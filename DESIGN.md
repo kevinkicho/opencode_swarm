@@ -9,9 +9,13 @@
 
 ## 1. Vision
 
-Run opencode as a **swarm**, not a single chat. Multiple specialist agents (orchestrator, architect, coder, researcher, reviewer) work in parallel against one mission. Every tool call, every sub-agent spawn, every routing decision is a first-class visual event on a timeline you can actually read — no scrollback hunting, no buried context.
+Run opencode as a **swarm**, not a single chat. Multiple undifferentiated agents work in parallel against one run, free to delegate, research, patch, and review as the work demands. Every tool call, every sub-agent spawn, every dispatch decision is a first-class visual event on a timeline you can actually read — no scrollback hunting, no buried context.
 
 The UI's job is to make a 5-agent run as legible as a 1-agent run. That is the entire premise.
+
+**Project goal.** Surface every inner working of opencode-driven agentic workmanship so that humans and agents alike can inspect, debug, and fine-tune the output of multi-agent runs across many iterations. The app keeps a detailed, durable record of every opencode session and project — not as passive archive, but as a shared substrate that both the human operator and the AI agents draw on to converge on sound-quality results over time.
+
+**On roles.** We reject the supervisor-worker paradigm. The human seeds direction and bounds; agents decide internally who does what, with maximal freedom over toolset and delegation pattern. The system *observes* what each agent has been doing and surfaces an emergent **shape** (coordinator-shaped, planner-shaped, implementer-shaped, verifier-shaped, investigator-shaped) derived from tool mix and delegation count. Shapes describe behavior; they never bind it. This is the single most load-bearing stance in the project — it shapes the routing modal, the spawn modal, and the agent inspector.
 
 ---
 
@@ -69,13 +73,13 @@ We deliberately use opencode's canonical names instead of inventing new ones. So
 ## 4. UI surface map
 
 ### Layout shell — `app/page.tsx`
-- **Topbar** — mission title, $ budget chip, go-tier rolling cap chip, agent count, palette/settings/account.
+- **Topbar** — run title, $ budget chip, go-tier rolling cap chip, agent count, palette/settings/account.
 - **Roster** (260px left rail) — collapsed agent rows: accent stripe, status circle, name, attention badge.
 - **Timeline** (1fr center) — sticky lane headers + event canvas (see below).
 - **Composer** (bottom) — typed message dispatch with target picker (broadcast / specific agent / human).
 - **Status rail** (footer) — live websocket dot, palette / routing / glossary / branch-history triggers.
 - **Drawer** (right, 380px) — inspector for the focused message OR selected agent.
-- **Modals** — palette (⌘K), routing policy, branch history, spawn agent, glossary.
+- **Modals** — palette (⌘K), run dispatch (observation), branch history, spawn agent, glossary.
 
 ### Timeline internals — `components/swarm-timeline.tsx` + `components/timeline-flow.tsx`
 - Each row = one **lead A2A event** + 0..N **chip events** docked beneath.
@@ -86,15 +90,67 @@ We deliberately use opencode's canonical names instead of inventing new ones. So
 
 ### Modals (each has a clear contract — do not mix)
 - **Spawn modal** (`spawn-agent-modal.tsx`) — *imperative*. Creates an agent now. Verb: `spawn`.
-- **Routing modal** (`routing-modal.tsx`) — *declarative policy*. Edits per-role rules. Verb: `save`. Effect applies to *next dispatched subtask*. The `eyebrow="policy"` tooltip explains this contract in-product.
-- **Branch history** (`commit-history.tsx`) — *read-only*. Mission log of commits / prompts / tools / reviews.
+- **Routing modal** (`routing-modal.tsx`) — *declarative observation + bounds*. Sets run-level caps (spend / tokens / wallclock), per-provider soft ceilings, and surfaces observed dispatch distribution + derived agent shapes. Verb: `save`. Effect applies to *next dispatch*. **No per-agent assignments live here.** Agents self-select providers within the bounds; humans observe and nudge. The `eyebrow="observation"` tooltip explains this contract in-product. See §4.2.
+- **Branch history** (`commit-history.tsx`) — *read-only*. Run log of commits / prompts / tools / reviews.
 - **Glossary** (`glossary-modal.tsx`) — *reference*. Canonical opencode parts, tools, events. Actor/transcript vocabulary only — API/config types are intentionally out of scope.
 - **Palette** (`command-palette.tsx`) — *imperative*. ⌘K / Ctrl+K. Jump to any timeline node or trigger an action.
 
 ### Important conventions
-- **Eyebrow tooltips** (`Modal.eyebrowHint`) — attach a wide hover tooltip to a modal's eyebrow when the eyebrow names a concept worth explaining (first use: `policy`).
+- **Eyebrow tooltips** (`Modal.eyebrowHint`) — attach a wide hover tooltip to a modal's eyebrow when the eyebrow names a concept worth explaining (first use: `observation`).
 - **Dense-factory aesthetic** — h-5/h-6 rows, tabular-nums, monospace, `text-micro` (10px) uppercase tracking-widest2 for labels, hairline borders (`hairline-b/t/r/l` from `app/globals.css`).
-- **Provider tier vocabulary** — `zen` (pay-per-token marketplace) and `go` (subscription bundle). All routing decisions choose between these two. We do *not* expose BYOK in the UI; the user said "all users are assumed to use opencode zen/go".
+- **Provider tier vocabulary** — `zen` (pay-per-token marketplace) and `go` (subscription bundle). All dispatch decisions choose between these two. We do *not* expose BYOK in the UI; the user said "all users are assumed to use opencode zen/go".
+
+### 4.2 Dispatch philosophy — observation + bounds, never assignment
+
+The routing modal is the single most opinionated surface in the app. The contract is:
+
+**Humans set bounds. Agents self-select. The system observes.**
+
+Concretely:
+
+| Layer | Who sets it | What it looks like |
+|---|---|---|
+| **Run bounds** | human | `$ cap` / `token cap` / `wallclock cap` — sliders in the modal |
+| **Provider ceilings** | human | soft fraction of run spend allowed per provider tier (`zen ≤ 60%`) |
+| **Provider choice per call** | agent | each agent picks cheapest capable model within remaining ceilings |
+| **Observed dispatch** | system | stacked bar + per-model breakdown of what actually happened |
+| **Observed shape** | system | derived label per agent (`coordinator-shaped`, `implementer-shaped`, etc.) from tool mix + delegation count |
+
+**What this explicitly rejects:** `if role=X then provider=Y`. Role-based routing pins an agent's behavior before it has acted, reproducing a supervisor-worker hierarchy the project is designed to refuse. It also turns the run into a set of predetermined slots rather than a live collaboration.
+
+**What survives from the old idea:** humans still want cost discipline, and some runs genuinely need a premium-reasoning tier available. The modal keeps those affordances — as ceilings on the tier, not as assignments to agents. The agent reasons about its own budget within that envelope.
+
+**Shape inference (sketch).** An agent's observed shape is derived per run from tool-call counts and delegation depth:
+- `coordinator-shaped` — high `task` count, low patch/read count
+- `planner-shaped` — moderate `task` count, heavy `read`/`todowrite`
+- `implementer-shaped` — heavy `edit`/`patch`/`write`, low delegation
+- `verifier-shaped` — heavy `read`/`bash` (tests), low patch count
+- `investigator-shaped` — heavy `webfetch`/`grep`/`read`, low patch count
+
+Shapes are a readout, never a lock. A human can add an optional note to a shape (`// went unusually deep on search this run`) but cannot pin one. Agents never see their own shape label — only the human does, through the modal.
+
+### 4.3 Initiate philosophy — source is sacred, everything else is a seed
+
+The new-run modal (`new-run-modal.tsx`) is the run's creation event. Contract:
+
+**The human anchors the substrate. The swarm sets its own goals within it.**
+
+| Field | Required? | Owned by |
+|---|---|---|
+| **source** (repo URL / folder) | yes | human — it's the only thing the swarm cannot invent |
+| **branch strategy** | yes (default worktree) | human — touches the file system outside the sandbox |
+| **start mode** (dry-run / live / spectator) | yes (default dry-run) | human — governs whether writes land |
+| **directive** | **no** | human *or* the swarm (inference from README / commits / issues) |
+| **team** | **no** | human-picked roster + fresh spawns; zero is fine — the orchestrator spawns as work demands |
+| **bounds** (spend / wallclock) | **no** | human; `unbounded` toggle surrenders the ceiling |
+
+**Why the optionals are truly optional.** The project's stance (§1) is that agents should be allowed to set their own goals when humans don't have strong preferences. The modal must not smuggle that stance back out through required fields. A run with only a source is a valid run.
+
+**Creative affordance: substrate inference.** When the directive is blank and the source is set, the preview panel shows what the swarm *would* infer — likely focus, file hotspots, open work. This is a readout, not a commitment. The swarm can revise goals mid-run; the directive is a seed, not a contract.
+
+**Dry-run is the default.** Because "let the swarm figure it out" is a strong claim, the first launch shouldn't mutate the working tree. Dry-run plans, spawns tasks, and populates L1 without writing to disk. Promote to `live` once the plan looks right.
+
+**Single contract.** The modal is imperative (`launch run`) but holds declarative preferences (bounds, strategy). Per §12 this coexistence is allowed because there is no kill switch and no live policy edit — the entire modal is the setup for one dispatch event. Once the run is launched, all further policy lives in the routing modal (declarative) and composer (imperative) — not here.
 
 ---
 
@@ -136,7 +192,7 @@ All shapes live in `lib/swarm-types.ts` and `lib/types.ts`. Today they're popula
 }
 ```
 
-### `MissionMeta`, `ProviderSummary` — see `swarm-types.ts`.
+### `RunMeta`, `ProviderSummary` — see `swarm-types.ts`.
 
 ---
 
@@ -146,27 +202,224 @@ The UI is intentionally state-shaped, not request-shaped. To make it real, do th
 
 ### Phase 1 — read-only mirror
 1. **Subscribe to opencode SSE** (`event.subscribe` / `event.listen`). One websocket per opencode instance.
-2. **Materialize sessions into agents.** Each child session of the parent mission becomes an `Agent` row. Map `session.status` → `Agent.status`. Initial config (name, model, tools) comes from `app.agents` for the agent definition referenced by the session.
+2. **Materialize sessions into agents.** Each child session of the parent run becomes an `Agent` row. Map `session.status` → `Agent.status`. Initial config (name, model, tools) comes from `app.agents` for the agent definition referenced by the session.
 3. **Materialize message parts into `AgentMessage`s.** Stream `message.part.updated` → append/update rows. Map opencode part types → our `PartType`. The `task` tool's invocation → `AgentMessage` with `part: 'tool'`, `toolName: 'task'`, and `toAgentIds` populated from the task's target agent.
-4. **Wire mission meta.** Sum tokens/cost across child sessions → `MissionMeta.totalCost / totalTokens`. Window-roll for `goTier.used`.
+4. **Wire run meta.** Sum tokens/cost across child sessions → `RunMeta.totalCost / totalTokens`. Window-roll for `goTier.used`.
 
 At this point the UI shows a real run live, but cannot drive it.
 
 ### Phase 2 — control plane
 5. **Composer dispatch** → `session.prompt` to the orchestrator session. Target picker (specific agent) → `session.prompt` directly to that child session.
 6. **Spawn modal** → `session.create` with the chosen agent config; immediately appears in roster.
-7. **Routing modal save** → write rules to a config endpoint; orchestrator agent reads them on next `task` dispatch. (Opencode does not have a routing-policy primitive natively; this layer is ours.)
+7. **Routing modal save** → persist run-level bounds (`costCap`, `tokenCap`, `minutesCap`, `zenCeiling%`, `goCeiling%`) to a config endpoint. Each agent's dispatch loop reads the current bounds and picks its own provider — cheapest capable within remaining ceiling. The **observed dispatch** readout comes from aggregating `message.part.updated` events by `model.provider` + `model.label`; **observed shapes** come from aggregating tool-call counts per agent, classified by the rubric in §4.2. Neither is a config value — both are derived projections over the L1 part index (§7.1).
 8. **Permission flow** — when `permission.updated` fires, surface in the agent's attention badge; clicking jumps to inspector with accept/reject buttons that call `permission.replied`.
 
 ### Phase 3 — branch history (real VCS)
 9. Replace `lib/commits-data.ts` with `vcs.branch.updated` + `file.edited` + `session.diff` aggregation. The current "branch history" modal shape already matches.
 
 ### Phase 4 — multi-tenant / multi-instance
-10. Account chip in topbar becomes real (current `kk` placeholder). Mission picker. Cross-mission cost dashboard.
+10. Account chip in topbar becomes real (current `kk` placeholder). Run picker. Cross-run cost dashboard.
 
 ---
 
-## 7. Decisions already made (do not re-litigate)
+## 7. Session memory & logging (backend)
+
+The app's durable value is not the live UI — it's the **record of every multi-agent run**, shaped so both humans (for playback) and agents (for the *next* run) can reason over it. This section is the brief for whoever wires persistence.
+
+### 7.1 Three-layer model
+
+Session memory is a pyramid. The base lives on disk; only the summit enters an agent's context window.
+
+| Layer | Storage | Purpose | Size per run |
+|---|---|---|---|
+| **L0 — Event log** | Append-only NDJSON (exact SSE stream, verbatim) | Human playback, replay, debug | Unbounded (MBs) |
+| **L1 — Part index** | SQLite / DuckDB, one row per message-part | Query: "what did agent X do to file Y?", cross-run analytics | ~10–50 KB per run |
+| **L2 — Rollups** | Per-agent summary + per-run retro, written at session close | Agent consumption in the *next* run | ~2–10 KB per run |
+
+**Budget target.** For multi-reasoning LLMs (e.g. GLM-5.1 @ 234k ctx), spend no more than ~50% (≈117k tokens) on recalled history. That means **L2 only by default**, with selective L1 slices fetched on demand via a `recall(sessionID, filter)` tool. L0 never enters context; it's for humans and for regenerating L1/L2 after schema changes.
+
+**Content-addressing.** Diffs, file snapshots, and tool outputs >N bytes are stored once by `sha256(content)` and referenced by hash everywhere. A run that touches the same 30-line patch ten times stores it once.
+
+### 7.2 What to collect (the menu)
+
+**Swarm-run level** (one record per run)
+- `swarmSessionID`, `createdAt`, `endedAt`, `durationMs`, `outcome` (`completed` / `aborted` / `failed`)
+- `directive` (verbatim prompt, may be null — agents can run unseeded), `rootWorkspace` (repo path, branch, HEAD sha start/end)
+- `participants[]` — per agent: `name`, `model`, `promptHash`, `toolPermissions`
+- `routingPolicy` snapshot (the declarative rules in force at start)
+- `budget`: `tokensIn`, `tokensOut`, `costUSD`, wallclock
+- `artifacts`: patches produced, files touched, commits, PR URLs
+
+**Per-agent-session** (one per opencode child sessionID)
+- `sessionID`, `agentConfig`, `parentTaskID` (who spawned it — forms the task tree)
+- Part counters: `bash`, `read`, `edit`, `grep`, `webfetch`, `task` (fan-out), `retry`, `compaction`
+- `tokensIn / tokensOut`, `toolCallsCount`, `errorsCount`
+- `firstDispatchAt`, `lastDispatchAt`
+
+**Per-part** (the atoms of L1)
+- `partID`, `messageID`, `partType`, `createdAt`, `latencyMs`
+- Tool parts: `toolName`, `argsHash`, `resultHash`, `resultSize`, `exitCode`, `durationMs`
+- `task` parts: `childSessionID`, `promptHash`, `resultSummary` (generated at close)
+- `patch` parts: `filePath`, `+lines / -lines`, `diffHash`
+
+**Quality signals** (what makes iteration work)
+- Reviewer approvals / rejections per patch
+- User interventions — permission replies, manual routing overrides, composer corrections
+- Retries, rollbacks, test / lint / typecheck results
+- **Diffs merged vs. diffs discarded** — the ground truth for "did this agent produce value?"
+
+**Routing trace** (makes the policy itself debuggable)
+- Every dispatch decision: `sender → receiver`, which rule matched, timestamp
+
+### 7.3 Key tradeoff
+
+The budget pressure is not L0 size — disk is cheap. It's the **quality of the L2 rollup**. If summaries are lossy in the wrong way, the next run repeats the same mistakes. Spend engineering on *structured* rollups (per-file outcome, per-tool failure modes, reviewer feedback verbatim) rather than free-form prose. A good rollup is a schema, not an essay.
+
+### 7.4 Rollup schema (L2)
+
+Two rollup shapes, written once at session close. Schema > prose — structured fields survive summarization better than free text.
+
+**Per-agent rollup** (one per child session)
+
+```ts
+type AgentRollup = {
+  sessionID: string;
+  agent: { name: string; model: string; role: string };
+  runId: string;
+  outcome: 'merged' | 'discarded' | 'partial' | 'aborted';
+  counters: { tokensIn: number; tokensOut: number; toolCalls: number; retries: number; compactions: number };
+  artifacts: Array<{
+    type: 'patch' | 'file' | 'commit';
+    filePath?: string;
+    addedLines?: number;
+    removedLines?: number;
+    diffHash?: string;
+    status: 'merged' | 'discarded' | 'superseded';
+    reviewerNotes?: string;  // verbatim, not summarized
+  }>;
+  failures: Array<{
+    tool: string;
+    argsHash: string;
+    exitCode?: number;
+    stderrHash?: string;
+    resolution: 'retried' | 'abandoned' | 'routed-to' | 'user-intervened';
+    routedTo?: string;
+  }>;
+  decisions: Array<{ at: number; choice: string; rationaleHash: string }>;
+  deps: { spawnedBy?: string; spawned: string[] };
+};
+```
+
+**Per-run retro** (one per swarm run)
+
+```ts
+type RunRetro = {
+  runId: string;
+  directive: string | null;               // verbatim prompt; null if run started unseeded
+  outcome: 'completed' | 'aborted' | 'failed';
+  timeline: { start: number; end: number; durationMs: number };
+  cost: { tokensTotal: number; costUSD: number };
+  participants: string[];                 // AgentRollup.sessionIDs
+  artifactGraph: { filesFinal: string[]; finalDiffHash?: string; commits: string[]; prURLs: string[] };
+  lessons: Array<{
+    tag: 'tool-failure' | 'routing-miss' | 'good-pattern' | 'user-correction';
+    text: string;
+    evidencePartIDs: string[];            // pointers into L1, so an agent can pull details on demand
+  }>;
+};
+```
+
+Lessons are the load-bearing field — they're what a future agent *wants*. Tagged, terse, evidence-linked.
+
+### 7.5 The `recall` tool
+
+Recall is how agents pull L1/L0 detail into context on demand. Default is cheap (L2 summary only); callers pay tokens explicitly by upgrading `shape`.
+
+```ts
+recall({
+  runId?: string;                     // this OR sessionID
+  sessionID?: string;
+  workspace?: string;                     // opt-in cross-run recall (same repo)
+  filter: {
+    agents?: string[];                    // ['coder', 'reviewer']
+    partTypes?: PartType[];               // ['edit', 'patch']
+    toolNames?: string[];                 // ['bash', 'grep']
+    filePath?: string;                    // glob: 'src/auth/**'
+    outcome?: 'merged' | 'discarded';
+    timeRange?: [number, number];
+  };
+  shape: 'summary' | 'parts' | 'diffs';   // token cost rises left→right
+  limit?: number;
+}) => {
+  items: RecallItem[];
+  tokenEstimate: number;                  // caller decides whether to paginate
+  truncated: boolean;
+};
+```
+
+Design notes:
+- **Default `shape: 'summary'`** — forces agents to explicitly request heavier payloads.
+- **`tokenEstimate` in response, not request** — the tool knows sizes; agents shouldn't guess.
+- **Cross-run recall is opt-in** (`workspace` param). Default is this run only, to avoid context bleed between unrelated runs on the same repo.
+
+### 7.6 Open wiring questions
+
+- **Where does rollup generation run?** A dedicated "librarian" agent at session close, or a deterministic reducer over L1?
+- **Schema evolution.** L0 is immutable; L1/L2 must be regenerable from L0 after schema changes. Budget for a migration tool from day one.
+- **Cross-run recall.** Should an agent in run B see L2 from run A on the same repo? Opt-in per run, or scoped by workspace?
+
+---
+
+## 8. Planning & delegation wiring (backend)
+
+Opencode gives each session a private todo list but no notion of a **shared, run-level plan**. A swarm UI where "the orchestrator's plan is visibly driving child agents" is an app-layer construction on top of SDK primitives. This section is the contract for building it.
+
+### 8.1 What opencode provides (native)
+
+| Primitive | Used for |
+|---|---|
+| `todowrite` / `todoread` tools | Per-session plans — one list per `sessionID` |
+| `task` tool | Delegation — spawns child session, runs prompt, returns `subtask` part |
+| `session.create` + `session.prompt` | Lower-level; what `task` wraps |
+| `subtask` part | Child's final result, surfaced in parent's message stream |
+| `todo.updated` SSE event | Fires when any session's list changes |
+
+None of these know about each other. A `todowrite` call and a `task` call are independent events from the SDK's point of view.
+
+### 8.2 What the app layer invents
+
+Three things the backend owns on top of the native primitives:
+
+1. **Binding** — link each orchestrator todo item to the `task` call that executes it. The SDK won't tell you "this task call is item B"; the app has to establish correspondence.
+2. **Aggregation** — if a child agent writes its own sub-plan via `todowrite`, optionally expose it as a collapsible sub-list under the parent's item. Opt-in; flattening is often clearer.
+3. **Persistence** — write the todo↔task mapping into L2 rollups (§7.4) so the next run can see *"item B was delegated to coder, took 3 retries, eventually succeeded."*
+
+### 8.3 The `todoID ↔ taskID` binding
+
+Two viable mechanisms:
+
+**(a) App-injected ID — recommended.** When the orchestrator writes a todo, the app mints a stable `todoID`. When it delegates, the app injects the ID into the `task` description (e.g. `[todo:abc123] research JWT library options`). Backend parses on observation. Simple, explicit, robust to re-ordering or content edits.
+
+**(b) Prompt-hash match — fallback.** Hash the todo content, hash the `task` prompt, match on overlap. Fragile — the orchestrator may reword between plan and delegation, and near-duplicates across items collide.
+
+Prefer (a). Implementation path: a thin tool wrapper around `task` that auto-injects the ID, plus a system-prompt pattern that teaches the orchestrator to preserve it.
+
+### 8.4 What this lights up in the UI
+
+- **Roster badge.** "Coder is working on *item B*" — currently the roster only shows status.
+- **Timeline affordance.** A `task` delegation card surfaces the originating todo item inline, not just the prompt text.
+- **Inspector drawer.** Selecting an item in the plan view scrolls the timeline to the corresponding `task`/`subtask` pair.
+- **L2 rollup field.** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent.
+
+### 8.5 Open questions
+
+- **Sub-plan depth.** If a child agent spawns its own sub-plan via its own `task` calls, render a tree view or flatten to depth=1?
+- **Re-planning mid-run.** If the orchestrator rewrites its todo list while tasks are in flight, what happens to tasks bound to deleted items? Abandon, reparent, or flag for user?
+- **Human edits.** Can the operator check off an item in the sidebar, or is the plan strictly agent-owned (read-only for humans)? The §11 "single contract" rule pushes toward read-only here.
+
+---
+
+## 9. Decisions already made (do not re-litigate)
 
 These are recorded so future contributors don't burn cycles re-asking:
 
@@ -177,22 +430,23 @@ These are recorded so future contributors don't burn cycles re-asking:
 - **Provider universe = zen + go only.** No BYOK / local-model UI. Agents are configured by name only, never by source.
 - **Agent name and directive are optional at spawn.** Frontier models don't need narrow scoping; directives matter for *coordination*, not capability. Spawn modal dims optional inputs to signal this.
 - **Inspector dismissal = click-outside.** No "show inspector" footer button. Modern users dismiss via outside-click; the button was removed.
+- **No role-based routing. Ever.** Agents self-select providers within run bounds; humans observe and nudge. Roles exist only as *derived shapes* (§4.2), read-only to the human, invisible to the agent. Anyone tempted to reintroduce `if role=X → provider=Y` should re-read §1 ("On roles") and the `observation` eyebrow tooltip before writing code. This is the single hardest-won architectural stance in the project.
 
 ---
 
-## 8. Open questions
+## 10. Open questions
 
 These are explicitly *not* decided yet. Backend implementer is invited to propose:
 
 - **Cost ceiling enforcement.** Where does the spend cap actually live? Orchestrator-side gate, or per-session middleware?
-- **Branch / fork semantics.** Palette has a "branch from current node" action. Maps to `session.children` + revert? Or a new git branch + new mission?
+- **Branch / fork semantics.** Palette has a "branch from current node" action. Maps to `session.children` + revert? Or a new git branch + new run?
 - **Compaction trigger.** Manual via palette, or automatic at token threshold? UI assumes both.
 - **A2A typed pins.** We assumed `task`-tool dispatch is the sole A2A primitive. If opencode introduces a richer A2A schema, the timeline needs a second wire style.
 - **Authentication.** No auth UI exists. `auth.set` is the SDK method but not surfaced.
 
 ---
 
-## 9. Files worth knowing
+## 11. Files worth knowing
 
 | Path | Purpose |
 |---|---|
@@ -201,17 +455,18 @@ These are explicitly *not* decided yet. Backend implementer is invited to propos
 | `components/timeline-flow.tsx` | Card / wire / drop / chip layout math + SVG rendering |
 | `components/agent-roster.tsx` | Left rail, attention badges, expanded agent panel |
 | `components/inspector.tsx` | Right drawer content for focused message OR selected agent |
-| `components/routing-modal.tsx` | Policy panel; eyebrow tooltip explains declarative contract |
+| `components/routing-modal.tsx` | Observation panel (run bounds + observed dispatch + observed shapes); see §4.2 for the philosophy |
 | `components/spawn-agent-modal.tsx` | Imperative agent creation; family picker |
+| `components/new-run-modal.tsx` | Run initiation; source required, directive/team/bounds optional; see §4.3 |
 | `components/command-palette.tsx` | ⌘K palette with grouped jump targets and chip-formatted line items |
-| `lib/swarm-types.ts` | Canonical TS types for Agent, AgentMessage, MissionMeta, etc. |
+| `lib/swarm-types.ts` | Canonical TS types for Agent, AgentMessage, RunMeta, etc. |
 | `lib/swarm-data.ts` | **Mock data** — the seed for everything you see today |
 | `lib/part-taxonomy.ts` | Part/tool color map + `isCrossLane()` predicate |
-| `lib/playback-context.tsx` | Mission clock + per-part phase machine |
+| `lib/playback-context.tsx` | Run clock + per-part phase machine |
 | `docs/opencode-vocabulary.md` | Detailed canonical vocab from opencode SDK |
 
 ---
 
-## 10. The one rule
+## 12. The one rule
 
-**Ship surfaces with single contracts.** A panel is either declarative (rules / config / state) or imperative (actions / events / commands). Never both. The `policy` eyebrow tooltip explains why — read it before adding a "force redispatch" button to the routing modal, or a "save preset" to the spawn modal.
+**Ship surfaces with single contracts.** A panel is either declarative (rules / config / state) or imperative (actions / events / commands). Never both. The `observation` eyebrow tooltip on the routing modal explains why — read it before adding a "force redispatch" or "halt all" button there, or a "save preset" to the spawn modal. Declarative bounds and derived readouts can coexist in one panel; declarative bounds and an imperative kill switch cannot.

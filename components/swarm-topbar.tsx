@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import type { MissionMeta, ProviderSummary } from '@/lib/swarm-types';
+import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
@@ -10,18 +10,18 @@ import { ProviderBadge } from './provider-badge';
 import { compact } from '@/lib/format';
 
 export function SwarmTopbar({
-  mission,
+  run,
   providers,
   onOpenPalette,
   onOpenSettings,
 }: {
-  mission: MissionMeta;
+  run: RunMeta;
   providers: ProviderSummary[];
   onOpenPalette: () => void;
   onOpenSettings: () => void;
 }) {
-  const budgetPct = Math.min(100, Math.round((mission.totalCost / mission.budgetCap) * 100));
-  const goTierPct = Math.min(100, Math.round((mission.goTier.used / mission.goTier.cap) * 100));
+  const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
+  const goTierPct = Math.min(100, Math.round((run.goTier.used / run.goTier.cap) * 100));
   const totalAgents = providers.reduce((s, p) => s + p.agents, 0);
 
   return (
@@ -42,34 +42,34 @@ export function SwarmTopbar({
       <span className="w-px h-4 bg-ink-600" />
 
       <nav className="flex items-center gap-2 pl-4 text-[12.5px] min-w-0 flex-1">
-        <span className="text-fog-200 truncate">{mission.title}</span>
+        <span className="text-fog-200 truncate">{run.title}</span>
       </nav>
 
       <div className="flex items-center gap-1 pr-1 h-full">
         <BudgetChip
           label="$"
-          used={mission.totalCost}
-          cap={mission.budgetCap}
+          used={run.totalCost}
+          cap={run.budgetCap}
           pct={budgetPct}
-          tooltipTitle="mission budget"
+          tooltipTitle="run budget"
           tooltipBody={[
-            ['total spend', `$${mission.totalCost.toFixed(2)}`],
-            ['cap', `$${mission.budgetCap.toFixed(2)}`],
-            ['remaining', `$${(mission.budgetCap - mission.totalCost).toFixed(2)}`],
-            ['tokens', compact(mission.totalTokens)],
+            ['total spend', `$${run.totalCost.toFixed(2)}`],
+            ['cap', `$${run.budgetCap.toFixed(2)}`],
+            ['remaining', `$${(run.budgetCap - run.totalCost).toFixed(2)}`],
+            ['tokens', compact(run.totalTokens)],
           ]}
         />
 
         <BudgetChip
-          label={mission.goTier.window}
-          used={mission.goTier.used}
-          cap={mission.goTier.cap}
+          label={run.goTier.window}
+          used={run.goTier.used}
+          cap={run.goTier.cap}
           pct={goTierPct}
           accent="mint"
           tooltipTitle="go 5h rolling limit"
           tooltipBody={[
-            ['used', `$${mission.goTier.used.toFixed(2)}`],
-            ['cap', `$${mission.goTier.cap.toFixed(2)}`],
+            ['used', `$${run.goTier.used.toFixed(2)}`],
+            ['cap', `$${run.goTier.cap.toFixed(2)}`],
             ['resets', 'in 3h 12m'],
             ['weekly', '$2.41 / $30'],
           ]}

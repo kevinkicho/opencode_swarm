@@ -47,7 +47,7 @@ The routing modal is **declarative policy only**. It edits per-role rules; savin
 - "Abort all" / "Pause swarm" actions inside the routing modal
 - Real-time slider that re-routes in-flight agents
 
-**Why:** mixing declarative (rules) and imperative (actions) in one panel destroys the user's mental model. See `DESIGN.md` §10. Imperatives belong in the spawn modal, agent inspector, and command palette — never in policy.
+**Why:** mixing declarative (rules) and imperative (actions) in one panel destroys the user's mental model. See `DESIGN.md` §12. Imperatives belong in the spawn modal, agent inspector, and command palette — never in policy.
 
 ---
 
@@ -120,7 +120,7 @@ Agent **name and directive are optional** at spawn. Only the family + model + to
 
 ## Not authenticated, not multi-tenant, not yet
 
-There is no auth UI. The `kk` chip in the topbar is a placeholder. There is no mission picker, no team scoping, no per-user budget. These belong to the post-prototype phase (`DESIGN.md` §6, Phase 4) and should not be added piecemeal before then.
+There is no auth UI. The `kk` chip in the topbar is a placeholder. There is no run picker, no team scoping, no per-user budget. These belong to the post-prototype phase (`DESIGN.md` §6, Phase 4) and should not be added piecemeal before then.
 
 **Why:** auth and multi-tenancy require backend decisions that haven't been made. Mocking them in the UI would lock us into shapes we'd have to reverse later.
 

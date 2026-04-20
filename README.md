@@ -19,7 +19,7 @@ npm run dev
 # open http://localhost:3000
 ```
 
-That's it — there is nothing to configure. The UI boots straight into a mocked mission with five agents already running.
+That's it — there is nothing to configure. The UI boots straight into a mocked run with five agents already running.
 
 ## Keyboard
 
@@ -51,7 +51,7 @@ This is a pre-backend prototype. Issues and PRs that:
 - ✅ Sketch a backend integration against the `lib/swarm-types.ts` contracts
 - ✅ Improve the design plan based on real opencode SDK behavior
 
-are all welcome. Before opening a feature PR, read `DESIGN.md` §10 — the one rule about surface contracts.
+are all welcome. Before opening a feature PR, read `DESIGN.md` §12 — the one rule about surface contracts.
 
 ## License
 

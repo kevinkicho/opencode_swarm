@@ -127,7 +127,28 @@ export interface AgentMessage {
   };
 }
 
-export interface MissionMeta {
+// App-layer todo item — not a native opencode primitive.
+// Mirrors what `todowrite` produces but extends it with app-minted binding
+// fields (ownerAgentId, taskMessageId) that link the plan to delegations.
+// See DESIGN.md §8 for the binding contract.
+export type TodoStatus =
+  | 'pending'
+  | 'in_progress'
+  | 'completed'
+  | 'failed'
+  | 'abandoned';
+
+export interface TodoItem {
+  id: string;                  // stable, app-minted todoID
+  content: string;             // verbatim plan text
+  status: TodoStatus;
+  ownerAgentId?: string;       // bound child agent, set when delegated
+  taskMessageId?: string;      // AgentMessage.id of the task-tool call that executes it
+  parentTodoId?: string;       // non-null for sub-plan items (not rendered in v1)
+  note?: string;               // short annotation, e.g. "3 retries"
+}
+
+export interface RunMeta {
   id: string;
   title: string;
   status: 'active' | 'done' | 'paused' | 'failed';

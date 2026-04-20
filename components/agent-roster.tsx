@@ -50,6 +50,7 @@ export function AgentRoster({
   onInspect,
   onFocus,
   onSpawn,
+  embedded = false,
 }: {
   agents: Agent[];
   messages: AgentMessage[];
@@ -58,6 +59,7 @@ export function AgentRoster({
   onInspect: (id: string) => void;
   onFocus: (id: string) => void;
   onSpawn?: () => void;
+  embedded?: boolean;
 }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -68,6 +70,26 @@ export function AgentRoster({
     for (const a of agents) map.set(a.id, computeAttention(a, messages));
     return map;
   }, [agents, messages]);
+
+  const body = (
+    <ul className="flex-1 overflow-y-auto py-1.5">
+      {agents.map((a) => (
+        <AgentRow
+          key={a.id}
+          agent={a}
+          attention={attentionByAgent.get(a.id)!}
+          selected={selectedId === a.id}
+          expanded={expandedId === a.id}
+          onToggleExpand={() => setExpandedId((p) => (p === a.id ? null : a.id))}
+          onSelect={() => onSelect(a.id)}
+          onInspect={() => onInspect(a.id)}
+          onFocus={onFocus}
+        />
+      ))}
+    </ul>
+  );
+
+  if (embedded) return body;
 
   return (
     <section className="relative flex flex-col min-w-0 min-h-0 bg-ink-850 hairline-r">
@@ -93,21 +115,7 @@ export function AgentRoster({
         </Tooltip>
       </div>
 
-      <ul className="flex-1 overflow-y-auto py-1.5">
-        {agents.map((a) => (
-          <AgentRow
-            key={a.id}
-            agent={a}
-            attention={attentionByAgent.get(a.id)!}
-            selected={selectedId === a.id}
-            expanded={expandedId === a.id}
-            onToggleExpand={() => setExpandedId((p) => (p === a.id ? null : a.id))}
-            onSelect={() => onSelect(a.id)}
-            onInspect={() => onInspect(a.id)}
-            onFocus={onFocus}
-          />
-        ))}
-      </ul>
+      {body}
     </section>
   );
 }

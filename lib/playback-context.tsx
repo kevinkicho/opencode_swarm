@@ -100,11 +100,11 @@ interface PlaybackStore {
   clockSec: number;
   playing: boolean;
   speed: number;
-  missionDuration: number;
+  runDuration: number;
   setClockSec: (v: number) => void;
   setPlaying: (v: boolean) => void;
   setSpeed: (v: number) => void;
-  setMissionDuration: (v: number) => void;
+  setRunDuration: (v: number) => void;
   restart: () => void;
 }
 
@@ -112,11 +112,11 @@ const usePlaybackStore = create<PlaybackStore>((set) => ({
   clockSec: 0,
   playing: false,
   speed: 1,
-  missionDuration: 0,
+  runDuration: 0,
   setClockSec: (v) => set({ clockSec: v }),
   setPlaying: (v) => set({ playing: v }),
   setSpeed: (v) => set({ speed: v }),
-  setMissionDuration: (v) => set({ missionDuration: v }),
+  setRunDuration: (v) => set({ runDuration: v }),
   restart: () => set({ clockSec: 0, playing: true }),
 }));
 
@@ -126,11 +126,11 @@ export function usePlayback() {
 
 export function PlaybackProvider({
   children,
-  missionDuration,
+  runDuration,
   initialSec,
 }: {
   children: ReactNode;
-  missionDuration: number;
+  runDuration: number;
   initialSec?: number;
 }) {
   const playing = usePlaybackStore((s) => s.playing);
@@ -138,10 +138,10 @@ export function PlaybackProvider({
 
   useEffect(() => {
     usePlaybackStore.setState({
-      missionDuration,
-      clockSec: initialSec ?? missionDuration,
+      runDuration,
+      clockSec: initialSec ?? runDuration,
     });
-  }, [missionDuration, initialSec]);
+  }, [runDuration, initialSec]);
 
   useEffect(() => {
     if (!playing) return;
@@ -150,7 +150,7 @@ export function PlaybackProvider({
     const tick = (now: number) => {
       const dt = (now - last) / 1000;
       last = now;
-      const { clockSec, missionDuration: md } = usePlaybackStore.getState();
+      const { clockSec, runDuration: md } = usePlaybackStore.getState();
       const next = clockSec + dt * speed;
       if (next >= md) {
         usePlaybackStore.setState({ clockSec: md, playing: false });

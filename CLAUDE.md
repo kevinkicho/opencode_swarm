@@ -13,7 +13,7 @@ Briefing for Claude Code (and any agent that respects this convention) opening t
 - Match the **dense-factory aesthetic**: h-5/h-6 rows, monospace, `text-micro` (10px) uppercase tracking-widest2 for labels, hairline borders, tabular-nums for numbers, ink-* / fog-* / molten / mint / iris / amber palette only.
 
 ## Never
-- Mix **declarative and imperative** in the same panel. A modal is either a rules editor (`save` / `reset`) or an action trigger (`spawn` / `send` / `run`). Never both. See `DESIGN.md` §10.
+- Mix **declarative and imperative** in the same panel. A modal is either a rules editor (`save` / `reset`) or an action trigger (`spawn` / `send` / `run`). Never both. See `DESIGN.md` §12.
 - Add **BYOK / local-model** UI. Provider universe is `zen` + `go` only.
 - Replace canonical opencode names with custom vocabulary "for clarity."
 - Default to generic AI design vocabulary (Inter, Roboto, purple gradients on white). The aesthetic is a deliberate point of view.

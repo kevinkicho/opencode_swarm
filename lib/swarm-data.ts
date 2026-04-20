@@ -5,12 +5,13 @@
 import type {
   Agent,
   AgentMessage,
-  MissionMeta,
+  RunMeta,
   ProviderSummary,
+  TodoItem,
 } from './swarm-types';
 
-export const missionMeta: MissionMeta = {
-  id: 'msn_a19c',
+export const runMeta: RunMeta = {
+  id: 'run_a19c',
   title: 'audit + remediate stripe webhook drift',
   status: 'active',
   started: '14:22 Apr 19',
@@ -116,6 +117,50 @@ export const agents: Agent[] = [
 
 export const agentOrder = ['ag_orch', 'ag_arch', 'ag_coder', 'ag_review'];
 
+// Run plan — swarm's shared todo list, app-layer bound to task delegations.
+// See DESIGN.md §8. todoID is app-minted; taskMessageId points into `messages`.
+export const runPlan: TodoItem[] = [
+  {
+    id: 'tdo_01',
+    content: 'map webhook handler surface',
+    status: 'completed',
+    ownerAgentId: 'ag_arch',
+    taskMessageId: 'm03',
+  },
+  {
+    id: 'tdo_02',
+    content: 'identify dedupe key drift root cause',
+    status: 'completed',
+    ownerAgentId: 'ag_arch',
+    note: 'v2024-08-01 contract change missed',
+  },
+  {
+    id: 'tdo_03',
+    content: 'patch idempotency key fallback',
+    status: 'in_progress',
+    ownerAgentId: 'ag_coder',
+    taskMessageId: 'm07',
+  },
+  {
+    id: 'tdo_04',
+    content: 'add regression test for drift detection',
+    status: 'pending',
+    ownerAgentId: 'ag_coder',
+  },
+  {
+    id: 'tdo_05',
+    content: 'review diff + sign off',
+    status: 'completed',
+    ownerAgentId: 'ag_review',
+    taskMessageId: 'm17',
+  },
+  {
+    id: 'tdo_06',
+    content: 'update runbook + changelog',
+    status: 'pending',
+  },
+];
+
 export const providerSummary: ProviderSummary[] = [
   { provider: 'zen', agents: 3, tokens: 40_200, cost: 0.75, hint: 'premium routing' },
   { provider: 'go', agents: 1, tokens: 28_220, cost: 0.12, hint: '5h tier $11.88 left' },
@@ -129,7 +174,7 @@ export const messages: AgentMessage[] = [
     fromAgentId: 'human',
     toAgentIds: ['ag_orch'],
     part: 'text',
-    title: 'mission brief',
+    title: 'run brief',
     body:
       'webhook deliveries from stripe are being double-processed after our retry upgrade. audit the handler path, find the drift, patch + verify. budget $5, ship under 10 minutes.',
     timestamp: '00:00',

@@ -55,7 +55,7 @@ export function ProviderStats({
   provider: Provider;
   onClose?: () => void;
 }) {
-  const { agents, mission, onOpenRouting } = useProviderStats();
+  const { agents, run, onOpenRouting } = useProviderStats();
   const display = providerDisplay[provider];
   const onThisProvider = agents.filter((a) => a.model.provider === provider);
   const totalTokens = onThisProvider.reduce((s, a) => s + a.tokensUsed, 0);
@@ -63,7 +63,7 @@ export function ProviderStats({
 
   const isGo = provider === 'go';
   const goPct = isGo
-    ? Math.min(100, Math.round((mission.goTier.used / mission.goTier.cap) * 100))
+    ? Math.min(100, Math.round((run.goTier.used / run.goTier.cap) * 100))
     : 0;
   const goBarColor = goPct > 80 ? 'bg-rust' : goPct > 60 ? 'bg-amber' : display.barFull;
 
@@ -94,7 +94,7 @@ export function ProviderStats({
           <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-widest2 text-fog-600">
             <span>go tier</span>
             <span className="text-fog-700 normal-case tracking-normal">
-              · {mission.goTier.window} window
+              · {run.goTier.window} window
             </span>
           </div>
           <div className="h-[3px] rounded-full bg-ink-800 overflow-hidden">
@@ -105,7 +105,7 @@ export function ProviderStats({
           </div>
           <div className="flex items-center font-mono text-[10px] text-fog-600 tabular-nums">
             <span>
-              ${mission.goTier.used.toFixed(2)} / ${mission.goTier.cap.toFixed(2)}
+              ${run.goTier.used.toFixed(2)} / ${run.goTier.cap.toFixed(2)}
             </span>
             <span className="ml-auto text-fog-700">{100 - goPct}% remaining</span>
           </div>
@@ -115,19 +115,19 @@ export function ProviderStats({
       {!isGo && provider === 'zen' && (
         <div className="hairline-t pt-2 space-y-1">
           <div className="font-mono text-[9px] uppercase tracking-widest2 text-fog-600">
-            mission budget
+            run budget
           </div>
           <div className="h-[3px] rounded-full bg-ink-800 overflow-hidden">
             <div
               className={clsx('h-full rounded-full', display.barFull)}
               style={{
-                width: `${Math.min(100, Math.round((totalCost / mission.budgetCap) * 100))}%`,
+                width: `${Math.min(100, Math.round((totalCost / run.budgetCap) * 100))}%`,
               }}
             />
           </div>
           <div className="flex items-center font-mono text-[10px] text-fog-600 tabular-nums">
             <span>
-              ${totalCost.toFixed(2)} / ${mission.budgetCap.toFixed(2)}
+              ${totalCost.toFixed(2)} / ${run.budgetCap.toFixed(2)}
             </span>
             <span className="ml-auto text-fog-700">metered per token</span>
           </div>

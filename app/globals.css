@@ -137,13 +137,13 @@ body {
   50% { opacity: 0; }
 }
 
-/* Mission clock scrub slider - invisible native control on top of custom track */
-.mission-scrub {
+/* Run clock scrub slider - invisible native control on top of custom track */
+.run-scrub {
   -webkit-appearance: none;
   appearance: none;
   background: transparent;
 }
-.mission-scrub::-webkit-slider-thumb {
+.run-scrub::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 12px;
@@ -151,7 +151,7 @@ body {
   background: transparent;
   cursor: pointer;
 }
-.mission-scrub::-moz-range-thumb {
+.run-scrub::-moz-range-thumb {
   width: 12px;
   height: 18px;
   background: transparent;

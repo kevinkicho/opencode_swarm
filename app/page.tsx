@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { SwarmTopbar } from '@/components/swarm-topbar';
-import { AgentRoster } from '@/components/agent-roster';
+import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
 import { Inspector } from '@/components/inspector';
 import { CommandPalette } from '@/components/command-palette';
@@ -10,6 +10,7 @@ import { RoutingModal } from '@/components/routing-modal';
 import { CommitHistory } from '@/components/commit-history';
 import { SpawnAgentModal } from '@/components/spawn-agent-modal';
 import { GlossaryModal } from '@/components/glossary-modal';
+import { NewRunModal } from '@/components/new-run-modal';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -20,7 +21,8 @@ import {
   agents,
   agentOrder,
   messages,
-  missionMeta,
+  runMeta,
+  runPlan,
   providerSummary,
 } from '@/lib/swarm-data';
 import type { TimelineNode } from '@/lib/types';
@@ -49,7 +51,7 @@ const paletteNodes: TimelineNode[] = messages.map((m) => ({
   tokens: m.tokens,
 }));
 
-const missionDuration = Math.max(
+const runDuration = Math.max(
   ...messages.map((m) => tsToSec(m.timestamp)),
   60
 );
@@ -63,6 +65,7 @@ export default function Page() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [newRunOpen, setNewRunOpen] = useState(false);
 
   const focusMessage = useCallback((id: string) => {
     setFocusedMsgId((prev) => {
@@ -124,31 +127,33 @@ export default function Page() {
       : undefined;
 
   return (
-    <PlaybackProvider missionDuration={missionDuration}>
+    <PlaybackProvider runDuration={runDuration}>
     <ProviderStatsProvider
       value={{
         agents,
         providers: providerSummary,
-        mission: missionMeta,
+        run: runMeta,
         onOpenRouting: () => setRoutingOpen(true),
       }}
     >
     <div className="relative h-screen w-screen flex flex-col bg-ink-900 overflow-hidden bg-noise">
       <SwarmTopbar
-        mission={missionMeta}
+        run={runMeta}
         providers={providerSummary}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenSettings={() => setRoutingOpen(true)}
       />
 
       <main className="flex-1 grid min-h-0" style={{ gridTemplateColumns: '260px 1fr' }}>
-        <AgentRoster
+        <LeftTabs
+          plan={runPlan}
           agents={agents}
           messages={messages}
-          selectedId={selectedAgentId}
-          onSelect={rosterSelect}
-          onInspect={selectAgent}
+          selectedAgentId={selectedAgentId}
+          onSelectAgent={rosterSelect}
+          onInspectAgent={selectAgent}
           onFocus={focusMessage}
+          onJump={focusMessage}
           onSpawn={() => setSpawnOpen(true)}
         />
 
@@ -176,6 +181,7 @@ export default function Page() {
         onOpenRouting={() => setRoutingOpen(true)}
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenGlossary={() => setGlossaryOpen(true)}
+        onOpenNewRun={() => setNewRunOpen(true)}
       />
 
       <Drawer
@@ -209,6 +215,8 @@ export default function Page() {
       <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />
 
       <GlossaryModal open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
+
+      <NewRunModal open={newRunOpen} onClose={() => setNewRunOpen(false)} />
     </div>
     </ProviderStatsProvider>
     </PlaybackProvider>
@@ -220,11 +228,13 @@ function StatusRail({
   onOpenRouting,
   onOpenHistory,
   onOpenGlossary,
+  onOpenNewRun,
 }: {
   onOpenPalette: () => void;
   onOpenRouting: () => void;
   onOpenHistory: () => void;
   onOpenGlossary: () => void;
+  onOpenNewRun: () => void;
 }) {
   return (
     <footer className="h-7 shrink-0 hairline-t bg-ink-900 flex items-center px-4 text-[11px] font-mono text-fog-600">
@@ -234,6 +244,27 @@ function StatusRail({
             <span className="w-1.5 h-1.5 rounded-full bg-mint" />
             <span className="text-fog-400">swarm live</span>
           </span>
+        </Tooltip>
+        <span className="w-px h-3 bg-ink-700" />
+        <Tooltip
+          side="top"
+          wide
+          content={
+            <div className="space-y-0.5">
+              <div className="font-mono text-[11px] text-fog-200">initiate a new run</div>
+              <div className="font-mono text-[10.5px] text-fog-600">
+                source + optional directive + optional team
+              </div>
+            </div>
+          }
+        >
+          <button
+            onClick={onOpenNewRun}
+            className="flex items-center gap-1.5 h-5 px-1.5 rounded bg-molten/10 hover:bg-molten/20 text-molten border border-molten/25 transition"
+          >
+            <span className="w-1 h-1 rounded-full bg-molten" />
+            <span className="font-mono text-[10px] uppercase tracking-widest2">new run</span>
+          </button>
         </Tooltip>
       </div>
 

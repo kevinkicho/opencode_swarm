@@ -1,12 +1,12 @@
 'use client';
 
 import { createContext, useContext, type ReactNode } from 'react';
-import type { Agent, MissionMeta, ProviderSummary } from './swarm-types';
+import type { Agent, RunMeta, ProviderSummary } from './swarm-types';
 
 type ProviderCtx = {
   agents: Agent[];
   providers: ProviderSummary[];
-  mission: MissionMeta;
+  run: RunMeta;
   onOpenRouting: () => void;
 };
 
