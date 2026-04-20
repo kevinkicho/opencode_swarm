@@ -1,0 +1,270 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink-base: #0a0d12;
+  --grid-line: rgba(255, 255, 255, 0.018);
+  --grid-dot: rgba(255, 255, 255, 0.04);
+  --noise-opacity: 0.04;
+}
+
+html,
+body {
+  background-color: var(--ink-base);
+  color: #e8ecf2;
+  font-feature-settings: 'ss01', 'cv01', 'cv09', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  min-height: 100vh;
+  background-image:
+    radial-gradient(circle at 20% 0%, rgba(255, 122, 61, 0.03), transparent 40%),
+    radial-gradient(circle at 80% 100%, rgba(94, 234, 212, 0.025), transparent 40%);
+  background-attachment: fixed;
+}
+
+/* Blueprint dot grid */
+.bg-grid-dots {
+  background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 0 0;
+}
+
+.bg-grid-lines {
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* Fine noise for texture */
+.bg-noise::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--noise-opacity);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: overlay;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1f2b;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3240;
+  background-clip: padding-box;
+}
+
+/* Focus */
+*:focus-visible {
+  outline: 1px solid #ff7a3d;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Selection */
+::selection {
+  background: rgba(255, 122, 61, 0.25);
+  color: #fff;
+}
+
+/* Hairline helpers */
+.hairline {
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+.hairline-t {
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+.hairline-b {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.hairline-r {
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+.hairline-l {
+  border-left: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+/* Inline keyboard chip */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+  color: #9ba5b5;
+  background: #141923;
+  border: 1px solid #232a37;
+  border-radius: 3px;
+  box-shadow: 0 1px 0 #0a0d12;
+}
+
+/* Shimmer for running activity */
+.shimmer-line {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 122, 61, 0.6) 50%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+}
+
+/* Blinking caret used on streaming node titles */
+.caret-blink {
+  animation: caret 1s steps(2, end) infinite;
+}
+@keyframes caret {
+  50% { opacity: 0; }
+}
+
+/* Mission clock scrub slider - invisible native control on top of custom track */
+.mission-scrub {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+}
+.mission-scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+}
+.mission-scrub::-moz-range-thumb {
+  width: 12px;
+  height: 18px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+/* Diff syntax */
+.diff-add {
+  background: rgba(94, 234, 212, 0.06);
+  border-left: 2px solid rgba(94, 234, 212, 0.5);
+}
+.diff-remove {
+  background: rgba(248, 113, 113, 0.06);
+  border-left: 2px solid rgba(248, 113, 113, 0.5);
+}
+.diff-context {
+  border-left: 2px solid transparent;
+}
+
+/* Custom scrollbar for code blocks */
+.code-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #2a3240 transparent;
+}
+
+/* Windows 11 Mica-style translucency */
+.mica {
+  background-color: rgba(16, 20, 28, 0.78);
+  backdrop-filter: blur(32px) saturate(160%);
+  -webkit-backdrop-filter: blur(32px) saturate(160%);
+}
+.mica-sheet {
+  background-color: rgba(22, 27, 36, 0.82);
+  backdrop-filter: blur(40px) saturate(160%);
+  -webkit-backdrop-filter: blur(40px) saturate(160%);
+}
+
+/* Windows 11 / Fluent icon button */
+.fluent-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 4px;
+  color: #cfd6df;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.fluent-btn:hover {
+  background: rgba(255, 255, 255, 0.055);
+  border-color: rgba(255, 255, 255, 0.04);
+}
+.fluent-btn:active {
+  background: rgba(255, 255, 255, 0.028);
+}
+.fluent-btn[aria-pressed="true"],
+.fluent-btn[data-active="true"] {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Caption button (title bar min/max/close) */
+.caption-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  color: #cfd6df;
+  background: transparent;
+  transition: background-color 100ms ease, color 100ms ease;
+  -webkit-app-region: no-drag;
+}
+.caption-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.caption-btn.close:hover {
+  background: #c42b1c;
+  color: #ffffff;
+}
+.caption-btn:active {
+  background: rgba(255, 255, 255, 0.035);
+}
+.caption-btn.close:active {
+  background: #a5281a;
+}
+
+/* Crosshair marker pattern */
+.crosshair {
+  position: relative;
+}
+.crosshair::before,
+.crosshair::after {
+  content: '';
+  position: absolute;
+  background: currentColor;
+  opacity: 0.4;
+}
+.crosshair::before {
+  top: 50%;
+  left: -3px;
+  right: -3px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+.crosshair::after {
+  left: 50%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  transform: translateX(-50%);
+}
