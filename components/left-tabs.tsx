@@ -66,7 +66,7 @@ export function LeftTabs({
                     agent-owned state
                   </div>
                   <div className="font-mono text-[10.5px] text-fog-500">
-                    written by the orchestrator via{' '}
+                    written by whichever agent is holding the plan via{' '}
                     <span className="text-fog-300">todowrite</span>. humans re-plan
                     via the command palette, not by editing rows.
                   </div>

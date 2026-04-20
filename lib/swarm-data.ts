@@ -26,8 +26,7 @@ export const runMeta: RunMeta = {
 export const agents: Agent[] = [
   {
     id: 'ag_orch',
-    name: 'primary',
-    role: 'orchestrator',
+    name: 'ember',
     model: {
       id: 'opencode/claude-opus-4-7',
       label: 'claude-opus-4-7',
@@ -36,20 +35,19 @@ export const agents: Agent[] = [
       pricing: { input: 5, output: 25 },
     },
     status: 'thinking',
-    currentTask: 'coordinating sub-agents via task tool',
+    focus: 'delegating via task tool',
     tokensUsed: 18_140,
     tokensBudget: 80_000,
     costUsed: 0.48,
     messagesSent: 5,
     messagesRecv: 4,
     accent: 'molten',
-    glyph: 'P',
+    glyph: 'E',
     tools: ['task', 'read', 'todowrite', 'todoread'],
   },
   {
     id: 'ag_arch',
-    name: 'architect',
-    role: 'architect',
+    name: 'atlas',
     model: {
       id: 'opencode/claude-sonnet-4-6',
       label: 'claude-sonnet-4-6',
@@ -58,7 +56,7 @@ export const agents: Agent[] = [
       pricing: { input: 3, output: 15 },
     },
     status: 'done',
-    currentTask: 'mapped webhook handler surface',
+    focus: 'mapped webhook handler surface',
     tokensUsed: 14_900,
     tokensBudget: 60_000,
     costUsed: 0.21,
@@ -70,8 +68,7 @@ export const agents: Agent[] = [
   },
   {
     id: 'ag_coder',
-    name: 'coder',
-    role: 'coder',
+    name: 'forge',
     model: {
       id: 'opencode/qwen3.6-plus',
       label: 'qwen3.6-plus',
@@ -81,20 +78,19 @@ export const agents: Agent[] = [
       limitTag: 'go 5h $12',
     },
     status: 'working',
-    currentTask: 'patching idempotency guard',
+    focus: 'patching idempotency guard',
     tokensUsed: 28_220,
     tokensBudget: 120_000,
     costUsed: 0.12,
     messagesSent: 2,
     messagesRecv: 2,
     accent: 'mint',
-    glyph: 'C',
+    glyph: 'F',
     tools: ['read', 'edit', 'write', 'bash', 'grep'],
   },
   {
     id: 'ag_review',
-    name: 'reviewer',
-    role: 'reviewer',
+    name: 'keel',
     model: {
       id: 'opencode/claude-haiku-4-5',
       label: 'claude-haiku-4-5',
@@ -103,14 +99,14 @@ export const agents: Agent[] = [
       pricing: { input: 1, output: 5 },
     },
     status: 'idle',
-    currentTask: 'standing by for diff review',
+    focus: 'standing by for diff review',
     tokensUsed: 7_160,
     tokensBudget: 40_000,
     costUsed: 0.06,
     messagesSent: 1,
     messagesRecv: 1,
     accent: 'fog',
-    glyph: 'R',
+    glyph: 'K',
     tools: ['read', 'grep'],
   },
 ];
@@ -168,7 +164,7 @@ export const providerSummary: ProviderSummary[] = [
 ];
 
 export const messages: AgentMessage[] = [
-  // 1. human prompt -> orchestrator (text part, cross-lane)
+  // 1. human prompt -> ember (text part, cross-lane)
   {
     id: 'm01',
     fromAgentId: 'human',
@@ -181,7 +177,7 @@ export const messages: AgentMessage[] = [
     status: 'complete',
   },
 
-  // 2. orchestrator reasoning (in-lane chip)
+  // 2. ember reasoning (in-lane chip)
   {
     id: 'm02',
     fromAgentId: 'ag_orch',
@@ -189,14 +185,14 @@ export const messages: AgentMessage[] = [
     part: 'reasoning',
     title: 'plan the dispatch',
     body:
-      'two phases: map the handler (architect) then patch + test (coder). review gates before ship.',
+      'two phases: map the handler (atlas) then patch + test (forge). keel gates review before ship.',
     timestamp: '00:03',
     tokens: 820,
     duration: '1.1s',
     status: 'complete',
   },
 
-  // 3. orchestrator calls task tool -> spawns architect (cross-lane)
+  // 3. ember calls task tool -> spawns atlas (cross-lane)
   {
     id: 'm03',
     fromAgentId: 'ag_orch',
@@ -205,7 +201,7 @@ export const messages: AgentMessage[] = [
     toolName: 'task',
     toolState: 'completed',
     title: 'delegate: map webhook handler',
-    toolSubtitle: 'task(subagent=architect, prompt="find the dedupe drift")',
+    toolSubtitle: 'task(subagent=atlas, prompt="find the dedupe drift")',
     timestamp: '00:05',
     tokens: 1240,
     cost: 0.02,
@@ -214,7 +210,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_arch',
   },
 
-  // 4. architect grep in-lane
+  // 4. atlas grep in-lane
   {
     id: 'm04',
     fromAgentId: 'ag_arch',
@@ -232,7 +228,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_arch',
   },
 
-  // 5. architect read in-lane
+  // 5. atlas read in-lane
   {
     id: 'm05',
     fromAgentId: 'ag_arch',
@@ -250,7 +246,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_arch',
   },
 
-  // 6. architect returns subtask part (cross-lane back to orchestrator)
+  // 6. atlas returns subtask part (cross-lane back to ember)
   {
     id: 'm06',
     fromAgentId: 'ag_arch',
@@ -268,7 +264,7 @@ export const messages: AgentMessage[] = [
     relatesTo: 'm03',
   },
 
-  // 7. orchestrator calls task tool -> coder
+  // 7. ember calls task tool -> forge
   {
     id: 'm07',
     fromAgentId: 'ag_orch',
@@ -278,7 +274,7 @@ export const messages: AgentMessage[] = [
     toolState: 'running',
     title: 'delegate: patch dedupe key',
     toolSubtitle:
-      'task(subagent=coder, prompt="swap to event.request.idempotency_key with event.id fallback")',
+      'task(subagent=forge, prompt="swap to event.request.idempotency_key with event.id fallback")',
     timestamp: '01:04',
     tokens: 1180,
     cost: 0.02,
@@ -288,7 +284,7 @@ export const messages: AgentMessage[] = [
     relatesTo: 'm06',
   },
 
-  // 8. coder reads
+  // 8. forge reads
   {
     id: 'm08',
     fromAgentId: 'ag_coder',
@@ -306,7 +302,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_coder',
   },
 
-  // 9. coder edit
+  // 9. forge edit
   {
     id: 'm09',
     fromAgentId: 'ag_coder',
@@ -338,7 +334,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_coder',
   },
 
-  // 11. coder bash (fails)
+  // 11. forge bash (fails)
   {
     id: 'm11',
     fromAgentId: 'ag_coder',
@@ -389,7 +385,7 @@ export const messages: AgentMessage[] = [
     permission: { tool: 'edit', state: 'approved' },
   },
 
-  // 14. coder edits test
+  // 14. forge edits test
   {
     id: 'm14',
     fromAgentId: 'ag_coder',
@@ -407,7 +403,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_coder',
   },
 
-  // 15. coder runs tests - green
+  // 15. forge runs tests - green
   {
     id: 'm15',
     fromAgentId: 'ag_coder',
@@ -425,7 +421,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_coder',
   },
 
-  // 16. coder returns subtask part
+  // 16. forge returns subtask part
   {
     id: 'm16',
     fromAgentId: 'ag_coder',
@@ -443,7 +439,7 @@ export const messages: AgentMessage[] = [
     relatesTo: 'm07',
   },
 
-  // 17. orchestrator -> reviewer via task tool
+  // 17. ember -> keel via task tool
   {
     id: 'm17',
     fromAgentId: 'ag_orch',
@@ -452,7 +448,7 @@ export const messages: AgentMessage[] = [
     toolName: 'task',
     toolState: 'completed',
     title: 'delegate: review diff',
-    toolSubtitle: 'task(subagent=reviewer, prompt="verify fallback + coverage")',
+    toolSubtitle: 'task(subagent=keel, prompt="verify fallback + coverage")',
     timestamp: '03:12',
     tokens: 880,
     cost: 0.02,
@@ -462,7 +458,7 @@ export const messages: AgentMessage[] = [
     relatesTo: 'm16',
   },
 
-  // 18. reviewer reads the diff
+  // 18. keel reads the diff
   {
     id: 'm18',
     fromAgentId: 'ag_review',
@@ -480,7 +476,7 @@ export const messages: AgentMessage[] = [
     threadId: 't_review',
   },
 
-  // 19. reviewer returns subtask
+  // 19. keel returns subtask
   {
     id: 'm19',
     fromAgentId: 'ag_review',
@@ -498,7 +494,7 @@ export const messages: AgentMessage[] = [
     relatesTo: 'm17',
   },
 
-  // 20. step-finish marker on orchestrator
+  // 20. step-finish marker on ember
   {
     id: 'm20',
     fromAgentId: 'ag_orch',
@@ -509,7 +505,7 @@ export const messages: AgentMessage[] = [
     status: 'complete',
   },
 
-  // 21. orchestrator -> human (text, cross-lane)
+  // 21. ember -> human (text, cross-lane)
   {
     id: 'm21',
     fromAgentId: 'ag_orch',

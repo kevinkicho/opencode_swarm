@@ -125,7 +125,7 @@ function MessageInspector({
         </div>
 
         <div className="p-3 space-y-2.5">
-          <AgentPill agent={from} role="from" />
+          <AgentPill agent={from} direction="from" />
           <div className="flex items-center gap-2">
             <span className="flex-1 h-px bg-gradient-to-r from-transparent via-fog-700 to-transparent" />
             <span className="font-mono text-micro uppercase tracking-wider text-fog-600">
@@ -134,7 +134,7 @@ function MessageInspector({
             <span className="flex-1 h-px bg-gradient-to-r from-transparent via-fog-700 to-transparent" />
           </div>
           {toAgents.map((a, i) => (
-            <AgentPill key={a?.id ?? `to-${i}`} agent={a} role="to" />
+            <AgentPill key={a?.id ?? `to-${i}`} agent={a} direction="to" />
           ))}
         </div>
       </div>
@@ -289,10 +289,9 @@ function AgentInspector({
         />
         <div className="px-3 pt-3 pb-3">
           <div className="flex items-center gap-2">
-            <span className="text-[15px] text-fog-100">{agent.name}</span>
             <span
               className={clsx(
-                'font-mono text-micro uppercase tracking-widest2',
+                'font-mono text-[11px] uppercase tracking-widest2 shrink-0',
                 agent.accent === 'molten' && 'text-molten',
                 agent.accent === 'mint' && 'text-mint',
                 agent.accent === 'iris' && 'text-iris',
@@ -300,20 +299,21 @@ function AgentInspector({
                 agent.accent === 'fog' && 'text-fog-400'
               )}
             >
-              {agent.role}
+              {agent.glyph}
             </span>
+            <span className="text-[15px] text-fog-100">{agent.name}</span>
           </div>
 
           <div className="mt-3">
             <ModelSwapRow agent={agent} />
           </div>
 
-          {agent.currentTask && (
+          {agent.focus && (
             <div className="mt-3 text-[12px] text-fog-300 leading-relaxed">
               <span className="font-mono text-micro uppercase tracking-wider text-fog-700 mr-1.5">
-                now
+                focus
               </span>
-              {agent.currentTask}
+              {agent.focus}
             </div>
           )}
         </div>
@@ -635,14 +635,14 @@ function BudgetPanel({ agent }: { agent: Agent }) {
   );
 }
 
-function AgentPill({ agent, role }: { agent: Agent | null; role: 'from' | 'to' }) {
+function AgentPill({ agent, direction }: { agent: Agent | null; direction: 'from' | 'to' }) {
   if (!agent) {
     return (
       <div className="relative border border-ink-600 bg-ink-700 px-2.5 py-1.5 pl-3">
         <span className="absolute left-0 top-0 bottom-0 w-[2px] bg-fog-500" />
         <div className="text-[12.5px] text-fog-100">human operator</div>
         <div className="font-mono text-micro uppercase tracking-wider text-fog-600">
-          {role}
+          {direction}
         </div>
       </div>
     );
@@ -661,18 +661,11 @@ function AgentPill({ agent, role }: { agent: Agent | null; role: 'from' | 'to' }
       />
       <div className="text-[12.5px] text-fog-100 truncate">
         {agent.name}
-        <span
-          className={clsx(
-            'ml-1.5 font-mono text-micro uppercase tracking-widest2',
-            agent.accent === 'molten' && 'text-molten',
-            agent.accent === 'mint' && 'text-mint',
-            agent.accent === 'iris' && 'text-iris',
-            agent.accent === 'amber' && 'text-amber',
-            agent.accent === 'fog' && 'text-fog-400'
-          )}
-        >
-          {agent.role}
-        </span>
+        {agent.focus && (
+          <span className="ml-1.5 font-mono text-[10.5px] text-fog-500">
+            {agent.focus}
+          </span>
+        )}
       </div>
       <div className="mt-0.5">
         <ProviderBadge provider={agent.model.provider} label={agent.model.label} size="sm" clickable />

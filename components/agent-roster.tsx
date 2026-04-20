@@ -176,7 +176,7 @@ function AgentRow({
             <div className="space-y-1">
               <div className="font-mono text-[11px] text-fog-200">
                 <span className={st.color}>{st.label}</span>
-                {agent.currentTask && <span className="text-fog-500"> - {agent.currentTask}</span>}
+                {agent.focus && <span className="text-fog-500"> - {agent.focus}</span>}
               </div>
               <div className="font-mono text-[10.5px] text-fog-600">
                 {compact(agent.tokensUsed)} tokens ${agent.costUsed.toFixed(2)} sent {agent.messagesSent} recv {agent.messagesRecv}
@@ -195,11 +195,9 @@ function AgentRow({
           </span>
         </Tooltip>
 
-        <Tooltip content={agent.role} side="top" align="start">
-          <span className="text-[13px] text-fog-100 truncate flex-1 min-w-0 cursor-default">
-            {agent.name}
-          </span>
-        </Tooltip>
+        <span className="text-[13px] text-fog-100 truncate flex-1 min-w-0 cursor-default">
+          {agent.name}
+        </span>
 
         <AttentionBadge attention={attention} onFocus={onFocus} />
       </button>
@@ -218,9 +216,9 @@ function AgentRow({
               <ToolList tools={agent.tools} size="xs" />
             </div>
 
-            {agent.currentTask && (
+            {agent.focus && (
               <div className="text-[11.5px] text-fog-400 leading-snug">
-                {agent.currentTask}
+                {agent.focus}
               </div>
             )}
 

@@ -13,14 +13,6 @@ interface DispatchSlice {
   share: number;
 }
 
-interface ObservedShape {
-  agentId: string;
-  agentName: string;
-  accent: 'molten' | 'mint' | 'iris' | 'amber' | 'fog';
-  shape: string;
-  breakdown: string;
-}
-
 const initialDispatch: DispatchSlice[] = [
   { provider: 'zen', model: 'opus-4.7', calls: 6, cost: 1.42, share: 0.34 },
   { provider: 'zen', model: 'sonnet-4.6', calls: 11, cost: 0.89, share: 0.22 },
@@ -30,58 +22,9 @@ const initialDispatch: DispatchSlice[] = [
   { provider: 'go', model: 'kimi k2.5', calls: 31, cost: 0.68, share: 0.17 },
 ];
 
-const initialShapes: ObservedShape[] = [
-  {
-    agentId: 'ag_orch',
-    agentName: 'orch-a',
-    accent: 'molten',
-    shape: 'coordinator-shaped',
-    breakdown: '12 delegations · 3 patches · 0 reads',
-  },
-  {
-    agentId: 'ag_arch',
-    agentName: 'arch-a',
-    accent: 'iris',
-    shape: 'planner-shaped',
-    breakdown: '6 delegations · 1 patch · 8 reads',
-  },
-  {
-    agentId: 'ag_coder',
-    agentName: 'coder-a',
-    accent: 'mint',
-    shape: 'implementer-shaped',
-    breakdown: '0 delegations · 14 patches · 22 reads',
-  },
-  {
-    agentId: 'ag_review',
-    agentName: 'review-a',
-    accent: 'fog',
-    shape: 'verifier-shaped',
-    breakdown: '0 delegations · 2 patches · 18 reads',
-  },
-  {
-    agentId: 'ag_research',
-    agentName: 'research-a',
-    accent: 'amber',
-    shape: 'investigator-shaped',
-    breakdown: '1 delegation · 0 patches · 31 searches',
-  },
-];
-
-const accentStripe: Record<ObservedShape['accent'], string> = {
+const accentStripe: Record<'molten' | 'mint', string> = {
   molten: 'bg-molten',
   mint: 'bg-mint',
-  iris: 'bg-iris',
-  amber: 'bg-amber',
-  fog: 'bg-fog-500',
-};
-
-const accentText: Record<ObservedShape['accent'], string> = {
-  molten: 'text-molten',
-  mint: 'text-mint',
-  iris: 'text-iris',
-  amber: 'text-amber',
-  fog: 'text-fog-300',
 };
 
 const providerFill: Record<'zen' | 'go', string> = {
@@ -97,7 +40,6 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
   const [goCeiling, setGoCeiling] = useState(100);
 
   const dispatch = initialDispatch;
-  const shapes = initialShapes;
 
   const costUsed = dispatch.reduce((a, d) => a + d.cost, 0);
   const callsTotal = dispatch.reduce((a, d) => a + d.calls, 0);
@@ -228,57 +170,12 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
           />
         </div>
 
-        <div className="rounded-md hairline bg-ink-900/50 overflow-hidden">
-          <div className="px-3 h-8 hairline-b flex items-center gap-2">
-            <span className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
-              observed shapes
-            </span>
-            <Tooltip
-              side="top"
-              wide
-              content={
-                <div className="space-y-1">
-                  <div className="font-mono text-[11px] text-fog-200">
-                    derived, not declared
-                  </div>
-                  <div className="font-mono text-[10.5px] text-fog-500">
-                    shapes come from what each agent actually did this run — tool mix, delegation count, patch count. they describe behavior; they never bind it. to shift an agent's shape, influence its seed prompt at spawn, not its label here.
-                  </div>
-                </div>
-              }
-            >
-              <span className="ml-auto font-mono text-[10.5px] text-fog-700 cursor-help underline decoration-dotted decoration-fog-800 underline-offset-[3px]">
-                why read-only?
-              </span>
-            </Tooltip>
-          </div>
-          <ul>
-            {shapes.map((s) => (
-              <li
-                key={s.agentId}
-                className="px-3 h-9 hairline-b last:border-b-0 flex items-center gap-3"
-              >
-                <span className={clsx('w-[3px] h-5 shrink-0', accentStripe[s.accent])} />
-                <div className="w-20 font-mono text-[11px] text-fog-200 truncate">
-                  {s.agentName}
-                </div>
-                <div className={clsx('font-mono text-[11px]', accentText[s.accent])}>
-                  {s.shape}
-                </div>
-                <div className="ml-auto font-mono text-[10.5px] text-fog-600 tabular-nums">
-                  {s.breakdown}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
         <div className="flex items-center gap-2">
           <button className="h-8 px-3 rounded font-mono text-micro uppercase tracking-wider bg-ink-900 hairline text-fog-400 hover:border-ink-500 transition">
             reset defaults
           </button>
           <span className="font-mono text-micro text-fog-700">
-            bounds apply to next dispatch · shapes refresh from behavior
+            bounds apply to next dispatch
           </span>
           <button
             onClick={onClose}
@@ -440,8 +337,8 @@ function ObservationTooltip() {
           </li>
           <li>· bounds are caps + ceilings, never per-agent routes</li>
           <li>
-            · shapes are <span className="text-fog-200">derived</span> from behavior,
-            read-only
+            · identity is a <span className="text-fog-200">name</span> + optional
+            focus line. the system does not label behavior.
           </li>
         </ul>
       </div>
@@ -453,9 +350,9 @@ function ObservationTooltip() {
         <div className="font-mono text-[10.5px] text-fog-400 leading-snug">
           no{' '}
           <span className="text-fog-700 line-through">
-            if role=X then provider=Y
+            roles, derived shapes, if role=X then provider=Y
           </span>
-          . role-pinning reproduced a supervisor-worker dialectic the swarm refuses. agents route themselves; humans observe and bound.
+          . any label applied to behavior — prescribed or inferred — reproduces the supervisor-worker dialectic the swarm refuses. agents route themselves; humans observe and bound.
         </div>
       </div>
 

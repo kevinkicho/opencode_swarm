@@ -87,23 +87,6 @@ export function PlanRail({
             {completed}/{items.length}
           </span>
         </Tooltip>
-        <Tooltip
-          side="bottom"
-          align="end"
-          wide
-          content={
-            <div className="space-y-1">
-              <div className="font-mono text-[11px] text-fog-200">agent-owned state</div>
-              <div className="font-mono text-[10.5px] text-fog-500">
-                written by the orchestrator via <span className="text-fog-300">todowrite</span>. humans re-plan via the command palette, not by editing rows.
-              </div>
-            </div>
-          }
-        >
-          <span className="ml-auto font-mono text-micro uppercase tracking-widest2 text-fog-700 cursor-help">
-            read-only
-          </span>
-        </Tooltip>
       </div>
 
       {body}
@@ -193,7 +176,7 @@ function PlanRow({
         </Tooltip>
 
         {owner ? (
-          <Tooltip content={`${owner.name} — ${owner.role}`} side="top">
+          <Tooltip content={owner.name} side="top">
             <span
               className={clsx(
                 'shrink-0 w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none cursor-default',

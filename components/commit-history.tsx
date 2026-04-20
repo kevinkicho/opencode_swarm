@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import type { CommitRecord, CommitAction, CommitActionKind } from '@/lib/commits-data';
 import {
   commits,
-  leadAgent,
+  rootAgent,
   agentCount,
   aggregateTokens,
   totalCost,
@@ -47,7 +47,7 @@ export function CommitHistory({ open, onClose }: { open: boolean; onClose: () =>
       (c) =>
         c.title.toLowerCase().includes(q) ||
         c.sha.toLowerCase().includes(q) ||
-        leadAgent(c).toLowerCase().includes(q)
+        rootAgent(c).toLowerCase().includes(q)
     );
   }, [query]);
 
@@ -175,7 +175,7 @@ function CommitList({
                   <span>{c.timestamp}</span>
                   <span className="text-mint/80 w-10 text-right">+{totalAdded}</span>
                   <span className="text-rust/80 w-10 text-right">-{totalRemoved}</span>
-                  <span className="ml-auto">{leadAgent(c)}</span>
+                  <span className="ml-auto">{rootAgent(c)}</span>
                 </div>
               </button>
             </li>
@@ -221,7 +221,7 @@ function CommitDetail({ commit }: { commit: CommitRecord }) {
           {commit.summary}
         </p>
         <div className="mt-2 flex items-center gap-4 font-mono text-micro text-fog-600 tabular-nums">
-          <span>lead <span className="text-fog-200">{leadAgent(commit)}</span></span>
+          <span>root <span className="text-fog-200">{rootAgent(commit)}</span></span>
           <span>{agentCount(commit)} agents</span>
           <span>{commit.duration}</span>
           <Tooltip

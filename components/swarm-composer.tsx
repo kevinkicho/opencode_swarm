@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Popover } from './ui/popover';
 import { Tooltip } from './ui/tooltip';
 import type { Agent } from '@/lib/swarm-types';
@@ -33,12 +33,9 @@ export function SwarmComposer({
   agents: Agent[];
   onSend?: (target: ComposerTarget, body: string) => void;
 }) {
-  const orchestrator = useMemo(
-    () => agents.find((a) => a.role === 'orchestrator') ?? agents[0],
-    [agents],
-  );
+  const defaultAgent = agents[0];
   const [target, setTarget] = useState<ComposerTarget>(() =>
-    orchestrator ? { kind: 'agent', id: orchestrator.id } : { kind: 'broadcast' },
+    defaultAgent ? { kind: 'agent', id: defaultAgent.id } : { kind: 'broadcast' },
   );
   const [body, setBody] = useState('');
   const [flash, setFlash] = useState(false);
@@ -139,9 +136,11 @@ export function SwarmComposer({
                 >
                   {targetAgent.name}
                 </span>
-                <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-600">
-                  {targetAgent.role}
-                </span>
+                {targetAgent.focus && (
+                  <span className="font-mono text-[9px] tracking-wide text-fog-600 truncate max-w-[110px]">
+                    {targetAgent.focus}
+                  </span>
+                )}
               </>
             ) : null}
             <span className="font-mono text-[9px] text-fog-700 ml-0.5">▾</span>
@@ -247,8 +246,8 @@ function TargetMenu({
                 >
                   {a.name}
                 </span>
-                <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-600 shrink-0 w-[80px]">
-                  {a.role}
+                <span className="font-mono text-[9.5px] tracking-wide text-fog-600 truncate flex-1 min-w-0">
+                  {a.focus ?? ''}
                 </span>
                 <span className="ml-auto font-mono text-[9px] uppercase tracking-widest2 text-fog-700 shrink-0">
                   {a.status}

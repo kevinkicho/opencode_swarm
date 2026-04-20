@@ -3,14 +3,6 @@
 
 export type Provider = 'zen' | 'go' | 'byok';
 
-export type AgentRole =
-  | 'orchestrator'
-  | 'architect'
-  | 'coder'
-  | 'reviewer'
-  | 'researcher'
-  | 'operator';
-
 // UI agent status — superset of opencode SessionStatus (idle/busy/retry)
 // with extra rendering states for the roster
 export type AgentStatus = 'idle' | 'thinking' | 'working' | 'waiting' | 'paused' | 'done' | 'error';
@@ -82,10 +74,11 @@ export interface ModelRef {
 export interface Agent {
   id: string;
   name: string;
-  role: AgentRole;
   model: ModelRef;
   status: AgentStatus;
-  currentTask?: string;
+  // Agent-authored one-liner describing what it's currently working on.
+  // Ephemeral, freely updatable, never routed on. Not a role.
+  focus?: string;
   tokensUsed: number;
   tokensBudget: number;
   costUsed: number;

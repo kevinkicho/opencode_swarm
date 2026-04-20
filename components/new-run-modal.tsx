@@ -5,11 +5,25 @@ import { useMemo, useState } from 'react';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
 import { IconBranch, IconMilestone, IconSettings } from './icons';
-import { agents as rosterAgents } from '@/lib/swarm-data';
+import {
+  zenModels,
+  familyMeta,
+  fmtZenPrice,
+  type ZenModel,
+  type ZenFamily,
+} from '@/lib/zen-catalog';
 
-type Source = 'github' | 'local';
-type BranchStrategy = 'worktree' | 'branch' | 'pr-only';
+type BranchStrategy = 'push-same-branch' | 'push-new-branch' | 'local-only';
 type StartMode = 'dry-run' | 'live' | 'spectator';
+
+function generateRunId(): string {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  let id = '';
+  for (let i = 0; i < 6; i++) {
+    id += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return `swarm-${id}`;
+}
 
 interface Inferred {
   focus: string[];
@@ -25,28 +39,43 @@ const inferred: Inferred = {
   openWork: ['#412 race in ws reconnect', '#417 perf regression in /search'],
 };
 
+function extractRepoName(url: string): string {
+  const trimmed = url.trim().replace(/\.git$/, '').replace(/\/$/, '');
+  if (!trimmed) return '';
+  const slash = trimmed.lastIndexOf('/');
+  return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
+}
+
 export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [source, setSource] = useState<Source>('github');
   const [sourceValue, setSourceValue] = useState('');
-  const [teamPicks, setTeamPicks] = useState<Set<string>>(new Set());
-  const [spawnFresh, setSpawnFresh] = useState(0);
+  const [workspacePath, setWorkspacePath] = useState('');
+  const [teamCounts, setTeamCounts] = useState<Record<string, number>>({});
   const [directive, setDirective] = useState('');
   const [unbounded, setUnbounded] = useState(true);
   const [costCap, setCostCap] = useState(5);
   const [minutesCap, setMinutesCap] = useState(15);
-  const [branchStrategy, setBranchStrategy] = useState<BranchStrategy>('worktree');
+  const [branchStrategy, setBranchStrategy] = useState<BranchStrategy>('push-new-branch');
+  const [branchName, setBranchName] = useState<string>(generateRunId);
   const [startMode, setStartMode] = useState<StartMode>('dry-run');
   const [launching, setLaunching] = useState(false);
 
-  const totalAgents = teamPicks.size + spawnFresh;
+  const totalAgents = useMemo(
+    () => Object.values(teamCounts).reduce((a, n) => a + n, 0),
+    [teamCounts]
+  );
   const hasDirective = directive.trim().length > 0;
 
-  const sourcePlaceholder =
-    source === 'github'
-      ? 'https://github.com/org/repo (optional branch#)'
-      : '/abs/path/to/project';
+  const cloneTarget = useMemo(() => {
+    const ws = workspacePath.trim().replace(/\/+$/, '');
+    if (!ws) return '';
+    const repoName = extractRepoName(sourceValue);
+    return `${ws}/${repoName || '<repo>'}/`;
+  }, [workspacePath, sourceValue]);
 
-  const canLaunch = sourceValue.trim().length > 0;
+  const canLaunch =
+    sourceValue.trim().length > 0 &&
+    workspacePath.trim().length > 0 &&
+    (branchStrategy !== 'push-new-branch' || branchName.trim().length > 0);
 
   const launchLabel = useMemo(() => {
     if (launching) return 'launching run';
@@ -64,14 +93,55 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     }, 900);
   };
 
-  const toggleTeamPick = (id: string) => {
-    setTeamPicks((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  const bumpCount = (id: string, delta: number) => {
+    setTeamCounts((prev) => {
+      const current = prev[id] ?? 0;
+      const next = Math.max(0, Math.min(12, current + delta));
+      if (next === 0) {
+        const { [id]: _drop, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [id]: next };
     });
   };
+
+  const clearTeam = () => setTeamCounts({});
+
+  const browseForWorkspace = async () => {
+    const picker = (window as unknown as {
+      showDirectoryPicker?: (opts?: { mode?: 'read' | 'readwrite' }) => Promise<{ name: string }>;
+    }).showDirectoryPicker;
+    if (typeof picker === 'function') {
+      try {
+        const handle = await picker({ mode: 'read' });
+        setWorkspacePath(handle.name);
+        return;
+      } catch {
+        return;
+      }
+    }
+    const input = document.createElement('input');
+    input.type = 'file';
+    (input as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true;
+    input.onchange = () => {
+      const file = input.files?.[0] as (File & { webkitRelativePath?: string }) | undefined;
+      const top = file?.webkitRelativePath?.split('/')[0];
+      if (top) setWorkspacePath(top);
+    };
+    input.click();
+  };
+
+  const teamRows = useMemo(
+    () =>
+      Object.entries(teamCounts)
+        .map(([id, count]) => {
+          const model = zenModels.find((m) => m.id === id);
+          return model ? { model, count } : null;
+        })
+        .filter((r): r is { model: ZenModel; count: number } => r !== null)
+        .sort((a, b) => b.count - a.count),
+    [teamCounts]
+  );
 
   return (
     <Modal
@@ -80,7 +150,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
       eyebrow="initiate"
       eyebrowHint={<InitiateTooltip />}
       title="new run"
-      width="max-w-[1200px]"
+      width="max-w-[1280px]"
     >
       <div
         className="grid gap-4 min-h-0"
@@ -90,29 +160,58 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           <Section
             step="01"
             label="source"
-            hint="github repo or a local folder path — the substrate the swarm reads and writes. branch and base sha are recorded into L0 at start."
+            hint="github repo url — the substrate the swarm reads and writes. branch and base sha are recorded into L0 at start."
           >
-            <div className="flex items-center gap-1 mb-1.5">
-              <SegButton active={source === 'github'} onClick={() => setSource('github')}>
-                github
-              </SegButton>
-              <SegButton active={source === 'local'} onClick={() => setSource('local')}>
-                local folder
-              </SegButton>
-            </div>
             <input
               value={sourceValue}
               onChange={(e) => setSourceValue(e.target.value)}
-              placeholder={sourcePlaceholder}
+              placeholder="https://github.com/org/repo (optional branch#)"
               className="w-full h-9 px-3 rounded bg-ink-900/40 border border-dashed border-ink-600/60 text-[12.5px] text-fog-200 placeholder:text-fog-700 font-mono focus:outline-none focus:bg-ink-900 focus:border-solid focus:border-molten/40 focus:text-fog-100 transition"
             />
           </Section>
 
           <Section
             step="02"
+            label="workspace"
+            hint="parent directory on disk where the swarm will clone the repo. clone lands at {workspace}/{repo-name}/. persists across runs so recall can read prior artifacts."
+          >
+            <div className="space-y-1.5">
+              <div className="flex items-stretch gap-1.5">
+                <input
+                  value={workspacePath}
+                  onChange={(e) => setWorkspacePath(e.target.value)}
+                  placeholder="/abs/path/to/workspace-parent"
+                  className="flex-1 min-w-0 h-9 px-3 rounded bg-ink-900/40 border border-dashed border-ink-600/60 text-[12.5px] text-fog-200 placeholder:text-fog-700 font-mono focus:outline-none focus:bg-ink-900 focus:border-solid focus:border-molten/40 focus:text-fog-100 transition"
+                />
+                <Tooltip
+                  side="top"
+                  content="opens your OS folder picker. browser-sandboxed pickers only expose the folder name, not its absolute path — type the full path if you need it exact."
+                >
+                  <button
+                    type="button"
+                    onClick={browseForWorkspace}
+                    className="shrink-0 h-9 px-3 rounded bg-ink-900 border border-ink-600 text-fog-300 hover:text-fog-100 hover:border-ink-500 font-mono text-[11px] uppercase tracking-widest2 transition"
+                  >
+                    browse…
+                  </button>
+                </Tooltip>
+              </div>
+              {cloneTarget && (
+                <div className="font-mono text-[10.5px] leading-snug flex items-center gap-1.5">
+                  <span className="text-fog-700 uppercase tracking-widest2 text-[9.5px]">
+                    clone →
+                  </span>
+                  <span className="text-mint">{cloneTarget}</span>
+                </div>
+              )}
+            </div>
+          </Section>
+
+          <Section
+            step="03"
             label="team"
             optional
-            hint="pick existing agents from the roster or spawn fresh generalists. leave both at zero and the orchestrator will spawn as it goes."
+            hint="pick agents from the opencode zen catalog. stack multiples of the same model with the +/− stepper. leave empty and agents will spawn as work demands."
             trailing={
               <span className="font-mono text-[10.5px] text-fog-700 tabular-nums">
                 {totalAgents} on deck
@@ -120,73 +219,65 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
             }
           >
             <div className="rounded-md hairline bg-ink-900/40 overflow-hidden">
-              <div className="px-3 h-6 hairline-b bg-ink-900/70 flex items-center gap-2">
-                <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600">
-                  existing roster
-                </span>
-                <span className="ml-auto font-mono text-[9.5px] uppercase tracking-widest2 text-fog-700">
-                  click to include
-                </span>
+              <div className="px-3 h-6 hairline-b bg-ink-900/70 flex items-center gap-3">
+                <HeaderCell cls="flex-1 min-w-0">model</HeaderCell>
+                <HeaderCell cls="w-[82px]">family</HeaderCell>
+                <HeaderCell cls="w-12 text-right">in $</HeaderCell>
+                <HeaderCell cls="w-12 text-right">out $</HeaderCell>
+                <HeaderCell cls="w-[74px] text-right">count</HeaderCell>
               </div>
-              <ul>
-                {rosterAgents.map((a) => {
-                  const active = teamPicks.has(a.id);
+              <ul className="max-h-[280px] overflow-y-auto">
+                {zenModels.map((m) => {
+                  const count = teamCounts[m.id] ?? 0;
+                  const active = count > 0;
                   return (
-                    <li key={a.id}>
-                      <button
-                        onClick={() => toggleTeamPick(a.id)}
+                    <li key={m.id}>
+                      <div
                         className={clsx(
-                          'w-full px-3 h-6 flex items-center gap-2.5 hairline-b last:border-b-0 transition text-left',
-                          active ? 'bg-ink-800' : 'hover:bg-ink-800/60'
+                          'px-3 h-5 flex items-center gap-3 hairline-b last:border-b-0 transition',
+                          active ? 'bg-ink-800' : 'hover:bg-ink-800/40'
                         )}
                       >
-                        <span
-                          className={clsx(
-                            'w-3 h-3 rounded-sm border shrink-0 flex items-center justify-center transition',
-                            active ? 'bg-molten/80 border-molten' : 'border-fog-600 bg-ink-900'
-                          )}
-                        >
-                          {active && <span className="w-1 h-1 bg-ink-900 rounded-[1px]" />}
-                        </span>
-                        <span className="font-mono text-[11.5px] text-fog-200 truncate w-[120px]">
-                          {a.name}
-                        </span>
-                        <span className="font-mono text-[10px] text-fog-600 truncate">
-                          {a.model.label}
-                        </span>
-                        <span className="ml-auto font-mono text-[9.5px] uppercase tracking-widest2 text-fog-700">
-                          {a.model.provider}
-                        </span>
-                      </button>
+                        <ModelNameCell label={m.label} active={active} />
+                        <FamilyCell family={m.family} />
+                        <PriceCell value={fmtZenPrice(m.in)} cls="w-12 text-right" />
+                        <PriceCell value={fmtZenPrice(m.out)} cls="w-12 text-right" />
+                        <CountStepper
+                          count={count}
+                          onMinus={() => bumpCount(m.id, -1)}
+                          onPlus={() => bumpCount(m.id, +1)}
+                        />
+                      </div>
                     </li>
                   );
                 })}
               </ul>
-            </div>
-
-            <div className="mt-2 flex items-center gap-2">
-              <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
-                spawn fresh
-              </span>
-              <div className="flex items-center gap-0.5">
-                <StepButton onClick={() => setSpawnFresh((n) => Math.max(0, n - 1))}>
-                  −
-                </StepButton>
-                <span className="w-8 text-center font-mono text-[12px] text-fog-200 tabular-nums">
-                  {spawnFresh}
+              <div className="hairline-t px-3 h-8 flex items-center gap-2 bg-ink-900/60">
+                <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600">
+                  {totalAgents === 0 ? 'no agents selected' : `${totalAgents} selected`}
                 </span>
-                <StepButton onClick={() => setSpawnFresh((n) => Math.min(12, n + 1))}>
-                  +
-                </StepButton>
+                <button
+                  onClick={clearTeam}
+                  disabled={totalAgents === 0}
+                  className={clsx(
+                    'ml-auto h-6 px-2 rounded font-mono text-micro uppercase tracking-widest2 transition border',
+                    totalAgents === 0
+                      ? 'bg-ink-900 border-ink-700 text-fog-700 cursor-not-allowed'
+                      : 'bg-ink-900 border-ink-600 text-fog-400 hover:text-fog-100 hover:border-ink-500'
+                  )}
+                >
+                  clear
+                </button>
               </div>
-              <span className="font-mono text-[10.5px] text-fog-700 leading-snug">
-                generalists · shape derives from behavior (§4.2)
-              </span>
+            </div>
+            <div className="mt-1 font-mono text-[10.5px] text-fog-700 leading-snug">
+              agents self-select within the run's bounds. stacking N of the same model spawns N
+              peer agents on that model.
             </div>
           </Section>
 
           <Section
-            step="03"
+            step="04"
             label="directive"
             optional
             hint="big-picture goal or desired direction. leave blank and the swarm will read the substrate — readme, recent commits, open issues — and infer focus on its own."
@@ -208,7 +299,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           </Section>
 
           <Section
-            step="04"
+            step="05"
             label="bounds"
             optional
             hint="soft caps on spend and wallclock. toggle unbounded if you want to see what the swarm does with no ceiling — useful for calibration runs, risky for everything else."
@@ -267,39 +358,74 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           </Section>
 
           <Section
-            step="05"
+            step="06"
             label="branch strategy"
-            hint="how agent-written changes land. worktree keeps the main tree untouched; branch lets agents commit to a side branch; pr-only emits a patch file for human review only."
+            hint="where agent commits go. three postures — each a different answer to 'how visible is this work outside my machine?'"
           >
             <div className="grid grid-cols-3 gap-2">
               <StrategyCard
-                active={branchStrategy === 'worktree'}
-                onClick={() => setBranchStrategy('worktree')}
-                icon={<IconBranch size={12} />}
-                title="worktree"
-                body="isolated git worktree; main tree untouched"
-              />
-              <StrategyCard
-                active={branchStrategy === 'branch'}
-                onClick={() => setBranchStrategy('branch')}
+                active={branchStrategy === 'push-same-branch'}
+                onClick={() => setBranchStrategy('push-same-branch')}
+                accent="molten"
                 icon={<IconMilestone size={12} />}
-                title="branch"
-                body="side branch on same clone; pushes allowed"
+                title="same branch"
+                body="commits + pushes to the same branch you cloned from. loudest."
               />
               <StrategyCard
-                active={branchStrategy === 'pr-only'}
-                onClick={() => setBranchStrategy('pr-only')}
+                active={branchStrategy === 'push-new-branch'}
+                onClick={() => setBranchStrategy('push-new-branch')}
+                accent="amber"
+                icon={<IconBranch size={12} />}
+                title="new branch"
+                body="creates a side branch and pushes there. remote-visible, source untouched."
+              />
+              <StrategyCard
+                active={branchStrategy === 'local-only'}
+                onClick={() => setBranchStrategy('local-only')}
+                accent="mint"
                 icon={<IconSettings size={12} />}
-                title="pr-only"
-                body="patch file emitted for human review"
+                title="local only"
+                body="commits stay on the cloned branch locally. never pushed."
               />
             </div>
+
+            {branchStrategy === 'push-new-branch' && (
+              <div className="mt-2 rounded-md hairline bg-ink-900/40 p-2.5 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600">
+                    branch name
+                  </span>
+                  <Tooltip
+                    side="top"
+                    wide
+                    content="auto-fills with a run identifier. edit to use your own name. if the name already exists on remote, the swarm appends -2, -3 etc."
+                  >
+                    <span className="font-mono text-[9.5px] text-fog-700 cursor-help underline decoration-dotted decoration-fog-800 underline-offset-[3px]">
+                      how?
+                    </span>
+                  </Tooltip>
+                  <button
+                    onClick={() => setBranchName(generateRunId())}
+                    className="ml-auto h-5 px-1.5 rounded-[3px] font-mono text-[9.5px] uppercase tracking-widest2 bg-ink-900 hairline text-fog-500 hover:text-fog-200 hover:border-ink-500 transition"
+                    title="regenerate auto-name"
+                  >
+                    ↻ re-roll
+                  </button>
+                </div>
+                <input
+                  value={branchName}
+                  onChange={(e) => setBranchName(e.target.value)}
+                  placeholder="swarm-<runId>"
+                  className="w-full h-8 px-2.5 rounded bg-ink-900/60 border border-ink-700/60 text-[12px] font-mono text-fog-200 placeholder:text-fog-700 focus:outline-none focus:bg-ink-900 focus:border-amber/40 focus:text-fog-100 transition"
+                />
+              </div>
+            )}
           </Section>
 
           <Section
-            step="06"
+            step="07"
             label="start mode"
-            hint="how the run begins. dry-run plans but does not write. live dispatches immediately. spectator runs the agents but hides the composer from the human."
+            hint="three postures — not a severity ladder. pick the stance that matches your intent this run."
           >
             <div className="flex items-center gap-1 h-8 hairline rounded p-0.5 bg-ink-900 w-fit">
               <ModeButton
@@ -307,18 +433,42 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                 onClick={() => setStartMode('dry-run')}
                 label="dry-run"
                 accent="amber"
+                hint={
+                  <ModeHint
+                    accent="amber"
+                    posture="sandbox contract"
+                    body="the swarm plans and reasons but nothing hits disk."
+                    when="first-contact-with-a-repo posture."
+                  />
+                }
               />
               <ModeButton
                 active={startMode === 'live'}
                 onClick={() => setStartMode('live')}
                 label="live"
                 accent="molten"
+                hint={
+                  <ModeHint
+                    accent="molten"
+                    posture="writes land"
+                    body="changes land per the branch strategy picked in step 06."
+                    when={'the "I trust this, go" posture.'}
+                  />
+                }
               />
               <ModeButton
                 active={startMode === 'spectator'}
                 onClick={() => setStartMode('spectator')}
                 label="spectator"
                 accent="mint"
+                hint={
+                  <ModeHint
+                    accent="mint"
+                    posture="passive observation"
+                    body="the run dispatches but the composer is hidden — the human can watch but not inject mid-run."
+                    when="study-the-swarm posture."
+                  />
+                }
               />
             </div>
           </Section>
@@ -343,18 +493,29 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                     {sourceValue.trim() || 'source not set'}
                   </span>
                   <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
-                    {source}
+                    github
                   </span>
                 </div>
 
                 <div className="pt-1 hairline-t">
+                  <LabelRow label="workspace">
+                    <span
+                      className={clsx(
+                        'font-mono text-[10.5px] truncate max-w-[200px]',
+                        cloneTarget ? 'text-mint' : 'text-fog-700 italic'
+                      )}
+                      title={cloneTarget || undefined}
+                    >
+                      {cloneTarget || 'unset'}
+                    </span>
+                  </LabelRow>
                   <LabelRow label="team">
                     <span className="font-mono text-[11px] text-fog-200 tabular-nums">
                       {totalAgents || '—'}
                     </span>
-                    {teamPicks.size > 0 && (
+                    {totalAgents > 0 && (
                       <span className="font-mono text-[10px] text-fog-600">
-                        + {spawnFresh} fresh
+                        agents
                       </span>
                     )}
                   </LabelRow>
@@ -369,7 +530,20 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                     </span>
                   </LabelRow>
                   <LabelRow label="branches">
-                    <span className="font-mono text-[11px] text-fog-200">{branchStrategy}</span>
+                    <span
+                      className={clsx(
+                        'font-mono text-[11px]',
+                        branchStrategy === 'push-same-branch' && 'text-molten',
+                        branchStrategy === 'push-new-branch' && 'text-amber',
+                        branchStrategy === 'local-only' && 'text-mint'
+                      )}
+                    >
+                      {branchStrategy === 'push-same-branch'
+                        ? 'same branch'
+                        : branchStrategy === 'push-new-branch'
+                          ? `new · ${branchName || 'unnamed'}`
+                          : 'local only'}
+                    </span>
                   </LabelRow>
                   <LabelRow label="start">
                     <span
@@ -384,6 +558,30 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                     </span>
                   </LabelRow>
                 </div>
+
+                {teamRows.length > 0 && (
+                  <div className="pt-1 hairline-t">
+                    <div className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600 mb-1">
+                      lineup
+                    </div>
+                    <ul className="space-y-0.5 max-h-[140px] overflow-y-auto">
+                      {teamRows.map(({ model, count }) => (
+                        <li
+                          key={model.id}
+                          className="flex items-center gap-2 h-4 font-mono text-[10.5px]"
+                        >
+                          <span className={clsx('w-1 h-1 rounded-full', familyMeta[model.family].color.replace('text-', 'bg-'))} />
+                          <span className="text-fog-300 truncate flex-1 min-w-0">
+                            {model.label}
+                          </span>
+                          <span className="text-fog-500 tabular-nums shrink-0">
+                            ×{count}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -441,8 +639,15 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
         </button>
         <span className="font-mono text-[10.5px] text-fog-700">
           {canLaunch
-            ? 'bounds and directive are optional · source anchors the run'
-            : 'add a source to enable launch'}
+            ? 'team / bounds / directive optional · source + workspace anchor the run'
+            : sourceValue.trim() && !workspacePath.trim()
+              ? 'set a workspace to enable launch'
+              : branchStrategy === 'push-new-branch' &&
+                  !branchName.trim() &&
+                  sourceValue.trim() &&
+                  workspacePath.trim()
+                ? 'name the new branch (or switch to same-branch / local-only)'
+                : 'add a source to enable launch'}
         </span>
         <button
           onClick={handleLaunch}
@@ -511,44 +716,42 @@ function Section({
   );
 }
 
-function SegButton({
-  active,
-  onClick,
-  children,
+function CountStepper({
+  count,
+  onMinus,
+  onPlus,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+  count: number;
+  onMinus: () => void;
+  onPlus: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        'h-6 px-2.5 rounded font-mono text-micro uppercase tracking-widest2 transition',
-        active
-          ? 'bg-ink-800 text-fog-100 hairline'
-          : 'text-fog-600 hover:text-fog-300'
+    <div className="w-[74px] flex items-center justify-end gap-0.5 shrink-0">
+      {count > 0 ? (
+        <button
+          onClick={onMinus}
+          className="w-4 h-4 rounded-[3px] bg-ink-900 hairline text-fog-400 hover:text-fog-100 hover:border-ink-500 transition font-mono text-[11px] flex items-center justify-center"
+        >
+          −
+        </button>
+      ) : (
+        <span className="w-4 h-4" aria-hidden />
       )}
-    >
-      {children}
-    </button>
-  );
-}
-
-function StepButton({
-  onClick,
-  children,
-}: {
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-5 h-5 rounded hairline bg-ink-900 text-fog-400 hover:text-fog-100 hover:border-ink-500 transition font-mono text-[12px] flex items-center justify-center"
-    >
-      {children}
-    </button>
+      <span
+        className={clsx(
+          'w-6 text-center font-mono text-[11px] tabular-nums',
+          count > 0 ? 'text-molten' : 'text-fog-700'
+        )}
+      >
+        {count || '·'}
+      </span>
+      <button
+        onClick={onPlus}
+        className="w-4 h-4 rounded-[3px] hairline bg-ink-900 text-fog-400 hover:text-fog-100 hover:border-ink-500 transition font-mono text-[11px] flex items-center justify-center"
+      >
+        +
+      </button>
+    </div>
   );
 }
 
@@ -597,29 +800,43 @@ function StrategyCard({
   icon,
   title,
   body,
+  accent,
 }: {
   active: boolean;
   onClick: () => void;
   icon: React.ReactNode;
   title: string;
   body: string;
+  accent: 'molten' | 'amber' | 'mint';
 }) {
+  const accentText =
+    accent === 'molten'
+      ? 'text-molten'
+      : accent === 'amber'
+        ? 'text-amber'
+        : 'text-mint';
+  const accentBorder =
+    accent === 'molten'
+      ? 'border-molten/40'
+      : accent === 'amber'
+        ? 'border-amber/40'
+        : 'border-mint/40';
   return (
     <button
       onClick={onClick}
       className={clsx(
         'rounded-md hairline p-2.5 text-left transition',
         active
-          ? 'bg-ink-800 border-molten/40'
+          ? clsx('bg-ink-800', accentBorder)
           : 'bg-ink-900/40 hover:bg-ink-800/60'
       )}
     >
       <div className="flex items-center gap-1.5 mb-1">
-        <span className={clsx(active ? 'text-molten' : 'text-fog-500')}>{icon}</span>
+        <span className={clsx(active ? accentText : 'text-fog-500')}>{icon}</span>
         <span
           className={clsx(
             'font-mono text-[11px] uppercase tracking-widest2',
-            active ? 'text-fog-100' : 'text-fog-400'
+            active ? accentText : 'text-fog-400'
           )}
         >
           {title}
@@ -635,11 +852,13 @@ function ModeButton({
   onClick,
   label,
   accent,
+  hint,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   accent: 'molten' | 'amber' | 'mint';
+  hint?: React.ReactNode;
 }) {
   const accentCls =
     accent === 'molten'
@@ -647,7 +866,7 @@ function ModeButton({
       : accent === 'amber'
         ? 'text-amber'
         : 'text-mint';
-  return (
+  const btn = (
     <button
       onClick={onClick}
       className={clsx(
@@ -659,6 +878,49 @@ function ModeButton({
     >
       {label}
     </button>
+  );
+  if (!hint) return btn;
+  return (
+    <Tooltip side="bottom" align="start" wide content={hint}>
+      {btn}
+    </Tooltip>
+  );
+}
+
+function ModeHint({
+  accent,
+  posture,
+  body,
+  when,
+}: {
+  accent: 'molten' | 'amber' | 'mint';
+  posture: string;
+  body: string;
+  when: string;
+}) {
+  const accentCls =
+    accent === 'molten'
+      ? 'text-molten'
+      : accent === 'amber'
+        ? 'text-amber'
+        : 'text-mint';
+  return (
+    <div className="space-y-1">
+      <div
+        className={clsx(
+          'font-mono text-micro uppercase tracking-widest2',
+          accentCls
+        )}
+      >
+        {posture}
+      </div>
+      <div className="font-mono text-[10.5px] text-fog-400 leading-snug">
+        {body}
+      </div>
+      <div className="font-mono text-[10px] text-fog-600 leading-snug">
+        {when}
+      </div>
+    </div>
   );
 }
 
@@ -710,6 +972,70 @@ function InferBlock({
   );
 }
 
+function HeaderCell({ cls, children }: { cls: string; children: React.ReactNode }) {
+  return (
+    <span
+      className={clsx(
+        'font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600 truncate',
+        cls
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ModelNameCell({ label, active }: { label: string; active: boolean }) {
+  return (
+    <span className="flex-1 min-w-0 flex items-center">
+      <span
+        className={clsx(
+          'font-mono text-[11.5px] truncate',
+          active ? 'text-fog-100' : 'text-fog-300'
+        )}
+      >
+        {label}
+      </span>
+    </span>
+  );
+}
+
+function FamilyCell({ family }: { family: ZenFamily }) {
+  const meta = familyMeta[family];
+  return (
+    <span
+      className={clsx(
+        'font-mono text-[10px] uppercase tracking-wider w-[82px] truncate',
+        meta.color
+      )}
+    >
+      {meta.label}
+    </span>
+  );
+}
+
+function PriceCell({
+  value,
+  cls,
+  muted,
+}: {
+  value: string;
+  cls: string;
+  muted?: boolean;
+}) {
+  return (
+    <span
+      className={clsx(
+        'font-mono text-[11px] tabular-nums truncate',
+        cls,
+        muted ? 'text-fog-500' : 'text-fog-200'
+      )}
+    >
+      {value}
+    </span>
+  );
+}
+
 function InitiateTooltip() {
   return (
     <div className="space-y-2 w-[320px]">
@@ -718,8 +1044,8 @@ function InitiateTooltip() {
           initiate = seed + substrate
         </div>
         <div className="font-mono text-[10.5px] text-fog-400 leading-snug mt-0.5">
-          a run is anchored to a source (repo or folder). everything else is optional —
-          directive, team size, bounds. blank fields hand control back to the swarm.
+          a run is anchored to a source and a workspace. everything else is optional —
+          directive, team, bounds. blank fields hand control back to the swarm.
         </div>
       </div>
       <div className="hairline-t pt-1.5">
@@ -727,7 +1053,8 @@ function InitiateTooltip() {
           what stays sacred
         </div>
         <ul className="space-y-0.5 font-mono text-[10.5px] text-fog-400 leading-snug">
-          <li>· source — the substrate agents read and write</li>
+          <li>· source — the github repo agents read and write</li>
+          <li>· workspace — parent directory where the clone lands</li>
           <li>· start mode — dry-run / live / spectator</li>
           <li>· branch strategy — how writes land</li>
         </ul>
@@ -738,7 +1065,7 @@ function InitiateTooltip() {
         </div>
         <ul className="space-y-0.5 font-mono text-[10.5px] text-fog-400 leading-snug">
           <li>· goal — inferred from readme / commits / issues</li>
-          <li>· team — orchestrator spawns as work demands</li>
+          <li>· team — agents spawn as work demands</li>
           <li>· bounds — defaults if unbounded, revises mid-run</li>
         </ul>
       </div>

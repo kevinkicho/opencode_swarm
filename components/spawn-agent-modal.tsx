@@ -5,82 +5,12 @@ import { useEffect, useState } from 'react';
 import { Modal } from './ui/modal';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
-
-type Family =
-  | 'anthropic'
-  | 'openai'
-  | 'google'
-  | 'alibaba'
-  | 'moonshot'
-  | 'zhipu'
-  | 'minimax'
-  | 'nvidia'
-  | 'stealth';
-type Tier = 'premium' | 'standard' | 'budget' | 'coding' | 'free' | 'fast';
-
-interface ZenModel {
-  id: string;
-  label: string;
-  family: Family;
-  in: number;
-  out: number;
-  cacheRead: number;
-  cacheWrite: number;
-  tier: Tier;
-}
-
-// Pricing pulled from https://opencode.ai/docs/zen/ - per 1M tokens.
-// cacheWrite is anthropic-only; left at 0 (renders as em-dash) for the rest.
-const zenModels: ZenModel[] = [
-  { id: 'claude-opus-4.7',   label: 'claude opus 4.7',   family: 'anthropic', in: 5.0,  out: 25.0,  cacheRead: 0.5,   cacheWrite: 6.25, tier: 'premium' },
-  { id: 'claude-opus-4.6',   label: 'claude opus 4.6',   family: 'anthropic', in: 5.0,  out: 25.0,  cacheRead: 0.5,   cacheWrite: 6.25, tier: 'premium' },
-  { id: 'claude-opus-4.5',   label: 'claude opus 4.5',   family: 'anthropic', in: 5.0,  out: 25.0,  cacheRead: 0.5,   cacheWrite: 6.25, tier: 'premium' },
-  { id: 'claude-sonnet-4.6', label: 'claude sonnet 4.6', family: 'anthropic', in: 3.0,  out: 15.0,  cacheRead: 0.3,   cacheWrite: 3.75, tier: 'standard' },
-  { id: 'claude-haiku-4.5',  label: 'claude haiku 4.5',  family: 'anthropic', in: 1.0,  out: 5.0,   cacheRead: 0.1,   cacheWrite: 1.25, tier: 'budget' },
-  { id: 'gpt-5.4-pro',       label: 'gpt 5.4 pro',       family: 'openai',    in: 30.0, out: 180.0, cacheRead: 30.0,  cacheWrite: 0,    tier: 'premium' },
-  { id: 'gpt-5.4',           label: 'gpt 5.4',           family: 'openai',    in: 2.5,  out: 15.0,  cacheRead: 0.25,  cacheWrite: 0,    tier: 'standard' },
-  { id: 'gpt-5.4-mini',      label: 'gpt 5.4 mini',      family: 'openai',    in: 0.75, out: 4.5,   cacheRead: 0.075, cacheWrite: 0,    tier: 'budget' },
-  { id: 'gpt-5.4-nano',      label: 'gpt 5.4 nano',      family: 'openai',    in: 0.2,  out: 1.25,  cacheRead: 0.02,  cacheWrite: 0,    tier: 'budget' },
-  { id: 'gpt-5.3-codex',     label: 'gpt 5.3 codex',     family: 'openai',    in: 1.75, out: 14.0,  cacheRead: 0.175, cacheWrite: 0,    tier: 'coding' },
-  { id: 'gpt-5.2-codex',     label: 'gpt 5.2 codex',     family: 'openai',    in: 1.75, out: 14.0,  cacheRead: 0.175, cacheWrite: 0,    tier: 'coding' },
-  { id: 'gpt-5-codex',       label: 'gpt 5 codex',       family: 'openai',    in: 1.07, out: 8.5,   cacheRead: 0.107, cacheWrite: 0,    tier: 'standard' },
-  { id: 'gpt-5-nano-free',   label: 'gpt 5 nano',        family: 'openai',    in: 0,    out: 0,     cacheRead: 0,     cacheWrite: 0,    tier: 'free' },
-  { id: 'gemini-3.1-pro',    label: 'gemini 3.1 pro',    family: 'google',    in: 4.0,  out: 18.0,  cacheRead: 0.4,   cacheWrite: 0,    tier: 'premium' },
-  { id: 'gemini-3-flash',    label: 'gemini 3 flash',    family: 'google',    in: 0.5,  out: 3.0,   cacheRead: 0.05,  cacheWrite: 0,    tier: 'fast' },
-  { id: 'qwen-3.6-plus',     label: 'qwen 3.6 plus',     family: 'alibaba',   in: 0.5,  out: 3.0,   cacheRead: 0.05,  cacheWrite: 0,    tier: 'standard' },
-  { id: 'qwen-3.5-plus',     label: 'qwen 3.5 plus',     family: 'alibaba',   in: 0.2,  out: 1.2,   cacheRead: 0.02,  cacheWrite: 0,    tier: 'budget' },
-  { id: 'kimi-k2.5',         label: 'kimi k2.5',         family: 'moonshot',  in: 0.6,  out: 3.0,   cacheRead: 0.1,   cacheWrite: 0,    tier: 'standard' },
-  { id: 'glm-5.1',           label: 'glm 5.1',           family: 'zhipu',     in: 1.4,  out: 4.4,   cacheRead: 0.26,  cacheWrite: 0,    tier: 'premium' },
-  { id: 'glm-5',             label: 'glm 5',             family: 'zhipu',     in: 1.0,  out: 3.2,   cacheRead: 0.2,   cacheWrite: 0,    tier: 'standard' },
-  { id: 'minimax-m2.5',      label: 'minimax m2.5',      family: 'minimax',   in: 0.3,  out: 1.2,   cacheRead: 0.06,  cacheWrite: 0,    tier: 'budget' },
-];
-
-const tierMeta: Record<Tier, { label: string; cls: string }> = {
-  premium:  { label: 'prem', cls: 'text-molten border-molten/30 bg-molten/10' },
-  standard: { label: 'std',  cls: 'text-fog-300 border-ink-500 bg-ink-800' },
-  budget:   { label: 'budg', cls: 'text-mint border-mint/25 bg-mint/5' },
-  coding:   { label: 'code', cls: 'text-iris border-iris/30 bg-iris/10' },
-  free:     { label: 'free', cls: 'text-amber border-amber/30 bg-amber/10' },
-  fast:     { label: 'fast', cls: 'text-mint border-mint/30 bg-mint/10' },
-};
-
-const familyMeta: Record<Family, { label: string; color: string }> = {
-  anthropic: { label: 'anthropic', color: 'text-amber' },
-  openai:    { label: 'openai',    color: 'text-mint' },
-  google:    { label: 'google',    color: 'text-iris' },
-  alibaba:   { label: 'alibaba',   color: 'text-fog-300' },
-  moonshot:  { label: 'moonshot',  color: 'text-fog-400' },
-  zhipu:     { label: 'zhipu',     color: 'text-fog-300' },
-  minimax:   { label: 'minimax',   color: 'text-fog-400' },
-  nvidia:    { label: 'nvidia',    color: 'text-fog-300' },
-  stealth:   { label: 'stealth',   color: 'text-fog-500' },
-};
-
-const fmtPrice = (n: number, isCacheWrite = false): string => {
-  if (n === 0) return isCacheWrite ? '\u2014' : '0';
-  if (n < 0.1) return n.toFixed(3);
-  return n.toFixed(2);
-};
+import {
+  zenModels,
+  familyMeta,
+  fmtZenPrice as fmtPrice,
+  type ZenFamily as Family,
+} from '@/lib/zen-catalog';
 
 interface Skill {
   id: string;
@@ -160,7 +90,7 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
                   rel="noreferrer"
                   className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600 hover:text-molten transition"
                 >
-                  ref opencode.ai/docs/zen ↗
+                  ref opencode.ai/docs/zen
                 </a>
               }
             >
@@ -172,7 +102,6 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
                   <HeaderCell cls="w-16 text-right">out $</HeaderCell>
                   <HeaderCell cls="w-14 text-right">cache r</HeaderCell>
                   <HeaderCell cls="w-14 text-right">cache w</HeaderCell>
-                  <HeaderCell cls="w-12">tier</HeaderCell>
                 </div>
                 <ul>
                   {zenModels.map((m) => {
@@ -192,7 +121,6 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
                           <PriceCell value={fmtPrice(m.out)} cls="w-16 text-right" />
                           <PriceCell value={fmtPrice(m.cacheRead)} cls="w-14 text-right" muted />
                           <PriceCell value={fmtPrice(m.cacheWrite, true)} cls="w-14 text-right" muted />
-                          <TierCell tier={m.tier} />
                         </button>
                       </li>
                     );
@@ -225,7 +153,7 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="coder alpha, scout, reviewer ..."
+                placeholder="ember, atlas, forge, keel ..."
                 className="w-full h-9 px-3 rounded bg-ink-900/40 border border-dashed border-ink-600/60 text-[13px] text-fog-300 placeholder:text-fog-700 focus:outline-none focus:bg-ink-900 focus:border-solid focus:border-molten/40 focus:text-fog-100 transition"
               />
             </Section>
@@ -462,14 +390,15 @@ function HeaderCell({ cls, children }: { cls: string; children: React.ReactNode 
 
 function ModelNameCell({ label, active }: { label: string; active: boolean }) {
   return (
-    <span className="flex-1 min-w-0 flex items-center gap-2">
+    <span className="flex-1 min-w-0 flex items-center">
       <span
         className={clsx(
-          'w-1 h-1 rounded-full shrink-0 transition',
-          active ? 'bg-molten' : 'bg-fog-700'
+          'font-mono text-[11.5px] truncate',
+          active ? 'text-fog-100' : 'text-fog-300'
         )}
-      />
-      <span className="font-mono text-[11.5px] text-fog-200 truncate">{label}</span>
+      >
+        {label}
+      </span>
     </span>
   );
 }
@@ -510,22 +439,6 @@ function PriceCell({
   );
 }
 
-function TierCell({ tier }: { tier: Tier }) {
-  const meta = tierMeta[tier];
-  return (
-    <span className="w-12 flex">
-      <span
-        className={clsx(
-          'inline-flex items-center h-4 px-1 text-[9px] border rounded-[3px] font-mono tracking-wider uppercase',
-          meta.cls
-        )}
-      >
-        {meta.label}
-      </span>
-    </span>
-  );
-}
-
 function SpawnModeToggle({
   mode,
   onChange,
@@ -542,13 +455,12 @@ function SpawnModeToggle({
         <div className="space-y-1">
           <div className="font-mono text-[11px] text-fog-200">spawn mode</div>
           <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
-            <span className="text-fog-200">idle</span> sits in the roster until the
-            orchestrator dispatches it via the task tool good for on-demand peers.
+            <span className="text-fog-200">idle</span> sits in the roster until
+            another agent dispatches it via the task tool good for on-demand peers.
           </div>
           <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
             <span className="text-mint">active</span> boots warm and immediately
-            advertises availability good for long-running watchers monitors and
-            always-on reviewers.
+            advertises availability good for long-running watchers and monitors.
           </div>
         </div>
       }

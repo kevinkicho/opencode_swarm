@@ -15,7 +15,7 @@ The UI's job is to make a 5-agent run as legible as a 1-agent run. That is the e
 
 **Project goal.** Surface every inner working of opencode-driven agentic workmanship so that humans and agents alike can inspect, debug, and fine-tune the output of multi-agent runs across many iterations. The app keeps a detailed, durable record of every opencode session and project — not as passive archive, but as a shared substrate that both the human operator and the AI agents draw on to converge on sound-quality results over time.
 
-**On roles.** We reject the supervisor-worker paradigm. The human seeds direction and bounds; agents decide internally who does what, with maximal freedom over toolset and delegation pattern. The system *observes* what each agent has been doing and surfaces an emergent **shape** (coordinator-shaped, planner-shaped, implementer-shaped, verifier-shaped, investigator-shaped) derived from tool mix and delegation count. Shapes describe behavior; they never bind it. This is the single most load-bearing stance in the project — it shapes the routing modal, the spawn modal, and the agent inspector.
+**On roles.** We reject the supervisor-worker paradigm — *and* we reject the softer move of letting the system label behavior after the fact. No role prescribed by the human ("this agent is the coder"), no role inferred by the system ("this agent is coder-shaped"). The human seeds direction and bounds; agents decide internally who does what, with maximal freedom over toolset and delegation pattern. An agent has a **name** and an optional ephemeral **focus line** it writes itself ("reviewing the router diff") — nothing else identifies it. The human operator scans names, status dots, focus lines, and the actual timeline events to draw their own conclusions; the system does not summarize behavior into labels. This is the single most load-bearing stance in the project — it shapes the routing modal, the spawn modal, the roster, and the inspector.
 
 ---
 
@@ -90,7 +90,7 @@ We deliberately use opencode's canonical names instead of inventing new ones. So
 
 ### Modals (each has a clear contract — do not mix)
 - **Spawn modal** (`spawn-agent-modal.tsx`) — *imperative*. Creates an agent now. Verb: `spawn`.
-- **Routing modal** (`routing-modal.tsx`) — *declarative observation + bounds*. Sets run-level caps (spend / tokens / wallclock), per-provider soft ceilings, and surfaces observed dispatch distribution + derived agent shapes. Verb: `save`. Effect applies to *next dispatch*. **No per-agent assignments live here.** Agents self-select providers within the bounds; humans observe and nudge. The `eyebrow="observation"` tooltip explains this contract in-product. See §4.2.
+- **Routing modal** (`routing-modal.tsx`) — *declarative observation + bounds*. Sets run-level caps (spend / tokens / wallclock), per-provider soft ceilings, and surfaces observed dispatch distribution. Verb: `save`. Effect applies to *next dispatch*. **No per-agent assignments live here, and no system-inferred role labels either.** Agents self-select providers within the bounds; humans observe and nudge. The `eyebrow="observation"` tooltip explains this contract in-product. See §4.2.
 - **Branch history** (`commit-history.tsx`) — *read-only*. Run log of commits / prompts / tools / reviews.
 - **Glossary** (`glossary-modal.tsx`) — *reference*. Canonical opencode parts, tools, events. Actor/transcript vocabulary only — API/config types are intentionally out of scope.
 - **Palette** (`command-palette.tsx`) — *imperative*. ⌘K / Ctrl+K. Jump to any timeline node or trigger an action.
@@ -114,20 +114,13 @@ Concretely:
 | **Provider ceilings** | human | soft fraction of run spend allowed per provider tier (`zen ≤ 60%`) |
 | **Provider choice per call** | agent | each agent picks cheapest capable model within remaining ceilings |
 | **Observed dispatch** | system | stacked bar + per-model breakdown of what actually happened |
-| **Observed shape** | system | derived label per agent (`coordinator-shaped`, `implementer-shaped`, etc.) from tool mix + delegation count |
+| **Focus line** | agent | one-liner each agent self-authors ("patching idempotency guard") — ephemeral, not routed on |
 
-**What this explicitly rejects:** `if role=X then provider=Y`. Role-based routing pins an agent's behavior before it has acted, reproducing a supervisor-worker hierarchy the project is designed to refuse. It also turns the run into a set of predetermined slots rather than a live collaboration.
+**What this explicitly rejects:** two things, not one. First, the prescriptive form — `if role=X then provider=Y` — which pins an agent's behavior before it has acted. Second, the softer form — system-inferred role labels (`coordinator-shaped`, `implementer-shaped`, etc.) derived from tool mix and shown to the human as a readout. Both reproduce the supervisor-worker dialectic; the inferred form just launders it through statistics. If the human wants to summarize what an agent did, the timeline and commit log are the source of truth, not a system-minted label.
 
 **What survives from the old idea:** humans still want cost discipline, and some runs genuinely need a premium-reasoning tier available. The modal keeps those affordances — as ceilings on the tier, not as assignments to agents. The agent reasons about its own budget within that envelope.
 
-**Shape inference (sketch).** An agent's observed shape is derived per run from tool-call counts and delegation depth:
-- `coordinator-shaped` — high `task` count, low patch/read count
-- `planner-shaped` — moderate `task` count, heavy `read`/`todowrite`
-- `implementer-shaped` — heavy `edit`/`patch`/`write`, low delegation
-- `verifier-shaped` — heavy `read`/`bash` (tests), low patch count
-- `investigator-shaped` — heavy `webfetch`/`grep`/`read`, low patch count
-
-Shapes are a readout, never a lock. A human can add an optional note to a shape (`// went unusually deep on search this run`) but cannot pin one. Agents never see their own shape label — only the human does, through the modal.
+**Focus lines, not shapes.** Each agent carries an optional `focus?: string` — a short, self-authored statement of what it's currently working on. Freely updatable by the agent, visible in the roster and timeline, never computed by the system, never used for routing or filtering. It's the only identity affordance beyond the name.
 
 ### 4.3 Initiate philosophy — source is sacred, everything else is a seed
 
@@ -141,7 +134,7 @@ The new-run modal (`new-run-modal.tsx`) is the run's creation event. Contract:
 | **branch strategy** | yes (default worktree) | human — touches the file system outside the sandbox |
 | **start mode** (dry-run / live / spectator) | yes (default dry-run) | human — governs whether writes land |
 | **directive** | **no** | human *or* the swarm (inference from README / commits / issues) |
-| **team** | **no** | human-picked roster + fresh spawns; zero is fine — the orchestrator spawns as work demands |
+| **team** | **no** | human-picked roster + fresh spawns; zero is fine — agents spawn peers as work demands |
 | **bounds** (spend / wallclock) | **no** | human; `unbounded` toggle surrenders the ceiling |
 
 **Why the optionals are truly optional.** The project's stance (§1) is that agents should be allowed to set their own goals when humans don't have strong preferences. The modal must not smuggle that stance back out through required fields. A run with only a source is a valid run.
@@ -162,18 +155,18 @@ All shapes live in `lib/swarm-types.ts` and `lib/types.ts`. Today they're popula
 ```ts
 {
   id: string,           // → child sessionID at runtime
-  name: string,         // display name (config label)
-  role: string,         // orchestrator/architect/coder/researcher/reviewer
+  name: string,         // display name (config label) — the only identity affordance
   accent: 'molten' | 'mint' | 'iris' | 'amber' | 'fog',
   status: 'idle' | 'thinking' | 'working' | 'waiting' | 'paused' | 'done' | 'error',
   model: { provider: 'zen' | 'go', label: string },
   tools: ToolName[],
-  currentTask?: string,
+  focus?: string,       // agent-authored ephemeral one-liner; never routed on
   tokensUsed: number, tokensBudget: number,
   costUsed: number,
   messagesSent: number, messagesRecv: number,
 }
 ```
+No `role` field. See §1 — role labels (prescribed *or* inferred) are rejected.
 
 ### `AgentMessage` (= one part on the timeline)
 ```ts
@@ -209,7 +202,7 @@ The UI is intentionally state-shaped, not request-shaped. To make it real, do th
 At this point the UI shows a real run live, but cannot drive it.
 
 ### Phase 2 — control plane
-5. **Composer dispatch** → `session.prompt` to the orchestrator session. Target picker (specific agent) → `session.prompt` directly to that child session.
+5. **Composer dispatch** → `session.prompt` to the root session (the session the human is addressing). Target picker (specific agent) → `session.prompt` directly to that child session.
 6. **Spawn modal** → `session.create` with the chosen agent config; immediately appears in roster.
 7. **Routing modal save** → persist run-level bounds (`costCap`, `tokenCap`, `minutesCap`, `zenCeiling%`, `goCeiling%`) to a config endpoint. Each agent's dispatch loop reads the current bounds and picks its own provider — cheapest capable within remaining ceiling. The **observed dispatch** readout comes from aggregating `message.part.updated` events by `model.provider` + `model.label`; **observed shapes** come from aggregating tool-call counts per agent, classified by the rubric in §4.2. Neither is a config value — both are derived projections over the L1 part index (§7.1).
 8. **Permission flow** — when `permission.updated` fires, surface in the agent's attention badge; clicking jumps to inspector with accept/reject buttons that call `permission.replied`.
@@ -263,7 +256,7 @@ Session memory is a pyramid. The base lives on disk; only the summit enters an a
 - `patch` parts: `filePath`, `+lines / -lines`, `diffHash`
 
 **Quality signals** (what makes iteration work)
-- Reviewer approvals / rejections per patch
+- Review approvals / rejections per patch (the *act* of review, not a reviewer identity — any agent may review any patch)
 - User interventions — permission replies, manual routing overrides, composer corrections
 - Retries, rollbacks, test / lint / typecheck results
 - **Diffs merged vs. diffs discarded** — the ground truth for "did this agent produce value?"
@@ -273,7 +266,7 @@ Session memory is a pyramid. The base lives on disk; only the summit enters an a
 
 ### 7.3 Key tradeoff
 
-The budget pressure is not L0 size — disk is cheap. It's the **quality of the L2 rollup**. If summaries are lossy in the wrong way, the next run repeats the same mistakes. Spend engineering on *structured* rollups (per-file outcome, per-tool failure modes, reviewer feedback verbatim) rather than free-form prose. A good rollup is a schema, not an essay.
+The budget pressure is not L0 size — disk is cheap. It's the **quality of the L2 rollup**. If summaries are lossy in the wrong way, the next run repeats the same mistakes. Spend engineering on *structured* rollups (per-file outcome, per-tool failure modes, review feedback verbatim) rather than free-form prose. A good rollup is a schema, not an essay.
 
 ### 7.4 Rollup schema (L2)
 
@@ -284,7 +277,7 @@ Two rollup shapes, written once at session close. Schema > prose — structured 
 ```ts
 type AgentRollup = {
   sessionID: string;
-  agent: { name: string; model: string; role: string };
+  agent: { name: string; model: string };
   runId: string;
   outcome: 'merged' | 'discarded' | 'partial' | 'aborted';
   counters: { tokensIn: number; tokensOut: number; toolCalls: number; retries: number; compactions: number };
@@ -295,7 +288,7 @@ type AgentRollup = {
     removedLines?: number;
     diffHash?: string;
     status: 'merged' | 'discarded' | 'superseded';
-    reviewerNotes?: string;  // verbatim, not summarized
+    reviewNotes?: string;  // verbatim, not summarized — from whichever agent reviewed
   }>;
   failures: Array<{
     tool: string;
@@ -341,7 +334,7 @@ recall({
   sessionID?: string;
   workspace?: string;                     // opt-in cross-run recall (same repo)
   filter: {
-    agents?: string[];                    // ['coder', 'reviewer']
+    agents?: string[];                    // ['ember', 'forge'] — filter by handle, not label
     partTypes?: PartType[];               // ['edit', 'patch']
     toolNames?: string[];                 // ['bash', 'grep']
     filePath?: string;                    // glob: 'src/auth/**'
@@ -372,7 +365,7 @@ Design notes:
 
 ## 8. Planning & delegation wiring (backend)
 
-Opencode gives each session a private todo list but no notion of a **shared, run-level plan**. A swarm UI where "the orchestrator's plan is visibly driving child agents" is an app-layer construction on top of SDK primitives. This section is the contract for building it.
+Opencode gives each session a private todo list but no notion of a **shared, run-level plan**. A swarm UI where "the plan-holding agent's todos are visibly driving child agents" is an app-layer construction on top of SDK primitives. This section is the contract for building it. Any agent can hold the plan; it's not a role, it's a position in the delegation graph.
 
 ### 8.1 What opencode provides (native)
 
@@ -390,23 +383,23 @@ None of these know about each other. A `todowrite` call and a `task` call are in
 
 Three things the backend owns on top of the native primitives:
 
-1. **Binding** — link each orchestrator todo item to the `task` call that executes it. The SDK won't tell you "this task call is item B"; the app has to establish correspondence.
+1. **Binding** — link each plan-holder todo item to the `task` call that executes it. The SDK won't tell you "this task call is item B"; the app has to establish correspondence.
 2. **Aggregation** — if a child agent writes its own sub-plan via `todowrite`, optionally expose it as a collapsible sub-list under the parent's item. Opt-in; flattening is often clearer.
-3. **Persistence** — write the todo↔task mapping into L2 rollups (§7.4) so the next run can see *"item B was delegated to coder, took 3 retries, eventually succeeded."*
+3. **Persistence** — write the todo↔task mapping into L2 rollups (§7.4) so the next run can see *"item B was delegated to `forge`, took 3 retries, eventually succeeded."*
 
 ### 8.3 The `todoID ↔ taskID` binding
 
 Two viable mechanisms:
 
-**(a) App-injected ID — recommended.** When the orchestrator writes a todo, the app mints a stable `todoID`. When it delegates, the app injects the ID into the `task` description (e.g. `[todo:abc123] research JWT library options`). Backend parses on observation. Simple, explicit, robust to re-ordering or content edits.
+**(a) App-injected ID — recommended.** When an agent writes a todo, the app mints a stable `todoID`. When it delegates, the app injects the ID into the `task` description (e.g. `[todo:abc123] research JWT library options`). Backend parses on observation. Simple, explicit, robust to re-ordering or content edits.
 
-**(b) Prompt-hash match — fallback.** Hash the todo content, hash the `task` prompt, match on overlap. Fragile — the orchestrator may reword between plan and delegation, and near-duplicates across items collide.
+**(b) Prompt-hash match — fallback.** Hash the todo content, hash the `task` prompt, match on overlap. Fragile — an agent may reword between plan and delegation, and near-duplicates across items collide.
 
-Prefer (a). Implementation path: a thin tool wrapper around `task` that auto-injects the ID, plus a system-prompt pattern that teaches the orchestrator to preserve it.
+Prefer (a). Implementation path: a thin tool wrapper around `task` that auto-injects the ID, plus a system-prompt pattern that teaches any plan-holding agent to preserve it.
 
 ### 8.4 What this lights up in the UI
 
-- **Roster badge.** "Coder is working on *item B*" — currently the roster only shows status.
+- **Roster badge.** "`forge` is working on *item B*" — currently the roster only shows status.
 - **Timeline affordance.** A `task` delegation card surfaces the originating todo item inline, not just the prompt text.
 - **Inspector drawer.** Selecting an item in the plan view scrolls the timeline to the corresponding `task`/`subtask` pair.
 - **L2 rollup field.** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent.
@@ -414,7 +407,7 @@ Prefer (a). Implementation path: a thin tool wrapper around `task` that auto-inj
 ### 8.5 Open questions
 
 - **Sub-plan depth.** If a child agent spawns its own sub-plan via its own `task` calls, render a tree view or flatten to depth=1?
-- **Re-planning mid-run.** If the orchestrator rewrites its todo list while tasks are in flight, what happens to tasks bound to deleted items? Abandon, reparent, or flag for user?
+- **Re-planning mid-run.** If the plan-holding agent rewrites its todo list while tasks are in flight, what happens to tasks bound to deleted items? Abandon, reparent, or flag for user?
 - **Human edits.** Can the operator check off an item in the sidebar, or is the plan strictly agent-owned (read-only for humans)? The §11 "single contract" rule pushes toward read-only here.
 
 ---
@@ -430,7 +423,7 @@ These are recorded so future contributors don't burn cycles re-asking:
 - **Provider universe = zen + go only.** No BYOK / local-model UI. Agents are configured by name only, never by source.
 - **Agent name and directive are optional at spawn.** Frontier models don't need narrow scoping; directives matter for *coordination*, not capability. Spawn modal dims optional inputs to signal this.
 - **Inspector dismissal = click-outside.** No "show inspector" footer button. Modern users dismiss via outside-click; the button was removed.
-- **No role-based routing. Ever.** Agents self-select providers within run bounds; humans observe and nudge. Roles exist only as *derived shapes* (§4.2), read-only to the human, invisible to the agent. Anyone tempted to reintroduce `if role=X → provider=Y` should re-read §1 ("On roles") and the `observation` eyebrow tooltip before writing code. This is the single hardest-won architectural stance in the project.
+- **No roles. Not prescribed, not inferred.** Agents self-select providers within run bounds; humans observe and nudge. There is no `role` field on `Agent`, no role-keyed routing, and no system-minted "shape" readout either. Identity is a name + an optional self-authored focus line. Anyone tempted to reintroduce `if role=X → provider=Y` — *or* a derived shape readout "for legibility" — should re-read §1 ("On roles") and the `observation` eyebrow tooltip before writing code. This is the single hardest-won architectural stance in the project.
 
 ---
 
@@ -438,7 +431,7 @@ These are recorded so future contributors don't burn cycles re-asking:
 
 These are explicitly *not* decided yet. Backend implementer is invited to propose:
 
-- **Cost ceiling enforcement.** Where does the spend cap actually live? Orchestrator-side gate, or per-session middleware?
+- **Cost ceiling enforcement.** Where does the spend cap actually live? Root-session gate, or per-session middleware?
 - **Branch / fork semantics.** Palette has a "branch from current node" action. Maps to `session.children` + revert? Or a new git branch + new run?
 - **Compaction trigger.** Manual via palette, or automatic at token threshold? UI assumes both.
 - **A2A typed pins.** We assumed `task`-tool dispatch is the sole A2A primitive. If opencode introduces a richer A2A schema, the timeline needs a second wire style.
@@ -455,7 +448,7 @@ These are explicitly *not* decided yet. Backend implementer is invited to propos
 | `components/timeline-flow.tsx` | Card / wire / drop / chip layout math + SVG rendering |
 | `components/agent-roster.tsx` | Left rail, attention badges, expanded agent panel |
 | `components/inspector.tsx` | Right drawer content for focused message OR selected agent |
-| `components/routing-modal.tsx` | Observation panel (run bounds + observed dispatch + observed shapes); see §4.2 for the philosophy |
+| `components/routing-modal.tsx` | Observation panel (run bounds + observed dispatch); see §4.2 for the philosophy |
 | `components/spawn-agent-modal.tsx` | Imperative agent creation; family picker |
 | `components/new-run-modal.tsx` | Run initiation; source required, directive/team/bounds optional; see §4.3 |
 | `components/command-palette.tsx` | ⌘K palette with grouped jump targets and chip-formatted line items |

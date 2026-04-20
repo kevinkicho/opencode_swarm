@@ -42,8 +42,8 @@ We **removed minimize / maximize / close caption buttons** from the topbar. The 
 
 ## Not an imperative routing panel
 
-The routing modal is **declarative policy only**. It edits per-role rules; saving applies to the *next dispatched subtask*. We rejected:
-- "Force redispatch all running coders" buttons
+The routing modal is **declarative policy only**. It sets run-level caps and per-provider soft ceilings; saving applies to the *next dispatched subtask*. We rejected:
+- "Force redispatch all running agents" buttons
 - "Abort all" / "Pause swarm" actions inside the routing modal
 - Real-time slider that re-routes in-flight agents
 
@@ -96,6 +96,18 @@ The composer is a single-line dispatch field with a target picker. We rejected:
 - @-mentions for agent targeting (target picker handles this with a dropdown)
 
 **Why:** the palette (⌘K) is the keyboard surface. The composer is for the one specific job of sending a message. Two surfaces with overlapping affordances confuses users.
+
+---
+
+## Not a role-assigning system
+
+Agents have **no `role` field** and no system-minted "shape" readout. We rejected both:
+- ❌ Prescribed roles — `orchestrator` / `architect` / `coder` / `reviewer` pinned at spawn and routed on
+- ❌ Inferred shapes — system-derived labels like "planner-shaped" / "implementer-shaped" / "coordinator-shaped" computed from observed behavior
+
+Identity is **a name + an optional self-authored focus line**. That's it. Any role interpretation happens in the human observer's head, not in data. The earlier prototype had `AgentRole`; it's been removed. The earlier DESIGN.md sketched a "derived shapes" observation readout; that's been removed too.
+
+**Why:** role labels — *prescribed or inferred* — reproduce the supervisor-worker dialectic the swarm refuses. Pinning roles forecloses emergent collaboration; inferring them projects structure onto freeform behavior and makes it look like the system is in charge of who does what. See `DESIGN.md` §1 and §9. The `observation` eyebrow tooltip in the routing modal is the in-product reminder.
 
 ---
 

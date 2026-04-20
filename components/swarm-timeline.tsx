@@ -272,14 +272,11 @@ export function SwarmTimeline({
                     <div className="space-y-1.5 min-w-[200px]">
                       <div className="flex items-center gap-2">
                         <span className="text-[12px] text-fog-100">{a.name}</span>
-                        <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
-                          {a.role}
-                        </span>
                       </div>
                       <ProviderBadge provider={a.model.provider} label={a.model.label} size="sm" />
-                      {a.currentTask && (
+                      {a.focus && (
                         <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
-                          {a.currentTask}
+                          {a.focus}
                         </div>
                       )}
                       <div className="flex items-center gap-3 font-mono text-[10.5px] text-fog-600 tabular-nums">
@@ -338,14 +335,17 @@ export function SwarmTimeline({
                         </span>
                       </div>
                       <div className="mt-1 flex items-center gap-1.5 min-w-0">
-                        <span
-                          className={clsx(
-                            'font-mono text-micro uppercase tracking-widest2 shrink-0',
-                            accentText[a.accent],
-                          )}
-                        >
-                          {a.role}
-                        </span>
+                        {a.focus && (
+                          <span
+                            className={clsx(
+                              'font-mono text-micro tracking-wide truncate min-w-0 flex-1',
+                              accentText[a.accent],
+                              'opacity-70',
+                            )}
+                          >
+                            {a.focus}
+                          </span>
+                        )}
                         <ProviderBadge provider={a.model.provider} size="sm" clickable />
                       </div>
                       <LaneMeter throughput={throughput} />
