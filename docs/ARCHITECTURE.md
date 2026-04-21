@@ -86,15 +86,93 @@ API quirks.
 ### 1.4 The "live vs mock" split
 
 `app/page.tsx` switches between mock fixtures and live opencode data based
-on the `?session=<id>` URL param:
+on URL params:
 
-- **No `?session`** → `swarm-data.ts` mock. Used for designing surfaces
+- **No params** → `swarm-data.ts` mock. Used for designing surfaces
   without a running opencode.
-- **`?session=<id>`** → `useLiveSession(id, dir)` + transforms. Real data.
+- **`?session=<id>`** → `useLiveSession(id, dir)` + transforms. Direct
+  deep-link to an opencode session created outside the swarm-run flow.
+- **`?swarmRun=<id>`** → `useLiveSwarmRun(id)` resolves to the run's
+  primary sessionID, which then feeds the same `useLiveSession` pipeline.
+  Preferred URL because it carries run-level context (workspace, bounds,
+  source). See §1.5.
 
 The Agent / AgentMessage / RunMeta / TodoItem / ProviderSummary shapes are
-identical in both paths — every component is agnostic. See
+identical in all paths — every component is agnostic. See
 `memory/feedback_prototype_first.md` for why we keep the mock layer alive.
+
+### 1.5 The swarm-run pipeline
+
+A parallel entry point to §1.1. §1.1 starts from an already-created opencode
+session; §1.5 starts from the new-run modal and walks the creation, dispatch,
+and multiplexed-event path through the Next.js server.
+
+```
+components/new-run-modal.tsx           (handleLaunch)
+        │
+        │  POST /api/swarm/run       { pattern, workspace, source?, directive?,
+        │                               title?, teamSize?, bounds? }
+        ▼
+app/api/swarm/run/route.ts             (validate → create → persist → respond)
+        │  1. reject pattern !== 'none' with 501
+        │  2. createSessionServer(workspace, title)  → opencode session
+        │  3. postSessionMessageServer(sessionID, workspace, directive)
+        │     (fire-and-forget; failure is logged, run continues)
+        │  4. createRun(req, [sessionID])
+        │     writes .opencode_swarm/runs/<id>/meta.json
+        ▼
+browser receives SwarmRunResponse      { swarmRunID, sessionIDs, meta }
+        │
+        │  router.push(`/?swarmRun=<id>`)
+        ▼
+app/page.tsx (PageInner)               (URL → sessionID resolver)
+        │  useLiveSwarmRun(swarmRunID) → fetches /api/swarm/run/:id → meta
+        │  effective sessionId = meta.sessionIDs[0]
+        │
+        │  from here the flow is identical to §1.1:
+        │  useLiveSession(sessionId) → transform.ts → view snapshot
+        ▼
+rendered UI (same components as direct-session path)
+
+┌─ parallel stream (started per-run, lives in parallel to useLiveSession) ──┐
+│                                                                           │
+│  GET /api/swarm/run/:id/events                                            │
+│        │                                                                  │
+│        │  opens ONE upstream to opencode /event?directory=<workspace>     │
+│        │  filters frames where properties.sessionID ∈ meta.sessionIDs     │
+│        │  tags each with { swarmRunID, sessionID, ts, type, properties }  │
+│        │  appends SwarmRunEvent JSON to events.ndjson  (L0 log)           │
+│        │  forwards tagged frames as SSE to the browser                    │
+│        ▼                                                                  │
+│  browser consumers (future: provenance panel, cross-session chips)        │
+└───────────────────────────────────────────────────────────────────────────┘
+```
+
+Ownership split:
+
+| Layer | Where it lives | Role |
+|---|---|---|
+| wire types | `lib/swarm-run-types.ts` | shared browser/server — `SwarmRunRequest/Meta/Response/Event` |
+| persistence | `lib/server/swarm-registry.ts` | `createRun`, `getRun`, `appendEvent` — server-only |
+| opencode fan-out | `lib/server/opencode-server.ts` | `createSessionServer`, `postSessionMessageServer` — server-only |
+| HTTP surface | `app/api/swarm/run/route.ts`, `.../[swarmRunID]/route.ts`, `.../[swarmRunID]/events/route.ts` | POST create · GET meta · GET SSE multiplex |
+| browser resolver | `useLiveSwarmRun` in `lib/opencode/live.ts` | fetches meta; exposes `primarySessionID`, `workspace` |
+| UI entry | `components/new-run-modal.tsx` → `app/page.tsx` PageInner | POST launch · URL-param branch |
+
+Invariants:
+
+- **At v1 N=1.** Every run wraps exactly one opencode session. Wire shapes
+  are plural-ready (`sessionIDs[]`) so blackboard / map-reduce / council
+  light up without breaking existing browser code.
+- **`pattern !== 'none'` returns 501.** The surface exists so the new-run
+  modal can hold preset tiles; the dispatch path rejects until coordinator
+  code ships. See `SWARM_PATTERNS.md` §"Backend gap".
+- **L0 events.ndjson is the authoritative replay source**, not the live
+  SSE stream. Future analytics / rollup workers read from disk; the live
+  stream is a convenience for the browser.
+- **The multiplexer filters by `properties.sessionID`.** Events without a
+  sessionID (global opencode events) are dropped. A future swarm-coordinator
+  event type would opt back in here.
 
 ---
 
