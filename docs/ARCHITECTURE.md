@@ -208,7 +208,6 @@ purpose) or its role is obvious from its name.
 | `format.ts` | `compact()` for tokens, timestamp helpers, small formatters. |
 | `types.ts` | DiffData / DiffHunk / DiffLine — the diff viewer's shape. |
 | `mock-data.ts` | Historical mock fixtures still referenced by one or two surfaces. |
-| `commits-data.ts` | Mock commit history for the branch-history drawer. Replaced in Phase 3 (DESIGN.md §6). |
 
 ### `lib/opencode/` (live wiring)
 

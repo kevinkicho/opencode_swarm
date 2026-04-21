@@ -8,7 +8,6 @@ import { SwarmTimeline } from '@/components/swarm-timeline';
 import { Inspector } from '@/components/inspector';
 import { CommandPalette } from '@/components/command-palette';
 import { RoutingModal } from '@/components/routing-modal';
-import { CommitHistory } from '@/components/commit-history';
 import { LiveCommitHistory } from '@/components/live-commit-history';
 import { SpawnAgentModal } from '@/components/spawn-agent-modal';
 import { GlossaryModal } from '@/components/glossary-modal';
@@ -470,18 +469,14 @@ function PageBody({
 
       <RoutingModal open={routingOpen} onClose={() => setRoutingOpen(false)} />
 
-      {isLive ? (
-        <LiveCommitHistory
-          open={historyOpen}
-          onClose={() => setHistoryOpen(false)}
-          turns={liveTurns}
-          diffs={liveDiffs}
-          loading={diffLoading}
-          error={diffError}
-        />
-      ) : (
-        <CommitHistory open={historyOpen} onClose={() => setHistoryOpen(false)} />
-      )}
+      <LiveCommitHistory
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        turns={liveTurns}
+        diffs={liveDiffs}
+        loading={diffLoading}
+        error={diffError}
+      />
 
       <SpawnAgentModal
         open={spawnOpen}

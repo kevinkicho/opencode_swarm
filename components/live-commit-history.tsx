@@ -95,7 +95,7 @@ export function LiveCommitHistory({
               <IconBranch size={14} className="text-molten" />
               <div>
                 <div className="font-mono text-micro uppercase tracking-widest2 text-fog-500 leading-none">
-                  branch history · live session
+                  branch history
                 </div>
                 <div className="text-[13px] text-fog-100 leading-tight mt-0.5">
                   turns diffs files

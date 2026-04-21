@@ -208,7 +208,7 @@ At this point the UI shows a real run live, but cannot drive it.
 8. **Permission flow** — when `permission.asked` fires, surface in a permission strip above the composer (`components/permission-strip.tsx`) with once / always / reject actions that POST to `/permission/{id}/reply`. The `permission.replied` event confirms and clears the strip. Attention-badge variant on the roster is a future iteration.
 
 ### Phase 3 — branch history (real VCS)
-9. Replace `lib/commits-data.ts` with `vcs.branch.updated` + `file.edited` + `session.diff` aggregation. The current "branch history" modal shape already matches.
+9. **Shipped.** `LiveCommitHistory` renders per-turn entries from `patch` parts with `session.diff` scoped to each turn's files (via `filterDiffsForTurn`). Every agent edit is a row; the "sha" column shows the synthetic turn id. Real `vcs.branch.updated` events are intentionally unused — they only fire on actual `git commit`, which most swarm runs never do, and the per-turn view answers the real human question ("what did the agent touch on this branch?") more directly. The mock `commits-data.ts` + `CommitHistory` fallback was removed — `LiveCommitHistory` is the single path.
 
 ### Phase 4 — cross-run analytics (single-user)
 
