@@ -13,6 +13,7 @@ import { LiveCommitHistory } from '@/components/live-commit-history';
 import { SpawnAgentModal } from '@/components/spawn-agent-modal';
 import { GlossaryModal } from '@/components/glossary-modal';
 import { NewRunModal } from '@/components/new-run-modal';
+import { RunProvenanceDrawer } from '@/components/run-provenance-drawer';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { PermissionStrip } from '@/components/permission-strip';
 import { Drawer } from '@/components/ui/drawer';
@@ -181,6 +182,7 @@ function PageInner() {
         liveTurns={liveTurns}
         liveLastUpdated={liveData?.lastUpdated ?? null}
         isLive={isLive}
+        swarmRunID={swarmRunID}
       />
     </RoutingBoundsProvider>
   );
@@ -201,6 +203,7 @@ function PageBody({
   liveTurns,
   liveLastUpdated,
   isLive,
+  swarmRunID,
 }: {
   agents: Agent[];
   agentOrder: string[];
@@ -216,6 +219,7 @@ function PageBody({
   liveTurns: LiveTurn[];
   liveLastUpdated: number | null;
   isLive: boolean;
+  swarmRunID: string | null;
 }) {
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -226,6 +230,7 @@ function PageBody({
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [newRunOpen, setNewRunOpen] = useState(false);
+  const [provenanceOpen, setProvenanceOpen] = useState(false);
 
   // Routing bounds live in a provider so the modal can persist them to
   // localStorage. Cost cap is the only bound with a direct RunMeta field
@@ -397,6 +402,7 @@ function PageBody({
         onOpenHistory={() => setHistoryOpen(true)}
         onOpenGlossary={() => setGlossaryOpen(true)}
         onOpenNewRun={() => setNewRunOpen(true)}
+        onOpenProvenance={swarmRunID ? () => setProvenanceOpen(true) : null}
       />
 
       <Drawer
@@ -447,6 +453,12 @@ function PageBody({
       <GlossaryModal open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
 
       <NewRunModal open={newRunOpen} onClose={() => setNewRunOpen(false)} />
+
+      <RunProvenanceDrawer
+        swarmRunID={swarmRunID}
+        open={provenanceOpen}
+        onClose={() => setProvenanceOpen(false)}
+      />
     </div>
     </ProviderStatsProvider>
     </PlaybackProvider>
@@ -459,12 +471,14 @@ function StatusRail({
   onOpenHistory,
   onOpenGlossary,
   onOpenNewRun,
+  onOpenProvenance,
 }: {
   onOpenPalette: () => void;
   onOpenRouting: () => void;
   onOpenHistory: () => void;
   onOpenGlossary: () => void;
   onOpenNewRun: () => void;
+  onOpenProvenance: (() => void) | null;
 }) {
   const health = useOpencodeHealth(5000);
   const dotClass =
@@ -546,6 +560,28 @@ function StatusRail({
             <span className="text-fog-700">routing</span>
           </button>
         </Tooltip>
+
+        {onOpenProvenance && (
+          <Tooltip
+            side="top"
+            wide
+            content={
+              <div className="space-y-0.5">
+                <div className="font-mono text-[11px] text-fog-200">run provenance</div>
+                <div className="font-mono text-[10.5px] text-fog-600">
+                  L0 event log for this swarm run · replay + live
+                </div>
+              </div>
+            }
+          >
+            <button
+              onClick={onOpenProvenance}
+              className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
+            >
+              <span className="text-fog-700">provenance</span>
+            </button>
+          </Tooltip>
+        )}
 
         <Tooltip
           side="top"
