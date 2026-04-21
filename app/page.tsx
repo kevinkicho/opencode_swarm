@@ -382,7 +382,11 @@ function PageBody({
         <CommitHistory open={historyOpen} onClose={() => setHistoryOpen(false)} />
       )}
 
-      <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />
+      <SpawnAgentModal
+        open={spawnOpen}
+        onClose={() => setSpawnOpen(false)}
+        directory={liveDirectory}
+      />
 
       <GlossaryModal open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
 

@@ -2,6 +2,7 @@
 
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Modal } from './ui/modal';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
@@ -11,6 +12,10 @@ import {
   fmtZenPrice as fmtPrice,
   type ZenFamily as Family,
 } from '@/lib/zen-catalog';
+import {
+  createSessionBrowser,
+  postSessionMessageBrowser,
+} from '@/lib/opencode/live';
 
 interface Skill {
   id: string;
@@ -30,21 +35,41 @@ const skills: Skill[] = [
 type SpawnState = 'idle' | 'verifying' | 'failed' | 'verified';
 type SpawnMode = 'idle' | 'active';
 
-export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SpawnAgentModal({
+  open,
+  onClose,
+  directory,
+}: {
+  open: boolean;
+  onClose: () => void;
+  directory: string | null;
+}) {
+  const router = useRouter();
   const [modelId, setModelId] = useState<string>(zenModels[0].id);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [name, setName] = useState('');
   const [directive, setDirective] = useState('');
   const [spawnState, setSpawnState] = useState<SpawnState>('idle');
   const [spawnMode, setSpawnMode] = useState<SpawnMode>('idle');
+  const [spawnError, setSpawnError] = useState<string | null>(null);
 
   const autoId = 'agent-03';
   const trimmedName = name.trim();
+  const trimmedDirective = directive.trim();
   const previewName = trimmedName || autoId;
   const currentModel = zenModels.find((m) => m.id === modelId) ?? zenModels[0];
 
+  // Active mode needs a directive to actually activate on — otherwise it's
+  // indistinguishable from idle. Idle is always valid: creates a parked session.
+  const canSpawn =
+    !!directory &&
+    (spawnMode === 'idle' || trimmedDirective.length > 0);
+
   useEffect(() => {
-    if (open) setSpawnState('idle');
+    if (open) {
+      setSpawnState('idle');
+      setSpawnError(null);
+    }
   }, [open]);
 
   const toggleSkill = (id: string) => {
@@ -56,13 +81,33 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
     });
   };
 
-  const handleSpawn = () => {
-    if (spawnState === 'verifying') return;
+  const handleSpawn = async () => {
+    if (spawnState === 'verifying' || !canSpawn || !directory) return;
+    // Title priority: explicit name → first line of directive (capped) → let
+    // opencode pick its default. Keeps the session picker readable.
+    const firstLine = trimmedDirective.split(/\r?\n/)[0] ?? '';
+    const derivedTitle =
+      firstLine.length > 80 ? firstLine.slice(0, 77).trimEnd() + '…' : firstLine;
+    const title = trimmedName || derivedTitle || undefined;
+
     setSpawnState('verifying');
-    setTimeout(() => {
+    setSpawnError(null);
+    try {
+      const session = await createSessionBrowser(directory, title);
+      if (spawnMode === 'active' && trimmedDirective) {
+        await postSessionMessageBrowser(session.id, directory, trimmedDirective);
+      }
       setSpawnState('verified');
-      setTimeout(onClose, 350);
-    }, 700);
+      // Short pause lets the verified state render before navigation so the
+      // user sees the transition instead of a modal that just vanishes.
+      setTimeout(() => {
+        onClose();
+        router.push(`/?session=${encodeURIComponent(session.id)}`);
+      }, 350);
+    } catch (err) {
+      setSpawnState('failed');
+      setSpawnError((err as Error).message);
+    }
   };
 
   return (
@@ -128,7 +173,6 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
                 </ul>
               </div>
               <div className="mt-1.5 font-mono text-[10.5px] text-fog-700 leading-snug">
-                spawn does a soft opencode-account check before the agent boots.
                 pricing and catalog pulled from{' '}
                 <a
                   href="https://opencode.ai/docs/zen/"
@@ -138,7 +182,7 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
                 >
                   opencode.ai/docs/zen
                 </a>
-                .
+                . model selection is cosmetic today — the session runs with whatever opencode picks per prompt.
               </div>
             </Section>
           </div>
@@ -317,9 +361,27 @@ export function SpawnAgentModal({ open, onClose }: { open: boolean; onClose: () 
         >
           cancel
         </button>
+        {spawnError ? (
+          <div className="ml-2 font-mono text-[10.5px] text-rust truncate min-w-0 max-w-[420px]">
+            {spawnError}
+          </div>
+        ) : !directory ? (
+          <div className="ml-2 font-mono text-[10.5px] text-fog-600 truncate min-w-0">
+            open a live session to spawn into its workspace
+          </div>
+        ) : spawnMode === 'active' && !trimmedDirective ? (
+          <div className="ml-2 font-mono text-[10.5px] text-fog-600 truncate min-w-0">
+            active mode needs a directive — add one or switch to idle
+          </div>
+        ) : null}
         <div className="ml-auto flex items-center gap-2">
           <SpawnModeToggle mode={spawnMode} onChange={setSpawnMode} />
-          <SpawnButton state={spawnState} mode={spawnMode} onClick={handleSpawn} />
+          <SpawnButton
+            state={spawnState}
+            mode={spawnMode}
+            onClick={handleSpawn}
+            disabled={!canSpawn}
+          />
         </div>
       </div>
     </Modal>
@@ -503,10 +565,12 @@ function SpawnButton({
   state,
   mode,
   onClick,
+  disabled,
 }: {
   state: SpawnState;
   mode: SpawnMode;
   onClick: () => void;
+  disabled?: boolean;
 }) {
   if (state === 'verifying') {
     return (
@@ -515,7 +579,7 @@ function SpawnButton({
         className="h-8 px-4 rounded font-mono text-micro uppercase tracking-wider bg-amber/10 text-amber border border-amber/30 transition flex items-center gap-2 cursor-wait"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
-        verifying account
+        spawning…
       </button>
     );
   }
@@ -533,16 +597,28 @@ function SpawnButton({
     return (
       <button
         onClick={onClick}
-        className="h-8 px-4 rounded font-mono text-micro uppercase tracking-wider bg-rust/15 hover:bg-rust/25 text-rust border border-rust/30 transition flex items-center gap-2"
+        disabled={disabled}
+        className={clsx(
+          'h-8 px-4 rounded font-mono text-micro uppercase tracking-wider transition flex items-center gap-2',
+          disabled
+            ? 'bg-ink-800 text-fog-600 border border-ink-700 cursor-not-allowed'
+            : 'bg-rust/15 hover:bg-rust/25 text-rust border border-rust/30'
+        )}
       >
-        retry verify
+        retry spawn
       </button>
     );
   }
   return (
     <button
       onClick={onClick}
-      className="h-8 px-4 rounded font-mono text-micro uppercase tracking-wider bg-molten/15 hover:bg-molten/25 text-molten border border-molten/30 transition"
+      disabled={disabled}
+      className={clsx(
+        'h-8 px-4 rounded font-mono text-micro uppercase tracking-wider transition',
+        disabled
+          ? 'bg-ink-800 text-fog-600 border border-ink-700 cursor-not-allowed'
+          : 'bg-molten/15 hover:bg-molten/25 text-molten border border-molten/30'
+      )}
     >
       spawn {mode === 'active' ? 'active' : 'agent'}
     </button>
