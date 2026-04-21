@@ -21,8 +21,9 @@
 import type { NextRequest } from 'next/server';
 
 import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
-import { createRun, listRuns } from '@/lib/server/swarm-registry';
+import { createRun, deriveRunStatus, listRuns } from '@/lib/server/swarm-registry';
 import type {
+  SwarmRunListRow,
   SwarmRunRequest,
   SwarmRunResponse,
 } from '@/lib/swarm-run-types';
@@ -180,13 +181,33 @@ export async function POST(req: NextRequest): Promise<Response> {
 
 // Run discovery. Wrapped in { runs } rather than returning a bare array so
 // future fields (cursor, total, filters) can land without breaking clients.
-// No server-side filtering at v1 — the registry is expected to hold tens of
-// runs, not thousands; filtering / pagination can move into the query layer
-// when it matters.
+// Each row carries a live-derived status — see deriveRunStatus() for how
+// it's classified from the primary session's message tail.
+//
+// Fan-out strategy: every list request does one opencode /message fetch per
+// run, in parallel. At prototype scale (~10s of runs, 4s client poll) that
+// lands around 10 req/s to opencode. When this starts to hurt, the fix is
+// a process-memory cache: `Map<swarmRunID, { row, fetchedAt }>` with a
+// ~2s TTL, invalidated when the multiplexer appends an event for that run.
+// Not built yet — flag and move on.
+//
+// No server-side filtering at v1. Sort order is inherited from listRuns()
+// (newest-first by createdAt); status-based sorting lives client-side in
+// the picker so the order follows live signals without a round-trip.
 export async function GET(): Promise<Response> {
   try {
-    const runs = await listRuns();
-    return Response.json({ runs });
+    const metas = await listRuns();
+    const rows: SwarmRunListRow[] = await Promise.all(
+      metas.map(async (meta) => {
+        // deriveRunStatus is itself non-throwing — it collapses probe
+        // failures to `unknown` — so this Promise.all never rejects for
+        // per-row reasons. A rejection here would be an unexpected crash
+        // path (e.g. OOM) and is fine to surface as a 500.
+        const { status, lastActivityTs } = await deriveRunStatus(meta);
+        return { meta, status, lastActivityTs };
+      })
+    );
+    return Response.json({ runs: rows });
   } catch (err) {
     return Response.json(
       { error: 'run list failed', message: (err as Error).message },

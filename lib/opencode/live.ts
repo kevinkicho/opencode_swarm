@@ -11,7 +11,11 @@ import type {
   OpencodeProject,
   OpencodeSession,
 } from './types';
-import type { SwarmRunEvent, SwarmRunMeta } from '../swarm-run-types';
+import type {
+  SwarmRunEvent,
+  SwarmRunListRow,
+  SwarmRunMeta,
+} from '../swarm-run-types';
 
 async function getJsonBrowser<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api/opencode${path}`, { ...init, cache: 'no-store' });
@@ -822,14 +826,17 @@ export function useSwarmRunEvents(
 // short poll keeps the picker fresh without plumbing a global event stream.
 
 export interface SwarmRunsSnapshot {
-  runs: SwarmRunMeta[];
+  // Rows carry the persisted meta plus a live-derived status. Consumers
+  // that only care about meta can read `row.meta`; consumers that want to
+  // color-code by status read `row.status`.
+  rows: SwarmRunListRow[];
   error: string | null;
   loading: boolean;
   lastUpdated: number | null;
 }
 
 export function useSwarmRuns(intervalMs = 4000): SwarmRunsSnapshot {
-  const [runs, setRuns] = useState<SwarmRunMeta[]>([]);
+  const [rows, setRows] = useState<SwarmRunListRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
@@ -852,9 +859,9 @@ export function useSwarmRuns(intervalMs = 4000): SwarmRunsSnapshot {
             `swarm run list -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
           );
         }
-        const body = (await res.json()) as { runs?: SwarmRunMeta[] };
+        const body = (await res.json()) as { runs?: SwarmRunListRow[] };
         if (cancelled) return;
-        setRuns(body.runs ?? []);
+        setRows(body.runs ?? []);
         setLastUpdated(Date.now());
         setError(null);
       } catch (err) {
@@ -876,5 +883,5 @@ export function useSwarmRuns(intervalMs = 4000): SwarmRunsSnapshot {
     };
   }, [intervalMs]);
 
-  return { runs, error, loading, lastUpdated };
+  return { rows, error, loading, lastUpdated };
 }

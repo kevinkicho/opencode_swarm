@@ -18,10 +18,12 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
+import { getSessionMessagesServer } from './opencode-server';
 import type {
   SwarmRunEvent,
   SwarmRunMeta,
   SwarmRunRequest,
+  SwarmRunStatus,
 } from '../swarm-run-types';
 
 // Override via env for deployments that want runs under a different root
@@ -126,6 +128,75 @@ export async function listRuns(): Promise<SwarmRunMeta[]> {
   return metas
     .filter((m): m is SwarmRunMeta => m !== null)
     .sort((a, b) => b.createdAt - a.createdAt);
+}
+
+// A turn with no `completed` timestamp that's older than this is treated as
+// a zombie: opencode probably crashed mid-turn or the process was killed
+// before the assistant could finish. Mirrors the threshold in
+// transform.ts's liveness heuristic so the single-session and cross-run
+// views agree on what "running" means. See memory note
+// "opencode zombie assistant messages" for why this guard exists.
+const ZOMBIE_THRESHOLD_MS = 10 * 60 * 1000;
+
+// Classify a run's current execution state by inspecting the tail of its
+// primary session's message list. N=1 at v1; when patterns ship, aggregate
+// across sessions (live if ANY is live; else error if ANY is error; else
+// idle — stale counts as idle for the aggregate since the run isn't
+// actually progressing anywhere).
+//
+// Never throws. A probe failure collapses to `unknown` with
+// lastActivityTs=null — the list endpoint still returns the row so the
+// picker can render it, just without a status dot.
+export async function deriveRunStatus(
+  meta: SwarmRunMeta,
+  signal?: AbortSignal
+): Promise<{ status: SwarmRunStatus; lastActivityTs: number | null }> {
+  const sessionID = meta.sessionIDs[0];
+  if (!sessionID) return { status: 'unknown', lastActivityTs: null };
+
+  let messages;
+  try {
+    messages = await getSessionMessagesServer(sessionID, meta.workspace, signal);
+  } catch {
+    // Could be the session was deleted out from under us, or opencode is
+    // momentarily unreachable. Either way, not actionable by the picker —
+    // surface as unknown and let the next poll try again.
+    return { status: 'unknown', lastActivityTs: null };
+  }
+
+  if (messages.length === 0) {
+    // Session exists but no messages yet. Usually means the run was just
+    // created and the first directive is still in flight. Not idle, not
+    // error — honest answer is unknown.
+    return { status: 'unknown', lastActivityTs: null };
+  }
+
+  const last = messages[messages.length - 1];
+  const info = last.info;
+  const now = Date.now();
+
+  // A trailing user message means opencode has accepted a prompt but hasn't
+  // yet attached the assistant reply. That's live — something is about to
+  // produce tokens.
+  if (info.role === 'user') {
+    return { status: 'live', lastActivityTs: info.time.created };
+  }
+
+  // Assistant message path.
+  if (info.error) {
+    return {
+      status: 'error',
+      lastActivityTs: info.time.completed ?? info.time.created,
+    };
+  }
+  if (info.time.completed) {
+    return { status: 'idle', lastActivityTs: info.time.completed };
+  }
+  // No completed, no error — either actively producing or zombie.
+  if (now - info.time.created < ZOMBIE_THRESHOLD_MS) {
+    return { status: 'live', lastActivityTs: info.time.created };
+  }
+  return { status: 'stale', lastActivityTs: info.time.created };
 }
 
 // Append one event as a single JSON line. Uses appendFile (single syscall,

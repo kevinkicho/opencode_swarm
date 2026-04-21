@@ -55,6 +55,37 @@ export interface SwarmRunResponse {
   meta: SwarmRunMeta;
 }
 
+// --- run lifecycle status ---------------------------------------------------
+
+// Classification of a run's execution state, derived server-side from the
+// tail of the run's primary session messages. Not persisted — this is a
+// live derivation, valid only for the moment the list endpoint replies.
+//
+//   live     — most recent assistant turn is in-flight (no completed, no
+//              error, recent activity). The run is actively producing.
+//   idle     — most recent assistant turn completed cleanly. The run is
+//              between turns; may still accept more prompts.
+//   error    — most recent assistant turn carries an error. Needs
+//              attention; not automatically retried.
+//   stale    — in-flight assistant turn older than the staleness threshold.
+//              Opencode can leave zombie turns (no completed, no error) if
+//              a session crashes mid-turn; we surface these separately so
+//              users know the run isn't actually progressing.
+//   unknown  — primary session has no messages yet, or the status probe
+//              itself failed. Not an error — just "we couldn't tell."
+export type SwarmRunStatus = 'live' | 'idle' | 'error' | 'stale' | 'unknown';
+
+// One row in GET /api/swarm/run's response. `meta` is the persisted record;
+// `status` and `lastActivityTs` are live-derived and may change across polls.
+export interface SwarmRunListRow {
+  meta: SwarmRunMeta;
+  status: SwarmRunStatus;
+  // Epoch ms of the most recent signal we used to classify — usually the
+  // latest message's time.completed or time.created. null when the session
+  // has no messages.
+  lastActivityTs: number | null;
+}
+
 // --- multiplexed event shape (out of /api/swarm/run/:id/events) -------------
 
 // Each line the multiplexer emits tags the raw opencode event with the

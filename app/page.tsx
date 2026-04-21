@@ -29,6 +29,7 @@ import {
   useLivePermissions,
   useLiveSwarmRun,
   useSessionDiff,
+  useSwarmRuns,
   postSessionMessageBrowser,
 } from '@/lib/opencode/live';
 import {
@@ -52,7 +53,7 @@ import {
   providerSummary as mockProviderSummary,
 } from '@/lib/swarm-data';
 import type { AgentMessage, Agent, RunMeta, ProviderSummary, TodoItem } from '@/lib/swarm-types';
-import type { SwarmRunMeta } from '@/lib/swarm-run-types';
+import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TimelineNode } from '@/lib/types';
 
 interface SwarmView {
@@ -87,6 +88,17 @@ function PageInner() {
   const swarmRunID = params.get('swarmRun');
   const directSessionId = params.get('session');
   const swarmRun = useLiveSwarmRun(swarmRunID);
+  // Ledger-wide poll. Feeds both the topbar status dot (this page) and the
+  // runs picker (via its own internal call — see note below). We poll here
+  // so the topbar has a live status even before the user opens the picker.
+  // The picker's internal poll stays — cheap at prototype scale and keeps
+  // the picker component self-contained.
+  const runsSnapshot = useSwarmRuns(4000);
+  const currentRunStatus: SwarmRunStatus | null = useMemo(() => {
+    if (!swarmRunID) return null;
+    const row = runsSnapshot.rows.find((r) => r.meta.swarmRunID === swarmRunID);
+    return row?.status ?? null;
+  }, [runsSnapshot.rows, swarmRunID]);
   // When the swarmRunID is terminal-dead (404) we still need to pass null
   // through the downstream session/permission hooks rather than branching
   // early — rules-of-hooks requires a stable call order across renders.
@@ -199,6 +211,7 @@ function PageInner() {
         isLive={isLive}
         swarmRunID={swarmRunID}
         swarmRunMeta={swarmRun.meta}
+        swarmRunStatus={currentRunStatus}
       />
     </RoutingBoundsProvider>
   );
@@ -221,6 +234,7 @@ function PageBody({
   isLive,
   swarmRunID,
   swarmRunMeta,
+  swarmRunStatus,
 }: {
   agents: Agent[];
   agentOrder: string[];
@@ -238,6 +252,7 @@ function PageBody({
   isLive: boolean;
   swarmRunID: string | null;
   swarmRunMeta: SwarmRunMeta | null;
+  swarmRunStatus: SwarmRunStatus | null;
 }) {
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -362,6 +377,7 @@ function PageBody({
         liveSessionId={liveSessionId}
         liveDirectory={liveDirectory}
         swarmRunMeta={swarmRunMeta}
+        swarmRunStatus={swarmRunStatus}
       />
 
       <main className="flex-1 grid min-h-0" style={{ gridTemplateColumns: '260px 1fr' }}>

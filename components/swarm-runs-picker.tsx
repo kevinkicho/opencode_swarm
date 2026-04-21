@@ -23,8 +23,22 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Popover } from './ui/popover';
 import { useSwarmRuns } from '@/lib/opencode/live';
-import type { SwarmRunMeta } from '@/lib/swarm-run-types';
+import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import { IconSearch } from './icons';
+
+// Color + dot styling per status bucket. Lives alongside the picker so the
+// topbar status dot can import the same table — one source of truth for
+// what "live" looks like visually.
+export const STATUS_VISUAL: Record<
+  SwarmRunStatus,
+  { dot: string; label: string; rank: number; tone: string }
+> = {
+  live:    { dot: 'bg-mint animate-pulse', label: 'live',    rank: 0, tone: 'text-mint' },
+  stale:   { dot: 'bg-amber',              label: 'stale',   rank: 1, tone: 'text-amber' },
+  error:   { dot: 'bg-rust',               label: 'error',   rank: 2, tone: 'text-rust' },
+  idle:    { dot: 'bg-fog-500',            label: 'idle',    rank: 3, tone: 'text-fog-400' },
+  unknown: { dot: 'bg-fog-700',            label: '—',       rank: 4, tone: 'text-fog-700' },
+};
 
 function fmtAge(ms: number): string {
   const s = Math.floor((Date.now() - ms) / 1000);
@@ -64,34 +78,54 @@ export function SwarmRunsPicker({
   children: React.ReactElement;
   currentSwarmRunID?: string | null;
 }) {
-  const { runs, error, loading, lastUpdated } = useSwarmRuns(4000);
+  const { rows, error, loading, lastUpdated } = useSwarmRuns(4000);
   const [query, setQuery] = useState('');
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return runs;
-    return runs.filter((r) => {
-      const haystack = [
-        r.swarmRunID,
-        r.pattern,
-        r.directive ?? '',
-        r.title ?? '',
-        r.source ?? '',
-        r.workspace,
-      ]
-        .join('|')
-        .toLowerCase();
-      return haystack.includes(q);
+    const base = q
+      ? rows.filter((r) => {
+          const m = r.meta;
+          const haystack = [
+            m.swarmRunID,
+            m.pattern,
+            m.directive ?? '',
+            m.title ?? '',
+            m.source ?? '',
+            m.workspace,
+            r.status,
+          ]
+            .join('|')
+            .toLowerCase();
+          return haystack.includes(q);
+        })
+      : rows;
+    // Sort by status rank (live first, unknown last) with createdAt
+    // descending as tiebreak. This pushes in-flight runs to the top where
+    // users are most likely to want them — the "what's happening right
+    // now" answer shouldn't require scrolling.
+    return [...base].sort((a, b) => {
+      const ra = STATUS_VISUAL[a.status].rank;
+      const rb = STATUS_VISUAL[b.status].rank;
+      if (ra !== rb) return ra - rb;
+      return b.meta.createdAt - a.meta.createdAt;
     });
-  }, [runs, query]);
+  }, [rows, query]);
+
+  const liveCount = useMemo(
+    () => rows.filter((r) => r.status === 'live').length,
+    [rows]
+  );
 
   const statusLabel = error
     ? 'offline'
     : loading && lastUpdated === null
       ? 'scanning…'
       : query
-        ? `${filtered.length} of ${runs.length}`
-        : `${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`;
+        ? `${filtered.length} of ${rows.length}`
+        : liveCount > 0
+          ? `${liveCount} live · ${rows.length} total`
+          : `${rows.length} ${rows.length === 1 ? 'run' : 'runs'}`;
 
   return (
     <Popover
@@ -128,18 +162,21 @@ export function SwarmRunsPicker({
           </div>
           <div className="px-3 h-5 hairline-b flex items-center gap-3 bg-ink-900/40">
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[52px] shrink-0">
+              status
+            </span>
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[42px] shrink-0">
               pat
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[132px] shrink-0">
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[124px] shrink-0">
               id
             </span>
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 flex-1 min-w-0">
               directive
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[44px] text-right shrink-0">
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[40px] text-right shrink-0">
               sess
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[68px] shrink-0">
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[64px] shrink-0">
               caps
             </span>
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[32px] text-right shrink-0">
@@ -150,63 +187,77 @@ export function SwarmRunsPicker({
             {error && !loading && (
               <li className="px-3 py-2 text-[11px] text-rust break-all">{error}</li>
             )}
-            {filtered.map((r) => {
-              const isCurrent = r.swarmRunID === currentSwarmRunID;
-              const bounds = formatBoundsShort(r);
+            {filtered.map((row) => {
+              const meta = row.meta;
+              const isCurrent = meta.swarmRunID === currentSwarmRunID;
+              const bounds = formatBoundsShort(meta);
+              const visual = STATUS_VISUAL[row.status];
               return (
-                <li key={r.swarmRunID}>
+                <li key={meta.swarmRunID}>
                   <Link
-                    href={`/?swarmRun=${r.swarmRunID}`}
+                    href={`/?swarmRun=${meta.swarmRunID}`}
                     onClick={() => close()}
                     className={clsx(
                       'px-3 h-7 flex items-center gap-3 hover:bg-ink-800/60 transition',
                       isCurrent && 'bg-iris/10 hover:bg-iris/15'
                     )}
                     title={[
-                      r.swarmRunID,
-                      r.workspace,
-                      r.directive ? `\n${r.directive}` : '',
+                      `status: ${row.status}`,
+                      meta.swarmRunID,
+                      meta.workspace,
+                      meta.directive ? `\n${meta.directive}` : '',
                     ].filter(Boolean).join('\n')}
                   >
-                    <span
-                      className={clsx(
-                        'font-mono text-[10px] uppercase tracking-widest2 w-[52px] shrink-0 whitespace-nowrap',
-                        r.pattern === 'none' ? 'text-fog-600' : 'text-iris'
-                      )}
-                    >
-                      {r.pattern}
+                    <span className="flex items-center gap-1.5 w-[52px] shrink-0">
+                      <span className={clsx('w-1.5 h-1.5 rounded-full', visual.dot)} />
+                      <span
+                        className={clsx(
+                          'font-mono text-[9.5px] uppercase tracking-widest2',
+                          visual.tone
+                        )}
+                      >
+                        {visual.label}
+                      </span>
                     </span>
                     <span
                       className={clsx(
-                        'font-mono text-[10px] tabular-nums shrink-0 w-[132px] whitespace-nowrap truncate',
+                        'font-mono text-[10px] uppercase tracking-widest2 w-[42px] shrink-0 whitespace-nowrap',
+                        meta.pattern === 'none' ? 'text-fog-600' : 'text-iris'
+                      )}
+                    >
+                      {meta.pattern}
+                    </span>
+                    <span
+                      className={clsx(
+                        'font-mono text-[10px] tabular-nums shrink-0 w-[124px] whitespace-nowrap truncate',
                         isCurrent ? 'text-iris' : 'text-fog-500'
                       )}
                     >
-                      {idTail(r.swarmRunID)}
+                      {idTail(meta.swarmRunID)}
                     </span>
                     <span className="text-[11.5px] text-fog-200 flex-1 min-w-0 whitespace-nowrap truncate">
-                      {directiveTeaser(r.directive)}
+                      {directiveTeaser(meta.directive)}
                     </span>
-                    <span className="font-mono text-[10px] text-fog-400 tabular-nums shrink-0 w-[44px] text-right">
-                      {r.sessionIDs.length}
+                    <span className="font-mono text-[10px] text-fog-400 tabular-nums shrink-0 w-[40px] text-right">
+                      {meta.sessionIDs.length}
                     </span>
-                    <span className="font-mono text-[10px] text-fog-600 tabular-nums shrink-0 w-[68px] truncate">
+                    <span className="font-mono text-[10px] text-fog-600 tabular-nums shrink-0 w-[64px] truncate">
                       {bounds || '—'}
                     </span>
                     <span className="font-mono text-[10px] text-fog-600 tabular-nums shrink-0 w-[32px] text-right">
-                      {fmtAge(r.createdAt)}
+                      {fmtAge(row.lastActivityTs ?? meta.createdAt)}
                     </span>
                   </Link>
                 </li>
               );
             })}
-            {!loading && !error && runs.length === 0 && (
+            {!loading && !error && rows.length === 0 && (
               <li className="px-3 py-3 text-[11px] text-fog-600 flex items-center gap-2">
                 <span className="w-1 h-1 rounded-full bg-fog-700" />
                 no runs yet — start one from the new run button
               </li>
             )}
-            {!loading && !error && runs.length > 0 && filtered.length === 0 && (
+            {!loading && !error && rows.length > 0 && filtered.length === 0 && (
               <li className="px-3 py-3 text-[11px] text-fog-600">
                 no runs match "{query}"
               </li>

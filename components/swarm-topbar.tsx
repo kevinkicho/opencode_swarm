@@ -3,13 +3,14 @@
 import clsx from 'clsx';
 import { useState } from 'react';
 import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
-import type { SwarmRunMeta } from '@/lib/swarm-run-types';
+import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
 import { StatsStream } from './ui/stats-stream';
 import { ProviderBadge } from './provider-badge';
 import { LiveSessionPicker } from './live-session-picker';
+import { STATUS_VISUAL } from './swarm-runs-picker';
 import { abortSessionBrowser } from '@/lib/opencode/live';
 import { compact } from '@/lib/format';
 
@@ -21,6 +22,7 @@ export function SwarmTopbar({
   liveSessionId,
   liveDirectory,
   swarmRunMeta,
+  swarmRunStatus,
 }: {
   run: RunMeta;
   providers: ProviderSummary[];
@@ -34,6 +36,11 @@ export function SwarmTopbar({
   // them separate preserves the "what was agreed at launch" vs "what the
   // dispatcher is enforcing right now" distinction.
   swarmRunMeta: SwarmRunMeta | null;
+  // Live-derived status from the runs poll. Null when we're not on a
+  // swarmRun URL or when the poll hasn't resolved yet. Rendered as the
+  // leading dot on the run-anchor chip so "is this run still going?" is
+  // answerable in one glance without opening the picker.
+  swarmRunStatus: SwarmRunStatus | null;
 }) {
   const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
   const goTierPct = Math.min(100, Math.round((run.goTier.used / run.goTier.cap) * 100));
@@ -58,7 +65,7 @@ export function SwarmTopbar({
 
       <nav className="flex items-center gap-2 pl-4 text-[12.5px] min-w-0 flex-1">
         <LiveSessionPicker title={run.title} />
-        {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} />}
+        {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} />}
         {liveSessionId && liveDirectory && run.status === 'active' && (
           <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
         )}
@@ -153,11 +160,22 @@ export function SwarmTopbar({
 // run's origin — mutating bounds mid-run happens via routing rules, not
 // here. The chip sits next to the session picker so the directive is one
 // glance away without having to open a drawer.
-function RunAnchorChip({ meta }: { meta: SwarmRunMeta }) {
+//
+// Leading dot reflects live-derived status from the runs poll (live / idle
+// / error / stale / unknown). When null, we render a neutral fog-700 dot —
+// the chip is still useful as an anchor even before the first poll lands.
+function RunAnchorChip({
+  meta,
+  status,
+}: {
+  meta: SwarmRunMeta;
+  status: SwarmRunStatus | null;
+}) {
   const directive = meta.directive?.trim() ?? '';
   const costCap = meta.bounds?.costCap;
   const minutesCap = meta.bounds?.minutesCap;
   const hasBounds = costCap != null || minutesCap != null;
+  const visual = status ? STATUS_VISUAL[status] : null;
 
   // Truncate the directive in the collapsed state but keep the newline
   // structure readable in the popover. The popover is the authoritative
@@ -178,6 +196,19 @@ function RunAnchorChip({ meta }: { meta: SwarmRunMeta }) {
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
               run anchor
             </span>
+            {visual && (
+              <span className="flex items-center gap-1 shrink-0">
+                <span className={clsx('w-1.5 h-1.5 rounded-full', visual.dot)} />
+                <span
+                  className={clsx(
+                    'font-mono text-[9.5px] uppercase tracking-widest2',
+                    visual.tone
+                  )}
+                >
+                  {visual.label}
+                </span>
+              </span>
+            )}
             <span
               className="ml-auto font-mono text-[10px] text-fog-600 tabular-nums truncate max-w-[220px]"
               title={meta.swarmRunID}
@@ -257,6 +288,13 @@ function RunAnchorChip({ meta }: { meta: SwarmRunMeta }) {
       )}
     >
       <button className="fluent-btn gap-1.5 min-w-0 max-w-[320px]" title={directive || meta.swarmRunID}>
+        <span
+          className={clsx(
+            'w-1.5 h-1.5 rounded-full shrink-0',
+            visual ? visual.dot : 'bg-fog-700'
+          )}
+          aria-label={visual ? `status: ${visual.label}` : 'status: unknown'}
+        />
         <span className="font-mono text-micro uppercase tracking-widest2 text-iris/80 shrink-0">
           run
         </span>

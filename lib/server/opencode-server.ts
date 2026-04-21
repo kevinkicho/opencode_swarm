@@ -17,6 +17,7 @@
 
 import { opencodeFetch } from '../opencode/client';
 import type { OpencodeSession } from '../opencode/client';
+import type { OpencodeMessage } from '../opencode/types';
 
 // Create a session scoped to `directory`. Opencode's POST /session accepts
 // an optional { title } body; omitting it lets opencode mint a placeholder
@@ -38,6 +39,31 @@ export async function createSessionServer(
     );
   }
   return (await res.json()) as OpencodeSession;
+}
+
+// Read session messages. The status deriver only needs the last assistant
+// message to classify a run, but opencode's /message endpoint always returns
+// the full history — there's no tail/limit param at this revision. At
+// prototype scale each call is a few KB, acceptable for a 4s poll over a
+// small ledger. If it starts to hurt, the fix is a server-side cache keyed
+// by (sessionID, time.updated) — see GET /api/swarm/run for the plan.
+export async function getSessionMessagesServer(
+  sessionId: string,
+  directory: string,
+  signal?: AbortSignal
+): Promise<OpencodeMessage[]> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await opencodeFetch(
+    `/session/${encodeURIComponent(sessionId)}/message?${qs}`,
+    { signal }
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `opencode session messages -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+    );
+  }
+  return (await res.json()) as OpencodeMessage[];
 }
 
 // Fire-and-forget prompt submission. Uses /prompt_async so the route handler
