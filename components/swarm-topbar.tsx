@@ -7,6 +7,7 @@ import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
 import { StatsStream } from './ui/stats-stream';
 import { ProviderBadge } from './provider-badge';
+import { LiveSessionPicker } from './live-session-picker';
 import { compact } from '@/lib/format';
 
 export function SwarmTopbar({
@@ -42,7 +43,7 @@ export function SwarmTopbar({
       <span className="w-px h-4 bg-ink-600" />
 
       <nav className="flex items-center gap-2 pl-4 text-[12.5px] min-w-0 flex-1">
-        <span className="text-fog-200 truncate">{run.title}</span>
+        <LiveSessionPicker title={run.title} />
       </nav>
 
       <div className="flex items-center gap-1 pr-1 h-full">
