@@ -90,6 +90,20 @@ export default function Page() {
   );
 }
 
+// Short relative-age formatter for palette hints — mirrors the runs
+// picker's `fmtAge` so both surfaces read identically. Kept inline here
+// rather than imported because the picker's helper isn't exported and it's
+// three trivial lines.
+function ageHint(ms: number): string {
+  const s = Math.floor((Date.now() - ms) / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h`;
+  return `${Math.floor(h / 24)}d`;
+}
+
 function PageInner() {
   const params = useSearchParams();
   // Two entry points resolve to the same live session:
@@ -216,6 +230,7 @@ function PageInner() {
         swarmRunID={swarmRunID}
         swarmRunMeta={swarmRun.meta}
         swarmRunStatus={currentRunStatus}
+        swarmRuns={runsSnapshot.rows}
       />
     </RoutingBoundsProvider>
   );
@@ -238,6 +253,7 @@ function PageBody({
   swarmRunID,
   swarmRunMeta,
   swarmRunStatus,
+  swarmRuns,
 }: {
   agents: Agent[];
   agentOrder: string[];
@@ -255,6 +271,7 @@ function PageBody({
   swarmRunID: string | null;
   swarmRunMeta: SwarmRunMeta | null;
   swarmRunStatus: SwarmRunStatus | null;
+  swarmRuns: import('@/lib/swarm-run-types').SwarmRunListRow[];
 }) {
   const router = useRouter();
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
@@ -287,6 +304,11 @@ function PageBody({
   // a live run — the rollup hasn't landed yet (DESIGN.md §7.6 — rollups are
   // written at session close). The retro page handles "no rollup yet"
   // gracefully, but showing the action during a run reads as a bug.
+  //
+  // Recent-retro entries lean on the same runsSnapshot the topbar polls, so
+  // this adds no extra request overhead. Cap at 8 — more than that, users
+  // should pop the runs picker for scan-style discovery. Excludes the
+  // current run since it already has its own entry above.
   const paletteActions = useMemo<PaletteAction[]>(() => {
     const out: PaletteAction[] = [];
     if (swarmRunID && swarmRunStatus && swarmRunStatus !== 'live' && swarmRunStatus !== 'unknown') {
@@ -299,8 +321,37 @@ function PageBody({
         onSelect: () => router.push(`/retro/${swarmRunID}`),
       });
     }
+    const recent = [...swarmRuns]
+      .filter(
+        (r) =>
+          r.meta.swarmRunID !== swarmRunID &&
+          r.status !== 'live' &&
+          r.status !== 'unknown'
+      )
+      .sort(
+        (a, b) =>
+          (b.lastActivityTs ?? b.meta.createdAt) -
+          (a.lastActivityTs ?? a.meta.createdAt)
+      )
+      .slice(0, 8);
+    for (const r of recent) {
+      const directive = r.meta.directive?.split('\n', 1)[0]?.trim() ?? '';
+      const teaser =
+        directive.length > 64
+          ? directive.slice(0, 64).replace(/\s+$/, '') + '…'
+          : directive || '(no directive)';
+      const age = ageHint(r.lastActivityTs ?? r.meta.createdAt);
+      out.push({
+        id: `retro:${r.meta.swarmRunID}`,
+        group: 'recent retros',
+        label: `retro · ${teaser}`,
+        hint: `${r.meta.pattern} · ${age}`,
+        tone: 'iris',
+        onSelect: () => router.push(`/retro/${r.meta.swarmRunID}`),
+      });
+    }
     return out;
-  }, [router, swarmRunID, swarmRunStatus]);
+  }, [router, swarmRunID, swarmRunStatus, swarmRuns]);
 
   // Routing bounds live in a provider so the modal can persist them to
   // localStorage. Cost cap is the only bound with a direct RunMeta field
