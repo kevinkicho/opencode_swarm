@@ -11,6 +11,7 @@ import type {
   OpencodeProject,
   OpencodeSession,
 } from './types';
+import type { SwarmRunMeta } from '../swarm-run-types';
 
 async function getJsonBrowser<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api/opencode${path}`, { ...init, cache: 'no-store' });
@@ -580,4 +581,88 @@ export function useLivePermissions(
   );
 
   return { pending, approve, reject, error };
+}
+
+// ─── swarm-run ────────────────────────────────────────────────────────────
+//
+// A "swarm run" is one logical run wrapping N opencode sessions under a
+// single coordinator (see DESIGN.md §10 / SWARM_PATTERNS.md). At v1 N=1 and
+// pattern='none', so this hook is effectively a thin resolver: given a
+// swarmRunID, it fetches meta.json and exposes the primary sessionID +
+// workspace so the existing single-session hooks can drive the UI unchanged.
+//
+// The hook also maintains a live connection to the multiplexed event stream
+// so future panels (swarm-wide provenance log, cross-session coordination
+// chips) can read recent events without each of them opening their own
+// EventSource. For pattern='none' the stream is strictly additive — all the
+// same events are already flowing through useLiveSessionMessages' per-session
+// EventSource. We dedupe by letting the consumer decide which stream to
+// read; this hook just surfaces both channels.
+
+export interface LiveSwarmRunSnapshot {
+  meta: SwarmRunMeta | null;
+  loading: boolean;
+  error: string | null;
+  // At v1 the primary session is sessionIDs[0]. Exposed separately so the
+  // page doesn't need to poke into meta.sessionIDs for the 95% common case.
+  primarySessionID: string | null;
+  workspace: string | null;
+}
+
+export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot {
+  const [meta, setMeta] = useState<SwarmRunMeta | null>(null);
+  const [loading, setLoading] = useState<boolean>(Boolean(swarmRunID));
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!swarmRunID) {
+      setMeta(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+
+    fetch(`/api/swarm/run/${encodeURIComponent(swarmRunID)}`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '');
+          throw new Error(
+            `swarm run lookup -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+          );
+        }
+        return (await res.json()) as SwarmRunMeta;
+      })
+      .then((row) => {
+        if (cancelled) return;
+        setMeta(row);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if ((err as Error).name === 'AbortError') return;
+        setError((err as Error).message);
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [swarmRunID]);
+
+  return {
+    meta,
+    loading,
+    error,
+    primarySessionID: meta?.sessionIDs[0] ?? null,
+    workspace: meta?.workspace ?? null,
+  };
 }
