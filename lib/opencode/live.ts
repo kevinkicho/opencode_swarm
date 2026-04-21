@@ -603,6 +603,12 @@ export interface LiveSwarmRunSnapshot {
   meta: SwarmRunMeta | null;
   loading: boolean;
   error: string | null;
+  // Dedicated 404 flag so callers can show a "run not found" surface
+  // instead of conflating it with transient network / server errors.
+  // This matters because a dead swarmRunID in the URL is a permanent
+  // state — retrying won't help, and silently falling back to mock data
+  // (which is what the page used to do) hides the broken link.
+  notFound: boolean;
   // At v1 the primary session is sessionIDs[0]. Exposed separately so the
   // page doesn't need to poke into meta.sessionIDs for the 95% common case.
   primarySessionID: string | null;
@@ -613,12 +619,14 @@ export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot
   const [meta, setMeta] = useState<SwarmRunMeta | null>(null);
   const [loading, setLoading] = useState<boolean>(Boolean(swarmRunID));
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState<boolean>(false);
 
   useEffect(() => {
     if (!swarmRunID) {
       setMeta(null);
       setLoading(false);
       setError(null);
+      setNotFound(false);
       return;
     }
 
@@ -626,12 +634,25 @@ export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot
     const controller = new AbortController();
     setLoading(true);
     setError(null);
+    setNotFound(false);
 
     fetch(`/api/swarm/run/${encodeURIComponent(swarmRunID)}`, {
       signal: controller.signal,
       cache: 'no-store',
     })
       .then(async (res) => {
+        // 404 is terminal for this swarmRunID — surface it as notFound so
+        // the page can render a dedicated screen. Every other non-ok
+        // response is an error (transient or server-side) and stays in
+        // the `error` channel.
+        if (res.status === 404) {
+          if (!cancelled) {
+            setNotFound(true);
+            setMeta(null);
+            setLoading(false);
+          }
+          return null;
+        }
         if (!res.ok) {
           const detail = await res.text().catch(() => '');
           throw new Error(
@@ -641,7 +662,7 @@ export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot
         return (await res.json()) as SwarmRunMeta;
       })
       .then((row) => {
-        if (cancelled) return;
+        if (cancelled || row === null) return;
         setMeta(row);
         setLoading(false);
       })
@@ -662,6 +683,7 @@ export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot
     meta,
     loading,
     error,
+    notFound,
     primarySessionID: meta?.sessionIDs[0] ?? null,
     workspace: meta?.workspace ?? null,
   };
