@@ -2,6 +2,7 @@
 
 import clsx from 'clsx';
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
 import { IconBranch, IconMilestone, IconSettings } from './icons';
@@ -12,6 +13,10 @@ import {
   type ZenModel,
   type ZenFamily,
 } from '@/lib/zen-catalog';
+import {
+  createSessionBrowser,
+  postSessionMessageBrowser,
+} from '@/lib/opencode/live';
 
 type BranchStrategy = 'push-same-branch' | 'push-new-branch' | 'local-only';
 type StartMode = 'dry-run' | 'live' | 'spectator';
@@ -58,6 +63,8 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const [branchName, setBranchName] = useState<string>(generateRunId);
   const [startMode, setStartMode] = useState<StartMode>('dry-run');
   const [launching, setLaunching] = useState(false);
+  const [launchError, setLaunchError] = useState<string | null>(null);
+  const router = useRouter();
 
   const totalAgents = useMemo(
     () => Object.values(teamCounts).reduce((a, n) => a + n, 0),
@@ -84,13 +91,27 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     return 'launch run';
   }, [launching, startMode]);
 
-  const handleLaunch = () => {
+  const handleLaunch = async () => {
     if (!canLaunch || launching) return;
     setLaunching(true);
-    setTimeout(() => {
-      setLaunching(false);
+    setLaunchError(null);
+    const directory = workspacePath.trim();
+    const prompt = directive.trim();
+    try {
+      // Honest plumbing: workspace → opencode ?directory=, directive → first
+      // prompt. source, team, bounds, branch strategy, start mode are
+      // aspirational UI — no opencode API backs them yet.
+      const session = await createSessionBrowser(directory);
+      if (prompt) {
+        await postSessionMessageBrowser(session.id, directory, prompt);
+      }
       onClose();
-    }, 900);
+      router.push(`/?session=${encodeURIComponent(session.id)}`);
+    } catch (err) {
+      setLaunchError((err as Error).message);
+    } finally {
+      setLaunching(false);
+    }
   };
 
   const bumpCount = (id: string, delta: number) => {
@@ -622,9 +643,11 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
               what this writes
             </div>
             <div className="text-[11px] text-fog-400 leading-snug">
-              one <span className="text-fog-200">swarm-run</span> record in L0, one child
-              session per agent in opencode. L2 rollup is written at close (§7.4). the swarm
-              can revise its own goals mid-run — the directive is a seed, not a contract.
+              wires: <span className="text-mint">workspace</span> → opencode session (
+              <span className="text-fog-600">POST /session?directory=</span>),{' '}
+              <span className="text-mint">directive</span> → first prompt. aspirational:{' '}
+              <span className="text-amber/80">source · team · bounds · branch · start mode</span>
+              {' '}— UI-only until opencode grows matching endpoints.
             </div>
           </div>
         </aside>
@@ -637,18 +660,24 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
         >
           cancel
         </button>
-        <span className="font-mono text-[10.5px] text-fog-700">
-          {canLaunch
-            ? 'team / bounds / directive optional · source + workspace anchor the run'
-            : sourceValue.trim() && !workspacePath.trim()
-              ? 'set a workspace to enable launch'
-              : branchStrategy === 'push-new-branch' &&
-                  !branchName.trim() &&
-                  sourceValue.trim() &&
-                  workspacePath.trim()
-                ? 'name the new branch (or switch to same-branch / local-only)'
-                : 'add a source to enable launch'}
-        </span>
+        {launchError ? (
+          <span className="font-mono text-[10.5px] text-rust truncate max-w-[420px]" title={launchError}>
+            launch failed: {launchError}
+          </span>
+        ) : (
+          <span className="font-mono text-[10.5px] text-fog-700">
+            {canLaunch
+              ? 'team / bounds / directive optional · source + workspace anchor the run'
+              : sourceValue.trim() && !workspacePath.trim()
+                ? 'set a workspace to enable launch'
+                : branchStrategy === 'push-new-branch' &&
+                    !branchName.trim() &&
+                    sourceValue.trim() &&
+                    workspacePath.trim()
+                  ? 'name the new branch (or switch to same-branch / local-only)'
+                  : 'add a source to enable launch'}
+          </span>
+        )}
         <button
           onClick={handleLaunch}
           disabled={!canLaunch || launching}

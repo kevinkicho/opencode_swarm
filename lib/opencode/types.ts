@@ -28,7 +28,8 @@ export type OpencodePartType =
   | 'reasoning'
   | 'tool'
   | 'step-start'
-  | 'step-finish';
+  | 'step-finish'
+  | 'patch';
 
 export interface OpencodeTokenUsage {
   total: number;
@@ -36,6 +37,13 @@ export interface OpencodeTokenUsage {
   output: number;
   reasoning: number;
   cache: { write: number; read: number };
+}
+
+// Discriminated by `name` — opencode sets this on the assistant message when a
+// turn ends abnormally. `MessageAbortedError` = user-triggered cancel.
+export interface OpencodeMessageError {
+  name: string;
+  data?: Record<string, unknown>;
 }
 
 export interface OpencodeMessageInfo {
@@ -52,6 +60,7 @@ export interface OpencodeMessageInfo {
   cost?: number;
   tokens?: OpencodeTokenUsage;
   finish?: string;
+  error?: OpencodeMessageError;
 }
 
 export interface OpencodePartBase {
@@ -89,14 +98,37 @@ export interface OpencodeStepFinishPart extends OpencodePartBase {
   cost: number;
   tokens: OpencodeTokenUsage;
 }
+// Emitted once per assistant turn that committed file edits. `files` names the
+// files touched in this turn; patch text lives only at the session level via
+// GET /session/{id}/diff (probed 2026-04-20: ?messageID=/?hash= are ignored).
+export interface OpencodePatchPart extends OpencodePartBase {
+  type: 'patch';
+  hash: string;
+  files: string[];
+}
 export type OpencodePart =
   | OpencodeTextPart
   | OpencodeReasoningPart
   | OpencodeToolPart
   | OpencodeStepStartPart
-  | OpencodeStepFinishPart;
+  | OpencodeStepFinishPart
+  | OpencodePatchPart;
 
 export interface OpencodeMessage {
   info: OpencodeMessageInfo;
   parts: OpencodePart[];
 }
+
+// Permission request emitted by opencode when a tool call requires user approval.
+// Matches Permission.Request in opencode's packages/opencode/src/permission/index.ts.
+export interface OpencodePermissionRequest {
+  id: string;
+  sessionID: string;
+  permission: string;
+  patterns: readonly string[];
+  metadata: Record<string, unknown>;
+  always: readonly string[];
+  tool?: { messageID: string; callID: string };
+}
+
+export type OpencodePermissionReply = 'once' | 'always' | 'reject';

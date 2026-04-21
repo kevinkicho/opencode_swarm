@@ -56,3 +56,7 @@ are all welcome. Before opening a feature PR, read `DESIGN.md` §12 — the one 
 ## License
 
 TBD
+
+## Connection
+
+Testing opencode-app network socket connection.

@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentMessage, PartType, ToolName } from '@/lib/swarm-types';
 import { IconSearch, IconFilter } from './icons';
 import { ProviderBadge } from './provider-badge';
@@ -89,6 +89,11 @@ export function SwarmTimeline({
   const [partFilter, setPartFilter] = useState<PartType | 'all'>('all');
   const { clockSec } = usePlayback();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Anchor-tracking refs for stick-to-bottom: `firstIdRef` distinguishes a
+  // fresh session (forces a jump), `lastIdRef` triggers follow-on auto-scroll
+  // only when the user was already near the bottom.
+  const firstIdRef = useRef<string | null>(null);
+  const lastIdRef = useRef<string | null>(null);
 
   const agentIndex = useMemo(() => {
     const m = new Map<string, number>();
@@ -151,6 +156,29 @@ export function SwarmTimeline({
 
   const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + TOP_PAD * 2;
   const totalWidth = agentOrder.length * LANE_WIDTH;
+
+  // Stick-to-bottom: on a fresh session (first message id changes) always
+  // land at the latest; on new messages within a session follow only if the
+  // user was within ~140px of the bottom so manual scroll-ups aren't yanked.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || messages.length === 0) return;
+    const firstId = messages[0].id;
+    const lastId = messages[messages.length - 1].id;
+
+    if (firstId !== firstIdRef.current) {
+      el.scrollTop = el.scrollHeight;
+      firstIdRef.current = firstId;
+      lastIdRef.current = lastId;
+      return;
+    }
+
+    if (lastId !== lastIdRef.current) {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (distance < 140) el.scrollTop = el.scrollHeight;
+      lastIdRef.current = lastId;
+    }
+  }, [messages, totalHeight]);
 
   return (
     <section className="relative flex flex-col min-w-0 min-h-0 bg-ink-800">

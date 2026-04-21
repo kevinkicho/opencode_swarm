@@ -3,9 +3,11 @@
 // Browser-side opencode client. Talks to our Next.js proxy at `/api/opencode/*`
 // — the proxy injects Basic auth server-side, so no credentials ship here.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   OpencodeMessage,
+  OpencodePermissionReply,
+  OpencodePermissionRequest,
   OpencodeProject,
   OpencodeSession,
 } from './types';
@@ -35,25 +37,34 @@ export function getSessionsByDirectoryBrowser(
 export async function getAllSessionsBrowser(
   init: RequestInit = {}
 ): Promise<OpencodeSession[]> {
-  const projects = await getProjectsBrowser(init);
-  const batches = await Promise.all(
-    projects.map((p) =>
-      getSessionsByDirectoryBrowser(p.worktree, init).catch(
-        () => [] as OpencodeSession[]
+  // Probed 2026-04-21: bare GET /session only returns projectID="global"
+  // sessions — project-scoped sessions (the ones opencode's CLI creates when
+  // launched inside a registered worktree) are omitted. To get a complete
+  // list we have to enumerate projects and fan out with ?directory=<worktree>.
+  const [globals, projects] = await Promise.all([
+    getJsonBrowser<OpencodeSession[]>('/session', init),
+    getProjectsBrowser(init).catch(() => [] as OpencodeProject[]),
+  ]);
+  const scoped = await Promise.all(
+    projects
+      .filter((p) => p.id !== 'global' && p.worktree)
+      .map((p) =>
+        getSessionsByDirectoryBrowser(p.worktree, init).catch(
+          () => [] as OpencodeSession[]
+        )
       )
-    )
   );
+  // Deliberately NOT sorted here: with many agents firing messages, sorting
+  // by time.updated would make the picker reshuffle constantly. The consumer
+  // applies an explicit sort (or leaves the natural merge order).
   const seen = new Set<string>();
-  const rows: OpencodeSession[] = [];
-  for (const batch of batches) {
-    for (const s of batch) {
-      if (seen.has(s.id)) continue;
-      seen.add(s.id);
-      rows.push(s);
-    }
+  const unique: OpencodeSession[] = [];
+  for (const s of [...globals, ...scoped.flat()]) {
+    if (seen.has(s.id)) continue;
+    seen.add(s.id);
+    unique.push(s);
   }
-  rows.sort((a, b) => b.time.updated - a.time.updated);
-  return rows;
+  return unique;
 }
 
 export function getSessionMessagesBrowser(
@@ -64,6 +75,94 @@ export function getSessionMessagesBrowser(
     `/session/${encodeURIComponent(sessionId)}/message`,
     init
   );
+}
+
+// Session-aggregate diff. Opencode returns one entry per changed file with a
+// unified-diff string spanning the whole session. Note: ?messageID= and ?hash=
+// are accepted by opencode but ignored (probed 2026-04-20), so per-turn
+// scoping has to come from patch parts' file lists client-side.
+export function getSessionDiffBrowser(
+  sessionId: string,
+  init: RequestInit = {}
+): Promise<Array<{ file: string; patch: string }>> {
+  return getJsonBrowser<Array<{ file: string; patch: string }>>(
+    `/session/${encodeURIComponent(sessionId)}/diff`,
+    init
+  );
+}
+
+// Create a new session scoped to `directory`. Returns the new session — the
+// caller can then POST a first prompt to it via postSessionMessageBrowser.
+export async function createSessionBrowser(
+  directory: string,
+  title?: string,
+  init: RequestInit = {}
+): Promise<OpencodeSession> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await fetch(`/api/opencode/session?${qs}`, {
+    ...init,
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+    body: JSON.stringify(title ? { title } : {}),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `opencode session create -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+    );
+  }
+  return (await res.json()) as OpencodeSession;
+}
+
+// Cancels any in-flight model turn for this session. Opencode's abort is a
+// soft cancel — already-committed tool calls finish, but no further reasoning
+// or tool invocations fire. Returns when the server acknowledges.
+export async function abortSessionBrowser(
+  sessionId: string,
+  directory: string,
+  init: RequestInit = {}
+): Promise<void> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await fetch(
+    `/api/opencode/session/${encodeURIComponent(sessionId)}/abort?${qs}`,
+    {
+      ...init,
+      method: 'POST',
+    }
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `opencode abort -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+    );
+  }
+}
+
+// Fire-and-forget prompt submission. Uses /prompt_async so the composer doesn't
+// block on the full model turn — SSE surfaces parts as they stream in.
+// Instance-scoped via ?directory=, same as every other instance route.
+export async function postSessionMessageBrowser(
+  sessionId: string,
+  directory: string,
+  text: string,
+  init: RequestInit = {}
+): Promise<void> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await fetch(
+    `/api/opencode/session/${encodeURIComponent(sessionId)}/prompt_async?${qs}`,
+    {
+      ...init,
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+      body: JSON.stringify({
+        parts: [{ type: 'text', text }],
+      }),
+    }
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`opencode prompt -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
+  }
 }
 
 export interface LiveSnapshot {
@@ -233,6 +332,54 @@ export function useLiveSession(
   return { data, error, loading };
 }
 
+// Lazy diff fetch: only runs when `enabled` flips true (e.g. when the drawer
+// opens). Refetches when the session's lastUpdated changes so edits from a
+// newly-finished turn appear without a manual refresh.
+export function useSessionDiff(
+  sessionId: string | null,
+  enabled: boolean,
+  lastUpdated: number | null
+): {
+  diffs: Array<{ file: string; patch: string }> | null;
+  error: string | null;
+  loading: boolean;
+} {
+  const [diffs, setDiffs] = useState<Array<{ file: string; patch: string }> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!sessionId || !enabled) {
+      setDiffs(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    setLoading(true);
+    getSessionDiffBrowser(sessionId, { signal: controller.signal })
+      .then((rows) => {
+        if (cancelled) return;
+        setDiffs(rows);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled || (err as Error).name === 'AbortError') return;
+        setError((err as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [sessionId, enabled, lastUpdated]);
+
+  return { diffs, error, loading };
+}
+
 // Polling hook — fires immediately, then every `intervalMs`. Aborts the in-flight
 // request on unmount / interval-change. Never shows stale data with a new error.
 export function useLiveSessions(intervalMs = 3000): {
@@ -279,4 +426,151 @@ export function useLiveSessions(intervalMs = 3000): {
   }, [intervalMs]);
 
   return { data, error, loading };
+}
+
+// --- Permissions ---------------------------------------------------------
+// opencode emits `permission.asked` when a tool call needs approval and blocks
+// the tool until `permission.replied` resolves it. Instance-scoped like every
+// other instance route — GET/POST both require ?directory=.
+
+export function getPendingPermissionsBrowser(
+  directory: string,
+  init: RequestInit = {}
+): Promise<OpencodePermissionRequest[]> {
+  const qs = new URLSearchParams({ directory }).toString();
+  return getJsonBrowser<OpencodePermissionRequest[]>(`/permission?${qs}`, init);
+}
+
+export async function replyPermissionBrowser(
+  requestID: string,
+  directory: string,
+  reply: OpencodePermissionReply,
+  message?: string
+): Promise<void> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await fetch(
+    `/api/opencode/permission/${encodeURIComponent(requestID)}/reply?${qs}`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(message ? { reply, message } : { reply }),
+    }
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `opencode permission reply -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+    );
+  }
+}
+
+export interface LivePermissions {
+  pending: OpencodePermissionRequest[];
+  approve: (requestID: string, scope: 'once' | 'always') => Promise<void>;
+  reject: (requestID: string, message?: string) => Promise<void>;
+  error: string | null;
+}
+
+// Tracks pending permission requests for one session. Hydrates via GET on
+// mount, then mutates local state from SSE `permission.asked` / `permission.replied`
+// — no refetch needed because the asked event carries the full Request payload.
+export function useLivePermissions(
+  sessionId: string | null,
+  directory: string | null
+): LivePermissions {
+  const [pending, setPending] = useState<OpencodePermissionRequest[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const directoryRef = useRef<string | null>(directory);
+  directoryRef.current = directory;
+
+  useEffect(() => {
+    if (!sessionId || !directory) {
+      setPending([]);
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+
+    getPendingPermissionsBrowser(directory, { signal: controller.signal })
+      .then((rows) => {
+        if (cancelled) return;
+        setPending(rows.filter((r) => r.sessionID === sessionId));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        if ((err as Error).name === 'AbortError') return;
+        setError((err as Error).message);
+      });
+
+    const qs = new URLSearchParams({ directory }).toString();
+    const es = new EventSource(`/api/opencode/event?${qs}`);
+    es.onmessage = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.data) as {
+          type?: string;
+          properties?: unknown;
+        };
+        if (parsed.type === 'permission.asked') {
+          const req = parsed.properties as OpencodePermissionRequest;
+          if (req.sessionID !== sessionId) return;
+          setPending((prev) =>
+            prev.some((p) => p.id === req.id) ? prev : [...prev, req]
+          );
+        } else if (parsed.type === 'permission.replied') {
+          const payload = parsed.properties as {
+            sessionID: string;
+            requestID: string;
+          };
+          if (payload.sessionID !== sessionId) return;
+          setPending((prev) => prev.filter((p) => p.id !== payload.requestID));
+        }
+      } catch {
+        // heartbeats / connected frames — ignore
+      }
+    };
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      es.close();
+    };
+  }, [sessionId, directory]);
+
+  const approve = useCallback(
+    async (requestID: string, scope: 'once' | 'always') => {
+      const dir = directoryRef.current;
+      if (!dir) return;
+      // optimistic remove — the replied event will confirm, and if the POST
+      // fails we surface the error and put it back
+      const snapshot = pending;
+      setPending((prev) => prev.filter((p) => p.id !== requestID));
+      try {
+        await replyPermissionBrowser(requestID, dir, scope);
+      } catch (err) {
+        setError((err as Error).message);
+        setPending(snapshot);
+      }
+    },
+    [pending]
+  );
+
+  const reject = useCallback(
+    async (requestID: string, message?: string) => {
+      const dir = directoryRef.current;
+      if (!dir) return;
+      const snapshot = pending;
+      setPending((prev) => prev.filter((p) => p.id !== requestID));
+      try {
+        await replyPermissionBrowser(requestID, dir, 'reject', message);
+      } catch (err) {
+        setError((err as Error).message);
+        setPending(snapshot);
+      }
+    },
+    [pending]
+  );
+
+  return { pending, approve, reject, error };
 }

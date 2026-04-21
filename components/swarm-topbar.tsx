@@ -1,6 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
+import { useState } from 'react';
 import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
@@ -8,6 +9,7 @@ import { Popover } from './ui/popover';
 import { StatsStream } from './ui/stats-stream';
 import { ProviderBadge } from './provider-badge';
 import { LiveSessionPicker } from './live-session-picker';
+import { abortSessionBrowser } from '@/lib/opencode/live';
 import { compact } from '@/lib/format';
 
 export function SwarmTopbar({
@@ -15,11 +17,15 @@ export function SwarmTopbar({
   providers,
   onOpenPalette,
   onOpenSettings,
+  liveSessionId,
+  liveDirectory,
 }: {
   run: RunMeta;
   providers: ProviderSummary[];
   onOpenPalette: () => void;
   onOpenSettings: () => void;
+  liveSessionId: string | null;
+  liveDirectory: string | null;
 }) {
   const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
   const goTierPct = Math.min(100, Math.round((run.goTier.used / run.goTier.cap) * 100));
@@ -44,6 +50,9 @@ export function SwarmTopbar({
 
       <nav className="flex items-center gap-2 pl-4 text-[12.5px] min-w-0 flex-1">
         <LiveSessionPicker title={run.title} />
+        {liveSessionId && liveDirectory && run.status === 'active' && (
+          <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
+        )}
       </nav>
 
       <div className="flex items-center gap-1 pr-1 h-full">
@@ -127,6 +136,59 @@ export function SwarmTopbar({
         </Tooltip>
       </div>
     </header>
+  );
+}
+
+function AbortChip({
+  sessionId,
+  directory,
+}: {
+  sessionId: string;
+  directory: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const doAbort = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await abortSessionBrowser(sessionId, directory);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Tooltip
+      side="bottom"
+      content={
+        error ? (
+          <span className="font-mono text-[10.5px] text-rust">{error}</span>
+        ) : (
+          <span className="font-mono text-[10.5px] text-fog-300">
+            cancel this run — already-committed tool calls finish, no further reasoning
+          </span>
+        )
+      }
+    >
+      <button
+        onClick={doAbort}
+        disabled={busy}
+        className={clsx(
+          'h-6 px-2 rounded hairline font-mono text-[10px] uppercase tracking-widest2 transition flex items-center gap-1.5 shrink-0',
+          busy
+            ? 'bg-ink-800 border-ink-700 text-fog-600 cursor-wait'
+            : 'bg-ink-900 border-rust/30 text-rust hover:bg-rust/10 hover:border-rust/50',
+        )}
+      >
+        <span className={clsx('w-1.5 h-1.5 rounded-full', busy ? 'bg-fog-700 animate-pulse' : 'bg-rust')} />
+        {busy ? 'aborting' : 'abort'}
+      </button>
+    </Tooltip>
   );
 }
 

@@ -14,6 +14,7 @@ import type {
   TodoItem,
   TodoStatus,
 } from '../swarm-types';
+import type { DiffData, DiffHunk, DiffLine } from '../types';
 import type {
   OpencodeMessage,
   OpencodePart,
@@ -67,6 +68,15 @@ function toolStateFrom(state: unknown): ToolState {
   return 'completed';
 }
 
+// opencode's abort path sets tool state to { status: "error", metadata: { interrupted: true } }.
+// Distinguish these from natural errors so the timeline can render them as abandoned, not failed.
+function isInterruptedTool(state: unknown): boolean {
+  if (!state || typeof state !== 'object') return false;
+  const meta = (state as { metadata?: unknown }).metadata;
+  if (!meta || typeof meta !== 'object') return false;
+  return (meta as { interrupted?: unknown }).interrupted === true;
+}
+
 function fmtTs(ms: number, anchor: number): string {
   const delta = Math.max(0, Math.floor((ms - anchor) / 1000));
   const m = Math.floor(delta / 60);
@@ -93,6 +103,12 @@ function synthesizeTitle(part: OpencodePart): string {
     case 'tool': return part.tool ?? 'tool';
     case 'step-start': return 'step start';
     case 'step-finish': return `step finish · ${part.reason}`;
+    case 'patch': {
+      const n = part.files.length;
+      return n === 1
+        ? `patch · ${part.files[0]}`
+        : `patch · ${n} files`;
+    }
     default: return 'event';
   }
 }
@@ -220,8 +236,10 @@ export function toMessages(
       const partType = normalizePart(part.type);
       const toolName = part.type === 'tool' ? normalizeTool(part.tool) : undefined;
       const toolState = part.type === 'tool' ? toolStateFrom(part.state) : undefined;
+      const interrupted = part.type === 'tool' && isInterruptedTool(part.state);
       const status: AgentMessage['status'] =
-        toolState === 'error' ? 'error'
+        interrupted ? 'abandoned'
+        : toolState === 'error' ? 'error'
         : toolState === 'pending' || toolState === 'running' ? 'running'
         : 'complete';
 
@@ -247,6 +265,25 @@ export function toMessages(
         ),
         tokens: partTokens,
         status,
+        threadId: m.info.id,
+      });
+    }
+
+    // Mirror opencode's "Interrupted" strip: when the assistant turn is tagged
+    // with MessageAbortedError, emit a synthetic row so the timeline shows
+    // where the user cancelled.
+    if (role === 'assistant' && m.info.error?.name === 'MessageAbortedError') {
+      const completedMs = m.info.time.completed ?? m.info.time.created;
+      const msg = (m.info.error.data?.message as string | undefined) ?? 'turn cancelled by user';
+      out.push({
+        id: `${m.info.id}_interrupted`,
+        fromAgentId: isHumanAgentId(fromAgentId) ? 'human' : fromAgentId,
+        toAgentIds,
+        part: 'text',
+        title: 'interrupted',
+        body: msg,
+        timestamp: fmtTs(completedMs, anchor),
+        status: 'abandoned',
         threadId: m.info.id,
       });
     }
@@ -280,10 +317,19 @@ export function toRunMeta(
         ? `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`
         : `${Math.floor(elapsedSec / 3600)}h ${Math.floor((elapsedSec % 3600) / 60)}m`;
 
+  // "active" when either (a) the last message is a user message — prompt is
+  // committed but opencode hasn't attached the assistant message yet, or
+  // (b) the last assistant message has no completed timestamp — turn in flight.
+  // Abort path, loading state, and mid-run chips all key off this.
+  const lastMessage = messages[messages.length - 1];
+  const isRunning =
+    !!lastMessage &&
+    (lastMessage.info.role === 'user' || !lastMessage.info.time.completed);
+
   return {
     id: session?.id ?? 'run_live',
     title: session?.title ?? 'live session',
-    status: 'active',
+    status: isRunning ? 'active' : 'done',
     started: new Date(startedMs).toLocaleString(undefined, {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     }),
@@ -346,6 +392,155 @@ export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
     content: t.content,
     status: mapTodoStatus(t.status),
   }));
+}
+
+// One entry per assistant turn that committed file edits. The diff viewer
+// uses this to build the turn list. `files` comes from the patch part, which
+// is authoritative for which files this specific turn touched. Diff *text*
+// has to be sliced from the session-aggregate response (see filterDiffsForTurn).
+export interface LiveTurn {
+  id: string;         // messageID of the assistant turn
+  sha: string;        // short patch hash — stands in for a git sha in the UI
+  title: string;      // first-line of the user prompt that triggered this turn
+  summary?: string;   // first-line of the assistant text response, when present
+  timestamp: string;  // "HH:MM" local time of turn completion
+  agent: string;      // assistant agent name
+  status: 'success' | 'in_progress' | 'failure';
+  files: string[];    // files this turn touched — from patch.files
+  tokens?: number;
+  cost?: number;
+}
+
+export function toLiveTurns(messages: OpencodeMessage[]): LiveTurn[] {
+  const turns: LiveTurn[] = [];
+  // Walk messages in pairs — the user prompt that preceded an assistant turn
+  // becomes the turn's title, since that's what the human asked for.
+  let lastUserText: string | undefined;
+
+  for (const m of messages) {
+    if (m.info.role === 'user') {
+      const text = firstTextPart(m.parts);
+      if (text) lastUserText = text;
+      continue;
+    }
+    if (m.info.role !== 'assistant') continue;
+
+    const patches = m.parts.filter((p): p is Extract<OpencodePart, { type: 'patch' }> => p.type === 'patch');
+    if (patches.length === 0) continue;
+
+    const files = Array.from(new Set(patches.flatMap((p) => p.files)));
+    const hash = patches[patches.length - 1].hash;
+    const responseText = firstTextPart(m.parts);
+
+    const completedMs = m.info.time.completed ?? m.info.time.created;
+    const status: LiveTurn['status'] = m.info.error
+      ? 'failure'
+      : m.info.time.completed
+        ? 'success'
+        : 'in_progress';
+
+    turns.push({
+      id: m.info.id,
+      sha: hash.slice(0, 7),
+      title: lastUserText ?? responseText ?? 'turn',
+      summary: responseText !== lastUserText ? responseText : undefined,
+      timestamp: fmtClock(completedMs),
+      agent: m.info.agent ?? 'assistant',
+      status,
+      files,
+      tokens: m.info.tokens?.total,
+      cost: m.info.cost,
+    });
+  }
+
+  return turns;
+}
+
+function firstTextPart(parts: OpencodePart[]): string | undefined {
+  for (const p of parts) {
+    if (p.type === 'text' && p.text.trim()) return firstLine(p.text, 120);
+  }
+  return undefined;
+}
+
+function fmtClock(ms: number): string {
+  const d = new Date(ms);
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+// Parses opencode's unified-diff string into the shape the existing DiffView
+// component renders. Tolerates the "Index:" + "====" preamble that opencode
+// emits before the standard --- / +++ / @@ hunks.
+export function parseUnifiedDiff(file: string, patch: string): DiffData {
+  const lines = patch.split(/\r?\n/);
+  const hunks: DiffHunk[] = [];
+  let additions = 0;
+  let deletions = 0;
+  let current: DiffHunk | null = null;
+  let oldLine = 0;
+  let newLine = 0;
+
+  for (const raw of lines) {
+    if (raw.startsWith('@@')) {
+      // @@ -oldStart,oldCount +newStart,newCount @@
+      const match = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+      if (!match) continue;
+      oldLine = parseInt(match[1], 10);
+      newLine = parseInt(match[2], 10);
+      current = { header: raw, lines: [] };
+      hunks.push(current);
+      continue;
+    }
+    if (!current) continue;
+    if (raw.startsWith('---') || raw.startsWith('+++') || raw.startsWith('Index:') || raw.startsWith('===')) {
+      continue;
+    }
+    if (raw.startsWith('\\')) {
+      // "\ No newline at end of file" — skip
+      continue;
+    }
+    const prefix = raw[0];
+    const text = raw.slice(1);
+    let entry: DiffLine;
+    if (prefix === '+') {
+      entry = { type: 'add', num: newLine, text };
+      newLine += 1;
+      additions += 1;
+    } else if (prefix === '-') {
+      entry = { type: 'remove', num: oldLine, text };
+      oldLine += 1;
+      deletions += 1;
+    } else {
+      // space-prefixed context line, or an empty line inside a hunk (treat as context)
+      entry = { type: 'context', num: newLine, text };
+      oldLine += 1;
+      newLine += 1;
+    }
+    current.lines.push(entry);
+  }
+
+  return { file, additions, deletions, hunks };
+}
+
+// Opencode's diff endpoint returns the session-aggregate delta per file, not
+// per-turn. To scope a turn, filter the aggregate to just the files that turn's
+// patch part named. Diff *text* is still session-wide for those files — call
+// out that caveat in the UI.
+export function parseSessionDiffs(
+  diffs: Array<{ file: string; patch: string }>
+): DiffData[] {
+  return diffs.map((d) => parseUnifiedDiff(d.file, d.patch));
+}
+
+export function filterDiffsForTurn(
+  allDiffs: DiffData[],
+  turnFiles: string[]
+): DiffData[] {
+  if (turnFiles.length === 0) return [];
+  const set = new Set(turnFiles);
+  return allDiffs.filter((d) => set.has(d.file));
 }
 
 export function toProviderSummary(

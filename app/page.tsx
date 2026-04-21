@@ -9,23 +9,35 @@ import { Inspector } from '@/components/inspector';
 import { CommandPalette } from '@/components/command-palette';
 import { RoutingModal } from '@/components/routing-modal';
 import { CommitHistory } from '@/components/commit-history';
+import { LiveCommitHistory } from '@/components/live-commit-history';
 import { SpawnAgentModal } from '@/components/spawn-agent-modal';
 import { GlossaryModal } from '@/components/glossary-modal';
 import { NewRunModal } from '@/components/new-run-modal';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
+import { PermissionStrip } from '@/components/permission-strip';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
 import { PlaybackProvider, tsToSec } from '@/lib/playback-context';
 import { ProviderStatsProvider } from '@/lib/provider-context';
-import { useOpencodeHealth, useLiveSession } from '@/lib/opencode/live';
+import {
+  useOpencodeHealth,
+  useLiveSession,
+  useLivePermissions,
+  useSessionDiff,
+  postSessionMessageBrowser,
+} from '@/lib/opencode/live';
 import {
   toAgents,
   toMessages,
   toRunMeta,
   toRunPlan,
   toProviderSummary,
+  toLiveTurns,
+  parseSessionDiffs,
+  type LiveTurn,
 } from '@/lib/opencode/transform';
+import type { DiffData } from '@/lib/types';
 import {
   agents as mockAgents,
   agentOrder as mockAgentOrder,
@@ -44,6 +56,7 @@ interface SwarmView {
   runMeta: RunMeta;
   providerSummary: ProviderSummary[];
   runPlan: TodoItem[];
+  liveTurns: LiveTurn[];
   isLive: boolean;
 }
 
@@ -59,6 +72,8 @@ function PageInner() {
   const params = useSearchParams();
   const sessionId = params.get('session');
   const { data: liveData } = useLiveSession(sessionId);
+  const liveDirectory = liveData?.session?.directory ?? null;
+  const permissions = useLivePermissions(sessionId, liveDirectory);
 
   const view: SwarmView = useMemo(() => {
     if (sessionId && liveData) {
@@ -71,6 +86,7 @@ function PageInner() {
         runMeta: toRunMeta(liveData.session, liveData.messages),
         providerSummary: toProviderSummary(agents, liveData.messages),
         runPlan: toRunPlan(liveData.messages),
+        liveTurns: toLiveTurns(liveData.messages),
         isLive: true,
       };
     }
@@ -81,11 +97,12 @@ function PageInner() {
       runMeta: mockRunMeta,
       providerSummary: mockProviderSummary,
       runPlan: mockRunPlan,
+      liveTurns: [],
       isLive: false,
     };
   }, [sessionId, liveData]);
 
-  const { agents, agentOrder, messages, runMeta, providerSummary, runPlan } = view;
+  const { agents, agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns, isLive } = view;
 
   const paletteNodes: TimelineNode[] = useMemo(
     () =>
@@ -130,6 +147,12 @@ function PageInner() {
       runPlan={runPlan}
       paletteNodes={paletteNodes}
       runDuration={runDuration}
+      liveSessionId={sessionId}
+      liveDirectory={liveDirectory}
+      permissions={permissions}
+      liveTurns={liveTurns}
+      liveLastUpdated={liveData?.lastUpdated ?? null}
+      isLive={isLive}
     />
   );
 }
@@ -143,6 +166,12 @@ function PageBody({
   runPlan,
   paletteNodes,
   runDuration,
+  liveSessionId,
+  liveDirectory,
+  permissions,
+  liveTurns,
+  liveLastUpdated,
+  isLive,
 }: {
   agents: Agent[];
   agentOrder: string[];
@@ -152,6 +181,12 @@ function PageBody({
   runPlan: TodoItem[];
   paletteNodes: TimelineNode[];
   runDuration: number;
+  liveSessionId: string | null;
+  liveDirectory: string | null;
+  permissions: ReturnType<typeof useLivePermissions>;
+  liveTurns: LiveTurn[];
+  liveLastUpdated: number | null;
+  isLive: boolean;
 }) {
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -162,6 +197,19 @@ function PageBody({
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [newRunOpen, setNewRunOpen] = useState(false);
+
+  // Only fetch the diff when the live drawer is actually open; refetch when
+  // a new turn lands. Returns null in non-live mode so the mock drawer keeps
+  // using its baked-in commit data.
+  const {
+    diffs: rawDiffs,
+    loading: diffLoading,
+    error: diffError,
+  } = useSessionDiff(isLive ? liveSessionId : null, historyOpen, liveLastUpdated);
+  const liveDiffs: DiffData[] | null = useMemo(
+    () => (rawDiffs ? parseSessionDiffs(rawDiffs) : null),
+    [rawDiffs]
+  );
 
   const focusMessage = useCallback((id: string) => {
     setFocusedMsgId((prev) => {
@@ -238,6 +286,8 @@ function PageBody({
         providers={providerSummary}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenSettings={() => setRoutingOpen(true)}
+        liveSessionId={liveSessionId}
+        liveDirectory={liveDirectory}
       />
 
       <main className="flex-1 grid min-h-0" style={{ gridTemplateColumns: '260px 1fr' }}>
@@ -265,9 +315,22 @@ function PageBody({
         />
       </main>
 
+      <PermissionStrip
+        pending={permissions.pending}
+        onApprove={permissions.approve}
+        onReject={permissions.reject}
+        error={permissions.error}
+      />
+
       <SwarmComposer
         agents={agents}
         onSend={(target: ComposerTarget, body: string) => {
+          if (liveSessionId && liveDirectory) {
+            postSessionMessageBrowser(liveSessionId, liveDirectory, body).catch(
+              (err) => console.error('[composer] opencode post failed', err)
+            );
+            return;
+          }
           console.info('[composer]', target, body);
         }}
       />
@@ -306,7 +369,18 @@ function PageBody({
 
       <RoutingModal open={routingOpen} onClose={() => setRoutingOpen(false)} />
 
-      <CommitHistory open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      {isLive ? (
+        <LiveCommitHistory
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          turns={liveTurns}
+          diffs={liveDiffs}
+          loading={diffLoading}
+          error={diffError}
+        />
+      ) : (
+        <CommitHistory open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      )}
 
       <SpawnAgentModal open={spawnOpen} onClose={() => setSpawnOpen(false)} />
 
