@@ -14,16 +14,16 @@ import {
   type ZenFamily,
 } from '@/lib/zen-catalog';
 import {
-  createSessionBrowser,
-  postSessionMessageBrowser,
-} from '@/lib/opencode/live';
-import {
   patternMeta,
   patternAccentText,
   patternAccentBorder,
   type PatternMeta,
 } from '@/lib/swarm-patterns';
 import type { SwarmPattern } from '@/lib/swarm-types';
+import type {
+  SwarmRunRequest,
+  SwarmRunResponse,
+} from '@/lib/swarm-run-types';
 
 type BranchStrategy = 'push-same-branch' | 'push-new-branch' | 'local-only';
 type StartMode = 'dry-run' | 'live' | 'spectator';
@@ -113,16 +113,35 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
       firstLine.length > 80
         ? firstLine.slice(0, 77).trimEnd() + '…'
         : firstLine || undefined;
+    // Honest plumbing: workspace → opencode ?directory=, directive → first
+    // prompt. source, pattern (when != 'none'), team, bounds, branch
+    // strategy, start mode are recorded into meta.json but don't drive
+    // runtime behavior yet — the server reads them for later replay.
+    const body: SwarmRunRequest = {
+      pattern,
+      workspace: directory,
+    };
+    if (sourceValue.trim()) body.source = sourceValue.trim();
+    if (prompt) body.directive = prompt;
+    if (title) body.title = title;
+    if (totalAgents > 0) body.teamSize = totalAgents;
+    if (!unbounded) body.bounds = { costCap, minutesCap };
     try {
-      // Honest plumbing: workspace → opencode ?directory=, directive → first
-      // prompt. source, team, bounds, branch strategy, start mode are
-      // aspirational UI — no opencode API backs them yet.
-      const session = await createSessionBrowser(directory, title);
-      if (prompt) {
-        await postSessionMessageBrowser(session.id, directory, prompt);
+      const res = await fetch('/api/swarm/run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        throw new Error(
+          (detail as { error?: string }).error ??
+            `swarm run create -> HTTP ${res.status}`
+        );
       }
+      const payload = (await res.json()) as SwarmRunResponse;
       onClose();
-      router.push(`/?session=${encodeURIComponent(session.id)}`);
+      router.push(`/?swarmRun=${encodeURIComponent(payload.swarmRunID)}`);
     } catch (err) {
       setLaunchError((err as Error).message);
     } finally {
