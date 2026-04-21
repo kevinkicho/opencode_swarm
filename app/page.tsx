@@ -15,6 +15,7 @@ import { GlossaryModal } from '@/components/glossary-modal';
 import { NewRunModal } from '@/components/new-run-modal';
 import { RunProvenanceDrawer } from '@/components/run-provenance-drawer';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
+import { CostDashboard } from '@/components/cost-dashboard';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { PermissionStrip } from '@/components/permission-strip';
 import { Drawer } from '@/components/ui/drawer';
@@ -264,6 +265,7 @@ function PageBody({
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [newRunOpen, setNewRunOpen] = useState(false);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
+  const [costOpen, setCostOpen] = useState(false);
 
   // Routing bounds live in a provider so the modal can persist them to
   // localStorage. Cost cap is the only bound with a direct RunMeta field
@@ -438,6 +440,7 @@ function PageBody({
         onOpenGlossary={() => setGlossaryOpen(true)}
         onOpenNewRun={() => setNewRunOpen(true)}
         onOpenProvenance={swarmRunID ? () => setProvenanceOpen(true) : null}
+        onOpenCost={() => setCostOpen(true)}
         swarmRunID={swarmRunID}
       />
 
@@ -495,6 +498,8 @@ function PageBody({
         open={provenanceOpen}
         onClose={() => setProvenanceOpen(false)}
       />
+
+      <CostDashboard open={costOpen} onClose={() => setCostOpen(false)} />
     </div>
     </ProviderStatsProvider>
     </PlaybackProvider>
@@ -508,6 +513,7 @@ function StatusRail({
   onOpenGlossary,
   onOpenNewRun,
   onOpenProvenance,
+  onOpenCost,
   swarmRunID,
 }: {
   onOpenPalette: () => void;
@@ -516,6 +522,7 @@ function StatusRail({
   onOpenGlossary: () => void;
   onOpenNewRun: () => void;
   onOpenProvenance: (() => void) | null;
+  onOpenCost: () => void;
   swarmRunID: string | null;
 }) {
   const health = useOpencodeHealth(5000);
@@ -579,6 +586,26 @@ function StatusRail({
             <span className="font-mono text-[9px] text-fog-700">▴</span>
           </button>
         </SwarmRunsPicker>
+        <Tooltip
+          side="top"
+          wide
+          content={
+            <div className="space-y-0.5">
+              <div className="font-mono text-[11px] text-fog-200">cross-run cost</div>
+              <div className="font-mono text-[10.5px] text-fog-600">
+                $ / tokens across every persisted run · by workspace + top spenders
+              </div>
+            </div>
+          }
+        >
+          <button
+            onClick={onOpenCost}
+            className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
+            aria-label="open cost dashboard"
+          >
+            <span className="font-mono text-[10px] uppercase tracking-widest2">cost</span>
+          </button>
+        </Tooltip>
       </div>
 
       <div className="ml-auto flex items-center gap-1">
