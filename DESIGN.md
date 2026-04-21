@@ -59,7 +59,7 @@ We deliberately use opencode's canonical names instead of inventing new ones. So
 `session.{created,updated,deleted,status,idle,compacted,diff,error}`
 `message.{updated,removed}`
 `message.part.{updated,removed}`
-`permission.{updated,replied}`
+`permission.{asked,replied,updated}`
 `file.edited` · `file.watcher.updated` · `vcs.branch.updated`
 `lsp.client.diagnostics` · `lsp.updated`
 `todo.updated` · `command.executed`
@@ -205,13 +205,27 @@ At this point the UI shows a real run live, but cannot drive it.
 5. **Composer dispatch** → `session.prompt` to the root session (the session the human is addressing). Target picker (specific agent) → `session.prompt` directly to that child session.
 6. **Spawn modal** → `session.create` with the chosen agent config; immediately appears in roster.
 7. **Routing modal save** → persist run-level bounds (`costCap`, `tokenCap`, `minutesCap`, `zenCeiling%`, `goCeiling%`) to a config endpoint. Each agent's dispatch loop reads the current bounds and picks its own provider — cheapest capable within remaining ceiling. The **observed dispatch** readout comes from aggregating `message.part.updated` events by `model.provider` + `model.label`; **observed shapes** come from aggregating tool-call counts per agent, classified by the rubric in §4.2. Neither is a config value — both are derived projections over the L1 part index (§7.1).
-8. **Permission flow** — when `permission.updated` fires, surface in the agent's attention badge; clicking jumps to inspector with accept/reject buttons that call `permission.replied`.
+8. **Permission flow** — when `permission.asked` fires, surface in a permission strip above the composer (`components/permission-strip.tsx`) with once / always / reject actions that POST to `/permission/{id}/reply`. The `permission.replied` event confirms and clears the strip. Attention-badge variant on the roster is a future iteration.
 
 ### Phase 3 — branch history (real VCS)
 9. Replace `lib/commits-data.ts` with `vcs.branch.updated` + `file.edited` + `session.diff` aggregation. The current "branch history" modal shape already matches.
 
 ### Phase 4 — multi-tenant / multi-instance
 10. Account chip in topbar becomes real (current `kk` placeholder). Run picker. Cross-run cost dashboard.
+
+### 6.5 HTTP API quirks discovered through probing
+
+Probed against opencode's live HTTP API (2026-04-21). Documented here because the SDK type names imply behavior that doesn't match what the wire actually does — anyone implementing Phase 1/2 will hit these in order.
+
+**Session scoping is bimodal.** Every session is either per-project (`projectID` = repo's first-commit SHA, `directory` = worktree) or global (`projectID` = `"global"`, `directory` = wherever opencode was invoked outside a registered repo). Bare `GET /session` returns **only globals** — per-project sessions are filtered out. To enumerate everything, fan out across `GET /project` and call `GET /session?directory=<worktree>` for each real project, then merge + dedupe. `GET /session/{id}` works regardless of scope, so URL-jumped sessions resolve even if the picker never listed them. See `getAllSessionsBrowser` in `lib/opencode/live.ts`.
+
+**Session list ordering drifts between polls.** Two `GET /session` calls 3s apart, with identical session sets, returned different orders starting around index 235. The backend makes no stability guarantee. Any list component that polls must apply its own immutable tiebreak — we sort by `session.id` (reverse-time-encoded hex, so id-ascending ≈ newest-first) in `components/live-session-picker.tsx` for a stable "none" sort. Without this the picker reshuffles on every 3s tick.
+
+**Assistant messages can become zombies.** When the opencode process dies mid-turn (e.g. because the session's `directory` doesn't exist on disk), the assistant message is left with `time.completed` missing AND `info.error` missing. Naive liveness checks (`!time.completed` = running) render these as active with an abort button forever. `toRunMeta` in `lib/opencode/transform.ts` now requires all three: no `completed`, no `error`, AND created within `ZOMBIE_THRESHOLD_MS` (10 min). Past 10 min with no terminal signal = stale.
+
+**The diff endpoint is session-aggregate only.** `GET /session/{id}/diff` returns one unified diff of all committed edits in the session. It accepts `?messageID=` and `?hash=` query params, but they are **ignored** — the response is identical regardless. Per-turn granularity lives exclusively in each assistant message's `patch` parts, which carry `files: string[]` (files touched that turn) but no diff text. To render per-turn diffs (as the live commit history drawer does), fetch the session-aggregate diff once and filter hunks client-side by the turn's file list.
+
+Each of these was an active blocker while wiring the real backend; none are visible in the SDK type definitions.
 
 ---
 
