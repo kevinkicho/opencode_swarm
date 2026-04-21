@@ -196,10 +196,58 @@ export function toAgents(messages: OpencodeMessage[]): {
         if (t && !agent.tools.includes(t)) agent.tools.push(t);
       }
     }
-
-    // last assistant message marks the "active" agent
-    if (idx === messages.length - 1) agent.status = 'thinking';
   });
+
+  // Status derivation: walk each agent back to their latest assistant message
+  // and classify. `waiting` (pending permission) is layered in by callers that
+  // hold the permissions state — toAgents only sees messages.
+  const latestMsgIdxByAgent = new Map<string, number>();
+  messages.forEach((m, idx) => {
+    if (m.info.role !== 'assistant') return;
+    latestMsgIdxByAgent.set(agentIdFor(m.info.agent, 'assistant'), idx);
+  });
+  const overallLastIdx = messages.length - 1;
+
+  for (const [id, msgIdx] of latestMsgIdxByAgent) {
+    const agent = byId.get(id);
+    if (!agent) continue;
+    const last = messages[msgIdx];
+
+    // error trumps all: opencode writes `info.error` on any abnormal turn end
+    // (including user-triggered aborts, which are `MessageAbortedError`).
+    if (last.info.error) {
+      agent.status = 'error';
+      continue;
+    }
+
+    // someone else spoke after this agent → this agent is just idle
+    if (msgIdx !== overallLastIdx) {
+      agent.status = 'idle';
+      continue;
+    }
+
+    // this agent is the session's latest speaker. Distinguish in-progress
+    // from completed by whether the info has a completion timestamp.
+    const completed = !!last.info.time.completed;
+    if (completed) {
+      agent.status = 'idle';
+      continue;
+    }
+
+    // ongoing turn — look at the trailing parts to tell `working` (a tool is
+    // executing) from `thinking` (reasoning / no active tool).
+    const trailingTool = [...last.parts]
+      .reverse()
+      .find((p) => p.type === 'tool') as
+      | (OpencodePart & { type: 'tool' })
+      | undefined;
+    const trailingToolState = trailingTool ? toolStateFrom(trailingTool.state) : undefined;
+    if (trailingToolState === 'running' || trailingToolState === 'pending') {
+      agent.status = 'working';
+    } else {
+      agent.status = 'thinking';
+    }
+  }
 
   return { agents: Array.from(byId.values()), agentOrder: order };
 }

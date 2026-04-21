@@ -103,7 +103,20 @@ function PageInner() {
     };
   }, [sessionId, liveData]);
 
-  const { agents, agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns, isLive } = view;
+  // Layer `waiting` on top of toAgents' status: a pending permission on the
+  // session means whichever agent is mid-turn is actually blocked on human
+  // approval, not still working. toAgents can't see permissions — they come
+  // from a separate hook — so we apply the override here.
+  const agents = useMemo(() => {
+    if (permissions.pending.length === 0) return view.agents;
+    return view.agents.map((a) =>
+      a.status === 'working' || a.status === 'thinking'
+        ? { ...a, status: 'waiting' as const }
+        : a
+    );
+  }, [view.agents, permissions.pending.length]);
+
+  const { agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns, isLive } = view;
 
   const paletteNodes: TimelineNode[] = useMemo(
     () =>
