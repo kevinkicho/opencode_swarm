@@ -256,7 +256,7 @@ Session memory is a pyramid. The base lives on disk; only the summit enters an a
 ### 7.2 What to collect (the menu)
 
 **Swarm-run level** (one record per run)
-- `swarmSessionID`, `createdAt`, `endedAt`, `durationMs`, `outcome` (`completed` / `aborted` / `failed`)
+- `swarmRunID`, `createdAt`, `endedAt`, `durationMs`, `outcome` (`completed` / `aborted` / `failed`)
 - `directive` (verbatim prompt, may be null — agents can run unseeded), `rootWorkspace` (repo path, branch, HEAD sha start/end)
 - `participants[]` — per agent: `name`, `model`, `promptHash`, `toolPermissions`
 - `routingPolicy` snapshot (the declarative rules in force at start)
@@ -290,15 +290,18 @@ The budget pressure is not L0 size — disk is cheap. It's the **quality of the 
 
 ### 7.4 Rollup schema (L2)
 
-Two rollup shapes, written once at session close. Schema > prose — structured fields survive summarization better than free text.
+Two rollup shapes, written once at session close. Schema > prose — structured fields survive summarization better than free text. Both shipped as `AgentRollup` / `RunRetro` in `lib/server/memory/types.ts`; both persist into the `rollups` table keyed on `(swarm_run_id, session_id)` where the retro uses `session_id=''`.
 
 **Per-agent rollup** (one per child session)
 
 ```ts
 type AgentRollup = {
+  kind: 'agent';                          // discriminator vs. RunRetro
+  swarmRunID: string;
   sessionID: string;
-  agent: { name: string; model: string };
-  runId: string;
+  workspace: string;                      // resolved absolute path; scopes cross-run recall
+  agent: { name: string; model?: string };
+  closedAt: number;                       // epoch ms — authoritative "when was this written"
   outcome: 'merged' | 'discarded' | 'partial' | 'aborted';
   counters: { tokensIn: number; tokensOut: number; toolCalls: number; retries: number; compactions: number };
   artifacts: Array<{
@@ -307,18 +310,18 @@ type AgentRollup = {
     addedLines?: number;
     removedLines?: number;
     diffHash?: string;
-    status: 'merged' | 'discarded' | 'superseded';
-    reviewNotes?: string;  // verbatim, not summarized — from whichever agent reviewed
+    status?: 'merged' | 'discarded' | 'superseded';
+    reviewNotes?: string;                 // verbatim, not summarized — from whichever agent reviewed
   }>;
   failures: Array<{
     tool: string;
-    argsHash: string;
+    argsHash?: string;
     exitCode?: number;
     stderrHash?: string;
     resolution: 'retried' | 'abandoned' | 'routed-to' | 'user-intervened';
     routedTo?: string;
   }>;
-  decisions: Array<{ at: number; choice: string; rationaleHash: string }>;
+  decisions: Array<{ at: number; choice: string; rationaleHash?: string }>;
   deps: { spawnedBy?: string; spawned: string[] };
 };
 ```
@@ -327,59 +330,65 @@ type AgentRollup = {
 
 ```ts
 type RunRetro = {
-  runId: string;
+  kind: 'retro';
+  swarmRunID: string;
+  workspace: string;
   directive: string | null;               // verbatim prompt; null if run started unseeded
   outcome: 'completed' | 'aborted' | 'failed';
   timeline: { start: number; end: number; durationMs: number };
   cost: { tokensTotal: number; costUSD: number };
-  participants: string[];                 // AgentRollup.sessionIDs
+  participants: string[];                 // sessionIDs with an AgentRollup row
   artifactGraph: { filesFinal: string[]; finalDiffHash?: string; commits: string[]; prURLs: string[] };
   lessons: Array<{
     tag: 'tool-failure' | 'routing-miss' | 'good-pattern' | 'user-correction';
     text: string;
-    evidencePartIDs: string[];            // pointers into L1, so an agent can pull details on demand
+    evidencePartIDs: string[];            // pointers into L1 (parts.part_id)
   }>;
 };
 ```
 
-Lessons are the load-bearing field — they're what a future agent *wants*. Tagged, terse, evidence-linked.
+Lessons are the load-bearing field — they're what a future agent *wants*. Tagged, terse, evidence-linked. The v1 reducer only emits `tool-failure` lessons (threshold: 3+ errors from the same tool in one run). The richer tags — `routing-miss`, `good-pattern`, `user-correction` — are reserved for a future librarian agent that reads the same L0+L1 and produces prose; until that ships, a mechanical tag is better than none.
 
 ### 7.5 The `recall` tool
 
-Recall is how agents pull L1/L0 detail into context on demand. Default is cheap (L2 summary only); callers pay tokens explicitly by upgrading `shape`.
+Recall is how agents pull L1/L0 detail into context on demand. Default is cheap (L2 summary only); callers pay tokens explicitly by upgrading `shape`. Shipped as `POST /api/swarm/recall` backed by `lib/server/memory/query.ts`.
 
 ```ts
 recall({
-  runId?: string;                     // this OR sessionID
+  swarmRunID?: string;                    // at least one of these three must be set
   sessionID?: string;
   workspace?: string;                     // opt-in cross-run recall (same repo)
-  filter: {
+  filter?: {
     agents?: string[];                    // ['ember', 'forge'] — filter by handle, not label
-    partTypes?: PartType[];               // ['edit', 'patch']
+    partTypes?: string[];                 // ['edit', 'patch']
     toolNames?: string[];                 // ['bash', 'grep']
-    filePath?: string;                    // glob: 'src/auth/**'
-    outcome?: 'merged' | 'discarded';
-    timeRange?: [number, number];
+    filePath?: string;                    // glob: 'src/auth/**' — not yet implemented
+    outcome?: 'merged' | 'discarded';     // summary-shape only
+    timeRange?: { startMs: number; endMs: number };
+    query?: string;                       // FTS5 MATCH expression (parts-shape only)
   };
-  shape: 'summary' | 'parts' | 'diffs';   // token cost rises left→right
-  limit?: number;
+  shape?: 'summary' | 'parts' | 'diffs';  // token cost rises left→right; default 'summary'
+  limit?: number;                         // server caps at 50
 }) => {
   items: RecallItem[];
   tokenEstimate: number;                  // caller decides whether to paginate
   truncated: boolean;
+  shape: 'summary' | 'parts' | 'diffs';
 };
 ```
 
 Design notes:
 - **Default `shape: 'summary'`** — forces agents to explicitly request heavier payloads.
 - **`tokenEstimate` in response, not request** — the tool knows sizes; agents shouldn't guess.
-- **Cross-run recall is opt-in** (`workspace` param). Default is this run only, to avoid context bleed between unrelated runs on the same repo.
+- **Scope guardrail** — the endpoint 400s if none of `swarmRunID`, `sessionID`, `workspace` is set. Unscoped "search the whole ledger" queries are almost always a malformed agent plan; require an explicit choice.
+- **Cross-run recall is opt-in** via the `workspace` param. Default is this run only, to avoid context bleed between unrelated runs on the same repo.
+- **`shape: 'diffs'`** currently falls through to `parts` filtered to `part_type='patch'`. Full-hunk expansion from L0 by `diffHash` is deferred — needs content-addressed resolution that isn't built yet.
 
 ### 7.6 Open wiring questions
 
-- **Where does rollup generation run?** A dedicated "librarian" agent at session close, or a deterministic reducer over L1?
-- **Schema evolution.** L0 is immutable; L1/L2 must be regenerable from L0 after schema changes. Budget for a migration tool from day one.
-- **Cross-run recall.** Should an agent in run B see L2 from run A on the same repo? Opt-in per run, or scoped by workspace?
+- ~~**Where does rollup generation run?**~~ **Resolved (2026-04-21):** deterministic reducer over L1+L0, not a librarian agent. See `lib/server/memory/rollup.ts`. A prose-producing librarian may layer on later; until then, mechanical rollups are the floor, not the ceiling.
+- ~~**Schema evolution.**~~ **Resolved (2026-04-21):** L0 stays immutable; L1 rebuilds from L0 via `npm run swarm:reindex` (resumes per-run from `ingest_cursors.last_seq`, so re-runs are cheap). L2 rebuilds from `POST /api/swarm/memory/rollup` — upserts by `(swarm_run_id, session_id)`, so a schema bump is "drop `memory.sqlite`, re-POST". No dedicated migration tool; the two idempotent endpoints cover it.
+- **Cross-run recall.** Still open as a policy question. The endpoint enforces *one* of `swarmRunID / sessionID / workspace` but doesn't isolate by workspace when a caller sets only `swarmRunID`. Agents that want "runs on this repo, not that repo" must pass `workspace` explicitly. Consider adding a config knob (`recallWorkspaceIsolation: 'strict' | 'permissive'`) when the cross-repo question shows up in practice — don't pre-build it.
 
 ### 7.7 Retention lifecycle
 
@@ -393,9 +402,9 @@ Runs are durable training signal — deletion is the wrong default. Three states
 
 **Why compression beats archiving at this stage.** Compression is reversible, cheap, and keeps the "grep across all runs" affordance intact (`zcat events.ndjson.gz | jq`). Archiving introduces a second "where does a run live?" question for no current payoff.
 
-**Implementation sketch.**
-- `readEvents()` in `lib/server/swarm-registry.ts` checks for `.gz` and pipes through a gunzip stream (~20 LOC when we build it).
-- Compression runs as a background sweep or `npm run swarm:compress` — **not triggered from the UI**.
+**Implementation (shipped 2026-04-21).**
+- `readEvents()` in `lib/server/swarm-registry.ts` falls back to `events.ndjson.gz` via a `createGunzip()` pipeline when the plain file is missing — consumers don't know or care which state a run is in.
+- `npm run swarm:compress` (`scripts/compress.mjs`) walks every run, uses `events.ndjson` mtime as the idle signal (≥24h), gzips via atomic `.gz.tmp → rename`, then unlinks the plain. A partial crash is recoverable on the next sweep: both files coexisting means the gzip finished but the unlink didn't, so the sweep removes the plain and reports `cleanup`.
 - The runs picker stays read-only (no delete/archive buttons). Retention is a backend concern; the picker is pure discovery. See the comment at the top of `components/swarm-runs-picker.tsx`.
 
 **Dev-stage cleanup.** `rm -rf .opencode_swarm/runs/<id>/` is fine. `listRuns()` already skips malformed/missing meta, so partial deletes don't break the list endpoint.
@@ -440,10 +449,10 @@ Prefer (a). Implementation path: a thin tool wrapper around `task` that auto-inj
 
 ### 8.4 What this lights up in the UI
 
-- **Roster badge.** "`forge` is working on *item B*" — currently the roster only shows status.
-- **Timeline affordance.** A `task` delegation card surfaces the originating todo item inline, not just the prompt text.
-- **Inspector drawer.** Selecting an item in the plan view scrolls the timeline to the corresponding `task`/`subtask` pair.
-- **L2 rollup field.** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent.
+- **Roster badge (shipped).** `ActiveTodoChip` in `components/agent-roster.tsx` shows every in-progress todo an agent owns; popover lists the full set and click-to-focus jumps to the Plan tab + flashes the row.
+- **Timeline affordance (shipped).** A `task` delegation card surfaces the originating todo item inline as a `todo·X` button (`components/timeline-flow.tsx`); hover shows the full content, click jumps to the Plan tab.
+- **Inspector drawer (partial).** Plan → timeline hop still TODO — clicking a todo in the plan rail should scroll the timeline to the bound `task` card. The reverse hop (timeline → plan) is live.
+- **L2 rollup field (open).** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent. Not yet emitted by the reducer — add when the rollup reader UI needs it.
 
 ### 8.5 Open questions
 
