@@ -25,6 +25,7 @@ import {
   useOpencodeHealth,
   useLiveSession,
   useLivePermissions,
+  useLiveSwarmRun,
   useSessionDiff,
   postSessionMessageBrowser,
 } from '@/lib/opencode/live';
@@ -72,7 +73,18 @@ export default function Page() {
 
 function PageInner() {
   const params = useSearchParams();
-  const sessionId = params.get('session');
+  // Two entry points resolve to the same live session:
+  //   ?session=<id>   — direct, used for deep-linking into an opencode session
+  //                     that was created outside the swarm-run flow
+  //   ?swarmRun=<id>  — swarm-run anchor; the hook looks up meta.json and
+  //                     resolves to the primary sessionID (sessionIDs[0] at v1)
+  // Pattern='none' makes these equivalent in runtime behavior; the swarmRun
+  // URL is preferred because it carries run-level context (workspace, bounds,
+  // source) that future patterns will consume here.
+  const swarmRunID = params.get('swarmRun');
+  const directSessionId = params.get('session');
+  const swarmRun = useLiveSwarmRun(swarmRunID);
+  const sessionId = swarmRunID ? swarmRun.primarySessionID : directSessionId;
   const { data: liveData } = useLiveSession(sessionId);
   const liveDirectory = liveData?.session?.directory ?? null;
   const permissions = useLivePermissions(sessionId, liveDirectory);
