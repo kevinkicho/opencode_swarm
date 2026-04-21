@@ -29,9 +29,13 @@ export type ComposerTarget =
 export function SwarmComposer({
   agents,
   onSend,
+  disabled = false,
+  disabledReason,
 }: {
   agents: Agent[];
   onSend?: (target: ComposerTarget, body: string) => void;
+  disabled?: boolean;
+  disabledReason?: string;
 }) {
   const defaultAgent = agents[0];
   const [target, setTarget] = useState<ComposerTarget>(() =>
@@ -74,13 +78,14 @@ export function SwarmComposer({
   };
 
   const broadcast = target.kind === 'broadcast';
-  const canSend = body.trim().length > 0;
+  const canSend = !disabled && body.trim().length > 0;
 
   return (
     <div
       className={clsx(
         'hairline-t bg-ink-850/80 backdrop-blur px-4 py-2 transition',
         flash && 'bg-molten/5',
+        disabled && 'opacity-60',
       )}
     >
       <div className="flex items-start gap-2">
@@ -102,9 +107,11 @@ export function SwarmComposer({
           )}
         >
           <button
+            disabled={disabled}
             className={clsx(
-              'h-9 px-2.5 rounded hairline bg-ink-900 hover:border-molten/40 transition flex items-center gap-1.5 shrink-0',
-              broadcast && 'border-molten/40',
+              'h-9 px-2.5 rounded hairline bg-ink-900 transition flex items-center gap-1.5 shrink-0',
+              disabled ? 'cursor-not-allowed' : 'hover:border-molten/40',
+              broadcast && !disabled && 'border-molten/40',
             )}
           >
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700">
@@ -151,24 +158,34 @@ export function SwarmComposer({
           ref={textareaRef}
           rows={1}
           value={body}
+          disabled={disabled}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={onKey}
           placeholder={
-            broadcast
-              ? `broadcast a directive to ${liveCount} live agents…`
-              : targetAgent
-                ? `message ${targetAgent.name} directly…`
-                : 'compose…'
+            disabled
+              ? (disabledReason ?? 'no active run — start one from the status rail to compose')
+              : broadcast
+                ? `broadcast a directive to ${liveCount} live agents…`
+                : targetAgent
+                  ? `message ${targetAgent.name} directly…`
+                  : 'compose…'
           }
           className={clsx(
             'flex-1 min-h-9 resize-none bg-ink-900 hairline rounded px-3 py-1.5 text-[13px] text-fog-100',
-            'placeholder:text-fog-700 focus:outline-none focus:border-molten/40 transition leading-relaxed',
+            'placeholder:text-fog-700 transition leading-relaxed',
+            disabled ? 'cursor-not-allowed' : 'focus:outline-none focus:border-molten/40',
           )}
         />
 
         <Tooltip
           side="top"
-          content={canSend ? 'send' : 'type a message to send'}
+          content={
+            disabled
+              ? (disabledReason ?? 'no active run')
+              : canSend
+                ? 'send'
+                : 'type a message to send'
+          }
           delay={200}
         >
           <button

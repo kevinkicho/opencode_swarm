@@ -44,14 +44,6 @@ import {
 } from '@/lib/opencode/transform';
 import { tokensForBudget } from '@/lib/opencode/pricing';
 import type { DiffData } from '@/lib/types';
-import {
-  agents as mockAgents,
-  agentOrder as mockAgentOrder,
-  messages as mockMessages,
-  runMeta as mockRunMeta,
-  runPlan as mockRunPlan,
-  providerSummary as mockProviderSummary,
-} from '@/lib/swarm-data';
 import type { AgentMessage, Agent, RunMeta, ProviderSummary, TodoItem } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TimelineNode } from '@/lib/types';
@@ -64,8 +56,31 @@ interface SwarmView {
   providerSummary: ProviderSummary[];
   runPlan: TodoItem[];
   liveTurns: LiveTurn[];
-  isLive: boolean;
 }
+
+// Zero-state view for "no run active" — topbar chips render as 0/placeholder,
+// all live-data panels collapse to their empty states. Budget defaults match
+// the routing-modal defaults so the topbar chip doesn't read 0/0.
+const EMPTY_VIEW: SwarmView = {
+  agents: [],
+  agentOrder: [],
+  messages: [],
+  runMeta: {
+    id: '',
+    title: '',
+    status: 'paused',
+    started: '',
+    elapsed: '—',
+    totalTokens: 0,
+    totalCost: 0,
+    budgetCap: 5,
+    goTier: { window: '5h', used: 0, cap: 12 },
+    cwd: '',
+  },
+  providerSummary: [],
+  runPlan: [],
+  liveTurns: [],
+};
 
 export default function Page() {
   return (
@@ -125,19 +140,9 @@ function PageInner() {
         providerSummary: toProviderSummary(agents, liveData.messages),
         runPlan: toRunPlan(liveData.messages),
         liveTurns: toLiveTurns(liveData.messages),
-        isLive: true,
       };
     }
-    return {
-      agents: mockAgents,
-      agentOrder: mockAgentOrder,
-      messages: mockMessages,
-      runMeta: mockRunMeta,
-      providerSummary: mockProviderSummary,
-      runPlan: mockRunPlan,
-      liveTurns: [],
-      isLive: false,
-    };
+    return EMPTY_VIEW;
   }, [sessionId, liveData]);
 
   // Layer `waiting` on top of toAgents' status: a pending permission on the
@@ -153,7 +158,7 @@ function PageInner() {
     );
   }, [view.agents, permissions.pending.length]);
 
-  const { agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns, isLive } = view;
+  const { agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns } = view;
 
   const paletteNodes: TimelineNode[] = useMemo(
     () =>
@@ -208,7 +213,6 @@ function PageInner() {
         permissions={permissions}
         liveTurns={liveTurns}
         liveLastUpdated={liveData?.lastUpdated ?? null}
-        isLive={isLive}
         swarmRunID={swarmRunID}
         swarmRunMeta={swarmRun.meta}
         swarmRunStatus={currentRunStatus}
@@ -231,7 +235,6 @@ function PageBody({
   permissions,
   liveTurns,
   liveLastUpdated,
-  isLive,
   swarmRunID,
   swarmRunMeta,
   swarmRunStatus,
@@ -249,7 +252,6 @@ function PageBody({
   permissions: ReturnType<typeof useLivePermissions>;
   liveTurns: LiveTurn[];
   liveLastUpdated: number | null;
-  isLive: boolean;
   swarmRunID: string | null;
   swarmRunMeta: SwarmRunMeta | null;
   swarmRunStatus: SwarmRunStatus | null;
@@ -288,13 +290,12 @@ function PageBody({
   }, [agentsIn, bounds.costCap]);
 
   // Only fetch the diff when the live drawer is actually open; refetch when
-  // a new turn lands. Returns null in non-live mode so the mock drawer keeps
-  // using its baked-in commit data.
+  // a new turn lands.
   const {
     diffs: rawDiffs,
     loading: diffLoading,
     error: diffError,
-  } = useSessionDiff(isLive ? liveSessionId : null, historyOpen, liveLastUpdated);
+  } = useSessionDiff(liveSessionId, historyOpen, liveLastUpdated);
   const liveDiffs: DiffData[] | null = useMemo(
     () => (rawDiffs ? parseSessionDiffs(rawDiffs) : null),
     [rawDiffs]
@@ -415,20 +416,19 @@ function PageBody({
 
       <SwarmComposer
         agents={agents}
+        disabled={!liveSessionId || !liveDirectory}
+        disabledReason="no active run — start one from the status rail to compose"
         onSend={(target: ComposerTarget, body: string) => {
-          if (liveSessionId && liveDirectory) {
-            // Agent target → opencode `agent` field (agent-config name, not UI id).
-            // Broadcast → omit `agent`; opencode routes to the session's lead.
-            const agentName =
-              target.kind === 'agent'
-                ? agents.find((a) => a.id === target.id)?.name
-                : undefined;
-            postSessionMessageBrowser(liveSessionId, liveDirectory, body, {
-              agent: agentName,
-            }).catch((err) => console.error('[composer] opencode post failed', err));
-            return;
-          }
-          console.info('[composer]', target, body);
+          if (!liveSessionId || !liveDirectory) return;
+          // Agent target → opencode `agent` field (agent-config name, not UI id).
+          // Broadcast → omit `agent`; opencode routes to the session's lead.
+          const agentName =
+            target.kind === 'agent'
+              ? agents.find((a) => a.id === target.id)?.name
+              : undefined;
+          postSessionMessageBrowser(liveSessionId, liveDirectory, body, {
+            agent: agentName,
+          }).catch((err) => console.error('[composer] opencode post failed', err));
         }}
       />
 
