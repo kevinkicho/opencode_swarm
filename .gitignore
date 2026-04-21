@@ -9,3 +9,4 @@ dist/
 .vercel
 tsconfig.tsbuildinfo
 .opencode_swarm/
+.dev-port
