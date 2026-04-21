@@ -23,7 +23,7 @@ export interface SwarmRunRequest {
   directive?: string;         // first prompt posted to the root session
   title?: string;             // session title seed; falls back to directive line 1
   teamSize?: number;          // aspirational — ignored for pattern='none'
-  bounds?: SwarmRunBounds;    // aspirational — recorded, not enforced yet
+  bounds?: SwarmRunBounds;    // costCap is enforced by the proxy gate (DESIGN.md §9); minutesCap still aspirational
 }
 
 export interface SwarmRunBounds {

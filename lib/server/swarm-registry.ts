@@ -55,6 +55,50 @@ function eventsGzPath(swarmRunID: string): string {
   return path.join(runDir(swarmRunID), 'events.ndjson.gz');
 }
 
+// ---- sessionID → swarmRunID reverse index ---------------------------------
+//
+// The opencode proxy's cost-cap gate needs to answer "which run owns this
+// session?" on every prompt POST. A disk scan per request is wasteful when
+// the answer is stable for the life of a run, so we keep a process-local
+// Map seeded by createRun() and lazily refilled from disk on miss.
+//
+// Same survive-restart shape as derivedRowCache below: globalThis-pinned
+// so Next.js dev module reloads don't duplicate it, no LRU bound (tens of
+// runs at prototype scale), single-worker-only.
+const globalIndexKey = Symbol.for('opencode_swarm.sessionIndex');
+type GlobalWithIndex = typeof globalThis & {
+  [globalIndexKey]?: Map<string, string>;
+};
+function sessionIndex(): Map<string, string> {
+  const g = globalThis as GlobalWithIndex;
+  if (!g[globalIndexKey]) g[globalIndexKey] = new Map();
+  return g[globalIndexKey]!;
+}
+
+// Resolve a session to its owning swarm run. Returns null when the session
+// isn't managed by any swarm run — that's the opt-out flow (direct `?session=`
+// prompts that bypass swarm bounds by construction; see DESIGN.md §9).
+//
+// Lazy-population on miss: if the index doesn't know about this session, walk
+// every meta.json once and refill. Subsequent misses skip the rescan — a
+// sessionID that isn't in any run is a genuine "not swarm-managed" answer.
+export async function findRunBySession(
+  sessionID: string
+): Promise<string | null> {
+  const index = sessionIndex();
+  const cached = index.get(sessionID);
+  if (cached) return cached;
+  // Rescan — cheap at tens-of-runs scale (N file reads). A sessionID that
+  // still isn't found after rescan is not-swarm-managed; we don't re-rescan
+  // for subsequent misses to avoid a per-prompt disk walk on every direct
+  // session flow.
+  const metas = await listRuns();
+  for (const m of metas) {
+    for (const sid of m.sessionIDs) index.set(sid, m.swarmRunID);
+  }
+  return index.get(sessionID) ?? null;
+}
+
 // Compact, sortable ID: `run_<time-b36>_<rand-b36>`. Time component sorts
 // lexicographically in creation order; random suffix avoids collisions
 // across simultaneous creates within the same millisecond.
@@ -85,6 +129,9 @@ export async function createRun(
   // Touch events.ndjson so the multiplexer can append without a separate
   // existence check. An empty file is a valid NDJSON (zero records).
   await fs.writeFile(eventsPath(swarmRunID), '', { flag: 'a' });
+  // Seed the reverse index so the cost-cap gate resolves this run's
+  // sessions without a full disk scan on first prompt.
+  for (const sid of sessionIDs) sessionIndex().set(sid, swarmRunID);
   return meta;
 }
 
