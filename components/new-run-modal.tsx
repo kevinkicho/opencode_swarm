@@ -97,11 +97,19 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     setLaunchError(null);
     const directory = workspacePath.trim();
     const prompt = directive.trim();
+    // Seed the session title from the directive's first line. Without this
+    // opencode falls back to "New session - <iso>", which makes the picker
+    // list of sessions useless for spotting what each one is about.
+    const firstLine = prompt.split(/\r?\n/)[0] ?? '';
+    const title =
+      firstLine.length > 80
+        ? firstLine.slice(0, 77).trimEnd() + '…'
+        : firstLine || undefined;
     try {
       // Honest plumbing: workspace → opencode ?directory=, directive → first
       // prompt. source, team, bounds, branch strategy, start mode are
       // aspirational UI — no opencode API backs them yet.
-      const session = await createSessionBrowser(directory);
+      const session = await createSessionBrowser(directory, title);
       if (prompt) {
         await postSessionMessageBrowser(session.id, directory, prompt);
       }
