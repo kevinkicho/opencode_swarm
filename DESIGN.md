@@ -3,7 +3,7 @@
 > Read this before writing backend code, opening a feature PR, or extending the timeline.
 > It is the single source of truth for *why* the UI is shaped the way it is.
 
-**Status:** UI prototype only. All data is mocked in `lib/swarm-data.ts`. There is no backend yet. This document is the brief for the team (human or AI) that will wire the real opencode runtime to this surface.
+**Status:** Live-data prototype. Mock fixtures were purged in April 2026 — the UI reads exclusively from opencode via `lib/opencode/live.ts` + `lib/opencode/transform.ts`, with `EMPTY_VIEW` as the zero-state when no run is active. This document is the brief for anyone extending the runtime surface or adding new panels.
 
 ---
 
@@ -149,7 +149,7 @@ The new-run modal (`new-run-modal.tsx`) is the run's creation event. Contract:
 
 ## 5. State the UI expects (data contracts)
 
-All shapes live in `lib/swarm-types.ts` and `lib/types.ts`. Today they're populated from `lib/swarm-data.ts` (mock). When wiring real opencode, these are the structures the backend must produce.
+All shapes live in `lib/swarm-types.ts` and `lib/types.ts`. At runtime they're populated by the transforms in `lib/opencode/transform.ts` from opencode's session + message payloads. When adding a new surface, derive the view shape from these contracts — don't reinvent.
 
 ### `Agent`
 ```ts
@@ -494,7 +494,8 @@ These are explicitly *not* decided yet. Backend implementer is invited to propos
 | `components/new-run-modal.tsx` | Run initiation; source required, directive/team/bounds optional; see §4.3 |
 | `components/command-palette.tsx` | ⌘K palette with grouped jump targets and chip-formatted line items |
 | `lib/swarm-types.ts` | Canonical TS types for Agent, AgentMessage, RunMeta, etc. |
-| `lib/swarm-data.ts` | **Mock data** — the seed for everything you see today |
+| `lib/opencode/live.ts` | Browser-side hooks that poll opencode (session / messages / diff / permissions / health / runs) |
+| `lib/opencode/transform.ts` | opencode payload → `Agent`, `AgentMessage`, `RunMeta`, `ProviderSummary`, `LiveTurn`, `TodoItem` |
 | `lib/part-taxonomy.ts` | Part/tool color map + `isCrossLane()` predicate |
 | `lib/playback-context.tsx` | Run clock + per-part phase machine |
 | `docs/opencode-vocabulary.md` | Detailed canonical vocab from opencode SDK |
