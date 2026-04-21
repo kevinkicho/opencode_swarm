@@ -21,7 +21,7 @@
 import type { NextRequest } from 'next/server';
 
 import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
-import { createRun, deriveRunRow, listRuns } from '@/lib/server/swarm-registry';
+import { createRun, deriveRunRowCached, listRuns } from '@/lib/server/swarm-registry';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -185,11 +185,10 @@ export async function POST(req: NextRequest): Promise<Response> {
 // it's classified from the primary session's message tail.
 //
 // Fan-out strategy: every list request does one opencode /message fetch per
-// run, in parallel. At prototype scale (~10s of runs, 4s client poll) that
-// lands around 10 req/s to opencode. When this starts to hurt, the fix is
-// a process-memory cache: `Map<swarmRunID, { row, fetchedAt }>` with a
-// ~2s TTL, invalidated when the multiplexer appends an event for that run.
-// Not built yet — flag and move on.
+// run, in parallel. A 2s in-memory TTL cache (deriveRunRowCached) collapses
+// the hot path when polls come in faster than the TTL; appendEvent purges
+// the entry for the affected run so new activity always shows up on the
+// next poll. See swarm-registry.ts "derived-row cache" block for details.
 //
 // No server-side filtering at v1. Sort order is inherited from listRuns()
 // (newest-first by createdAt); status-based sorting lives client-side in
@@ -204,7 +203,7 @@ export async function GET(): Promise<Response> {
         // rejects for per-row reasons. A rejection here would be an
         // unexpected crash path (e.g. OOM) and is fine to surface as a 500.
         const { status, lastActivityTs, costTotal, tokensTotal } =
-          await deriveRunRow(meta);
+          await deriveRunRowCached(meta);
         return { meta, status, lastActivityTs, costTotal, tokensTotal };
       })
     );

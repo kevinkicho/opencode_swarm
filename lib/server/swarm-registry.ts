@@ -15,8 +15,10 @@
 //
 // This module is server-only — do not import from 'use client' code.
 
-import { promises as fs } from 'node:fs';
+import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
+import { createGunzip } from 'node:zlib';
 
 import { getSessionMessagesServer } from './opencode-server';
 import { priceFor } from '../opencode/pricing';
@@ -47,6 +49,10 @@ function metaPath(swarmRunID: string): string {
 
 function eventsPath(swarmRunID: string): string {
   return path.join(runDir(swarmRunID), 'events.ndjson');
+}
+
+function eventsGzPath(swarmRunID: string): string {
+  return path.join(runDir(swarmRunID), 'events.ndjson.gz');
 }
 
 // Compact, sortable ID: `run_<time-b36>_<rand-b36>`. Time component sorts
@@ -248,21 +254,104 @@ export async function deriveRunRow(
   return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal };
 }
 
+// ---- derived-row cache ----------------------------------------------------
+//
+// deriveRunRow() costs one opencode /message fetch per run. The list
+// endpoint fans that out for *every* run on every GET, and the picker polls
+// on ~4s cadence, so unchanged runs take the same hit they took a moment
+// ago. Short-TTL memoization flattens that curve:
+//
+//   - key:    swarmRunID
+//   - value:  { row, fetchedAt } — the full deriveRunRow() return
+//   - TTL:    CACHE_TTL_MS (2s) — below the poll cadence, above the
+//             roundtrip jitter so one GET benefits from the prior one
+//   - purge:  appendEvent() drops the entry for that run, so any new event
+//             the multiplexer writes forces the next poll to re-fetch
+//
+// No LRU bound. The ledger has tens of runs at prototype scale (see memory
+// user_host_machine). When the ledger grows into thousands this needs a
+// bounded LRU; flag and move on.
+//
+// Shape is survive-restart safe because it lives in process memory only —
+// a reboot is a natural purge. `globalThis` pinning matches memoryDb() so
+// Next.js's module-reload in dev doesn't duplicate the map.
+//
+// Not thread-aware: single Next.js worker in dev. If we ever scale to
+// multiple workers, this becomes a per-worker cache and runs with stale
+// entries across workers — fine for a status picker, but call it out here.
+interface CachedRow {
+  row: {
+    status: SwarmRunStatus;
+    lastActivityTs: number | null;
+    costTotal: number;
+    tokensTotal: number;
+  };
+  fetchedAt: number;
+}
+
+const CACHE_TTL_MS = 2000;
+
+const globalCacheKey = Symbol.for('opencode_swarm.deriveRowCache');
+type GlobalWithCache = typeof globalThis & {
+  [globalCacheKey]?: Map<string, CachedRow>;
+};
+function derivedRowCache(): Map<string, CachedRow> {
+  const g = globalThis as GlobalWithCache;
+  if (!g[globalCacheKey]) g[globalCacheKey] = new Map();
+  return g[globalCacheKey]!;
+}
+
+// Cached variant of deriveRunRow. Prefer this in the list endpoint; call
+// the uncached deriveRunRow directly when freshness matters more than
+// latency (e.g. a user clicking "refresh now" on a single run detail).
+export async function deriveRunRowCached(
+  meta: SwarmRunMeta,
+  signal?: AbortSignal
+): Promise<{
+  status: SwarmRunStatus;
+  lastActivityTs: number | null;
+  costTotal: number;
+  tokensTotal: number;
+}> {
+  const cache = derivedRowCache();
+  const now = Date.now();
+  const hit = cache.get(meta.swarmRunID);
+  if (hit && now - hit.fetchedAt < CACHE_TTL_MS) return hit.row;
+  const row = await deriveRunRow(meta, signal);
+  cache.set(meta.swarmRunID, { row, fetchedAt: now });
+  return row;
+}
+
+function invalidateDerivedRow(swarmRunID: string): void {
+  derivedRowCache().delete(swarmRunID);
+}
+
 // Append one event as a single JSON line. Uses appendFile (single syscall,
 // O_APPEND semantics on POSIX) so concurrent appends from one process are
 // safe without an explicit lock. The trailing newline is required for
 // line-by-line replay readers.
+//
+// Side effect: purges the derived-row cache for this run. The next GET
+// /api/swarm/run will re-probe opencode and pick up whatever this event
+// implies (new tokens, status change, completion).
 export async function appendEvent(
   swarmRunID: string,
   event: SwarmRunEvent
 ): Promise<void> {
   const line = JSON.stringify(event) + '\n';
   await fs.appendFile(eventsPath(swarmRunID), line, 'utf8');
+  invalidateDerivedRow(swarmRunID);
 }
 
 // Stream events.ndjson line-by-line. Yields each parsed SwarmRunEvent in
 // the order it was appended — this is the authoritative replay order
 // (server-receive clock), not opencode's internal event ordering.
+//
+// Transparent compression support: if events.ndjson is missing but
+// events.ndjson.gz exists, we stream through a gunzip pipeline. The sweep
+// script (scripts/compress.mjs) renames to .gz once a run has been idle
+// for 24h+ (see memory project_retention_policy). Callers never need to
+// know which state a run is in.
 //
 // `sinceTs` is an optional exclusive lower bound on ts (epoch ms). Useful
 // when a client reconnects after a drop and only needs the tail. Missing
@@ -276,21 +365,47 @@ export async function* readEvents(
   swarmRunID: string,
   opts: { sinceTs?: number } = {}
 ): AsyncGenerator<SwarmRunEvent> {
-  let fh: Awaited<ReturnType<typeof fs.open>>;
-  try {
-    fh = await fs.open(eventsPath(swarmRunID), 'r');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+  const plain = eventsPath(swarmRunID);
+  const gz = eventsGzPath(swarmRunID);
+
+  let lines: AsyncIterable<string>;
+  let cleanup: () => Promise<void> = async () => undefined;
+
+  const plainHandle = await fs.open(plain, 'r').catch((err) => {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw err;
+  });
+
+  if (plainHandle) {
+    // readLines() is the node 18+ built-in line iterator. Handles UTF-8
+    // boundaries across chunk reads correctly.
+    lines = plainHandle.readLines({ encoding: 'utf8' });
+    cleanup = () => plainHandle.close().catch(() => undefined);
+  } else {
+    // Fall back to the compressed sibling. Ungzip is a Transform stream;
+    // readline gives us the same line-by-line contract as readLines().
+    const gzStream = createReadStream(gz).on('error', () => undefined);
+    // Surface ENOENT on the gz side as "no events" rather than throwing —
+    // matches the plain-file contract and keeps readEvents() total.
+    try {
+      await fs.access(gz);
+    } catch {
+      return;
+    }
+    const rl = readline.createInterface({
+      input: gzStream.pipe(createGunzip()),
+      crlfDelay: Infinity,
+    });
+    lines = rl;
+    cleanup = async () => {
+      rl.close();
+      gzStream.destroy();
+    };
   }
 
   try {
-    // readLines() is the node 18+ built-in line iterator. Avoids the
-    // boilerplate of readable-stream + split() and handles UTF-8 boundaries
-    // across chunk reads correctly.
-    const stream = fh.readLines({ encoding: 'utf8' });
     const sinceTs = opts.sinceTs;
-    for await (const line of stream) {
+    for await (const line of lines) {
       if (!line) continue;
       let ev: SwarmRunEvent;
       try {
@@ -302,6 +417,6 @@ export async function* readEvents(
       yield ev;
     }
   } finally {
-    await fh.close().catch(() => undefined);
+    await cleanup();
   }
 }
