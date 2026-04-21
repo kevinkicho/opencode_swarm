@@ -191,8 +191,14 @@ export function SwarmRunsPicker({
               const isCurrent = meta.swarmRunID === currentSwarmRunID;
               const bounds = formatBoundsShort(meta);
               const visual = STATUS_VISUAL[row.status];
+              // Retro link only offered for runs that have likely produced
+              // rollups — live/unknown runs haven't been reduced yet. idle
+              // / error / stale runs are eligible. The page itself handles
+              // the "no rollup yet" case, so a false positive here just
+              // shows the empty-state with the generate-curl recipe.
+              const retroEligible = row.status !== 'live' && row.status !== 'unknown';
               return (
-                <li key={meta.swarmRunID}>
+                <li key={meta.swarmRunID} className="group relative">
                   <Link
                     href={`/?swarmRun=${meta.swarmRunID}`}
                     onClick={() => close()}
@@ -247,6 +253,16 @@ export function SwarmRunsPicker({
                       {fmtAge(row.lastActivityTs ?? meta.createdAt)}
                     </span>
                   </Link>
+                  {retroEligible && (
+                    <Link
+                      href={`/retro/${meta.swarmRunID}`}
+                      onClick={() => close()}
+                      title="open retro for this run"
+                      className="absolute right-1 top-1 h-5 px-1.5 rounded font-mono text-[9px] uppercase tracking-widest2 text-fog-600 hover:text-molten hover:bg-molten/10 transition opacity-0 group-hover:opacity-100 flex items-center"
+                    >
+                      retro
+                    </Link>
+                  )}
                 </li>
               );
             })}

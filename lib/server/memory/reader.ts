@@ -1,0 +1,68 @@
+// Read-side helpers that return typed L2 shapes directly, without the
+// `recall()` envelope (items[], tokenEstimate, truncated, shape). The retro
+// page consumes these on the server so it can render without a round-trip
+// back through its own HTTP surface.
+//
+// Kept separate from query.ts because query.ts is purpose-built for the
+// generic recall() endpoint — summarizing into headlines, estimating
+// tokens, capping limits. For page-level reads we want the full AgentRollup
+// / RunRetro blobs back as-is.
+
+import { memoryDb } from './db';
+import type { AgentRollup, RunRetro } from './types';
+
+interface RollupRow {
+  swarm_run_id: string;
+  session_id: string;
+  kind: string;
+  closed_at: number;
+  payload: string;
+}
+
+// Fetch the retro + every agent rollup for one run. Returns null when the
+// run has no rollups at all — the caller decides whether that's a 404 or a
+// "generate now" prompt.
+export function getRetro(swarmRunID: string): {
+  retro: RunRetro | null;
+  agentRollups: AgentRollup[];
+} | null {
+  const db = memoryDb();
+  const rows = db
+    .prepare(
+      `SELECT swarm_run_id, session_id, kind, closed_at, payload
+       FROM rollups
+       WHERE swarm_run_id = ?
+       ORDER BY closed_at ASC`
+    )
+    .all(swarmRunID) as RollupRow[];
+
+  if (rows.length === 0) return null;
+
+  let retro: RunRetro | null = null;
+  const agentRollups: AgentRollup[] = [];
+  for (const r of rows) {
+    try {
+      const blob = JSON.parse(r.payload) as AgentRollup | RunRetro;
+      if (blob.kind === 'retro') retro = blob;
+      else if (blob.kind === 'agent') agentRollups.push(blob);
+    } catch {
+      // Malformed payload — skip rather than throw. A single bad row
+      // shouldn't hide the rest of the run's data; the rollup generator
+      // can be re-run to rewrite it.
+      continue;
+    }
+  }
+
+  return { retro, agentRollups };
+}
+
+// Lightweight row count used by the retro link in the runs picker: "does
+// this run have rollups yet?" in one query. Avoids deserializing payloads
+// when the caller just needs a boolean/count.
+export function countRollups(swarmRunID: string): number {
+  const db = memoryDb();
+  const row = db
+    .prepare('SELECT COUNT(*) AS n FROM rollups WHERE swarm_run_id = ?')
+    .get(swarmRunID) as { n: number };
+  return row.n;
+}
