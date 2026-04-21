@@ -10,3 +10,4 @@ dist/
 tsconfig.tsbuildinfo
 .opencode_swarm/
 .dev-port
+.claude/
