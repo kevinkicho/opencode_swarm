@@ -56,6 +56,35 @@ function sha256(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
+// Plan-state tracker: walks todowrite snapshots across a session so we can
+// attribute each patch to whichever todo was in_progress when it landed.
+// DESIGN.md §8.4 — temporal attribution, v1. Multiple concurrent in_progress
+// todos resolve to the *first* one in document order (opencode's convention
+// is one-at-a-time, but the shape allows more).
+interface RawTodoState {
+  content: string;
+  status?: string;
+}
+
+function extractTodowriteTodos(state: unknown): RawTodoState[] | null {
+  if (!state || typeof state !== 'object') return null;
+  const s = state as { input?: unknown };
+  if (!s.input || typeof s.input !== 'object') return null;
+  const inp = s.input as { todos?: unknown };
+  if (!Array.isArray(inp.todos)) return null;
+  return inp.todos.filter(
+    (t): t is RawTodoState =>
+      !!t && typeof t === 'object' && typeof (t as RawTodoState).content === 'string'
+  );
+}
+
+function firstInProgressHash(todos: RawTodoState[]): string | null {
+  for (const t of todos) {
+    if (t.status === 'in_progress') return sha256(t.content);
+  }
+  return null;
+}
+
 // Cost fallback mirrors swarm-registry.ts costForAssistant. Duplicated so
 // this module has no import from anywhere client-adjacent; both should be
 // moved into a `lib/server/opencode-metrics.ts` helper when/if a third
@@ -98,7 +127,16 @@ function reduceSession(
   const decisions: AgentRollup['decisions'] = [];
   const spawned: string[] = [];
 
-  for (const m of messages) {
+  // Chronological walk is required for the plan-state tracker — a patch
+  // should see the todowrite snapshot that landed *before* it, even when
+  // parts straddle message boundaries.
+  const ordered = [...messages].sort(
+    (a, b) => a.info.time.created - b.info.time.created
+  );
+
+  const planState: PlanState = { inProgressHash: null, lastTodos: null };
+
+  for (const m of ordered) {
     const info = m.info;
     startMs = startMs == null ? info.time.created : Math.min(startMs, info.time.created);
     endMs = Math.max(endMs ?? 0, info.time.completed ?? info.time.created);
@@ -121,12 +159,21 @@ function reduceSession(
         failures,
         decisions,
         spawned,
+        planState,
         onToolCall: () => (toolCalls += 1),
         onRetry: () => (retries += 1),
         onCompaction: () => (compactions += 1),
       });
     }
   }
+
+  const plan = planState.lastTodos
+    ? planState.lastTodos.map((t) => ({
+        id: sha256(t.content),
+        content: t.content,
+        status: normalizePlanStatus(t.status),
+      }))
+    : undefined;
 
   return {
     kind: 'agent',
@@ -141,8 +188,32 @@ function reduceSession(
     failures,
     decisions,
     deps: { spawned },
+    ...(plan ? { plan } : {}),
     // cost is tracked on RunRetro, not per-session, per DESIGN.md §7.4
   };
+}
+
+// Tighten opencode's free-form status string to our typed union. Unknown
+// values fall through to 'pending' — matches transform.ts mapTodoStatus.
+function normalizePlanStatus(
+  s: string | undefined
+): NonNullable<AgentRollup['plan']>[number]['status'] {
+  switch (s) {
+    case 'completed': return 'completed';
+    case 'in_progress': return 'in_progress';
+    case 'failed': return 'failed';
+    case 'cancelled':
+    case 'abandoned': return 'abandoned';
+    default: return 'pending';
+  }
+}
+
+interface PlanState {
+  inProgressHash: string | null;
+  // Snapshot of the latest todowrite payload — stored so the agent rollup
+  // can ship the final plan alongside originTodoID hashes. Without this,
+  // the viewer can't resolve a hash back to human-readable text.
+  lastTodos: RawTodoState[] | null;
 }
 
 interface PartReduceContext {
@@ -150,6 +221,7 @@ interface PartReduceContext {
   failures: AgentRollup['failures'];
   decisions: AgentRollup['decisions'];
   spawned: string[];
+  planState: PlanState;
   onToolCall: () => void;
   onRetry: () => void;
   onCompaction: () => void;
@@ -179,6 +251,16 @@ function reducePart(p: OpencodePart, ctx: PartReduceContext): void {
           ctx.spawned.push(maybeChild);
         }
       }
+      // todowrite snapshot drives originTodoID attribution for later
+      // patches. Each call replaces the list entirely; skip errored calls so
+      // a transient failure doesn't blank out the prior state.
+      if (p.tool === 'todowrite' && status !== 'error') {
+        const todos = extractTodowriteTodos(state);
+        if (todos) {
+          ctx.planState.inProgressHash = firstInProgressHash(todos);
+          ctx.planState.lastTodos = todos;
+        }
+      }
       return;
     }
     case 'patch': {
@@ -186,12 +268,14 @@ function reducePart(p: OpencodePart, ctx: PartReduceContext): void {
       // +/- lines requires fetching the session diff (not done here — the
       // rollup stays cheap). Leave added/removed undefined; the viewer can
       // resolve via /session/{id}/diff when the detail is asked for.
+      const originTodoID = ctx.planState.inProgressHash ?? undefined;
       for (const filePath of p.files) {
         ctx.artifacts.push({
           type: 'patch',
           filePath,
           diffHash: p.hash,
           status: 'merged',
+          ...(originTodoID ? { originTodoID } : {}),
         });
       }
       return;

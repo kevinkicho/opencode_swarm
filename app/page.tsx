@@ -1,12 +1,12 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
 import { Inspector } from '@/components/inspector';
-import { CommandPalette } from '@/components/command-palette';
+import { CommandPalette, type PaletteAction } from '@/components/command-palette';
 import { RoutingModal } from '@/components/routing-modal';
 import { LiveCommitHistory } from '@/components/live-commit-history';
 import { SpawnAgentModal } from '@/components/spawn-agent-modal';
@@ -256,6 +256,7 @@ function PageBody({
   swarmRunMeta: SwarmRunMeta | null;
   swarmRunStatus: SwarmRunStatus | null;
 }) {
+  const router = useRouter();
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -280,6 +281,26 @@ function PageBody({
     // scroll + highlight. 1200ms covers smooth scroll + visual settle.
     window.setTimeout(() => setFocusTodoId(null), 1200);
   }, []);
+
+  // Palette actions: runtime navigation shortcuts that don't fit the
+  // jump-to-node model. Gated on swarmRunStatus so we don't offer retro for
+  // a live run — the rollup hasn't landed yet (DESIGN.md §7.6 — rollups are
+  // written at session close). The retro page handles "no rollup yet"
+  // gracefully, but showing the action during a run reads as a bug.
+  const paletteActions = useMemo<PaletteAction[]>(() => {
+    const out: PaletteAction[] = [];
+    if (swarmRunID && swarmRunStatus && swarmRunStatus !== 'live' && swarmRunStatus !== 'unknown') {
+      out.push({
+        id: 'retro:current',
+        group: 'open',
+        label: 'retro · current run',
+        hint: swarmRunID,
+        tone: 'molten',
+        onSelect: () => router.push(`/retro/${swarmRunID}`),
+      });
+    }
+    return out;
+  }, [router, swarmRunID, swarmRunStatus]);
 
   // Routing bounds live in a provider so the modal can persist them to
   // localStorage. Cost cap is the only bound with a direct RunMeta field
@@ -483,6 +504,7 @@ function PageBody({
         onClose={() => setPaletteOpen(false)}
         nodes={paletteNodes}
         onJump={focusMessage}
+        actions={paletteActions}
       />
 
       <RoutingModal open={routingOpen} onClose={() => setRoutingOpen(false)} />

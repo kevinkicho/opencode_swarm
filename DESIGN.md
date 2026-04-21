@@ -312,6 +312,7 @@ type AgentRollup = {
     diffHash?: string;
     status?: 'merged' | 'discarded' | 'superseded';
     reviewNotes?: string;                 // verbatim, not summarized — from whichever agent reviewed
+    originTodoID?: string;                // sha256(todo.content)[:16] — intent anchor back to plan; §8.4
   }>;
   failures: Array<{
     tool: string;
@@ -323,6 +324,11 @@ type AgentRollup = {
   }>;
   decisions: Array<{ at: number; choice: string; rationaleHash?: string }>;
   deps: { spawnedBy?: string; spawned: string[] };
+  plan?: Array<{                          // final todowrite snapshot; omitted when agent never planned
+    id: string;                           // sha256(content)[:16] — matches originTodoID on artifacts
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'abandoned';
+  }>;
 };
 ```
 
@@ -452,7 +458,7 @@ Prefer (a). Implementation path: a thin tool wrapper around `task` that auto-inj
 - **Roster badge (shipped).** `ActiveTodoChip` in `components/agent-roster.tsx` shows every in-progress todo an agent owns; popover lists the full set and click-to-focus jumps to the Plan tab + flashes the row.
 - **Timeline affordance (shipped).** A `task` delegation card surfaces the originating todo item inline as a `todo·X` button (`components/timeline-flow.tsx`); hover shows the full content, click jumps to the Plan tab.
 - **Inspector drawer (partial).** Plan → timeline hop still TODO — clicking a todo in the plan rail should scroll the timeline to the bound `task` card. The reverse hop (timeline → plan) is live.
-- **L2 rollup field (open).** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent. Not yet emitted by the reducer — add when the rollup reader UI needs it.
+- **L2 rollup field (shipped).** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent. The reducer attributes each patch temporally to the todo that was `in_progress` at patch time — keyed on `sha256(todo.content)[:16]` so the ID survives plan edits as long as the content is stable. The retro viewer resolves back to todo text by re-hashing the final plan's todos.
 
 ### 8.5 Open questions
 

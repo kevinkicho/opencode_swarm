@@ -84,6 +84,16 @@ const LESSON_TONE: Record<string, string> = {
   'user-correction': 'text-iris border-iris/30 bg-iris/5',
 };
 
+// Per-status affordance for plan items. Mirrors the run-roster palette so a
+// completed todo reads as "done" without second-guessing.
+const PLAN_STATUS_TONE: Record<string, { dot: string; text: string }> = {
+  completed:   { dot: 'bg-mint',   text: 'text-mint' },
+  in_progress: { dot: 'bg-iris animate-pulse', text: 'text-iris' },
+  pending:     { dot: 'bg-fog-700', text: 'text-fog-400' },
+  failed:      { dot: 'bg-rust',   text: 'text-rust' },
+  abandoned:   { dot: 'bg-fog-700', text: 'text-fog-600 line-through' },
+};
+
 export function RetroView({ swarmRunID, retro, agentRollups }: Props) {
   if (!retro && agentRollups.length === 0) {
     return <EmptyRetro swarmRunID={swarmRunID} />;
@@ -308,6 +318,25 @@ function AgentSection({ rollups }: { rollups: AgentRollup[] }) {
 
 function AgentRollupCard({ rollup }: { rollup: AgentRollup }) {
   const tone = OUTCOME_TONE[rollup.outcome] ?? OUTCOME_TONE.partial;
+
+  // Build todo-id → (index, content) lookup so an artifact's originTodoID can
+  // render as `todo·N` with a hover tooltip showing the full todo content.
+  // Index is 1-based and matches the order of the plan list below.
+  const planIndex = new Map<string, { index: number; content: string }>();
+  if (rollup.plan) {
+    rollup.plan.forEach((t, i) => {
+      planIndex.set(t.id, { index: i + 1, content: t.content });
+    });
+  }
+
+  // Count artifacts per todo so the plan block can show weight at a glance.
+  const artifactsPerTodo = new Map<string, number>();
+  for (const a of rollup.artifacts) {
+    if (a.originTodoID) {
+      artifactsPerTodo.set(a.originTodoID, (artifactsPerTodo.get(a.originTodoID) ?? 0) + 1);
+    }
+  }
+
   return (
     <li className="px-3 py-2.5 space-y-2">
       <div className="flex items-center gap-3">
@@ -351,40 +380,55 @@ function AgentRollupCard({ rollup }: { rollup: AgentRollup }) {
         />
       </div>
 
+      {rollup.plan && rollup.plan.length > 0 && (
+        <PlanBlock plan={rollup.plan} artifactsPerTodo={artifactsPerTodo} />
+      )}
+
       {rollup.artifacts.length > 0 && (
         <DetailBlock label={`artifacts (${rollup.artifacts.length})`}>
-          {rollup.artifacts.slice(0, 10).map((a, i) => (
-            <span
-              key={i}
-              className="flex items-center gap-2 h-5 px-2 hover:bg-ink-800/60 transition rounded"
-            >
+          {rollup.artifacts.slice(0, 10).map((a, i) => {
+            const bound = a.originTodoID ? planIndex.get(a.originTodoID) : undefined;
+            return (
               <span
-                className={clsx(
-                  'font-mono text-[9px] uppercase tracking-widest2 w-[38px] shrink-0',
-                  a.status === 'merged'
-                    ? 'text-mint'
-                    : a.status === 'discarded'
-                      ? 'text-rust'
-                      : 'text-fog-600'
-                )}
+                key={i}
+                className="flex items-center gap-2 h-5 px-2 hover:bg-ink-800/60 transition rounded"
               >
-                {a.type}
-              </span>
-              <span className="font-mono text-[10.5px] text-fog-200 truncate flex-1 min-w-0">
-                {a.filePath ?? '—'}
-              </span>
-              {(a.addedLines !== undefined || a.removedLines !== undefined) && (
-                <span className="font-mono text-[9.5px] tabular-nums shrink-0">
-                  {a.addedLines !== undefined && (
-                    <span className="text-mint">+{a.addedLines}</span>
+                <span
+                  className={clsx(
+                    'font-mono text-[9px] uppercase tracking-widest2 w-[38px] shrink-0',
+                    a.status === 'merged'
+                      ? 'text-mint'
+                      : a.status === 'discarded'
+                        ? 'text-rust'
+                        : 'text-fog-600'
                   )}
-                  {a.removedLines !== undefined && (
-                    <span className="text-rust ml-1">-{a.removedLines}</span>
-                  )}
+                >
+                  {a.type}
                 </span>
-              )}
-            </span>
-          ))}
+                <span className="font-mono text-[10.5px] text-fog-200 truncate flex-1 min-w-0">
+                  {a.filePath ?? '—'}
+                </span>
+                {bound && (
+                  <span
+                    title={bound.content}
+                    className="font-mono text-[9px] uppercase tracking-widest2 text-iris/80 border border-iris/20 bg-iris/5 rounded px-1 h-3.5 flex items-center shrink-0"
+                  >
+                    todo·{bound.index}
+                  </span>
+                )}
+                {(a.addedLines !== undefined || a.removedLines !== undefined) && (
+                  <span className="font-mono text-[9.5px] tabular-nums shrink-0">
+                    {a.addedLines !== undefined && (
+                      <span className="text-mint">+{a.addedLines}</span>
+                    )}
+                    {a.removedLines !== undefined && (
+                      <span className="text-rust ml-1">-{a.removedLines}</span>
+                    )}
+                  </span>
+                )}
+              </span>
+            );
+          })}
           {rollup.artifacts.length > 10 && (
             <span className="px-2 h-4 font-mono text-[10px] text-fog-600">
               …{rollup.artifacts.length - 10} more
@@ -463,6 +507,48 @@ function AgentRollupCard({ rollup }: { rollup: AgentRollup }) {
         </div>
       )}
     </li>
+  );
+}
+
+function PlanBlock({
+  plan,
+  artifactsPerTodo,
+}: {
+  plan: NonNullable<AgentRollup['plan']>;
+  artifactsPerTodo: Map<string, number>;
+}) {
+  const completed = plan.filter((t) => t.status === 'completed').length;
+  return (
+    <DetailBlock label={`plan (${completed}/${plan.length})`}>
+      {plan.map((t, i) => {
+        const tone = PLAN_STATUS_TONE[t.status] ?? PLAN_STATUS_TONE.pending;
+        const count = artifactsPerTodo.get(t.id) ?? 0;
+        return (
+          <span
+            key={t.id}
+            className="flex items-center gap-2 h-5 px-2 hover:bg-ink-800/60 transition rounded"
+          >
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 tabular-nums w-[22px] shrink-0">
+              t·{i + 1}
+            </span>
+            <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', tone.dot)} />
+            <span
+              className={clsx(
+                'font-mono text-[10.5px] truncate flex-1 min-w-0',
+                tone.text
+              )}
+            >
+              {t.content}
+            </span>
+            {count > 0 && (
+              <span className="font-mono text-[9.5px] tabular-nums text-fog-600 shrink-0">
+                {count} patch{count === 1 ? '' : 'es'}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </DetailBlock>
   );
 }
 

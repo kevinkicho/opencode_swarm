@@ -16,6 +16,19 @@ interface CommandItem {
   node: TimelineNode;
 }
 
+// Action items are palette entries that *do* something instead of jumping
+// to a timeline node. They share the same visual slot but route through
+// `onSelect` rather than `onJump`. Kept as a distinct shape so TypeScript
+// can prevent us from accidentally passing an action to the jump path.
+export interface PaletteAction {
+  id: string;
+  label: string;
+  hint: string;
+  group: string;
+  onSelect: () => void;
+  tone?: 'default' | 'molten' | 'iris';
+}
+
 const kindChip: Record<
   Exclude<TimelineNode['kind'], 'tool'>,
   { label: string; hex: string }
@@ -27,6 +40,23 @@ const kindChip: Record<
   milestone: { label: 'step', hex: '#7d8798' },
   decision: { label: 'decision', hex: '#ff7a3d' },
 };
+
+function ActionChip({ tone }: { tone: NonNullable<PaletteAction['tone']> }) {
+  const palette =
+    tone === 'molten'
+      ? { color: '#ff7a3d', border: '#ff7a3d55' }
+      : tone === 'iris'
+        ? { color: '#c084fc', border: '#c084fc55' }
+        : { color: '#cfd6df', border: '#cfd6df55' };
+  return (
+    <span
+      className="inline-flex items-center h-4 px-1.5 border rounded-[3px] font-mono text-[9px] uppercase tracking-wider bg-ink-900/60 shrink-0"
+      style={{ color: palette.color, borderColor: palette.border }}
+    >
+      action
+    </span>
+  );
+}
 
 function PaletteChip({ item }: { item: CommandItem }) {
   const n = item.node;
@@ -56,11 +86,13 @@ export function CommandPalette({
   onClose,
   nodes,
   onJump,
+  actions = [],
 }: {
   open: boolean;
   onClose: () => void;
   nodes: TimelineNode[];
   onJump: (id: string) => void;
+  actions?: PaletteAction[];
 }) {
   const [q, setQ] = useState('');
 
@@ -96,8 +128,23 @@ export function CommandPalette({
     return Array.from(m.entries());
   }, [items]);
 
+  const groupedActions = useMemo(() => {
+    const m = new Map<string, PaletteAction[]>();
+    for (const a of actions) {
+      const arr = m.get(a.group) ?? [];
+      arr.push(a);
+      m.set(a.group, arr);
+    }
+    return Array.from(m.entries());
+  }, [actions]);
+
   const select = (item: CommandItem) => {
     onJump(item.node.id);
+    onClose();
+  };
+
+  const selectAction = (action: PaletteAction) => {
+    action.onSelect();
     onClose();
   };
 
@@ -152,6 +199,50 @@ export function CommandPalette({
                     try a tool name, an agent, or a file path
                   </div>
                 </Command.Empty>
+
+                {groupedActions.map(([group, groupActions]) => (
+                  <Command.Group
+                    key={`action:${group}`}
+                    heading={
+                      <span className="block px-4 py-1 font-mono text-micro uppercase tracking-widest2 text-fog-700 text-center">
+                        {group}
+                      </span>
+                    }
+                  >
+                    {groupActions.map((action) => (
+                      <Command.Item
+                        key={action.id}
+                        value={`${action.group} ${action.label}`}
+                        onSelect={() => selectAction(action)}
+                        className={clsx(
+                          'w-full grid items-center gap-3 px-4 h-9 text-left transition cursor-pointer relative',
+                          'data-[selected=true]:bg-ink-700',
+                          'aria-selected:bg-ink-700'
+                        )}
+                        style={{ gridTemplateColumns: '84px minmax(0, 1fr) 140px' }}
+                      >
+                        <span className="flex items-center">
+                          <ActionChip tone={action.tone ?? 'default'} />
+                        </span>
+                        <span
+                          className={clsx(
+                            'truncate text-[13px] min-w-0',
+                            action.tone === 'molten'
+                              ? 'text-molten'
+                              : action.tone === 'iris'
+                                ? 'text-iris'
+                                : 'text-fog-200'
+                          )}
+                        >
+                          {action.label}
+                        </span>
+                        <span className="font-mono text-micro text-fog-600 tabular-nums text-right">
+                          {action.hint}
+                        </span>
+                      </Command.Item>
+                    ))}
+                  </Command.Group>
+                ))}
 
                 {grouped.map(([group, groupItems]) => (
                   <Command.Group

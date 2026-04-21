@@ -39,6 +39,12 @@ export interface AgentRollup {
     diffHash?: string;
     status?: 'merged' | 'discarded' | 'superseded';
     reviewNotes?: string;
+    // Intent anchor: which plan item was in_progress when this artifact
+    // landed? (DESIGN.md §8.4.) v1 uses temporal attribution — the
+    // first in-progress todo at patch time. Value is sha256(content) sliced
+    // to 16 chars so it survives plan edits (same content → same ID).
+    // Undefined when no todo was in-progress, or when the run had no plan.
+    originTodoID?: string;
   }>;
   failures: Array<{
     tool: string;
@@ -57,6 +63,16 @@ export interface AgentRollup {
     spawnedBy?: string;
     spawned: string[];
   };
+  // Final todowrite snapshot for this session, captured at close time.
+  // Present only when the agent wrote a plan during the run; omitted for
+  // agents that never called `todowrite`. `id` is sha256(content)[:16] —
+  // the same key stored on `artifacts[].originTodoID`, so the viewer can
+  // resolve a hash to text without any extra fetch.
+  plan?: Array<{
+    id: string;
+    content: string;
+    status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'abandoned';
+  }>;
 }
 
 export interface RunRetro {
