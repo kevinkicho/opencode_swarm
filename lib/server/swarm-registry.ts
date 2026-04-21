@@ -19,6 +19,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { getSessionMessagesServer } from './opencode-server';
+import { priceFor } from '../opencode/pricing';
+import type {
+  OpencodeMessage,
+  OpencodeMessageInfo,
+} from '../opencode/types';
 import type {
   SwarmRunEvent,
   SwarmRunMeta,
@@ -138,21 +143,62 @@ export async function listRuns(): Promise<SwarmRunMeta[]> {
 // "opencode zombie assistant messages" for why this guard exists.
 const ZOMBIE_THRESHOLD_MS = 10 * 60 * 1000;
 
-// Classify a run's current execution state by inspecting the tail of its
-// primary session's message list. N=1 at v1; when patterns ship, aggregate
-// across sessions (live if ANY is live; else error if ANY is error; else
-// idle — stale counts as idle for the aggregate since the run isn't
-// actually progressing anywhere).
+// Cost fallback for assistant messages where opencode didn't populate
+// `info.cost` (free tiers, old sessions, go-bundle messages). Mirrors
+// `derivedCost` in transform.ts so single-run and cross-run dollar figures
+// match within rounding. Duplicated here rather than imported because
+// transform.ts is a client-adjacent module and we want the server path
+// free of its transitive deps.
+function costForAssistant(info: OpencodeMessageInfo): number {
+  if (typeof info.cost === 'number') return info.cost;
+  const price = priceFor(info.modelID);
+  const t = info.tokens;
+  if (!price || !t) return 0;
+  const input = t.input * price.input;
+  const output = t.output * price.output;
+  const cachedRead = t.cache.read * price.cached;
+  const cachedWrite = t.cache.write * (price.write ?? price.input);
+  return (input + output + cachedRead + cachedWrite) / 1_000_000;
+}
+
+function sumRunMetrics(messages: OpencodeMessage[]): {
+  costTotal: number;
+  tokensTotal: number;
+} {
+  let costTotal = 0;
+  let tokensTotal = 0;
+  for (const m of messages) {
+    if (m.info.role !== 'assistant') continue;
+    tokensTotal += m.info.tokens?.total ?? 0;
+    costTotal += costForAssistant(m.info);
+  }
+  return { costTotal, tokensTotal };
+}
+
+// Row-level derivation: one message fetch per run, two projections from
+// the response — live status (tail-only) and cumulative $/tokens (sum
+// across assistant messages). Folded into a single function so the list
+// endpoint doesn't fan out twice for what is the same underlying data.
 //
-// Never throws. A probe failure collapses to `unknown` with
-// lastActivityTs=null — the list endpoint still returns the row so the
-// picker can render it, just without a status dot.
-export async function deriveRunStatus(
+// N=1 session at v1; when patterns ship, metrics aggregate across sessions
+// (sum) and status aggregates with priority (live > error > stale > idle).
+//
+// Never throws. A probe failure collapses to `unknown` status + zero
+// metrics — the list endpoint still returns the row so the picker renders
+// it, just without a status dot or cost readout.
+export async function deriveRunRow(
   meta: SwarmRunMeta,
   signal?: AbortSignal
-): Promise<{ status: SwarmRunStatus; lastActivityTs: number | null }> {
+): Promise<{
+  status: SwarmRunStatus;
+  lastActivityTs: number | null;
+  costTotal: number;
+  tokensTotal: number;
+}> {
   const sessionID = meta.sessionIDs[0];
-  if (!sessionID) return { status: 'unknown', lastActivityTs: null };
+  if (!sessionID) {
+    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+  }
 
   let messages;
   try {
@@ -161,16 +207,17 @@ export async function deriveRunStatus(
     // Could be the session was deleted out from under us, or opencode is
     // momentarily unreachable. Either way, not actionable by the picker —
     // surface as unknown and let the next poll try again.
-    return { status: 'unknown', lastActivityTs: null };
+    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
   }
 
   if (messages.length === 0) {
     // Session exists but no messages yet. Usually means the run was just
     // created and the first directive is still in flight. Not idle, not
     // error — honest answer is unknown.
-    return { status: 'unknown', lastActivityTs: null };
+    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
   }
 
+  const { costTotal, tokensTotal } = sumRunMetrics(messages);
   const last = messages[messages.length - 1];
   const info = last.info;
   const now = Date.now();
@@ -179,7 +226,7 @@ export async function deriveRunStatus(
   // yet attached the assistant reply. That's live — something is about to
   // produce tokens.
   if (info.role === 'user') {
-    return { status: 'live', lastActivityTs: info.time.created };
+    return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal };
   }
 
   // Assistant message path.
@@ -187,16 +234,18 @@ export async function deriveRunStatus(
     return {
       status: 'error',
       lastActivityTs: info.time.completed ?? info.time.created,
+      costTotal,
+      tokensTotal,
     };
   }
   if (info.time.completed) {
-    return { status: 'idle', lastActivityTs: info.time.completed };
+    return { status: 'idle', lastActivityTs: info.time.completed, costTotal, tokensTotal };
   }
   // No completed, no error — either actively producing or zombie.
   if (now - info.time.created < ZOMBIE_THRESHOLD_MS) {
-    return { status: 'live', lastActivityTs: info.time.created };
+    return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal };
   }
-  return { status: 'stale', lastActivityTs: info.time.created };
+  return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal };
 }
 
 // Append one event as a single JSON line. Uses appendFile (single syscall,

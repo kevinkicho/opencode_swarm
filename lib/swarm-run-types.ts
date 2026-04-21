@@ -76,7 +76,8 @@ export interface SwarmRunResponse {
 export type SwarmRunStatus = 'live' | 'idle' | 'error' | 'stale' | 'unknown';
 
 // One row in GET /api/swarm/run's response. `meta` is the persisted record;
-// `status` and `lastActivityTs` are live-derived and may change across polls.
+// the rest is live-derived from the primary session's messages and may
+// change across polls.
 export interface SwarmRunListRow {
   meta: SwarmRunMeta;
   status: SwarmRunStatus;
@@ -84,6 +85,12 @@ export interface SwarmRunListRow {
   // latest message's time.completed or time.created. null when the session
   // has no messages.
   lastActivityTs: number | null;
+  // Cumulative dollars and tokens across every assistant message in the
+  // run's primary session. Falls back to pricing-derived cost when
+  // opencode doesn't report info.cost directly (free tiers, go bundle).
+  // Zero when the probe failed or the run has no assistant messages yet.
+  costTotal: number;
+  tokensTotal: number;
 }
 
 // --- multiplexed event shape (out of /api/swarm/run/:id/events) -------------

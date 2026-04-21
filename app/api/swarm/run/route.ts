@@ -21,7 +21,7 @@
 import type { NextRequest } from 'next/server';
 
 import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
-import { createRun, deriveRunStatus, listRuns } from '@/lib/server/swarm-registry';
+import { createRun, deriveRunRow, listRuns } from '@/lib/server/swarm-registry';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -199,12 +199,13 @@ export async function GET(): Promise<Response> {
     const metas = await listRuns();
     const rows: SwarmRunListRow[] = await Promise.all(
       metas.map(async (meta) => {
-        // deriveRunStatus is itself non-throwing — it collapses probe
-        // failures to `unknown` — so this Promise.all never rejects for
-        // per-row reasons. A rejection here would be an unexpected crash
-        // path (e.g. OOM) and is fine to surface as a 500.
-        const { status, lastActivityTs } = await deriveRunStatus(meta);
-        return { meta, status, lastActivityTs };
+        // deriveRunRow is itself non-throwing — it collapses probe
+        // failures to `unknown` + zero metrics — so this Promise.all never
+        // rejects for per-row reasons. A rejection here would be an
+        // unexpected crash path (e.g. OOM) and is fine to surface as a 500.
+        const { status, lastActivityTs, costTotal, tokensTotal } =
+          await deriveRunRow(meta);
+        return { meta, status, lastActivityTs, costTotal, tokensTotal };
       })
     );
     return Response.json({ runs: rows });
