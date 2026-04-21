@@ -23,6 +23,7 @@ import {
   toAgents,
   toMessages,
   toRunMeta,
+  toRunPlan,
   toProviderSummary,
 } from '@/lib/opencode/transform';
 import {
@@ -30,10 +31,10 @@ import {
   agentOrder as mockAgentOrder,
   messages as mockMessages,
   runMeta as mockRunMeta,
-  runPlan,
+  runPlan as mockRunPlan,
   providerSummary as mockProviderSummary,
 } from '@/lib/swarm-data';
-import type { AgentMessage, Agent, RunMeta, ProviderSummary } from '@/lib/swarm-types';
+import type { AgentMessage, Agent, RunMeta, ProviderSummary, TodoItem } from '@/lib/swarm-types';
 import type { TimelineNode } from '@/lib/types';
 
 interface SwarmView {
@@ -42,6 +43,7 @@ interface SwarmView {
   messages: AgentMessage[];
   runMeta: RunMeta;
   providerSummary: ProviderSummary[];
+  runPlan: TodoItem[];
   isLive: boolean;
 }
 
@@ -68,6 +70,7 @@ function PageInner() {
         messages,
         runMeta: toRunMeta(liveData.session, liveData.messages),
         providerSummary: toProviderSummary(agents, liveData.messages),
+        runPlan: toRunPlan(liveData.messages),
         isLive: true,
       };
     }
@@ -77,11 +80,12 @@ function PageInner() {
       messages: mockMessages,
       runMeta: mockRunMeta,
       providerSummary: mockProviderSummary,
+      runPlan: mockRunPlan,
       isLive: false,
     };
   }, [sessionId, liveData]);
 
-  const { agents, agentOrder, messages, runMeta, providerSummary } = view;
+  const { agents, agentOrder, messages, runMeta, providerSummary, runPlan } = view;
 
   const paletteNodes: TimelineNode[] = useMemo(
     () =>
@@ -123,6 +127,7 @@ function PageInner() {
       messages={messages}
       runMeta={runMeta}
       providerSummary={providerSummary}
+      runPlan={runPlan}
       paletteNodes={paletteNodes}
       runDuration={runDuration}
     />
@@ -135,6 +140,7 @@ function PageBody({
   messages,
   runMeta,
   providerSummary,
+  runPlan,
   paletteNodes,
   runDuration,
 }: {
@@ -143,6 +149,7 @@ function PageBody({
   messages: AgentMessage[];
   runMeta: RunMeta;
   providerSummary: ProviderSummary[];
+  runPlan: TodoItem[];
   paletteNodes: TimelineNode[];
   runDuration: number;
 }) {

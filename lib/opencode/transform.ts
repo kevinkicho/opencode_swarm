@@ -11,6 +11,8 @@ import type {
   PartType,
   ToolName,
   ToolState,
+  TodoItem,
+  TodoStatus,
 } from '../swarm-types';
 import type {
   OpencodeMessage,
@@ -292,6 +294,58 @@ export function toRunMeta(
     goTier: { window: '5h', used: 0, cap: 12.0 },
     cwd: session?.directory ?? '',
   };
+}
+
+// opencode's todowrite payload lives at part.state.input.todos — each call
+// fully replaces the prior list, so only the LAST invocation matters.
+interface RawTodo {
+  content: string;
+  status?: string;
+  priority?: string;
+}
+
+function rawTodosFromState(state: unknown): RawTodo[] | null {
+  if (!state || typeof state !== 'object') return null;
+  const s = state as { input?: unknown };
+  if (!s.input || typeof s.input !== 'object') return null;
+  const inp = s.input as { todos?: unknown };
+  if (!Array.isArray(inp.todos)) return null;
+  return inp.todos.filter(
+    (t): t is RawTodo =>
+      !!t && typeof t === 'object' && typeof (t as RawTodo).content === 'string'
+  );
+}
+
+function mapTodoStatus(s: string | undefined): TodoStatus {
+  switch (s) {
+    case 'completed': return 'completed';
+    case 'in_progress': return 'in_progress';
+    case 'failed': return 'failed';
+    case 'cancelled':
+    case 'abandoned': return 'abandoned';
+    default: return 'pending';
+  }
+}
+
+export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
+  let latest: { todos: RawTodo[]; messageId: string; callIndex: number } | null = null;
+  let callIndex = 0;
+
+  for (const m of messages) {
+    for (const part of m.parts) {
+      if (part.type !== 'tool' || part.tool !== 'todowrite') continue;
+      callIndex += 1;
+      const todos = rawTodosFromState(part.state);
+      if (todos) latest = { todos, messageId: m.info.id, callIndex };
+    }
+  }
+
+  if (!latest) return [];
+  return latest.todos.map((t, i) => ({
+    id: `tdo_${latest!.callIndex}_${i}`,
+    content: t.content,
+    status: mapTodoStatus(t.status),
+  }));
 }
 
 export function toProviderSummary(
