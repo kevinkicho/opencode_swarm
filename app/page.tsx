@@ -16,6 +16,7 @@ import { RunProvenanceDrawer } from '@/components/run-provenance-drawer';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { CostDashboard } from '@/components/cost-dashboard';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
+import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -31,6 +32,7 @@ import {
   useSessionDiff,
   useSwarmRuns,
   postSessionMessageBrowser,
+  CostCapError,
 } from '@/lib/opencode/live';
 import {
   toAgents,
@@ -285,6 +287,10 @@ function PageBody({
   const [newRunOpen, setNewRunOpen] = useState(false);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [costOpen, setCostOpen] = useState(false);
+  // Most recent cost-cap rejection from the proxy gate (DESIGN.md §9). Set
+  // when postSessionMessageBrowser throws CostCapError; cleared on dismiss or
+  // when the user switches to a different run.
+  const [costCapBlock, setCostCapBlock] = useState<CostCapBlock | null>(null);
   // Left-panel tab is lifted so the timeline can reveal the plan when a task
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
@@ -432,6 +438,13 @@ function PageBody({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Drop any stale cost-cap banner when the active run changes — a block from
+  // one run isn't meaningful for another. Also clears when the user exits a
+  // swarm-scoped view entirely (swarmRunID → null).
+  useEffect(() => {
+    setCostCapBlock(null);
+  }, [swarmRunID]);
+
 
   const drawerTitle = focusedMsgId
     ? messages.find((m) => m.id === focusedMsgId)?.title
@@ -504,6 +517,17 @@ function PageBody({
         error={permissions.error}
       />
 
+      {costCapBlock && (
+        <CostCapBanner
+          block={costCapBlock}
+          onOpenRouting={() => {
+            setCostCapBlock(null);
+            setRoutingOpen(true);
+          }}
+          onDismiss={() => setCostCapBlock(null)}
+        />
+      )}
+
       <SwarmComposer
         agents={agents}
         disabled={!liveSessionId || !liveDirectory}
@@ -518,7 +542,18 @@ function PageBody({
               : undefined;
           postSessionMessageBrowser(liveSessionId, liveDirectory, body, {
             agent: agentName,
-          }).catch((err) => console.error('[composer] opencode post failed', err));
+          }).catch((err) => {
+            if (err instanceof CostCapError) {
+              setCostCapBlock({
+                swarmRunID: err.swarmRunID,
+                costTotal: err.costTotal,
+                costCap: err.costCap,
+                message: err.message,
+              });
+              return;
+            }
+            console.error('[composer] opencode post failed', err);
+          });
         }}
       />
 

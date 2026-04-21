@@ -143,6 +143,25 @@ export async function abortSessionBrowser(
   }
 }
 
+// Typed error for the cost-cap gate (DESIGN.md §9 — see
+// app/api/opencode/[...path]/route.ts). We split this out from the generic
+// prompt-failure path because the UI needs the structured body (run id,
+// accumulated $, declared cap) to render the banner and link to the routing
+// modal. Callers `instanceof`-check this before falling back to generic logs.
+export class CostCapError extends Error {
+  readonly kind = 'cost-cap' as const;
+  swarmRunID: string;
+  costTotal: number;
+  costCap: number;
+  constructor(payload: { swarmRunID: string; costTotal: number; costCap: number; message?: string }) {
+    super(payload.message ?? 'swarm run hit its cost cap');
+    this.name = 'CostCapError';
+    this.swarmRunID = payload.swarmRunID;
+    this.costTotal = payload.costTotal;
+    this.costCap = payload.costCap;
+  }
+}
+
 // Fire-and-forget prompt submission. Uses /prompt_async so the composer doesn't
 // block on the full model turn — SSE surfaces parts as they stream in.
 // Instance-scoped via ?directory=, same as every other instance route.
@@ -150,6 +169,10 @@ export async function abortSessionBrowser(
 // `agent` is the opencode agent-config name (e.g. "build", "plan"). When set,
 // opencode routes this prompt to that agent-config within the session instead
 // of the session's default. Omit to broadcast to the session's lead agent.
+//
+// Throws CostCapError on 402 (swarm cost-cap gate fired) so callers can
+// render a structured banner; other failures throw a generic Error with the
+// HTTP status and response detail.
 export async function postSessionMessageBrowser(
   sessionId: string,
   directory: string,
@@ -173,6 +196,31 @@ export async function postSessionMessageBrowser(
   );
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
+    if (res.status === 402 && detail) {
+      try {
+        const parsed = JSON.parse(detail) as {
+          swarmRunID?: string;
+          costTotal?: number;
+          costCap?: number;
+          message?: string;
+        };
+        if (
+          typeof parsed.swarmRunID === 'string' &&
+          typeof parsed.costTotal === 'number' &&
+          typeof parsed.costCap === 'number'
+        ) {
+          throw new CostCapError({
+            swarmRunID: parsed.swarmRunID,
+            costTotal: parsed.costTotal,
+            costCap: parsed.costCap,
+            message: parsed.message,
+          });
+        }
+      } catch (err) {
+        if (err instanceof CostCapError) throw err;
+        // malformed 402 body — fall through to the generic error below
+      }
+    }
     throw new Error(`opencode prompt -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
   }
 }
