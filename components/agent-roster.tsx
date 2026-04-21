@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import { useMemo, useState } from 'react';
-import type { Agent, AgentMessage, AgentStatus } from '@/lib/swarm-types';
+import type { Agent, AgentMessage, AgentStatus, TodoItem } from '@/lib/swarm-types';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
@@ -45,6 +45,7 @@ const statusMeta: Record<AgentStatus, { label: string; color: string }> = {
 export function AgentRoster({
   agents,
   messages,
+  todos,
   selectedId,
   onSelect,
   onInspect,
@@ -54,6 +55,7 @@ export function AgentRoster({
 }: {
   agents: Agent[];
   messages: AgentMessage[];
+  todos: TodoItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   onInspect: (id: string) => void;
@@ -71,6 +73,21 @@ export function AgentRoster({
     return map;
   }, [agents, messages]);
 
+  // Owned-in-progress todos per agent. Surfaced as a row-level "→ item X"
+  // chip so the roster answers "what is this agent doing right now?" without
+  // requiring a tab switch to the plan. Binding source is transform.ts's
+  // hash-match; see DESIGN.md §8.
+  const todosByAgent = useMemo(() => {
+    const map = new Map<string, TodoItem[]>();
+    for (const t of todos) {
+      if (!t.ownerAgentId || t.status !== 'in_progress') continue;
+      const arr = map.get(t.ownerAgentId) ?? [];
+      arr.push(t);
+      map.set(t.ownerAgentId, arr);
+    }
+    return map;
+  }, [todos]);
+
   const body = (
     <ul className="flex-1 overflow-y-auto py-1.5">
       {agents.map((a) => (
@@ -78,6 +95,7 @@ export function AgentRoster({
           key={a.id}
           agent={a}
           attention={attentionByAgent.get(a.id)!}
+          activeTodos={todosByAgent.get(a.id) ?? []}
           selected={selectedId === a.id}
           expanded={expandedId === a.id}
           onToggleExpand={() => setExpandedId((p) => (p === a.id ? null : a.id))}
@@ -123,6 +141,7 @@ export function AgentRoster({
 function AgentRow({
   agent,
   attention,
+  activeTodos,
   selected,
   expanded,
   onToggleExpand,
@@ -132,6 +151,7 @@ function AgentRow({
 }: {
   agent: Agent;
   attention: Attention;
+  activeTodos: TodoItem[];
   selected: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
@@ -198,6 +218,14 @@ function AgentRow({
         <span className="text-[13px] text-fog-100 truncate flex-1 min-w-0 cursor-default">
           {agent.name}
         </span>
+
+        {activeTodos.length > 0 && (
+          <ActiveTodoChip
+            todos={activeTodos}
+            accent={agent.accent}
+            onFocus={onFocus}
+          />
+        )}
 
         <AttentionBadge attention={attention} onFocus={onFocus} />
       </button>
@@ -293,6 +321,100 @@ function AgentRow({
         </div>
       )}
     </li>
+  );
+}
+
+// Compact chip on an agent row: "→ item B". Click jumps to the task-tool
+// message that bound the todo. Multi-todo case shows a "+N" suffix; the
+// Popover reveals the full list. Positioned inline between name and the
+// attention badge so a single glance answers "what is this agent doing?".
+function ActiveTodoChip({
+  todos,
+  accent,
+  onFocus,
+}: {
+  todos: TodoItem[];
+  accent: Agent['accent'];
+  onFocus: (messageId: string) => void;
+}) {
+  const primary = todos[0];
+  const extra = todos.length - 1;
+  const toneText: Record<Agent['accent'], string> = {
+    molten: 'text-molten',
+    mint: 'text-mint',
+    iris: 'text-iris',
+    amber: 'text-amber',
+    fog: 'text-fog-300',
+  };
+
+  const jumpTo = (messageId?: string) => {
+    if (messageId) onFocus(messageId);
+  };
+
+  const content = (close?: () => void) => (
+    <div className="py-1 min-w-[220px]">
+      <div className="px-2 pt-1 pb-1.5 flex items-center gap-2">
+        <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-500">
+          in progress
+        </span>
+        <span className="ml-auto font-mono text-[9.5px] tabular-nums text-fog-600">
+          {todos.length}
+        </span>
+      </div>
+      <ul className="hairline-t">
+        {todos.map((t) => {
+          const clickable = !!t.taskMessageId;
+          return (
+            <li key={t.id}>
+              <button
+                type="button"
+                disabled={!clickable}
+                onClick={() => {
+                  jumpTo(t.taskMessageId);
+                  close?.();
+                }}
+                className={clsx(
+                  'w-full grid grid-cols-[28px_1fr] items-center gap-2 px-2 h-6 text-left border-b border-ink-800 last:border-b-0 transition',
+                  clickable ? 'hover:bg-ink-800 cursor-pointer' : 'cursor-default'
+                )}
+              >
+                <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-500">
+                  {t.id}
+                </span>
+                <span className="text-[11px] text-fog-200 truncate leading-none">
+                  {t.content}
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+
+  return (
+    <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+      <Popover side="right" align="start" width={280} content={content}>
+        <span
+          className={clsx(
+            'shrink-0 inline-flex items-center gap-1 h-4 px-1 rounded-sm cursor-pointer',
+            'bg-ink-900/60 hairline hover:border-molten/40 transition max-w-[110px]',
+          )}
+        >
+          <span className={clsx('font-mono text-[9px] uppercase tracking-widest2', toneText[accent])}>
+            →
+          </span>
+          <span className="font-mono text-[10px] text-fog-300 truncate min-w-0">
+            {primary.content}
+          </span>
+          {extra > 0 && (
+            <span className="font-mono text-[9.5px] tabular-nums text-fog-600 shrink-0">
+              +{extra}
+            </span>
+          )}
+        </span>
+      </Popover>
+    </span>
   );
 }
 

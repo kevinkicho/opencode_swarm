@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useCallback, useMemo, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
-import type { Agent, AgentMessage } from '@/lib/swarm-types';
+import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
 import { partMeta, partHex, toolMeta, isCrossLane } from '@/lib/part-taxonomy';
 import { Popover } from './ui/popover';
 import { Tooltip } from './ui/tooltip';
@@ -107,6 +107,8 @@ export function TimelineFlow({
   totalHeight,
   scrollRef,
   scrollMargin,
+  todoByTaskMessageId,
+  onJumpToTodo,
 }: {
   agents: Agent[];
   agentOrder: string[];
@@ -124,6 +126,8 @@ export function TimelineFlow({
   totalHeight: number;
   scrollRef: RefObject<HTMLDivElement | null>;
   scrollMargin: number;
+  todoByTaskMessageId: Map<string, TodoItem>;
+  onJumpToTodo: (todoId: string) => void;
 }) {
   const estimateSize = useCallback(
     (i: number) => rowHeights[i] ?? ROW_HEIGHT,
@@ -250,6 +254,8 @@ export function TimelineFlow({
             agentMap={agentMap}
             focused={focusedId === row.event.id}
             onFocus={onFocus}
+            todoByTaskMessageId={todoByTaskMessageId}
+            onJumpToTodo={onJumpToTodo}
           />
         );
       })}
@@ -547,6 +553,8 @@ function EventCard({
   agentMap,
   focused,
   onFocus,
+  todoByTaskMessageId,
+  onJumpToTodo,
 }: {
   evt: EventLayout;
   y: number;
@@ -554,6 +562,8 @@ function EventCard({
   agentMap: Map<string, Agent>;
   focused: boolean;
   onFocus: (id: string) => void;
+  todoByTaskMessageId: Map<string, TodoItem>;
+  onJumpToTodo: (todoId: string) => void;
 }) {
   const { msg, cardX, accent, isIO, phase, progress, fromName, toNames, dimmed } = evt;
   const labelTop = eventLabel(msg);
@@ -566,6 +576,12 @@ function EventCard({
       : msg.tokens != null
         ? compact(msg.tokens)
         : msg.duration ?? '';
+
+  // Task-tool cards get a "todo· X" eyebrow pointing back at the plan row
+  // that delegated this call. Binding comes from transform.ts; the eyebrow
+  // is absent (not a broken pill) when no matching todo was found.
+  const boundTodo =
+    msg.toolName === 'task' ? todoByTaskMessageId.get(msg.id) : undefined;
 
   return (
     <div
@@ -664,7 +680,35 @@ function EventCard({
                 >
                   {labelTop}
                 </span>
-                {secondary && (
+                {boundTodo ? (
+                  <Tooltip
+                    side="top"
+                    wide
+                    content={
+                      <div className="space-y-1">
+                        <div className="font-mono text-[10.5px] uppercase tracking-widest2 text-fog-500">
+                          carries plan item {boundTodo.id}
+                        </div>
+                        <div className="font-mono text-[11px] text-fog-200 leading-snug">
+                          {boundTodo.content}
+                        </div>
+                        <div className="font-mono text-[9.5px] text-fog-600">
+                          click to reveal in plan
+                        </div>
+                      </div>
+                    }
+                  >
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onJumpToTodo(boundTodo.id);
+                      }}
+                      className="shrink-0 inline-flex items-center h-[12px] px-1 rounded-[2px] font-mono text-[9px] uppercase tracking-wider text-molten bg-molten/10 hover:bg-molten/20 border border-molten/25 transition"
+                    >
+                      todo·{boundTodo.id}
+                    </button>
+                  </Tooltip>
+                ) : secondary && (
                   <span className="font-mono text-[9px] uppercase tracking-wider text-fog-600 shrink-0">
                     {secondary}
                   </span>

@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import type { Agent, AgentMessage, PartType, ToolName } from '@/lib/swarm-types';
+import type { Agent, AgentMessage, PartType, TodoItem, ToolName } from '@/lib/swarm-types';
 import { IconSearch, IconFilter } from './icons';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
@@ -74,6 +74,8 @@ export function SwarmTimeline({
   onClearFocus,
   selectedAgentId,
   onSelectAgent,
+  todos,
+  onJumpToTodo,
 }: {
   agents: Agent[];
   messages: AgentMessage[];
@@ -83,6 +85,8 @@ export function SwarmTimeline({
   onClearFocus: () => void;
   selectedAgentId: string | null;
   onSelectAgent: (id: string) => void;
+  todos: TodoItem[];
+  onJumpToTodo: (todoId: string) => void;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
@@ -106,6 +110,18 @@ export function SwarmTimeline({
     agents.forEach((a) => m.set(a.id, a));
     return m;
   }, [agents]);
+
+  // Reverse index: task-tool message -> originating todo. Lets each task
+  // card in the timeline surface a "todo· X" eyebrow showing which plan
+  // item it was delegated to carry out. Binding is established in
+  // transform.ts's toRunPlan via hash-match; see DESIGN.md §8.
+  const todoByTaskMessageId = useMemo(() => {
+    const m = new Map<string, TodoItem>();
+    for (const t of todos) {
+      if (t.taskMessageId) m.set(t.taskMessageId, t);
+    }
+    return m;
+  }, [todos]);
 
   const filtered = useMemo(
     () =>
@@ -424,6 +440,8 @@ export function SwarmTimeline({
               totalHeight={totalHeight}
               scrollRef={scrollRef}
               scrollMargin={HEADER_HEIGHT + TOP_PAD}
+              todoByTaskMessageId={todoByTaskMessageId}
+              onJumpToTodo={onJumpToTodo}
             />
           </div>
         </div>

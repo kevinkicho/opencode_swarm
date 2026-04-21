@@ -1,6 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
+import { useEffect, useRef } from 'react';
 import type { Agent, TodoItem, TodoStatus } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 
@@ -48,11 +49,16 @@ export function PlanRail({
   items,
   agents,
   onJump,
+  focusTodoId = null,
   embedded = false,
 }: {
   items: TodoItem[];
   agents: Agent[];
   onJump: (messageId: string) => void;
+  // When a caller outside this component (e.g. a task card in the timeline)
+  // wants the plan to reveal a specific item, it sets this prop. The row
+  // scrolls into view and flashes briefly. Clear by setting back to null.
+  focusTodoId?: string | null;
   embedded?: boolean;
 }) {
   const agentById = new Map(agents.map((a) => [a.id, a]));
@@ -66,6 +72,7 @@ export function PlanRail({
           item={item}
           owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) : undefined}
           onJump={onJump}
+          focused={focusTodoId === item.id}
         />
       ))}
     </ul>
@@ -98,16 +105,31 @@ function PlanRow({
   item,
   owner,
   onJump,
+  focused = false,
 }: {
   item: TodoItem;
   owner?: Agent;
   onJump: (messageId: string) => void;
+  focused?: boolean;
 }) {
   const clickable = !!item.taskMessageId;
   const tone = statusTone[item.status];
+  const rowRef = useRef<HTMLLIElement | null>(null);
+
+  useEffect(() => {
+    if (focused && rowRef.current) {
+      rowRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [focused]);
 
   return (
-    <li className="relative">
+    <li
+      ref={rowRef}
+      className={clsx(
+        'relative transition-colors',
+        focused && 'bg-molten/15'
+      )}
+    >
       <button
         type="button"
         disabled={!clickable}

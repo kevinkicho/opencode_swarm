@@ -8,7 +8,7 @@ import { AgentRoster } from './agent-roster';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 
-type Tab = 'plan' | 'roster';
+export type Tab = 'plan' | 'roster';
 
 export function LeftTabs({
   plan,
@@ -20,6 +20,9 @@ export function LeftTabs({
   onFocus,
   onJump,
   onSpawn,
+  tab: tabProp,
+  onTabChange,
+  focusTodoId,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -30,8 +33,19 @@ export function LeftTabs({
   onFocus: (id: string) => void;
   onJump: (messageId: string) => void;
   onSpawn: () => void;
+  // Controlled tab state is optional — the component falls back to its own
+  // local state. Lifting is needed only for cross-component jumps (e.g. a
+  // task card in the timeline that wants to reveal the plan tab).
+  tab?: Tab;
+  onTabChange?: (tab: Tab) => void;
+  focusTodoId?: string | null;
 }) {
-  const [tab, setTab] = useState<Tab>('plan');
+  const [localTab, setLocalTab] = useState<Tab>('plan');
+  const tab = tabProp ?? localTab;
+  const setTab = (t: Tab) => {
+    if (onTabChange) onTabChange(t);
+    else setLocalTab(t);
+  };
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -92,11 +106,18 @@ export function LeftTabs({
 
       <div className="flex-1 min-h-0 flex flex-col">
         {tab === 'plan' ? (
-          <PlanRail items={plan} agents={agents} onJump={onJump} embedded />
+          <PlanRail
+            items={plan}
+            agents={agents}
+            onJump={onJump}
+            focusTodoId={focusTodoId ?? null}
+            embedded
+          />
         ) : (
           <AgentRoster
             agents={agents}
             messages={messages}
+            todos={plan}
             selectedId={selectedAgentId}
             onSelect={onSelectAgent}
             onInspect={onInspectAgent}

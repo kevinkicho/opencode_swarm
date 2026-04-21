@@ -267,6 +267,19 @@ function PageBody({
   const [newRunOpen, setNewRunOpen] = useState(false);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [costOpen, setCostOpen] = useState(false);
+  // Left-panel tab is lifted so the timeline can reveal the plan when a task
+  // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
+  // PlanRail scrolls+flashes on change; we clear it after the row animates.
+  const [leftTab, setLeftTab] = useState<'plan' | 'roster'>('plan');
+  const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
+
+  const jumpToTodo = useCallback((todoId: string) => {
+    setLeftTab('plan');
+    setFocusTodoId(todoId);
+    // Clear after the flash so re-clicking the same todo re-triggers the
+    // scroll + highlight. 1200ms covers smooth scroll + visual settle.
+    window.setTimeout(() => setFocusTodoId(null), 1200);
+  }, []);
 
   // Routing bounds live in a provider so the modal can persist them to
   // localStorage. Cost cap is the only bound with a direct RunMeta field
@@ -393,6 +406,9 @@ function PageBody({
           onFocus={focusMessage}
           onJump={focusMessage}
           onSpawn={() => setSpawnOpen(true)}
+          tab={leftTab}
+          onTabChange={setLeftTab}
+          focusTodoId={focusTodoId}
         />
 
         <SwarmTimeline
@@ -404,6 +420,8 @@ function PageBody({
           onClearFocus={clearFocus}
           selectedAgentId={selectedAgentId}
           onSelectAgent={selectAgent}
+          todos={runPlan}
+          onJumpToTodo={jumpToTodo}
         />
       </main>
 
