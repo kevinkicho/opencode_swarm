@@ -162,6 +162,31 @@ export function useLiveSession(
     let cancelled = false;
     let pendingRefetch = false;
     let controller = new AbortController();
+    let currentDirectory: string | null = null;
+    let es: EventSource | null = null;
+
+    // Opencode's /event route is instance-scoped by ?directory=<path>
+    // (see opencode src: routes/instance/middleware.ts). Without the param it
+    // falls back to process.cwd(), which is why anonymous SSE subs only see
+    // heartbeats — POSTs from the web UI bind to a different instance. So we
+    // fetch the session first to learn its directory, then scope the stream.
+    const openStream = (directory: string) => {
+      if (es) es.close();
+      const qs = new URLSearchParams({ directory }).toString();
+      es = new EventSource(`/api/opencode/event?${qs}`);
+      es.onmessage = (ev) => {
+        try {
+          const parsed = JSON.parse(ev.data) as {
+            type?: string;
+            properties?: { sessionID?: string };
+          };
+          if (parsed.properties?.sessionID !== sessionId) return;
+          refetch();
+        } catch {
+          // heartbeat / connected frames — ignore
+        }
+      };
+    };
 
     async function refetch() {
       if (pendingRefetch) return;
@@ -177,6 +202,10 @@ export function useLiveSession(
         const session = sessions.find((s) => s.id === sessionId) ?? null;
         setData({ session, messages, lastUpdated: Date.now() });
         setError(null);
+        if (session?.directory && session.directory !== currentDirectory) {
+          currentDirectory = session.directory;
+          openStream(session.directory);
+        }
       } catch (err) {
         if (cancelled) return;
         if ((err as Error).name === 'AbortError') return;
@@ -190,29 +219,13 @@ export function useLiveSession(
     setLoading(true);
     refetch();
 
-    // SSE — relevant events trigger an immediate refetch. Event envelope:
-    // { type: "message.updated" | "message.part.updated" | "session.updated" | ..., properties: { sessionID, ... } }
-    const es = new EventSource('/api/opencode/event');
-    es.onmessage = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.data) as {
-          type?: string;
-          properties?: { sessionID?: string };
-        };
-        if (parsed.properties?.sessionID !== sessionId) return;
-        refetch();
-      } catch {
-        // non-JSON heartbeat / connected frames — ignore
-      }
-    };
-
     // Safety net: if the stream drops or an event is missed, still catch up.
     const pollId = setInterval(refetch, fallbackPollMs);
 
     return () => {
       cancelled = true;
       controller.abort();
-      es.close();
+      if (es) es.close();
       clearInterval(pollId);
     };
   }, [sessionId, fallbackPollMs]);
