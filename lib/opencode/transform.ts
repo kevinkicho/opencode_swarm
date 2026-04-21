@@ -319,12 +319,20 @@ export function toRunMeta(
 
   // "active" when either (a) the last message is a user message — prompt is
   // committed but opencode hasn't attached the assistant message yet, or
-  // (b) the last assistant message has no completed timestamp — turn in flight.
-  // Abort path, loading state, and mid-run chips all key off this.
+  // (b) the last assistant message has no completed timestamp, no error, and
+  // was created within ZOMBIE_THRESHOLD_MS. Missing completed + error set
+  // means the turn aborted; missing completed + missing error + old means the
+  // opencode process died mid-turn. Without the staleness guard, such zombie
+  // sessions render "active" with an abort button forever.
+  const ZOMBIE_THRESHOLD_MS = 10 * 60 * 1000;
   const lastMessage = messages[messages.length - 1];
+  const lastInfo = lastMessage?.info;
   const isRunning =
-    !!lastMessage &&
-    (lastMessage.info.role === 'user' || !lastMessage.info.time.completed);
+    !!lastInfo &&
+    (lastInfo.role === 'user' ||
+      (!lastInfo.time.completed &&
+        !lastInfo.error &&
+        Date.now() - lastInfo.time.created < ZOMBIE_THRESHOLD_MS));
 
   return {
     id: session?.id ?? 'run_live',
