@@ -111,6 +111,10 @@ export interface RecallRequest {
     agents?: string[];
     partTypes?: string[];
     toolNames?: string[];
+    // Shell-style glob anchored to the full path. `**` crosses `/`, `*` does
+    // not, `?` matches one non-`/` char, `[abc]` is a character class.
+    // Applies to shape='parts' and shape='diffs'; ignored for 'summary'
+    // (rollup payloads aren't indexed for paths — see DESIGN.md §7.5).
     filePath?: string;
     outcome?: 'merged' | 'discarded';
     timeRange?: { startMs: number; endMs: number };

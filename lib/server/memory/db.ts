@@ -49,10 +49,30 @@ export function memoryDb(): DB {
 
   const schema = readFileSync(resolveSchema(), 'utf8');
   db.exec(schema);
+  migrate(db);
 
   conn = db;
   g.__opencode_memory_db = db;
   return db;
+}
+
+// Lightweight column-level migrations. SQLite rejects `ADD COLUMN IF NOT
+// EXISTS`, so we inspect table_info first and only ALTER when absent. Each
+// block here should stay idempotent + cheap — this runs on every memoryDb()
+// open. Existing rows are left with NULL on the new column; a reindex will
+// backfill patch/file rows with their paths. Dropping the sqlite file is
+// also a supported "migration" at the prototype stage.
+function migrate(db: DB): void {
+  const cols = db
+    .prepare("PRAGMA table_info('parts')")
+    .all() as Array<{ name: string }>;
+  const has = (name: string) => cols.some((c) => c.name === name);
+  if (!has('file_paths')) {
+    db.exec('ALTER TABLE parts ADD COLUMN file_paths TEXT');
+    db.exec(
+      "CREATE INDEX IF NOT EXISTS parts_file_paths ON parts(file_paths) WHERE file_paths IS NOT NULL"
+    );
+  }
 }
 
 // Schema path resolves differently under next's bundled server vs. a

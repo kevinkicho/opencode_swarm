@@ -33,6 +33,11 @@ interface PartUpdatedProps {
     source?: string;
     reasoning?: string;
     snippet?: string;
+    // patch parts expose a file list + content hash. We capture `files` into
+    // the denormalized file_paths column so filter.filePath glob queries
+    // (DESIGN.md §7.5) can pre-filter cheaply in SQL and post-filter with a
+    // shell-style glob in JS.
+    files?: string[];
   };
 }
 
@@ -69,6 +74,25 @@ function extractToolState(part: NonNullable<PartUpdatedProps['part']>): string |
   return null;
 }
 
+// Serializes a part's file attribution into a |-delimited column value. The
+// leading + trailing | are intentional — they anchor LIKE/GLOB matches on
+// whole-segment boundaries (e.g. `%|src/auth/foo.ts|%` matches exactly that
+// file, not `src/auth/foo.ts.bak`). Returns null for parts that don't touch
+// files so the partial index stays sparse.
+function extractFilePaths(part: NonNullable<PartUpdatedProps['part']>): string | null {
+  if (part.type === 'patch' && Array.isArray(part.files) && part.files.length > 0) {
+    const cleaned = part.files
+      .filter((f): f is string => typeof f === 'string' && f.length > 0)
+      .map((f) => f.replace(/\n/g, ''));
+    if (cleaned.length === 0) return null;
+    return `|${cleaned.join('|')}|`;
+  }
+  if (part.type === 'file' && typeof part.filename === 'string' && part.filename.length > 0) {
+    return `|${part.filename.replace(/\n/g, '')}|`;
+  }
+  return null;
+}
+
 // Ingest every untried event for a single swarm run. Returns the number of
 // rows inserted plus the new cursor position. Safe to call against a run
 // with no events file yet (returns 0, 0).
@@ -84,10 +108,10 @@ export async function reindexRun(
   const insert = db.prepare(
     `INSERT OR REPLACE INTO parts
       (part_id, swarm_run_id, session_id, workspace, message_id,
-       part_type, tool_name, tool_state, agent, text, created_ms, event_seq)
+       part_type, tool_name, tool_state, agent, text, file_paths, created_ms, event_seq)
      VALUES
       (@part_id, @swarm_run_id, @session_id, @workspace, @message_id,
-       @part_type, @tool_name, @tool_state, @agent, @text, @created_ms, @event_seq)`
+       @part_type, @tool_name, @tool_state, @agent, @text, @file_paths, @created_ms, @event_seq)`
   );
   const upsertCursor = db.prepare(
     `INSERT INTO ingest_cursors (swarm_run_id, last_seq, last_ts, updated_at)
@@ -168,6 +192,7 @@ function buildRow(
     tool_state: part.type === 'tool' ? extractToolState(part) : null,
     agent: null,                   // opencode doesn't expose agent-name on the part; populate later from session info
     text: extractText(part),
+    file_paths: extractFilePaths(part),
     created_ms: ev.ts,
     event_seq: seq,
   };

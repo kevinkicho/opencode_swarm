@@ -33,6 +33,13 @@ CREATE TABLE IF NOT EXISTS parts (
   -- content (first N chars only; full content stays in L0)
   text TEXT,
 
+  -- file attribution: |-delimited list of paths touched by this part, with
+  -- leading + trailing | so LIKE anchors on whole-segment matches. Populated
+  -- for part_type='patch' (from part.files[]) and part_type='file' (from
+  -- part.filename). NULL for every other part type. Added 2026-04-21 to
+  -- back filter.filePath queries (DESIGN.md §7.5).
+  file_paths TEXT,
+
   -- timing
   created_ms INTEGER NOT NULL,     -- epoch ms of the originating opencode event
   event_seq INTEGER NOT NULL       -- 0-based line number in events.ndjson (replay anchor)
@@ -44,6 +51,10 @@ CREATE INDEX IF NOT EXISTS parts_workspace ON parts(workspace);
 CREATE INDEX IF NOT EXISTS parts_agent     ON parts(agent);
 CREATE INDEX IF NOT EXISTS parts_kind      ON parts(part_type, tool_name);
 CREATE INDEX IF NOT EXISTS parts_time      ON parts(created_ms);
+-- Partial index: only patch/file rows have file_paths populated, so we skip
+-- the NULL majority. Speeds up "which parts touched any file?" pre-filters.
+CREATE INDEX IF NOT EXISTS parts_file_paths
+  ON parts(file_paths) WHERE file_paths IS NOT NULL;
 
 -- FTS5 companion. contentless virtual table syncs via triggers — keeps the
 -- FTS rowid aligned with parts.rowid without duplicating text at read time.

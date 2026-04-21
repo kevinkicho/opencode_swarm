@@ -3,6 +3,13 @@
 //
 //   shape='summary' — hits `rollups` table, returns AgentRollup/RunRetro
 //                     digests. Default path; cheapest in tokens and IO.
+//                     `filter.filePath` is ignored here — rollups carry file
+//                     lists inside the payload blob, not indexed columns, so
+//                     path filtering on summaries would require an O(N) JSON
+//                     parse per row. Use shape='parts' or 'diffs' for path
+//                     queries; callers that want "which rollups touched X"
+//                     should follow up with a summary fetch using the
+//                     swarmRunIDs surfaced by the parts query.
 //   shape='parts'   — hits `parts` (+ parts_fts when filter.query is set),
 //                     returns per-part snippets. For "show me the exact
 //                     edit part that touched src/auth.ts".
@@ -30,11 +37,95 @@ import type {
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 50;
 
+// When filter.filePath is set, SQL pre-filters on `file_paths IS NOT NULL`
+// plus a coarse LIKE on the pattern's fixed prefix, then JS applies the
+// exact shell-glob match. Overfetch multiplier accounts for the rows the
+// JS filter will reject; capped so we never scan more than N rows even on
+// patterns with no shared prefix.
+const FILEPATH_OVERFETCH = 4;
+
 // Very rough token estimate from text length. Good enough to flag when a
 // caller should paginate; not a pricing-grade calculation. ~4 chars/token
 // is the conventional approximation for English prose/code.
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+// Longest leading substring of `pattern` that contains no glob metachars.
+// Used as a SQL LIKE pre-filter so the glob-match JS pass only runs against
+// plausibly-matching rows. '**'/'*'/'?'/'[' all terminate the prefix.
+function globPrefix(pattern: string): string {
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i]!;
+    if (ch === '*' || ch === '?' || ch === '[') break;
+    i += 1;
+  }
+  return pattern.slice(0, i);
+}
+
+// Compile a shell-style glob to a RegExp that matches ONE path string.
+//   **        → any sequence (including /)
+//   *         → any sequence except /
+//   ?         → single char except /
+//   [abc]     → character class
+// Everything else is treated literally and regex-escaped. Anchored to the
+// full path (^…$) so `src/auth` doesn't match `foo/src/auth/bar` — the
+// caller should use `**/src/auth/**` if they want prefix-free matching.
+function globToRegex(pattern: string): RegExp {
+  let re = '^';
+  let i = 0;
+  while (i < pattern.length) {
+    const ch = pattern[i]!;
+    if (ch === '*' && pattern[i + 1] === '*') {
+      re += '.*';
+      i += 2;
+      if (pattern[i] === '/') i += 1; // collapse `**/` → `.*`
+      continue;
+    }
+    if (ch === '*') {
+      re += '[^/]*';
+      i += 1;
+      continue;
+    }
+    if (ch === '?') {
+      re += '[^/]';
+      i += 1;
+      continue;
+    }
+    if (ch === '[') {
+      const close = pattern.indexOf(']', i + 1);
+      if (close === -1) {
+        re += '\\[';
+        i += 1;
+        continue;
+      }
+      re += pattern.slice(i, close + 1);
+      i = close + 1;
+      continue;
+    }
+    if (/[.+^$(){}|\\]/.test(ch)) {
+      re += '\\' + ch;
+    } else {
+      re += ch;
+    }
+    i += 1;
+  }
+  re += '$';
+  return new RegExp(re);
+}
+
+// Does any path in a `|p1|p2|`-delimited column match the compiled glob?
+function filePathsMatch(encoded: string | null, rx: RegExp): boolean {
+  if (!encoded) return false;
+  // Strip leading/trailing | before split so we don't get '' entries.
+  const trimmed = encoded.startsWith('|') ? encoded.slice(1) : encoded;
+  const ready = trimmed.endsWith('|') ? trimmed.slice(0, -1) : trimmed;
+  if (!ready) return false;
+  for (const p of ready.split('|')) {
+    if (rx.test(p)) return true;
+  }
+  return false;
 }
 
 export function recall(req: RecallRequest): RecallResponse {
@@ -186,10 +277,35 @@ function queryParts(
     params.endMs = req.filter.timeRange.endMs;
   }
 
+  // filter.filePath handling: pre-filter at SQL with `file_paths IS NOT NULL`
+  // + a LIKE on the pattern's fixed prefix, then apply the compiled glob in
+  // JS below. Only rows from patch/file parts land here because ingest only
+  // populates file_paths for those types.
+  const filePathPattern = req.filter?.filePath?.trim();
+  let filePathRegex: RegExp | null = null;
+  if (filePathPattern) {
+    where.push('p.file_paths IS NOT NULL');
+    const prefix = globPrefix(filePathPattern);
+    if (prefix.length > 0) {
+      // `|<prefix>` anchors on a whole-segment boundary — `src/auth` won't
+      // match `mysrc/authless/…`. SQLite `||` concatenation lets us keep the
+      // pattern parameterized instead of inlining user input.
+      where.push("p.file_paths LIKE '%|' || @fpPrefix || '%'");
+      params.fpPrefix = prefix;
+    }
+    filePathRegex = globToRegex(filePathPattern);
+  }
+
+  // Overfetch when we have a JS-side post-filter so the final row count can
+  // still reach `limit`. Bounded at MAX_LIMIT * FILEPATH_OVERFETCH to prevent
+  // a pathological pattern (no prefix, e.g. `**`) from scanning the whole
+  // table — that much scan is still cheap at prototype scale.
+  const fetchLimit = filePathRegex ? limit * FILEPATH_OVERFETCH : limit;
+
   const sql = useFts
     ? `
     SELECT p.part_id, p.swarm_run_id, p.session_id, p.agent, p.part_type, p.tool_name,
-           p.created_ms, snippet(parts_fts, 0, '[', ']', '…', 16) AS snip
+           p.created_ms, p.file_paths, snippet(parts_fts, 0, '[', ']', '…', 16) AS snip
     FROM parts_fts
     JOIN parts p ON p.rowid = parts_fts.rowid
     WHERE parts_fts MATCH @fts
@@ -199,7 +315,7 @@ function queryParts(
   `
     : `
     SELECT p.part_id, p.swarm_run_id, p.session_id, p.agent, p.part_type, p.tool_name,
-           p.created_ms, substr(p.text, 1, 240) AS snip
+           p.created_ms, p.file_paths, substr(p.text, 1, 240) AS snip
     FROM parts p
     ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY p.created_ms DESC
@@ -207,7 +323,7 @@ function queryParts(
   `;
 
   if (useFts) params.fts = ftsQuery;
-  params.limit = limit;
+  params.limit = fetchLimit;
 
   const rows = db.prepare(sql).all(params) as Array<{
     part_id: string;
@@ -217,11 +333,27 @@ function queryParts(
     part_type: string;
     tool_name: string | null;
     created_ms: number;
+    file_paths: string | null;
     snip: string | null;
   }>;
 
+  // Apply the shell-style glob on the fetched rows. We stop as soon as we
+  // hit `limit` matches so the response stays inside the caller's budget
+  // regardless of how many rows the SQL pre-filter let through.
+  const matched: typeof rows = [];
+  if (filePathRegex) {
+    for (const r of rows) {
+      if (filePathsMatch(r.file_paths, filePathRegex)) {
+        matched.push(r);
+        if (matched.length >= limit) break;
+      }
+    }
+  } else {
+    matched.push(...rows.slice(0, limit));
+  }
+
   let tokenEstimate = 0;
-  const items: RecallPartItem[] = rows.map((r) => {
+  const items: RecallPartItem[] = matched.map((r) => {
     const snippet = r.snip ?? '';
     tokenEstimate += estimateTokens(snippet);
     return {
@@ -237,10 +369,18 @@ function queryParts(
     };
   });
 
+  // `truncated` reports whether the caller likely has more to paginate
+  // through. For the glob path, that's "SQL returned the overfetch cap AND
+  // we actually filled the response" — otherwise either the pre-filter was
+  // exhaustive or the glob rejected most rows, both of which are terminal.
+  const truncated = filePathRegex
+    ? rows.length === fetchLimit && matched.length === limit
+    : rows.length === limit;
+
   return {
     items: items as RecallItem[],
     tokenEstimate,
-    truncated: rows.length === limit,
+    truncated,
     shape,
   };
 }

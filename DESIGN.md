@@ -368,7 +368,7 @@ recall({
     agents?: string[];                    // ['ember', 'forge'] — filter by handle, not label
     partTypes?: string[];                 // ['edit', 'patch']
     toolNames?: string[];                 // ['bash', 'grep']
-    filePath?: string;                    // glob: 'src/auth/**' — not yet implemented
+    filePath?: string;                    // shell-style glob: 'src/auth/**', '**/*.test.ts' — anchored to the full path; shipped 2026-04-21 (§7.5 below)
     outcome?: 'merged' | 'discarded';     // summary-shape only
     timeRange?: { startMs: number; endMs: number };
     query?: string;                       // FTS5 MATCH expression (parts-shape only)
@@ -389,6 +389,7 @@ Design notes:
 - **Scope guardrail** — the endpoint 400s if none of `swarmRunID`, `sessionID`, `workspace` is set. Unscoped "search the whole ledger" queries are almost always a malformed agent plan; require an explicit choice.
 - **Cross-run recall is opt-in** via the `workspace` param. Default is this run only, to avoid context bleed between unrelated runs on the same repo.
 - **`shape: 'diffs'`** currently falls through to `parts` filtered to `part_type='patch'`. Full-hunk expansion from L0 by `diffHash` is deferred — needs content-addressed resolution that isn't built yet.
+- **`filter.filePath` (shipped 2026-04-21)** is a shell-style glob anchored to the full path — `**` crosses `/`, `*` does not, `?` is a single non-`/` char, `[abc]` is a character class. Matching is a hybrid: ingest stores a `|`-delimited `file_paths` column on patch/file parts, SQL pre-filters on `file_paths IS NOT NULL` + a `LIKE` on the pattern's fixed prefix, then JS post-filters with the compiled glob regex. Summary shape ignores the filter (rollup payloads aren't indexed for paths — callers should issue a parts/diffs query and look up the resolved `swarmRunID`s if they want rollup follow-through). Existing installs auto-migrate the column on next `memoryDb()` open; old rows read as NULL until reindexed (or the sqlite file is wiped and rebuilt from L0).
 
 ### 7.6 Open wiring questions
 
