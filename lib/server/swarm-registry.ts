@@ -96,3 +96,49 @@ export async function appendEvent(
   const line = JSON.stringify(event) + '\n';
   await fs.appendFile(eventsPath(swarmRunID), line, 'utf8');
 }
+
+// Stream events.ndjson line-by-line. Yields each parsed SwarmRunEvent in
+// the order it was appended — this is the authoritative replay order
+// (server-receive clock), not opencode's internal event ordering.
+//
+// `sinceTs` is an optional exclusive lower bound on ts (epoch ms). Useful
+// when a client reconnects after a drop and only needs the tail. Missing
+// or malformed lines are skipped silently — the file is append-only and
+// a partial trailing write can exist if the process died mid-line.
+//
+// Returns nothing when the run has no events file yet (createRun touches
+// it, so this is rare — typically a race between createRun and the first
+// read). ENOENT becomes an empty stream rather than throwing.
+export async function* readEvents(
+  swarmRunID: string,
+  opts: { sinceTs?: number } = {}
+): AsyncGenerator<SwarmRunEvent> {
+  let fh: Awaited<ReturnType<typeof fs.open>>;
+  try {
+    fh = await fs.open(eventsPath(swarmRunID), 'r');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+
+  try {
+    // readLines() is the node 18+ built-in line iterator. Avoids the
+    // boilerplate of readable-stream + split() and handles UTF-8 boundaries
+    // across chunk reads correctly.
+    const stream = fh.readLines({ encoding: 'utf8' });
+    const sinceTs = opts.sinceTs;
+    for await (const line of stream) {
+      if (!line) continue;
+      let ev: SwarmRunEvent;
+      try {
+        ev = JSON.parse(line) as SwarmRunEvent;
+      } catch {
+        continue;
+      }
+      if (sinceTs !== undefined && ev.ts <= sinceTs) continue;
+      yield ev;
+    }
+  } finally {
+    await fh.close().catch(() => undefined);
+  }
+}
