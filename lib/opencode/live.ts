@@ -136,12 +136,12 @@ export interface LiveSessionSnapshot {
   lastUpdated: number;
 }
 
-// Polls one session's messages + metadata. Pass null to skip (no fetch, no poll).
-// Session metadata comes from the fan-out list so we don't need a separate
-// `/session/{id}` roundtrip — and the fan-out is already cached by the picker.
+// SSE-driven live view of one session. Initial REST fetch establishes baseline,
+// then /api/opencode/event triggers refetches as message/session events arrive.
+// A 30s safety poll catches any dropped-stream edge cases. Pass null to skip.
 export function useLiveSession(
   sessionId: string | null,
-  intervalMs = 3000
+  fallbackPollMs = 30_000
 ): {
   data: LiveSessionSnapshot | null;
   error: string | null;
@@ -160,9 +160,12 @@ export function useLiveSession(
     }
 
     let cancelled = false;
+    let pendingRefetch = false;
     let controller = new AbortController();
 
-    async function poll() {
+    async function refetch() {
+      if (pendingRefetch) return;
+      pendingRefetch = true;
       controller.abort();
       controller = new AbortController();
       try {
@@ -179,20 +182,40 @@ export function useLiveSession(
         if ((err as Error).name === 'AbortError') return;
         setError((err as Error).message);
       } finally {
+        pendingRefetch = false;
         if (!cancelled) setLoading(false);
       }
     }
 
     setLoading(true);
-    poll();
-    const id = setInterval(poll, intervalMs);
+    refetch();
+
+    // SSE — relevant events trigger an immediate refetch. Event envelope:
+    // { type: "message.updated" | "message.part.updated" | "session.updated" | ..., properties: { sessionID, ... } }
+    const es = new EventSource('/api/opencode/event');
+    es.onmessage = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.data) as {
+          type?: string;
+          properties?: { sessionID?: string };
+        };
+        if (parsed.properties?.sessionID !== sessionId) return;
+        refetch();
+      } catch {
+        // non-JSON heartbeat / connected frames — ignore
+      }
+    };
+
+    // Safety net: if the stream drops or an event is missed, still catch up.
+    const pollId = setInterval(refetch, fallbackPollMs);
 
     return () => {
       cancelled = true;
       controller.abort();
-      clearInterval(id);
+      es.close();
+      clearInterval(pollId);
     };
-  }, [sessionId, intervalMs]);
+  }, [sessionId, fallbackPollMs]);
 
   return { data, error, loading };
 }

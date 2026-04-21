@@ -58,7 +58,7 @@ export default function Page() {
 function PageInner() {
   const params = useSearchParams();
   const sessionId = params.get('session');
-  const { data: liveData } = useLiveSession(sessionId, 4000);
+  const { data: liveData } = useLiveSession(sessionId);
 
   const view: SwarmView = useMemo(() => {
     if (sessionId && liveData) {
