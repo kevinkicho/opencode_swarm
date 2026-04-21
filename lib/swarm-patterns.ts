@@ -1,0 +1,55 @@
+// UI metadata for the orchestration-pattern picker in new-run-modal.
+// The canonical catalog lives in `SWARM_PATTERNS.md` — keep taglines and
+// availability flags in sync there when promoting a preset.
+
+import type { SwarmPattern } from './swarm-types';
+
+export interface PatternMeta {
+  label: string;
+  tagline: string;          // short description shown inside the tile
+  available: boolean;       // drives disabled state + "coming soon" indicator
+  accent: 'molten' | 'amber' | 'mint' | 'iris';
+}
+
+export const patternMeta: Record<SwarmPattern, PatternMeta> = {
+  none: {
+    label: 'none',
+    tagline: 'single opencode session, native task / subtask',
+    available: true,
+    accent: 'molten',
+  },
+  blackboard: {
+    label: 'blackboard',
+    tagline: 'shared board, claim any unresolved todo',
+    available: false,
+    accent: 'amber',
+  },
+  'map-reduce': {
+    label: 'map-reduce',
+    tagline: 'split the tree, synthesize as a claimable phase',
+    available: false,
+    accent: 'mint',
+  },
+  council: {
+    label: 'council',
+    tagline: 'n parallel drafts, human reconciles via permissions',
+    available: false,
+    accent: 'iris',
+  },
+};
+
+// Static class-name maps so Tailwind's JIT purger keeps these utilities in
+// the final bundle. Dynamic `text-${accent}` interpolation would be purged.
+export const patternAccentText: Record<PatternMeta['accent'], string> = {
+  molten: 'text-molten',
+  amber: 'text-amber',
+  mint: 'text-mint',
+  iris: 'text-iris',
+};
+
+export const patternAccentBorder: Record<PatternMeta['accent'], string> = {
+  molten: 'border-molten/40',
+  amber: 'border-amber/40',
+  mint: 'border-mint/40',
+  iris: 'border-iris/40',
+};

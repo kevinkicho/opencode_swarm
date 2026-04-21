@@ -17,6 +17,13 @@ import {
   createSessionBrowser,
   postSessionMessageBrowser,
 } from '@/lib/opencode/live';
+import {
+  patternMeta,
+  patternAccentText,
+  patternAccentBorder,
+  type PatternMeta,
+} from '@/lib/swarm-patterns';
+import type { SwarmPattern } from '@/lib/swarm-types';
 
 type BranchStrategy = 'push-same-branch' | 'push-new-branch' | 'local-only';
 type StartMode = 'dry-run' | 'live' | 'spectator';
@@ -54,6 +61,7 @@ function extractRepoName(url: string): string {
 export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [sourceValue, setSourceValue] = useState('');
   const [workspacePath, setWorkspacePath] = useState('');
+  const [pattern, setPattern] = useState<SwarmPattern>('none');
   const [teamCounts, setTeamCounts] = useState<Record<string, number>>({});
   const [directive, setDirective] = useState('');
   const [unbounded, setUnbounded] = useState(true);
@@ -238,6 +246,23 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
 
           <Section
             step="03"
+            label="pattern"
+            hint="how agents coordinate run-wide — not role assignments. none = opencode native (one session, task tool for sub-agents). blackboard / map-reduce / council are orchestration shapes above opencode and unlock as their backends ship."
+          >
+            <div className="grid grid-cols-4 gap-2">
+              {(Object.keys(patternMeta) as SwarmPattern[]).map((p) => (
+                <PatternCard
+                  key={p}
+                  meta={patternMeta[p]}
+                  active={pattern === p}
+                  onClick={() => patternMeta[p].available && setPattern(p)}
+                />
+              ))}
+            </div>
+          </Section>
+
+          <Section
+            step="04"
             label="team"
             optional
             hint="pick agents from the opencode zen catalog. stack multiples of the same model with the +/− stepper. leave empty and agents will spawn as work demands."
@@ -306,7 +331,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           </Section>
 
           <Section
-            step="04"
+            step="05"
             label="directive"
             optional
             hint="big-picture goal or desired direction. leave blank and the swarm will read the substrate — readme, recent commits, open issues — and infer focus on its own."
@@ -328,7 +353,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           </Section>
 
           <Section
-            step="05"
+            step="06"
             label="bounds"
             optional
             hint="soft caps on spend and wallclock. toggle unbounded if you want to see what the swarm does with no ceiling — useful for calibration runs, risky for everything else."
@@ -387,7 +412,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           </Section>
 
           <Section
-            step="06"
+            step="07"
             label="branch strategy"
             hint="where agent commits go. three postures — each a different answer to 'how visible is this work outside my machine?'"
           >
@@ -452,7 +477,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           </Section>
 
           <Section
-            step="07"
+            step="08"
             label="start mode"
             hint="three postures — not a severity ladder. pick the stance that matches your intent this run."
           >
@@ -536,6 +561,16 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                       title={cloneTarget || undefined}
                     >
                       {cloneTarget || 'unset'}
+                    </span>
+                  </LabelRow>
+                  <LabelRow label="pattern">
+                    <span
+                      className={clsx(
+                        'font-mono text-[11px]',
+                        patternAccentText[patternMeta[pattern].accent]
+                      )}
+                    >
+                      {patternMeta[pattern].label}
                     </span>
                   </LabelRow>
                   <LabelRow label="team">
@@ -654,7 +689,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
               wires: <span className="text-mint">workspace</span> → opencode session (
               <span className="text-fog-600">POST /session?directory=</span>),{' '}
               <span className="text-mint">directive</span> → first prompt. aspirational:{' '}
-              <span className="text-amber/80">source · team · bounds · branch · start mode</span>
+              <span className="text-amber/80">source · pattern · team · bounds · branch · start mode</span>
               {' '}— UI-only until opencode grows matching endpoints.
             </div>
           </div>
@@ -828,6 +863,52 @@ function BoundRow({
         {format(value)}
       </span>
     </div>
+  );
+}
+
+function PatternCard({
+  meta,
+  active,
+  onClick,
+}: {
+  meta: PatternMeta;
+  active: boolean;
+  onClick: () => void;
+}) {
+  const disabled = !meta.available;
+  const accentText = patternAccentText[meta.accent];
+  const accentBorder = patternAccentBorder[meta.accent];
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-disabled={disabled}
+      className={clsx(
+        'relative rounded-md hairline p-2.5 text-left transition',
+        disabled && 'opacity-50 cursor-not-allowed',
+        !disabled && !active && 'bg-ink-900/40 hover:bg-ink-800/60',
+        !disabled && active && clsx('bg-ink-800', accentBorder),
+        disabled && 'bg-ink-900/40'
+      )}
+    >
+      <div
+        className={clsx(
+          'font-mono text-[11px] uppercase tracking-widest2 mb-1',
+          active ? accentText : 'text-fog-400'
+        )}
+      >
+        {meta.label}
+      </div>
+      <div className="font-mono text-[10px] text-fog-600 leading-snug">
+        {meta.tagline}
+      </div>
+      {disabled && (
+        <span className="absolute top-1.5 right-1.5 font-mono text-[8.5px] uppercase tracking-widest2 text-fog-700 border border-ink-700 rounded-[3px] px-1 h-3.5 inline-flex items-center bg-ink-900">
+          soon
+        </span>
+      )}
+    </button>
   );
 }
 
