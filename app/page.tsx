@@ -17,6 +17,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
 import { PlaybackProvider, tsToSec } from '@/lib/playback-context';
 import { ProviderStatsProvider } from '@/lib/provider-context';
+import { useOpencodeHealth } from '@/lib/opencode/live';
 import {
   agents,
   agentOrder,
@@ -236,13 +237,35 @@ function StatusRail({
   onOpenGlossary: () => void;
   onOpenNewRun: () => void;
 }) {
+  const health = useOpencodeHealth(5000);
+  const dotClass =
+    health.status === 'live'
+      ? 'bg-mint'
+      : health.status === 'offline'
+        ? 'bg-rust'
+        : 'bg-fog-700 animate-pulse';
+  const label =
+    health.status === 'live'
+      ? 'swarm live'
+      : health.status === 'offline'
+        ? 'swarm offline'
+        : 'connecting…';
+  const healthTooltip =
+    health.status === 'live'
+      ? `opencode reachable · ${health.projectCount} project${health.projectCount === 1 ? '' : 's'}`
+      : health.status === 'offline'
+        ? health.error
+          ? `opencode unreachable: ${health.error}`
+          : 'opencode unreachable'
+        : 'probing opencode…';
+
   return (
     <footer className="h-7 shrink-0 hairline-t bg-ink-900 flex items-center px-4 text-[11px] font-mono text-fog-600">
       <div className="flex items-center gap-3">
-        <Tooltip content="live swarm websocket connected" side="top">
+        <Tooltip content={healthTooltip} side="top">
           <span className="flex items-center gap-1.5 cursor-default">
-            <span className="w-1.5 h-1.5 rounded-full bg-mint" />
-            <span className="text-fog-400">swarm live</span>
+            <span className={`w-1.5 h-1.5 rounded-full ${dotClass}`} />
+            <span className="text-fog-400">{label}</span>
           </span>
         </Tooltip>
         <span className="w-px h-3 bg-ink-700" />
