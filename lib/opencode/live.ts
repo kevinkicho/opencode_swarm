@@ -141,22 +141,29 @@ export async function abortSessionBrowser(
 // Fire-and-forget prompt submission. Uses /prompt_async so the composer doesn't
 // block on the full model turn — SSE surfaces parts as they stream in.
 // Instance-scoped via ?directory=, same as every other instance route.
+//
+// `agent` is the opencode agent-config name (e.g. "build", "plan"). When set,
+// opencode routes this prompt to that agent-config within the session instead
+// of the session's default. Omit to broadcast to the session's lead agent.
 export async function postSessionMessageBrowser(
   sessionId: string,
   directory: string,
   text: string,
+  opts: { agent?: string } = {},
   init: RequestInit = {}
 ): Promise<void> {
   const qs = new URLSearchParams({ directory }).toString();
+  const body: Record<string, unknown> = {
+    parts: [{ type: 'text', text }],
+  };
+  if (opts.agent) body.agent = opts.agent;
   const res = await fetch(
     `/api/opencode/session/${encodeURIComponent(sessionId)}/prompt_async?${qs}`,
     {
       ...init,
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
-      body: JSON.stringify({
-        parts: [{ type: 'text', text }],
-      }),
+      body: JSON.stringify(body),
     }
   );
   if (!res.ok) {

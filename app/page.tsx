@@ -338,9 +338,15 @@ function PageBody({
         agents={agents}
         onSend={(target: ComposerTarget, body: string) => {
           if (liveSessionId && liveDirectory) {
-            postSessionMessageBrowser(liveSessionId, liveDirectory, body).catch(
-              (err) => console.error('[composer] opencode post failed', err)
-            );
+            // Agent target → opencode `agent` field (agent-config name, not UI id).
+            // Broadcast → omit `agent`; opencode routes to the session's lead.
+            const agentName =
+              target.kind === 'agent'
+                ? agents.find((a) => a.id === target.id)?.name
+                : undefined;
+            postSessionMessageBrowser(liveSessionId, liveDirectory, body, {
+              agent: agentName,
+            }).catch((err) => console.error('[composer] opencode post failed', err));
             return;
           }
           console.info('[composer]', target, body);
