@@ -11,7 +11,7 @@ import type {
   OpencodeProject,
   OpencodeSession,
 } from './types';
-import type { SwarmRunMeta } from '../swarm-run-types';
+import type { SwarmRunEvent, SwarmRunMeta } from '../swarm-run-types';
 
 async function getJsonBrowser<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api/opencode${path}`, { ...init, cache: 'no-store' });
@@ -665,4 +665,128 @@ export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot
     primarySessionID: meta?.sessionIDs[0] ?? null,
     workspace: meta?.workspace ?? null,
   };
+}
+
+// Stream of run-level events. Consumes GET /api/swarm/run/:id/events and
+// accumulates both the L0 replay (replayed SwarmRunEvents tagged replay:true)
+// and the live feed. The control frames `swarm.run.attached`,
+// `swarm.run.replay.start`, `swarm.run.replay.end`, `swarm.run.error` drive
+// the `phase` state machine but are not surfaced as events themselves.
+//
+// Use this instead of useLiveSession when you need a cross-session view of
+// a run — e.g. the run-provenance drawer. For a single-session drill-down,
+// useLiveSession is still cheaper (it hydrates message history from
+// /session/{id}/message instead of replaying every tagged event).
+
+export type SwarmRunPhase =
+  | 'idle'         // no swarmRunID or not yet connected
+  | 'attached'     // handshake received, replay not yet started
+  | 'replaying'    // streaming historical events from L0
+  | 'live'         // replay complete, receiving live opencode events
+  | 'error';       // upstream threw; `events` still holds what we got
+
+export interface SwarmRunEventRow extends SwarmRunEvent {
+  // Present on rows emitted during the replay phase. Absent on live rows.
+  replay?: boolean;
+}
+
+export interface SwarmRunEventsSnapshot {
+  events: SwarmRunEventRow[];
+  phase: SwarmRunPhase;
+  replayCount: number;   // what the server reported at replay.end
+  error: string | null;
+}
+
+export function useSwarmRunEvents(
+  swarmRunID: string | null
+): SwarmRunEventsSnapshot {
+  const [events, setEvents] = useState<SwarmRunEventRow[]>([]);
+  const [phase, setPhase] = useState<SwarmRunPhase>('idle');
+  const [replayCount, setReplayCount] = useState<number>(0);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!swarmRunID) {
+      setEvents([]);
+      setPhase('idle');
+      setReplayCount(0);
+      setError(null);
+      return;
+    }
+
+    setEvents([]);
+    setPhase('attached');
+    setReplayCount(0);
+    setError(null);
+
+    const es = new EventSource(
+      `/api/swarm/run/${encodeURIComponent(swarmRunID)}/events`
+    );
+    es.onmessage = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.data) as {
+          type?: string;
+          properties?: unknown;
+          replay?: boolean;
+          ts?: number;
+          sessionID?: string;
+          swarmRunID?: string;
+        };
+
+        // Control frames drive the phase machine.
+        if (parsed.type === 'swarm.run.attached') {
+          setPhase('replaying');
+          return;
+        }
+        if (parsed.type === 'swarm.run.replay.start') {
+          setPhase('replaying');
+          return;
+        }
+        if (parsed.type === 'swarm.run.replay.end') {
+          const count = Number(
+            (parsed.properties as { count?: number } | undefined)?.count ?? 0
+          );
+          setReplayCount(count);
+          setPhase('live');
+          return;
+        }
+        if (parsed.type === 'swarm.run.error') {
+          const msg =
+            (parsed.properties as { message?: string } | undefined)?.message ??
+            'stream error';
+          setError(msg);
+          setPhase('error');
+          return;
+        }
+
+        // Everything else is a tagged SwarmRunEvent (has ts + sessionID +
+        // swarmRunID). Keep replay rows and live rows in the same array,
+        // ordered by arrival — the server guarantees replay order first.
+        if (
+          typeof parsed.ts === 'number' &&
+          typeof parsed.sessionID === 'string' &&
+          typeof parsed.swarmRunID === 'string'
+        ) {
+          const row = parsed as SwarmRunEventRow;
+          setEvents((prev) => [...prev, row]);
+        }
+      } catch {
+        // Ignore malformed frames — the server shouldn't emit these but a
+        // proxy / buffering edge case could split a JSON payload.
+      }
+    };
+    es.onerror = () => {
+      // EventSource auto-reconnects on transport errors; we only surface
+      // the state change. If the server returned 404 the connection closes
+      // permanently — phase stays 'error' and the caller (useLiveSwarmRun)
+      // will also have seen the 404 on its meta lookup.
+      setPhase((prev) => (prev === 'live' ? 'live' : 'error'));
+    };
+
+    return () => {
+      es.close();
+    };
+  }, [swarmRunID]);
+
+  return { events, phase, replayCount, error };
 }
