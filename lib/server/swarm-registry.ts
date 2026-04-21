@@ -85,6 +85,49 @@ export async function getRun(swarmRunID: string): Promise<SwarmRunMeta | null> {
   }
 }
 
+// Enumerate every run under ROOT/runs by reading each meta.json. Returns
+// newest-first by createdAt — that's the order the picker wants, and it
+// matches the lexicographic order of the b36 time prefix in swarmRunID, so
+// the disk layout is already roughly sorted on its own.
+//
+// What this skips silently:
+//   - directory entries that aren't run dirs (stray files, .DS_Store)
+//   - run dirs with missing or malformed meta.json (partial creates, manual
+//     edits). A returned list with N-1 entries is better than a throw that
+//     hides every valid run because one is broken.
+//
+// Pagination: not yet. At prototype scale N is small (tens, not thousands).
+// When it starts to hurt, the fix is a cursor-based API — the directory
+// scan itself is cheap, it's the per-file read that adds up.
+export async function listRuns(): Promise<SwarmRunMeta[]> {
+  const runsRoot = path.join(ROOT, 'runs');
+  let entries: string[];
+  try {
+    entries = await fs.readdir(runsRoot);
+  } catch (err) {
+    // No runs have ever been created on this server — the directory hasn't
+    // been touched. Return empty rather than throw; callers don't need to
+    // distinguish "no runs" from "filesystem error" for the picker.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw err;
+  }
+
+  const metas = await Promise.all(
+    entries.map(async (id) => {
+      try {
+        const raw = await fs.readFile(metaPath(id), 'utf8');
+        return JSON.parse(raw) as SwarmRunMeta;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return metas
+    .filter((m): m is SwarmRunMeta => m !== null)
+    .sort((a, b) => b.createdAt - a.createdAt);
+}
+
 // Append one event as a single JSON line. Uses appendFile (single syscall,
 // O_APPEND semantics on POSIX) so concurrent appends from one process are
 // safe without an explicit lock. The trailing newline is required for

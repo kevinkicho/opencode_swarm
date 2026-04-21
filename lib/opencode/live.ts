@@ -812,3 +812,69 @@ export function useSwarmRunEvents(
 
   return { events, phase, replayCount, error };
 }
+
+// Polling list of every persisted swarm run. Drives the status-rail runs
+// picker. Shape mirrors useLiveSessions so the picker component can be
+// structured the same way — a wide dense-row popover with filter + sort.
+//
+// Why poll vs subscribe: registry writes are rare (once per run create) and
+// the existing SSE machinery is scoped to one run, not the whole ledger. A
+// short poll keeps the picker fresh without plumbing a global event stream.
+
+export interface SwarmRunsSnapshot {
+  runs: SwarmRunMeta[];
+  error: string | null;
+  loading: boolean;
+  lastUpdated: number | null;
+}
+
+export function useSwarmRuns(intervalMs = 4000): SwarmRunsSnapshot {
+  const [runs, setRuns] = useState<SwarmRunMeta[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let controller = new AbortController();
+
+    async function poll() {
+      controller.abort();
+      controller = new AbortController();
+      try {
+        const res = await fetch('/api/swarm/run', {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        if (!res.ok) {
+          const detail = await res.text().catch(() => '');
+          throw new Error(
+            `swarm run list -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+          );
+        }
+        const body = (await res.json()) as { runs?: SwarmRunMeta[] };
+        if (cancelled) return;
+        setRuns(body.runs ?? []);
+        setLastUpdated(Date.now());
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        if ((err as Error).name === 'AbortError') return;
+        setError((err as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    poll();
+    const id = setInterval(poll, intervalMs);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(id);
+    };
+  }, [intervalMs]);
+
+  return { runs, error, loading, lastUpdated };
+}

@@ -14,6 +14,7 @@ import { SpawnAgentModal } from '@/components/spawn-agent-modal';
 import { GlossaryModal } from '@/components/glossary-modal';
 import { NewRunModal } from '@/components/new-run-modal';
 import { RunProvenanceDrawer } from '@/components/run-provenance-drawer';
+import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { PermissionStrip } from '@/components/permission-strip';
 import { Drawer } from '@/components/ui/drawer';
@@ -421,6 +422,7 @@ function PageBody({
         onOpenGlossary={() => setGlossaryOpen(true)}
         onOpenNewRun={() => setNewRunOpen(true)}
         onOpenProvenance={swarmRunID ? () => setProvenanceOpen(true) : null}
+        swarmRunID={swarmRunID}
       />
 
       <Drawer
@@ -490,6 +492,7 @@ function StatusRail({
   onOpenGlossary,
   onOpenNewRun,
   onOpenProvenance,
+  swarmRunID,
 }: {
   onOpenPalette: () => void;
   onOpenRouting: () => void;
@@ -497,6 +500,7 @@ function StatusRail({
   onOpenGlossary: () => void;
   onOpenNewRun: () => void;
   onOpenProvenance: (() => void) | null;
+  swarmRunID: string | null;
 }) {
   const health = useOpencodeHealth(5000);
   const dotClass =
@@ -550,6 +554,15 @@ function StatusRail({
             <span className="font-mono text-[10px] uppercase tracking-widest2">new run</span>
           </button>
         </Tooltip>
+        <SwarmRunsPicker currentSwarmRunID={swarmRunID}>
+          <button
+            className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
+            aria-label="browse swarm runs"
+          >
+            <span className="font-mono text-[10px] uppercase tracking-widest2">runs</span>
+            <span className="font-mono text-[9px] text-fog-700">▴</span>
+          </button>
+        </SwarmRunsPicker>
       </div>
 
       <div className="ml-auto flex items-center gap-1">

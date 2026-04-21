@@ -1,4 +1,6 @@
 // POST /api/swarm/run — creates one swarm run.
+// GET  /api/swarm/run — lists every persisted run (newest-first) for the
+//                       status-rail run picker.
 //
 // At v1 a "run" wraps exactly one opencode session (pattern='none'). The
 // surface is shaped for N sessions so the blackboard / map-reduce / council
@@ -19,7 +21,7 @@
 import type { NextRequest } from 'next/server';
 
 import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
-import { createRun } from '@/lib/server/swarm-registry';
+import { createRun, listRuns } from '@/lib/server/swarm-registry';
 import type {
   SwarmRunRequest,
   SwarmRunResponse,
@@ -174,4 +176,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     meta,
   };
   return Response.json(payload, { status: 201 });
+}
+
+// Run discovery. Wrapped in { runs } rather than returning a bare array so
+// future fields (cursor, total, filters) can land without breaking clients.
+// No server-side filtering at v1 — the registry is expected to hold tens of
+// runs, not thousands; filtering / pagination can move into the query layer
+// when it matters.
+export async function GET(): Promise<Response> {
+  try {
+    const runs = await listRuns();
+    return Response.json({ runs });
+  } catch (err) {
+    return Response.json(
+      { error: 'run list failed', message: (err as Error).message },
+      { status: 500 }
+    );
+  }
 }
