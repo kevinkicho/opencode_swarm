@@ -375,6 +375,27 @@ Design notes:
 - **Schema evolution.** L0 is immutable; L1/L2 must be regenerable from L0 after schema changes. Budget for a migration tool from day one.
 - **Cross-run recall.** Should an agent in run B see L2 from run A on the same repo? Opt-in per run, or scoped by workspace?
 
+### 7.7 Retention lifecycle
+
+Runs are durable training signal — deletion is the wrong default. Three states, not four:
+
+| State | Trigger | Disk effect |
+|---|---|---|
+| **active** | run created | `meta.json` + uncompressed `events.ndjson` |
+| **compressed** | status ∈ {idle, error} for >24h | `events.ndjson` → `events.ndjson.gz`; `meta.json` untouched |
+| **archived** | *deferred — only if disk pressure actually appears* | move dir to `.opencode_swarm/archive/` (or S3) |
+
+**Why compression beats archiving at this stage.** Compression is reversible, cheap, and keeps the "grep across all runs" affordance intact (`zcat events.ndjson.gz | jq`). Archiving introduces a second "where does a run live?" question for no current payoff.
+
+**Implementation sketch.**
+- `readEvents()` in `lib/server/swarm-registry.ts` checks for `.gz` and pipes through a gunzip stream (~20 LOC when we build it).
+- Compression runs as a background sweep or `npm run swarm:compress` — **not triggered from the UI**.
+- The runs picker stays read-only (no delete/archive buttons). Retention is a backend concern; the picker is pure discovery. See the comment at the top of `components/swarm-runs-picker.tsx`.
+
+**Dev-stage cleanup.** `rm -rf .opencode_swarm/runs/<id>/` is fine. `listRuns()` already skips malformed/missing meta, so partial deletes don't break the list endpoint.
+
+Decided 2026-04-21.
+
 ---
 
 ## 8. Planning & delegation wiring (backend)

@@ -7,10 +7,9 @@
 // only storage.
 //
 // Design choices:
-//   - Read-only: no delete / archive affordances yet. Prototype stage; we
-//     haven't decided on retention semantics (see Tier 4 todo in
-//     DESIGN.md §7 — rotation). Adding action buttons now would tell the
-//     user something works that doesn't.
+//   - Read-only: no delete / archive affordances. Retention is a backend
+//     concern (DESIGN.md §7.7) — compression runs as a server sweep, never
+//     from a user click. The picker is pure discovery.
 //   - Wide dense-row popover, one-eye-look density: the point is to spot
 //     the run you want in one glance. Progressive disclosure for a list
 //     view kills that.
