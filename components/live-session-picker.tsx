@@ -46,7 +46,7 @@ export function LiveSessionPicker({ title }: { title: string }) {
             {sessions.slice(0, 30).map((s) => (
               <li key={s.id}>
                 <Link
-                  href={`/debug/opencode/session/${s.id}`}
+                  href={`/?session=${s.id}`}
                   onClick={() => close()}
                   className="px-3 h-7 flex items-center gap-3 hover:bg-ink-800/60 transition"
                 >

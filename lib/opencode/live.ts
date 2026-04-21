@@ -130,6 +130,73 @@ export function useOpencodeHealth(intervalMs = 5000): HealthSnapshot {
   return state;
 }
 
+export interface LiveSessionSnapshot {
+  session: OpencodeSession | null;
+  messages: OpencodeMessage[];
+  lastUpdated: number;
+}
+
+// Polls one session's messages + metadata. Pass null to skip (no fetch, no poll).
+// Session metadata comes from the fan-out list so we don't need a separate
+// `/session/{id}` roundtrip — and the fan-out is already cached by the picker.
+export function useLiveSession(
+  sessionId: string | null,
+  intervalMs = 3000
+): {
+  data: LiveSessionSnapshot | null;
+  error: string | null;
+  loading: boolean;
+} {
+  const [data, setData] = useState<LiveSessionSnapshot | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    let controller = new AbortController();
+
+    async function poll() {
+      controller.abort();
+      controller = new AbortController();
+      try {
+        const [sessions, messages] = await Promise.all([
+          getAllSessionsBrowser({ signal: controller.signal }),
+          getSessionMessagesBrowser(sessionId!, { signal: controller.signal }),
+        ]);
+        if (cancelled) return;
+        const session = sessions.find((s) => s.id === sessionId) ?? null;
+        setData({ session, messages, lastUpdated: Date.now() });
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        if ((err as Error).name === 'AbortError') return;
+        setError((err as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    setLoading(true);
+    poll();
+    const id = setInterval(poll, intervalMs);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearInterval(id);
+    };
+  }, [sessionId, intervalMs]);
+
+  return { data, error, loading };
+}
+
 // Polling hook — fires immediately, then every `intervalMs`. Aborts the in-flight
 // request on unmount / interval-change. Never shows stale data with a new error.
 export function useLiveSessions(intervalMs = 3000): {

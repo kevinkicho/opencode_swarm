@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
@@ -17,47 +18,134 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
 import { PlaybackProvider, tsToSec } from '@/lib/playback-context';
 import { ProviderStatsProvider } from '@/lib/provider-context';
-import { useOpencodeHealth } from '@/lib/opencode/live';
+import { useOpencodeHealth, useLiveSession } from '@/lib/opencode/live';
 import {
+  toAgents,
+  toMessages,
+  toRunMeta,
+  toProviderSummary,
+} from '@/lib/opencode/transform';
+import {
+  agents as mockAgents,
+  agentOrder as mockAgentOrder,
+  messages as mockMessages,
+  runMeta as mockRunMeta,
+  runPlan,
+  providerSummary as mockProviderSummary,
+} from '@/lib/swarm-data';
+import type { AgentMessage, Agent, RunMeta, ProviderSummary } from '@/lib/swarm-types';
+import type { TimelineNode } from '@/lib/types';
+
+interface SwarmView {
+  agents: Agent[];
+  agentOrder: string[];
+  messages: AgentMessage[];
+  runMeta: RunMeta;
+  providerSummary: ProviderSummary[];
+  isLive: boolean;
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <PageInner />
+    </Suspense>
+  );
+}
+
+function PageInner() {
+  const params = useSearchParams();
+  const sessionId = params.get('session');
+  const { data: liveData } = useLiveSession(sessionId, 4000);
+
+  const view: SwarmView = useMemo(() => {
+    if (sessionId && liveData) {
+      const { agents, agentOrder } = toAgents(liveData.messages);
+      const messages = toMessages(liveData.messages);
+      return {
+        agents,
+        agentOrder,
+        messages,
+        runMeta: toRunMeta(liveData.session, liveData.messages),
+        providerSummary: toProviderSummary(agents, liveData.messages),
+        isLive: true,
+      };
+    }
+    return {
+      agents: mockAgents,
+      agentOrder: mockAgentOrder,
+      messages: mockMessages,
+      runMeta: mockRunMeta,
+      providerSummary: mockProviderSummary,
+      isLive: false,
+    };
+  }, [sessionId, liveData]);
+
+  const { agents, agentOrder, messages, runMeta, providerSummary } = view;
+
+  const paletteNodes: TimelineNode[] = useMemo(
+    () =>
+      messages.map((m) => ({
+        id: m.id,
+        kind:
+          m.fromAgentId === 'human'
+            ? 'user'
+            : m.part === 'tool'
+              ? 'tool'
+              : m.part === 'reasoning'
+                ? 'thinking'
+                : m.part === 'subtask' || m.part === 'agent'
+                  ? 'agent'
+                  : m.part === 'step-start' || m.part === 'step-finish'
+                    ? 'milestone'
+                    : 'assistant',
+        toolKind: m.toolName,
+        title: m.title,
+        subtitle: m.toolSubtitle ?? m.body,
+        preview: m.toolPreview ?? m.body,
+        timestamp: m.timestamp,
+        duration: m.duration,
+        status: m.status === 'pending' ? 'pending' : m.status,
+        tokens: m.tokens,
+      })),
+    [messages]
+  );
+
+  const runDuration = useMemo(
+    () => Math.max(...messages.map((m) => tsToSec(m.timestamp)), 60),
+    [messages]
+  );
+
+  return (
+    <PageBody
+      agents={agents}
+      agentOrder={agentOrder}
+      messages={messages}
+      runMeta={runMeta}
+      providerSummary={providerSummary}
+      paletteNodes={paletteNodes}
+      runDuration={runDuration}
+    />
+  );
+}
+
+function PageBody({
   agents,
   agentOrder,
   messages,
   runMeta,
-  runPlan,
   providerSummary,
-} from '@/lib/swarm-data';
-import type { TimelineNode } from '@/lib/types';
-
-const paletteNodes: TimelineNode[] = messages.map((m) => ({
-  id: m.id,
-  kind:
-    m.fromAgentId === 'human'
-      ? 'user'
-      : m.part === 'tool'
-        ? 'tool'
-        : m.part === 'reasoning'
-          ? 'thinking'
-          : m.part === 'subtask' || m.part === 'agent'
-            ? 'agent'
-            : m.part === 'step-start' || m.part === 'step-finish'
-              ? 'milestone'
-              : 'assistant',
-  toolKind: m.toolName,
-  title: m.title,
-  subtitle: m.toolSubtitle ?? m.body,
-  preview: m.toolPreview ?? m.body,
-  timestamp: m.timestamp,
-  duration: m.duration,
-  status: m.status === 'pending' ? 'pending' : m.status,
-  tokens: m.tokens,
-}));
-
-const runDuration = Math.max(
-  ...messages.map((m) => tsToSec(m.timestamp)),
-  60
-);
-
-export default function Page() {
+  paletteNodes,
+  runDuration,
+}: {
+  agents: Agent[];
+  agentOrder: string[];
+  messages: AgentMessage[];
+  runMeta: RunMeta;
+  providerSummary: ProviderSummary[];
+  paletteNodes: TimelineNode[];
+  runDuration: number;
+}) {
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
