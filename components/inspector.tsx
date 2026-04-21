@@ -5,7 +5,7 @@ import { useState } from 'react';
 import type { Agent, AgentMessage, ModelRef, ToolName } from '@/lib/swarm-types';
 import { ProviderBadge } from './provider-badge';
 import { Popover } from './ui/popover';
-import { toolIcon, IconBranch } from './icons';
+import { toolIcon } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { compact } from '@/lib/format';
 import { partMeta, partHex, toolMeta, hueClass } from '@/lib/part-taxonomy';
@@ -176,17 +176,16 @@ function MessageInspector({
         </button>
       )}
 
-      <div className="rounded-md hairline bg-ink-800 p-3 space-y-2">
-        <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 mb-1">
-          intervene
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <InterventionBtn label="branch from here" icon={<IconBranch size={11} />} tone="molten" />
-          <InterventionBtn label="pause sender" tone="amber" />
-          <InterventionBtn label="reroute to haiku" tone="mint" />
-          <InterventionBtn label="drop & redo" tone="rust" />
-        </div>
-      </div>
+      {/*
+        Per-message "intervene" panel was removed in April 2026 — the four
+        buttons (branch-from-here, pause-sender, reroute-to-haiku, drop-&-redo)
+        were unwired. Per DESIGN.md §9, palette and inspector placeholders are
+        reintroduced wired, not as stubs. Real paths when we build them:
+          branch-from-here → session.revert({ messageID }) + session.children
+          pause-sender     → session.abort on sender's sessionID
+          reroute-to-haiku → no direct mapping (opencode auto-picks models)
+          drop-&-redo      → session.revert to parent + re-prompt
+      */}
     </div>
   );
 }
@@ -363,17 +362,16 @@ function AgentInspector({
         </ul>
       </div>
 
-      <div className="rounded-md hairline bg-ink-800 p-3 space-y-2">
-        <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
-          control
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <InterventionBtn label="pause" tone="amber" />
-          <InterventionBtn label="branch here" tone="molten" icon={<IconBranch size={11} />} />
-          <InterventionBtn label="nudge retry" tone="mint" />
-          <InterventionBtn label="terminate" tone="rust" />
-        </div>
-      </div>
+      {/*
+        Per-agent "control" panel was removed in April 2026 — the four buttons
+        (pause, branch-here, nudge-retry, terminate) were unwired. Per
+        DESIGN.md §9, reintroduce wired. Real paths:
+          pause / terminate → session.abort (soft cancel; current turn only)
+          branch-here       → session.revert + session.create children
+          nudge-retry       → session.prompt("retry the last action")
+        "pause" vs "terminate" may fold into one button once we ship — they
+        both map to the same opencode call today.
+      */}
     </div>
   );
 }
@@ -708,32 +706,3 @@ function Stat({
   );
 }
 
-function InterventionBtn({
-  label,
-  icon,
-  tone = 'molten',
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  tone?: 'molten' | 'mint' | 'amber' | 'rust';
-}) {
-  const toneClass: Record<typeof tone, string> = {
-    molten: 'hover:border-molten/40 hover:text-molten',
-    mint: 'hover:border-mint/40 hover:text-mint',
-    amber: 'hover:border-amber/40 hover:text-amber',
-    rust: 'hover:border-rust/40 hover:text-rust',
-  };
-  return (
-    <button
-      className={clsx(
-        'group flex items-center gap-2 px-2 h-8 rounded bg-ink-900/60 hairline transition text-left',
-        toneClass[tone]
-      )}
-    >
-      {icon && <span className="text-fog-500 group-hover:text-inherit transition">{icon}</span>}
-      <span className="text-[11.5px] text-fog-300 group-hover:text-inherit transition flex-1 truncate">
-        {label}
-      </span>
-    </button>
-  );
-}

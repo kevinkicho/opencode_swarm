@@ -465,18 +465,11 @@ These are recorded so future contributors don't burn cycles re-asking:
 - **Agent name and directive are optional at spawn.** Frontier models don't need narrow scoping; directives matter for *coordination*, not capability. Spawn modal dims optional inputs to signal this.
 - **Inspector dismissal = click-outside.** No "show inspector" footer button. Modern users dismiss via outside-click; the button was removed.
 - **No roles. Not prescribed, not inferred.** Agents self-select providers within run bounds; humans observe and nudge. There is no `role` field on `Agent`, no role-keyed routing, and no system-minted "shape" readout either. Identity is a name + an optional self-authored focus line. Anyone tempted to reintroduce `if role=X → provider=Y` — *or* a derived shape readout "for legibility" — should re-read §1 ("On roles") and the `observation` eyebrow tooltip before writing code. This is the single hardest-won architectural stance in the project.
-
----
-
-## 10. Open questions
-
-These are explicitly *not* decided yet. Backend implementer is invited to propose:
-
-- **Cost ceiling enforcement.** Where does the spend cap actually live? Root-session gate, or per-session middleware?
-- **Branch / fork semantics.** Palette has a "branch from current node" action. Maps to `session.children` + revert? Or a new git branch + new run?
-- **Compaction trigger.** Manual via palette, or automatic at token threshold? UI assumes both.
-- **A2A typed pins.** We assumed `task`-tool dispatch is the sole A2A primitive. If opencode introduces a richer A2A schema, the timeline needs a second wire style.
-- **Authentication.** No auth UI exists. `auth.set` is the SDK method but not surfaced.
+- **Cost ceiling enforcement = hybrid (per-session model selection + root gate).** Per-session dispatch loops read `bounds.costCap` to pick the cheapest capable model within remaining headroom (§6 step 7). The root-session **gate** is the hard wall: before the `/api/opencode` proxy forwards a `/prompt` or `/prompt_async` for a swarm-managed session, the server compares the run's accumulated `$` against `bounds.costCap` and returns 402 if exceeded. Direct `?session=` flows (no swarmRunID) are ungated — they're opting out of swarm management by construction. Implemented as a middleware in the catch-all proxy; the session→swarmRunID lookup uses the registry's reverse index (TODO: build the index when we wire the gate).
+- **Branch / fork = `session.children` + `session.revert`, not new git branches.** A "branch from here" action maps to: create a child session via `session.create({ parentID })`, then if the user picked a non-tail node, `session.revert({ messageID })` to rewind. Git-branch-per-run was considered and rejected — it puts repo-level cost behind a UI action that's meant to be cheap exploration. The palette's aspirational `branch` / `detach` action stubs were **removed** until a concrete UI story for "pick a node and branch" exists; reintroduce them wired, not as placeholders.
+- **Compaction = both manual and automatic.** Manual: a palette action that calls `session.summarize`. Automatic: the dispatch loop watches `info.tokens.total` vs. the model's context window and fires `summarize` around 80% utilization (configurable per-model). Both produce a `compaction` part that renders as a timeline marker. The palette's aspirational `compact` stub was **removed** until the summarize call + context-window lookup are wired.
+- **A2A typed pins = `task`-tool dispatch only, for now.** opencode has no richer A2A schema today (`docs/opencode-vocabulary.md` line 160). The timeline has exactly one wire style (`task` → `subtask`) and that's the correct count. If opencode later ships typed pins, the timeline grows a second wire style — not a rewrite. This item is closed as *reactive* — we don't decide before opencode does.
+- **Authentication = out of scope, not deferred.** Personal-use deployment only (never SaaS, never multi-tenant, never multi-instance — see the `deployment-scope` memory). `auth.set` exists in the SDK but is never surfaced; there is no login screen, no token UI, no account switcher. The `kk` chip in the topbar is a cosmetic placeholder, not a feature stub. If this ever changes, it changes in response to a new product direction, not a missing piece.
 
 ---
 

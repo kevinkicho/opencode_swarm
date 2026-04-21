@@ -13,8 +13,7 @@ interface CommandItem {
   label: string;
   hint: string;
   group: string;
-  node?: TimelineNode;
-  action?: () => void;
+  node: TimelineNode;
 }
 
 const kindChip: Record<
@@ -30,15 +29,6 @@ const kindChip: Record<
 };
 
 function PaletteChip({ item }: { item: CommandItem }) {
-  if (!item.node) {
-    return (
-      <span
-        className="inline-flex items-center h-4 px-1.5 border rounded-[3px] font-mono text-[9px] uppercase tracking-wider bg-molten/10 text-molten border-molten/30 shrink-0"
-      >
-        action
-      </span>
-    );
-  }
   const n = item.node;
   if (n.status === 'error') {
     return (
@@ -78,38 +68,23 @@ export function CommandPalette({
     if (open) setQ('');
   }, [open]);
 
-  const items = useMemo<CommandItem[]>(() => {
-    const actions: CommandItem[] = [
-      {
-        id: 'branch',
-        group: 'actions',
-        label: 'branch from current node',
-        hint: '',
-      },
-      {
-        id: 'detach',
-        group: 'actions',
-        label: 'detach agent run in background',
-        hint: '',
-      },
-      {
-        id: 'compact',
-        group: 'actions',
-        label: 'compact conversation history',
-        hint: '',
-      },
-    ];
-
-    const jumps: CommandItem[] = nodes.map((n) => ({
-      id: n.id,
-      group: 'jump to',
-      label: n.title + (n.subtitle ? ` ${n.subtitle}` : ''),
-      hint: n.timestamp,
-      node: n,
-    }));
-
-    return [...actions, ...jumps];
-  }, [nodes]);
+  // Palette is currently jump-only. The `actions` group ( branch / detach /
+  // compact ) was removed in April 2026 — each was an unwired placeholder and
+  // selecting them fell through to `onClose()` with no effect. Reintroduce as
+  // `CommandItem[]` here once they're wired to real opencode calls
+  // (`session.children` + `session.revert` for branch; `session.summarize`
+  // for compact — see DESIGN.md §9).
+  const items = useMemo<CommandItem[]>(
+    () =>
+      nodes.map((n) => ({
+        id: n.id,
+        group: 'jump to',
+        label: n.title + (n.subtitle ? ` ${n.subtitle}` : ''),
+        hint: n.timestamp,
+        node: n,
+      })),
+    [nodes]
+  );
 
   const grouped = useMemo(() => {
     const m = new Map<string, CommandItem[]>();
@@ -122,8 +97,7 @@ export function CommandPalette({
   }, [items]);
 
   const select = (item: CommandItem) => {
-    if (item.node) onJump(item.node.id);
-    item.action?.();
+    onJump(item.node.id);
     onClose();
   };
 
@@ -166,7 +140,7 @@ export function CommandPalette({
                   value={q}
                   onValueChange={setQ}
                   autoFocus
-                  placeholder="jump to node run action search files"
+                  placeholder="jump to a node — by title, agent, tool, or file…"
                   className="flex-1 bg-transparent text-[14px] text-fog-100 placeholder:text-fog-600 focus:outline-none"
                 />
               </div>
@@ -175,7 +149,7 @@ export function CommandPalette({
                 <Command.Empty className="py-10 text-center">
                   <div className="font-display italic text-[18px] text-fog-600">no matches</div>
                   <div className="font-mono text-micro text-fog-700 mt-1">
-                    try a tool name, file, or `branch`
+                    try a tool name, an agent, or a file path
                   </div>
                 </Command.Empty>
 

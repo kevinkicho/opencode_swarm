@@ -226,7 +226,6 @@ purpose) or its role is obvious from its name.
 | `swarm-timeline.tsx` | Main timeline render. Groups by time bucket, picks wires vs chips. |
 | `timeline-node.tsx` | Single cross-lane event with wires into / out of lane columns. |
 | `timeline-flow.tsx` | SVG wire layout between nodes. |
-| `timeline-pane.tsx` | Scroll container + lane column headers. |
 | `part-chip.tsx` | Compact in-lane chip (tool / internal events docked under A2A rows). See `memory/project_tool_chip_docking.md`. |
 | `agent-roster.tsx` | Left-rail agent list. Identity + status + tokens ratio. |
 | `plan-rail.tsx` | Plan / todo list. Clicks jump to bound `task` tool call (see §3 recipe). |

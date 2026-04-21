@@ -156,7 +156,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Step 3: persist meta.json. If this fails we've already created an
   // opencode session — accept the orphan rather than introduce rollback.
   // The user can see the session in opencode's own UI; our own ledger just
-  // won't know about it. Acceptable for v1 (see DESIGN.md §10).
+  // won't know about it. Acceptable for a single-user prototype.
   let meta;
   try {
     meta = await createRun(parsed, [session.id]);

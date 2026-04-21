@@ -590,7 +590,7 @@ export function useLivePermissions(
 // ─── swarm-run ────────────────────────────────────────────────────────────
 //
 // A "swarm run" is one logical run wrapping N opencode sessions under a
-// single coordinator (see DESIGN.md §10 / SWARM_PATTERNS.md). At v1 N=1 and
+// single coordinator (see SWARM_PATTERNS.md). At v1 N=1 and
 // pattern='none', so this hook is effectively a thin resolver: given a
 // swarmRunID, it fetches meta.json and exposes the primary sessionID +
 // workspace so the existing single-session hooks can drive the UI unchanged.
