@@ -33,11 +33,33 @@ const KNOWN_PARTS: PartType[] = [
   'step-start', 'step-finish', 'snapshot', 'patch', 'retry', 'compaction',
 ];
 
+// Opencode's providerID is per-message and reflects the routing gateway, not
+// the model vendor. Per CLAUDE.md the UI's provider universe is `zen` + `go`
+// only — BYOK-shaped providerIDs (anthropic, openai, gemini, …) still route
+// through opencode here and are bucketed as `zen`. `go` requires a positive
+// bundle/subscription signal because zen vs go is often an account-level
+// distinction opencode doesn't echo per-message.
 function providerOf(providerID?: string): Provider {
   if (!providerID) return 'zen';
   const p = providerID.toLowerCase();
-  if (p.includes('anthropic') || p.includes('claude') || p.includes('openai') || p.includes('gpt')) return 'zen';
-  return 'go';
+  if (p.includes('-go') || p.includes('bundle') || p.includes('subscription')) return 'go';
+  return 'zen';
+}
+
+// Cost fallback for messages where opencode didn't populate `info.cost` (free
+// tiers, old sessions, go-bundle messages). Computes per-1M pricing × tokens
+// from the zen table. Returns 0 when the model isn't in the table or tokens
+// are missing — better than NaN, and aligns with zero-cost free tiers.
+function derivedCost(info: OpencodeMessage['info']): number {
+  if (typeof info.cost === 'number') return info.cost;
+  const price = priceFor(info.modelID);
+  const t = info.tokens;
+  if (!price || !t) return 0;
+  const input = t.input * price.input;
+  const output = t.output * price.output;
+  const cachedRead = t.cache.read * price.cached;
+  const cachedWrite = t.cache.write * (price.write ?? price.input);
+  return (input + output + cachedRead + cachedWrite) / 1_000_000;
 }
 
 function familyOf(modelID?: string): Agent['model']['family'] {
@@ -159,7 +181,7 @@ export function toAgents(messages: OpencodeMessage[]): {
     const id = agentIdFor(m.info.agent, 'assistant');
     const existing = byId.get(id);
     const tokens = m.info.tokens?.total ?? 0;
-    const cost = m.info.cost ?? 0;
+    const cost = derivedCost(m.info);
 
     if (!existing) {
       order.push(id);
@@ -626,7 +648,7 @@ export function toProviderSummary(
     }
     const bucket = byProvider.get(provider)!;
     bucket.tokens += m.info.tokens?.total ?? 0;
-    bucket.cost += m.info.cost ?? 0;
+    bucket.cost += derivedCost(m.info);
   }
 
   return Array.from(byProvider.entries()).map(([provider, b]) => ({
