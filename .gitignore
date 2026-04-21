@@ -8,3 +8,4 @@ dist/
 *.log
 .vercel
 tsconfig.tsbuildinfo
+.opencode_swarm/
