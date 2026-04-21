@@ -210,8 +210,14 @@ At this point the UI shows a real run live, but cannot drive it.
 ### Phase 3 — branch history (real VCS)
 9. Replace `lib/commits-data.ts` with `vcs.branch.updated` + `file.edited` + `session.diff` aggregation. The current "branch history" modal shape already matches.
 
-### Phase 4 — multi-tenant / multi-instance
-10. Account chip in topbar becomes real (current `kk` placeholder). Run picker. Cross-run cost dashboard.
+### Phase 4 — cross-run analytics (single-user)
+
+This app is personal-use only (never SaaS). **Multi-tenant and multi-instance work is explicitly out of scope** — no auth UI, no account switching, no tenant isolation. The `kk` chip in the topbar is a cosmetic placeholder, not an unfinished feature. What remains:
+
+10. **Cross-run cost dashboard.** Aggregate `$` and tokens across every persisted run; group by workspace + rolling window. Data already exists in `meta.json` plus each session's messages — no new collection, just projection. First-class panel for answering *"where's my spend going this week?"* once the run count grows past ~20.
+11. **Run picker** (shipped as Tier 4, reads local `.opencode_swarm/`).
+
+GitHub integration (agent clones a repo, opens a PR, reads issues) is a **Phase 2 tool-capability concern**, not a Phase 4 identity concern — the user provides a classic PAT via env var; there is no sign-in flow.
 
 ### 6.5 HTTP API quirks discovered through probing
 
