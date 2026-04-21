@@ -5,7 +5,8 @@ Briefing for Claude Code (and any agent that respects this convention) opening t
 ## Read these first
 1. **`DESIGN.md`** — vision, mental model, opencode SDK vocabulary, data contracts, backend wiring plan, decisions already made. Do not write code without reading it.
 2. **`WHAT_THIS_PROJECT_IS_NOT.md`** — design choices we explicitly rejected. Read before "fixing" something that looks missing — it may be missing on purpose.
-3. **`docs/opencode-vocabulary.md`** — canonical opencode SDK part / tool / event names. Use these instead of inventing new terms.
+3. **`SWARM_PATTERNS.md`** — orchestration pattern catalog (blackboard, map-reduce, council, stigmergy) and the rejected list (role differentiation, orchestrator-worker, debate/judge, critic loops). Read before building multi-session coordination or preset picker UI.
+4. **`docs/opencode-vocabulary.md`** — canonical opencode SDK part / tool / event names. Use these instead of inventing new terms.
 
 ## Always
 - Run `npx tsc --noEmit` after edits. The repo is TypeScript strict; type-clean is the bar.
