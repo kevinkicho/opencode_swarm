@@ -20,6 +20,7 @@ import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
 import { PlaybackProvider, tsToSec } from '@/lib/playback-context';
 import { ProviderStatsProvider } from '@/lib/provider-context';
+import { RoutingBoundsProvider, useRoutingBounds } from '@/lib/routing-bounds-context';
 import {
   useOpencodeHealth,
   useLiveSession,
@@ -138,22 +139,24 @@ function PageInner() {
   );
 
   return (
-    <PageBody
-      agents={agents}
-      agentOrder={agentOrder}
-      messages={messages}
-      runMeta={runMeta}
-      providerSummary={providerSummary}
-      runPlan={runPlan}
-      paletteNodes={paletteNodes}
-      runDuration={runDuration}
-      liveSessionId={sessionId}
-      liveDirectory={liveDirectory}
-      permissions={permissions}
-      liveTurns={liveTurns}
-      liveLastUpdated={liveData?.lastUpdated ?? null}
-      isLive={isLive}
-    />
+    <RoutingBoundsProvider>
+      <PageBody
+        agents={agents}
+        agentOrder={agentOrder}
+        messages={messages}
+        runMeta={runMeta}
+        providerSummary={providerSummary}
+        runPlan={runPlan}
+        paletteNodes={paletteNodes}
+        runDuration={runDuration}
+        liveSessionId={sessionId}
+        liveDirectory={liveDirectory}
+        permissions={permissions}
+        liveTurns={liveTurns}
+        liveLastUpdated={liveData?.lastUpdated ?? null}
+        isLive={isLive}
+      />
+    </RoutingBoundsProvider>
   );
 }
 
@@ -197,6 +200,15 @@ function PageBody({
   const [spawnOpen, setSpawnOpen] = useState(false);
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [newRunOpen, setNewRunOpen] = useState(false);
+
+  // Routing bounds live in a provider so the modal can persist them to
+  // localStorage. Cost cap is the only bound with a direct RunMeta field
+  // today; the rest live on the bounds record for dispatcher reads.
+  const { bounds } = useRoutingBounds();
+  const runWithBounds = useMemo<RunMeta>(
+    () => ({ ...runMeta, budgetCap: bounds.costCap }),
+    [runMeta, bounds.costCap]
+  );
 
   // Only fetch the diff when the live drawer is actually open; refetch when
   // a new turn lands. Returns null in non-live mode so the mock drawer keeps
@@ -276,13 +288,13 @@ function PageBody({
       value={{
         agents,
         providers: providerSummary,
-        run: runMeta,
+        run: runWithBounds,
         onOpenRouting: () => setRoutingOpen(true),
       }}
     >
     <div className="relative h-screen w-screen flex flex-col bg-ink-900 overflow-hidden bg-noise">
       <SwarmTopbar
-        run={runMeta}
+        run={runWithBounds}
         providers={providerSummary}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenSettings={() => setRoutingOpen(true)}

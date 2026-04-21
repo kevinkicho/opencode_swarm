@@ -1,9 +1,10 @@
 'use client';
 
 import clsx from 'clsx';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
+import { defaultBounds, useRoutingBounds } from '@/lib/routing-bounds-context';
 
 interface DispatchSlice {
   provider: 'zen' | 'go';
@@ -33,11 +34,49 @@ const providerFill: Record<'zen' | 'go', string> = {
 };
 
 export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [costCap, setCostCap] = useState(5.0);
-  const [tokenCap, setTokenCap] = useState(200_000);
-  const [minutesCap, setMinutesCap] = useState(15);
-  const [zenCeiling, setZenCeiling] = useState(60);
-  const [goCeiling, setGoCeiling] = useState(100);
+  const { bounds, save, reset } = useRoutingBounds();
+
+  // Draft state — hydrated from committed bounds on each open-transition so
+  // edits don't leak across cancels. Save writes draft back to the context;
+  // reset writes defaults to the context directly (committed, not draft).
+  const [costCap, setCostCap] = useState(bounds.costCap);
+  const [tokenCap, setTokenCap] = useState(bounds.tokenCap);
+  const [minutesCap, setMinutesCap] = useState(bounds.minutesCap);
+  const [zenCeiling, setZenCeiling] = useState(bounds.zenCeiling);
+  const [goCeiling, setGoCeiling] = useState(bounds.goCeiling);
+
+  const wasOpenRef = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpenRef.current) {
+      setCostCap(bounds.costCap);
+      setTokenCap(bounds.tokenCap);
+      setMinutesCap(bounds.minutesCap);
+      setZenCeiling(bounds.zenCeiling);
+      setGoCeiling(bounds.goCeiling);
+    }
+    wasOpenRef.current = open;
+  }, [open, bounds]);
+
+  const dirty =
+    costCap !== bounds.costCap ||
+    tokenCap !== bounds.tokenCap ||
+    minutesCap !== bounds.minutesCap ||
+    zenCeiling !== bounds.zenCeiling ||
+    goCeiling !== bounds.goCeiling;
+
+  const handleSave = () => {
+    save({ costCap, tokenCap, minutesCap, zenCeiling, goCeiling });
+    onClose();
+  };
+
+  const handleReset = () => {
+    reset();
+    setCostCap(defaultBounds.costCap);
+    setTokenCap(defaultBounds.tokenCap);
+    setMinutesCap(defaultBounds.minutesCap);
+    setZenCeiling(defaultBounds.zenCeiling);
+    setGoCeiling(defaultBounds.goCeiling);
+  };
 
   const dispatch = initialDispatch;
 
@@ -171,15 +210,23 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
         </div>
 
         <div className="flex items-center gap-2">
-          <button className="h-8 px-3 rounded font-mono text-micro uppercase tracking-wider bg-ink-900 hairline text-fog-400 hover:border-ink-500 transition">
+          <button
+            onClick={handleReset}
+            className="h-8 px-3 rounded font-mono text-micro uppercase tracking-wider bg-ink-900 hairline text-fog-400 hover:border-ink-500 transition"
+          >
             reset defaults
           </button>
           <span className="font-mono text-micro text-fog-700">
-            bounds apply to next dispatch
+            {dirty ? 'unsaved changes · apply to next dispatch' : 'bounds apply to next dispatch'}
           </span>
           <button
-            onClick={onClose}
-            className="ml-auto h-8 px-4 rounded font-mono text-micro uppercase tracking-wider bg-molten/15 hover:bg-molten/25 text-molten border border-molten/30 transition"
+            onClick={handleSave}
+            className={clsx(
+              'ml-auto h-8 px-4 rounded font-mono text-micro uppercase tracking-wider transition border',
+              dirty
+                ? 'bg-molten/15 hover:bg-molten/25 text-molten border-molten/30'
+                : 'bg-ink-900 text-fog-500 border-ink-700 hover:text-fog-300'
+            )}
           >
             save
           </button>
