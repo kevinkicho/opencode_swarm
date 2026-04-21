@@ -51,6 +51,7 @@ import {
   providerSummary as mockProviderSummary,
 } from '@/lib/swarm-data';
 import type { AgentMessage, Agent, RunMeta, ProviderSummary, TodoItem } from '@/lib/swarm-types';
+import type { SwarmRunMeta } from '@/lib/swarm-run-types';
 import type { TimelineNode } from '@/lib/types';
 
 interface SwarmView {
@@ -183,6 +184,7 @@ function PageInner() {
         liveLastUpdated={liveData?.lastUpdated ?? null}
         isLive={isLive}
         swarmRunID={swarmRunID}
+        swarmRunMeta={swarmRun.meta}
       />
     </RoutingBoundsProvider>
   );
@@ -204,6 +206,7 @@ function PageBody({
   liveLastUpdated,
   isLive,
   swarmRunID,
+  swarmRunMeta,
 }: {
   agents: Agent[];
   agentOrder: string[];
@@ -220,6 +223,7 @@ function PageBody({
   liveLastUpdated: number | null;
   isLive: boolean;
   swarmRunID: string | null;
+  swarmRunMeta: SwarmRunMeta | null;
 }) {
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -343,6 +347,7 @@ function PageBody({
         onOpenSettings={() => setRoutingOpen(true)}
         liveSessionId={liveSessionId}
         liveDirectory={liveDirectory}
+        swarmRunMeta={swarmRunMeta}
       />
 
       <main className="flex-1 grid min-h-0" style={{ gridTemplateColumns: '260px 1fr' }}>

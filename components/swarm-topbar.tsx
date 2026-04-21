@@ -3,6 +3,7 @@
 import clsx from 'clsx';
 import { useState } from 'react';
 import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
+import type { SwarmRunMeta } from '@/lib/swarm-run-types';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
@@ -19,6 +20,7 @@ export function SwarmTopbar({
   onOpenSettings,
   liveSessionId,
   liveDirectory,
+  swarmRunMeta,
 }: {
   run: RunMeta;
   providers: ProviderSummary[];
@@ -26,6 +28,12 @@ export function SwarmTopbar({
   onOpenSettings: () => void;
   liveSessionId: string | null;
   liveDirectory: string | null;
+  // Present only on `?swarmRun=<id>`. Read-only snapshot of how the run was
+  // launched — directive text + bounds at dispatch time. NOT the same as
+  // `run.budgetCap` (which reflects the *current* routing cost cap). Keeping
+  // them separate preserves the "what was agreed at launch" vs "what the
+  // dispatcher is enforcing right now" distinction.
+  swarmRunMeta: SwarmRunMeta | null;
 }) {
   const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
   const goTierPct = Math.min(100, Math.round((run.goTier.used / run.goTier.cap) * 100));
@@ -50,6 +58,7 @@ export function SwarmTopbar({
 
       <nav className="flex items-center gap-2 pl-4 text-[12.5px] min-w-0 flex-1">
         <LiveSessionPicker title={run.title} />
+        {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} />}
         {liveSessionId && liveDirectory && run.status === 'active' && (
           <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
         )}
@@ -137,6 +146,146 @@ export function SwarmTopbar({
       </div>
     </header>
   );
+}
+
+// Compact chip surfacing the run-launch contract: directive text + bounds as
+// they were recorded in meta.json. This is a *read-only* handle on the
+// run's origin — mutating bounds mid-run happens via routing rules, not
+// here. The chip sits next to the session picker so the directive is one
+// glance away without having to open a drawer.
+function RunAnchorChip({ meta }: { meta: SwarmRunMeta }) {
+  const directive = meta.directive?.trim() ?? '';
+  const costCap = meta.bounds?.costCap;
+  const minutesCap = meta.bounds?.minutesCap;
+  const hasBounds = costCap != null || minutesCap != null;
+
+  // Truncate the directive in the collapsed state but keep the newline
+  // structure readable in the popover. The popover is the authoritative
+  // surface; the chip is just the teaser.
+  const teaser = directive
+    ? directive.length > 56
+      ? directive.slice(0, 56).replace(/\s+$/, '') + '…'
+      : directive
+    : '(no directive)';
+
+  return (
+    <Popover
+      side="bottom"
+      align="start"
+      content={() => (
+        <div className="w-[420px]">
+          <div className="px-3 h-7 hairline-b flex items-center gap-2">
+            <span className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
+              run anchor
+            </span>
+            <span
+              className="ml-auto font-mono text-[10px] text-fog-600 tabular-nums truncate max-w-[220px]"
+              title={meta.swarmRunID}
+            >
+              {meta.swarmRunID}
+            </span>
+          </div>
+          <div className="px-3 py-2 hairline-b grid grid-cols-[78px_1fr] gap-y-1.5 gap-x-3 items-baseline">
+            <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
+              pattern
+            </span>
+            <span className="font-mono text-[11px] text-iris">{meta.pattern}</span>
+            <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
+              sessions
+            </span>
+            <span className="font-mono text-[11px] text-fog-300 tabular-nums">
+              {meta.sessionIDs.length}
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
+              created
+            </span>
+            <span className="font-mono text-[11px] text-fog-200 tabular-nums">
+              {fmtAbsTs(meta.createdAt)}
+            </span>
+            {meta.source && (
+              <>
+                <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
+                  source
+                </span>
+                <a
+                  href={meta.source}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-[11px] text-mint/90 hover:text-mint truncate"
+                  title={meta.source}
+                >
+                  {meta.source}
+                </a>
+              </>
+            )}
+          </div>
+          {directive && (
+            <div className="px-3 py-2 hairline-b">
+              <div className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600 mb-1">
+                directive
+              </div>
+              <div className="font-mono text-[11px] text-fog-200 whitespace-pre-wrap leading-relaxed max-h-[168px] overflow-y-auto">
+                {directive}
+              </div>
+            </div>
+          )}
+          <div className="px-3 py-2 grid grid-cols-[78px_1fr] gap-y-1.5 gap-x-3 items-baseline">
+            <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
+              cost cap
+            </span>
+            <span
+              className={clsx(
+                'font-mono text-[11px] tabular-nums',
+                costCap != null ? 'text-molten' : 'text-fog-700'
+              )}
+            >
+              {costCap != null ? `$${costCap.toFixed(2)}` : 'unbounded'}
+            </span>
+            <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
+              time cap
+            </span>
+            <span
+              className={clsx(
+                'font-mono text-[11px] tabular-nums',
+                minutesCap != null ? 'text-amber' : 'text-fog-700'
+              )}
+            >
+              {minutesCap != null ? `${minutesCap}m` : 'unbounded'}
+            </span>
+          </div>
+        </div>
+      )}
+    >
+      <button className="fluent-btn gap-1.5 min-w-0 max-w-[320px]" title={directive || meta.swarmRunID}>
+        <span className="font-mono text-micro uppercase tracking-widest2 text-iris/80 shrink-0">
+          run
+        </span>
+        <span className="font-mono text-[10.5px] text-fog-300 truncate min-w-0">
+          {teaser}
+        </span>
+        {hasBounds && (
+          <span className="flex items-center gap-1 shrink-0 pl-1 border-l border-ink-700">
+            {costCap != null && (
+              <span className="font-mono text-[9.5px] text-fog-500 tabular-nums">
+                ${costCap.toFixed(costCap < 10 ? 2 : 0)}
+              </span>
+            )}
+            {minutesCap != null && (
+              <span className="font-mono text-[9.5px] text-fog-500 tabular-nums">
+                {minutesCap}m
+              </span>
+            )}
+          </span>
+        )}
+      </button>
+    </Popover>
+  );
+}
+
+function fmtAbsTs(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function AbortChip({
