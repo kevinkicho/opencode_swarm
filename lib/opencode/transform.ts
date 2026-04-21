@@ -21,6 +21,7 @@ import type {
   OpencodeSession,
   OpencodeTokenUsage,
 } from './types';
+import { priceFor } from './pricing';
 
 const ACCENT_ROTATION: Agent['accent'][] = ['molten', 'mint', 'iris', 'amber', 'fog'];
 const KNOWN_TOOLS: ToolName[] = [
@@ -162,6 +163,7 @@ export function toAgents(messages: OpencodeMessage[]): {
 
     if (!existing) {
       order.push(id);
+      const price = priceFor(m.info.modelID);
       byId.set(id, {
         id,
         name: m.info.agent ?? 'assistant',
@@ -170,10 +172,14 @@ export function toAgents(messages: OpencodeMessage[]): {
           label: m.info.modelID?.split('/').pop() ?? 'unknown',
           provider: providerOf(m.info.providerID),
           family: familyOf(m.info.modelID),
+          pricing: price ? { input: price.input, output: price.output } : undefined,
         },
         status: 'idle',
         focus: m.info.mode,
         tokensUsed: tokens,
+        // Placeholder — PageInner overrides via runBudgetCap / pricing (see
+        // withTokenBudget in app/page.tsx). Left non-zero so roster ratios
+        // don't divide by zero in the mock-data / no-bounds case.
         tokensBudget: 80_000,
         costUsed: cost,
         messagesSent: 1,

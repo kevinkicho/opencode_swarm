@@ -38,6 +38,7 @@ import {
   parseSessionDiffs,
   type LiveTurn,
 } from '@/lib/opencode/transform';
+import { tokensForBudget } from '@/lib/opencode/pricing';
 import type { DiffData } from '@/lib/types';
 import {
   agents as mockAgents,
@@ -174,7 +175,7 @@ function PageInner() {
 }
 
 function PageBody({
-  agents,
+  agents: agentsIn,
   agentOrder,
   messages,
   runMeta,
@@ -222,6 +223,18 @@ function PageBody({
     () => ({ ...runMeta, budgetCap: bounds.costCap }),
     [runMeta, bounds.costCap]
   );
+
+  // Overlay pricing-derived tokensBudget on each agent. The per-agent budget
+  // is the notional output-token count that the run's cost cap buys at the
+  // agent's own model rate — so agents on expensive models show smaller
+  // budgets than agents on cheap ones, matching economic reality. Falls back
+  // to the toAgents default (80k) when pricing is unknown.
+  const agents = useMemo(() => {
+    return agentsIn.map((a) => {
+      const budget = tokensForBudget(bounds.costCap, a.model.id);
+      return budget ? { ...a, tokensBudget: budget } : a;
+    });
+  }, [agentsIn, bounds.costCap]);
 
   // Only fetch the diff when the live drawer is actually open; refetch when
   // a new turn lands. Returns null in non-live mode so the mock drawer keeps
