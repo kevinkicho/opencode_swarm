@@ -29,10 +29,16 @@ import { Tooltip } from './ui/tooltip';
 //     color derived in deriveBoardAgents so the same agent gets the same
 //     accent on board-preview and the rail.
 
+// Per-kind glyph. Todo is the default kind — we leave its glyph blank so
+// the row reads as content-first. Other kinds get a one-char marker
+// because they're structurally distinct: claims have an owner already,
+// questions need a reply, findings are immutable results, synthesize is
+// the map-reduce reduce phase. The marker earns its column only when it
+// differentiates from the default.
 const KIND_GLYPH: Record<BoardItemKind, string> = {
   claim: '◎',
   question: '?',
-  todo: '·',
+  todo: '',
   finding: '✓',
   synthesize: 'Σ',
 };
@@ -248,15 +254,17 @@ function BoardRailRow({
       }
     >
       <div className="pl-5 pr-2 h-6 flex items-center gap-1.5 hover:bg-ink-800/40 cursor-default transition">
-        <span
-          className={clsx(
-            'shrink-0 w-3 text-center font-mono text-[11px] leading-none',
-            KIND_TONE[item.kind]
-          )}
-          aria-label={item.kind}
-        >
-          {KIND_GLYPH[item.kind]}
-        </span>
+        {KIND_GLYPH[item.kind] && (
+          <span
+            className={clsx(
+              'shrink-0 w-3 text-center font-mono text-[11px] leading-none',
+              KIND_TONE[item.kind]
+            )}
+            aria-label={item.kind}
+          >
+            {KIND_GLYPH[item.kind]}
+          </span>
+        )}
         <span className="text-[11.5px] text-fog-200 truncate flex-1 min-w-0 font-mono">
           {item.content}
         </span>
