@@ -1,14 +1,15 @@
 'use client';
 
 import clsx from 'clsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
+import { BoardRail } from './board-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 
-export type Tab = 'plan' | 'roster';
+export type Tab = 'plan' | 'roster' | 'board';
 
 export function LeftTabs({
   plan,
@@ -23,6 +24,7 @@ export function LeftTabs({
   tab: tabProp,
   onTabChange,
   focusTodoId,
+  boardSwarmRunID,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -39,6 +41,10 @@ export function LeftTabs({
   tab?: Tab;
   onTabChange?: (tab: Tab) => void;
   focusTodoId?: string | null;
+  // When set, the third "board" tab is rendered and the inline BoardRail
+  // polls /api/swarm/run/:id/board. Null/undefined hides the tab entirely.
+  // Only blackboard runs should pass a value here.
+  boardSwarmRunID?: string | null;
 }) {
   const [localTab, setLocalTab] = useState<Tab>('plan');
   const tab = tabProp ?? localTab;
@@ -46,6 +52,14 @@ export function LeftTabs({
     if (onTabChange) onTabChange(t);
     else setLocalTab(t);
   };
+
+  // If the active run stops being a blackboard (or we switch to a different
+  // run that has no board), 'board' becomes an invalid selection. Fall back
+  // to 'plan' so the header doesn't show a highlighted tab with no content.
+  useEffect(() => {
+    if (!boardSwarmRunID && tab === 'board') setTab('plan');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardSwarmRunID, tab]);
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -67,9 +81,17 @@ export function LeftTabs({
           label="roster"
           count={`${agentsActive}/${agents.length}`}
         />
+        {boardSwarmRunID && (
+          <TabButton
+            active={tab === 'board'}
+            onClick={() => setTab('board')}
+            label="board"
+            count=""
+          />
+        )}
 
         <div className="ml-auto flex items-center">
-          {tab === 'plan' ? (
+          {tab === 'plan' && (
             <Tooltip
               side="bottom"
               align="end"
@@ -91,7 +113,8 @@ export function LeftTabs({
                 read-only
               </span>
             </Tooltip>
-          ) : (
+          )}
+          {tab === 'roster' && (
             <Tooltip content="spawn new agent" side="bottom" align="end">
               <button
                 onClick={onSpawn}
@@ -101,11 +124,35 @@ export function LeftTabs({
               </button>
             </Tooltip>
           )}
+          {tab === 'board' && (
+            <Tooltip
+              side="bottom"
+              align="end"
+              wide
+              content={
+                <div className="space-y-1">
+                  <div className="font-mono text-[11px] text-fog-200">
+                    blackboard state
+                  </div>
+                  <div className="font-mono text-[10.5px] text-fog-500">
+                    items and claims are written by the coordinator loop (see{' '}
+                    <span className="text-fog-300">SWARM_PATTERNS.md §1</span>).
+                    polls every 2s. for the 5-column kanban, follow the
+                    footer link.
+                  </div>
+                </div>
+              }
+            >
+              <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700 cursor-help pr-2">
+                read-only
+              </span>
+            </Tooltip>
+          )}
         </div>
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col">
-        {tab === 'plan' ? (
+        {tab === 'plan' && (
           <PlanRail
             items={plan}
             agents={agents}
@@ -113,7 +160,8 @@ export function LeftTabs({
             focusTodoId={focusTodoId ?? null}
             embedded
           />
-        ) : (
+        )}
+        {tab === 'roster' && (
           <AgentRoster
             agents={agents}
             messages={messages}
@@ -124,6 +172,9 @@ export function LeftTabs({
             onFocus={onFocus}
             embedded
           />
+        )}
+        {tab === 'board' && boardSwarmRunID && (
+          <BoardRail swarmRunID={boardSwarmRunID} embedded />
         )}
       </div>
     </section>
@@ -152,14 +203,16 @@ function TabButton({
       )}
     >
       <span>{label}</span>
-      <span
-        className={clsx(
-          'tabular-nums normal-case',
-          active ? 'text-fog-400' : 'text-fog-700'
-        )}
-      >
-        {count}
-      </span>
+      {count && (
+        <span
+          className={clsx(
+            'tabular-nums normal-case',
+            active ? 'text-fog-400' : 'text-fog-700'
+          )}
+        >
+          {count}
+        </span>
+      )}
     </button>
   );
 }

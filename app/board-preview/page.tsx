@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   MOCK_AGENTS,
@@ -14,6 +14,7 @@ import type {
   BoardItemKind,
   BoardItemStatus,
 } from '@/lib/blackboard/types';
+import { deriveBoardAgents, useLiveBoard } from '@/lib/blackboard/live';
 
 // Board view for the blackboard preset. Runs in two modes:
 //   - /board-preview                  → mock data (design-time showcase, kept so
@@ -84,84 +85,6 @@ function fmtAge(ms: number, now: number): string {
   return `${h}h`;
 }
 
-const DERIVED_ACCENTS: BoardAgent['accent'][] = ['molten', 'mint', 'iris', 'amber', 'fog'];
-
-// Synthesize a BoardAgent from the board's ownerAgentId strings. The live
-// store doesn't carry agent metadata (names, glyphs, accents) — those are UI
-// sugar — so we derive a deterministic identity per unique owner id. Hashing
-// the id for accent keeps the same agent the same color across polls and
-// reloads. Falls back gracefully for non-`ag_*` shapes.
-function deriveAgents(items: BoardItem[]): BoardAgent[] {
-  const seen = new Set<string>();
-  const out: BoardAgent[] = [];
-  for (const it of items) {
-    const id = it.ownerAgentId;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const bare = id.startsWith('ag_') ? id.slice(3) : id;
-    // `ag_build_12345678` -> 'build'. Matches the canonical agent-id shape
-    // (see memory reference_opencode_sdk_vocab / agent-abstraction translator).
-    const shortName = bare.split('_')[0] || bare;
-    let h = 0;
-    for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) | 0;
-    out.push({
-      id,
-      name: shortName,
-      accent: DERIVED_ACCENTS[Math.abs(h) % DERIVED_ACCENTS.length],
-      glyph: (shortName[0] ?? '?').toUpperCase(),
-    });
-  }
-  return out;
-}
-
-// Lightweight fetch+poll hook. SSE would be the eventual home, but board
-// writes are infrequent enough that a 2s poll is honest and avoids the
-// multiplex plumbing until we need it. Matches the runs-picker cadence
-// (see lib/server/swarm-registry CACHE_TTL_MS) so the two views stay in sync.
-function useLiveBoard(swarmRunID: string | null): {
-  items: BoardItem[] | null;
-  error: string | null;
-} {
-  const [items, setItems] = useState<BoardItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!swarmRunID) {
-      setItems(null);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    async function fetchOnce() {
-      try {
-        const r = await fetch(`/api/swarm/run/${swarmRunID}/board`, {
-          cache: 'no-store',
-        });
-        const data = await r.json();
-        if (cancelled) return;
-        if (!r.ok) {
-          setError((data as { error?: string }).error ?? `HTTP ${r.status}`);
-          setItems(null);
-          return;
-        }
-        setItems((data as { items: BoardItem[] }).items);
-        setError(null);
-      } catch (e) {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
-      }
-    }
-    fetchOnce();
-    const timer = setInterval(fetchOnce, 2000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [swarmRunID]);
-
-  return { items, error };
-}
-
 function BoardPreviewInner() {
   const params = useSearchParams();
   const swarmRunID = params.get('swarmRun');
@@ -171,7 +94,7 @@ function BoardPreviewInner() {
   // In live mode we wait for the first fetch to land before rendering cards,
   // so a blank run doesn't flash the mock fallback.
   const items: BoardItem[] = isLive ? live.items ?? [] : MOCK_BOARD;
-  const agents: BoardAgent[] = isLive ? deriveAgents(items) : MOCK_AGENTS;
+  const agents: BoardAgent[] = isLive ? deriveBoardAgents(items) : MOCK_AGENTS;
 
   const agentMap = useMemo(() => {
     const m = new Map<string, BoardAgent>();

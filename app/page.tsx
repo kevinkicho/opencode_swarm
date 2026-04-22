@@ -336,7 +336,7 @@ function PageBody({
   // Left-panel tab is lifted so the timeline can reveal the plan when a task
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
-  const [leftTab, setLeftTab] = useState<'plan' | 'roster'>('plan');
+  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board'>('plan');
   const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
 
   const jumpToTodo = useCallback((todoId: string) => {
@@ -536,6 +536,9 @@ function PageBody({
           tab={leftTab}
           onTabChange={setLeftTab}
           focusTodoId={focusTodoId}
+          boardSwarmRunID={
+            swarmRunMeta?.pattern === 'blackboard' ? swarmRunMeta.swarmRunID : null
+          }
         />
 
         <SwarmTimeline
