@@ -969,6 +969,26 @@ function StatusRail({
             <span className="font-mono text-[10px] uppercase tracking-widest2">metrics</span>
           </Link>
         </Tooltip>
+        <Tooltip
+          side="top"
+          wide
+          content={
+            <div className="space-y-0.5">
+              <div className="font-mono text-[11px] text-fog-200">project-time matrix</div>
+              <div className="font-mono text-[10.5px] text-fog-600">
+                every repo × every day · run markers colored by status
+              </div>
+            </div>
+          }
+        >
+          <Link
+            href="/projects"
+            className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
+            aria-label="open project-time matrix"
+          >
+            <span className="font-mono text-[10px] uppercase tracking-widest2">projects</span>
+          </Link>
+        </Tooltip>
       </div>
 
       <div className="ml-auto flex items-center gap-1">
