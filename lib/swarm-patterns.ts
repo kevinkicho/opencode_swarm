@@ -27,7 +27,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
   'map-reduce': {
     label: 'map-reduce',
     tagline: 'split the tree, synthesize as a claimable phase',
-    available: false,
+    available: true,
     accent: 'mint',
   },
   council: {

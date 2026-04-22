@@ -20,6 +20,7 @@ import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer'
 import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
 import { ReconcileStrip } from '@/components/reconcile-strip';
+import { SynthesisStrip } from '@/components/synthesis-strip';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
@@ -566,7 +567,10 @@ function PageBody({
       <ReconcileStrip
         agents={agents}
         messages={messages}
-        isMultiSession={(swarmRunMeta?.sessionIDs.length ?? 0) > 1}
+        isMultiSession={
+          swarmRunMeta?.pattern === 'council' &&
+          (swarmRunMeta?.sessionIDs.length ?? 0) > 1
+        }
         onFocus={focusMessage}
         focusedMsgId={focusedMsgId}
         onCopyDraft={async (draft) => {
@@ -636,6 +640,15 @@ function PageBody({
             }
           }
         }}
+      />
+
+      <SynthesisStrip
+        agents={agents}
+        messages={messages}
+        pattern={swarmRunMeta?.pattern ?? null}
+        sessionCount={swarmRunMeta?.sessionIDs.length ?? 0}
+        onFocus={focusMessage}
+        focusedMsgId={focusedMsgId}
       />
 
       {costCapBlock && (

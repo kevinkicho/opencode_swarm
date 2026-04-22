@@ -110,7 +110,30 @@ the timeline. Read-only from the human's side, like observed dispatch
 **Layering.** Stigmergy is an additional signal a blackboard worker uses
 to pick its next todo. It extends #1, not a separate preset.
 
-### 3. Map-reduce over the repo `[ ]`
+### 3. Map-reduce over the repo `[~]`
+
+> **Status 2026-04-21.** Shipped end-to-end (v1): `POST /api/swarm/run`
+> accepts `pattern='map-reduce'` and, on create, derives top-level
+> directory slices (`lib/server/map-reduce.ts::deriveSlices`) — one per
+> session, padded with `(whole workspace)` when the repo has fewer dirs
+> than sessions, comma-joined round-robin when it has more. Each session
+> gets the same base directive plus its own scope annotation
+> (`buildScopedDirective`). The route fires a background
+> `runMapReduceSynthesis` that waits for every session to idle (25-min
+> per-session deadline, skipping any that time out), harvests each
+> member's latest completed assistant text, and posts a synthesis prompt
+> to `sessionIDs[0]` embedding every sibling draft. UI-side,
+> `components/synthesis-strip.tsx` renders above the composer for
+> `pattern='map-reduce'` runs and surfaces: per-member draft pills,
+> `map N/N` progress, `awaiting synthesis` / `synthesizing…` / `synthesis
+> ready`, and an `open synthesis →` jump when the merged output lands.
+> **v2 target:** route the synthesis post through a **blackboard-claim**
+> (any idle session claims a `synthesize` todo) instead of pinning it to
+> `sessionIDs[0]` at dispatch time. Today's choice is a dispatcher
+> shortcut, not a role — it lets the coordinator decide *which* session
+> runs the synthesize phase rather than assigning a role at spawn — but
+> it still narrows the set to one session per run, which blackboard mode
+> would remove. See `lib/server/map-reduce.ts` for the migration point.
 
 Each agent takes a disjoint slice of the tree with no shared transcript,
 produces a report on its slice, then a synthesis phase unifies the
@@ -280,7 +303,7 @@ landed against a pattern with simpler semantics.
 |---|---------------|--------|--------------------------------------------------------------------------------|
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
 | 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview + coordinator + auto-ticker + UI picker + inline rail + ticker-state surface ship; SSE mux tbd |
-| 3 | `map-reduce`  | `[ ]`  | Reuses blackboard's mux; synthesize phase claimed from the board, not pinned  |
+| 3 | `map-reduce`  | `[~]`  | Auto-slice + scoped directives + background synthesis orchestration + synthesis-strip ship; v2 = route synthesis via blackboard-claim instead of `sessionIDs[0]` dispatch |
 | 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 
 Critic loops, debate, orchestrator-worker, and role differentiation are

@@ -27,6 +27,11 @@ import { createSessionServer, postSessionMessageServer } from '@/lib/server/open
 import { createRun, deriveRunRowCached, listRuns } from '@/lib/server/swarm-registry';
 import { runPlannerSweep } from '@/lib/server/blackboard/planner';
 import { startAutoTicker } from '@/lib/server/blackboard/auto-ticker';
+import {
+  buildScopedDirective,
+  deriveSlices,
+  runMapReduceSynthesis,
+} from '@/lib/server/map-reduce';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -37,7 +42,12 @@ import type { SwarmPattern } from '@/lib/swarm-types';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set(['none', 'council', 'blackboard']);
+const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set([
+  'none',
+  'council',
+  'blackboard',
+  'map-reduce',
+]);
 
 // Hard cap on multi-session fan-out. Picked to stay well inside opencode's
 // parallel-prompt tolerance on the hosted Zen tier (probe margins, not a
@@ -225,20 +235,32 @@ export async function POST(req: NextRequest): Promise<Response> {
   // the fast ones. opencode's /prompt_async returns before the model turn
   // completes, so the await here is just the HTTP ack, not the reply.
   //
-  // Blackboard runs skip this broadcast: the directive is the planner
-  // sweep's input, not a worker prompt. Sessions stay idle until the
-  // coordinator (Step 4 below) assigns them a todo — posting the raw
-  // directive to every session up-front would have N workers all racing
-  // the same survey prompt while the planner is also running.
+  // Shape varies by pattern:
+  //   - blackboard  → skip this broadcast entirely. The directive is the
+  //                   planner sweep's input, not a worker prompt. Workers
+  //                   stay idle until the coordinator assigns them a todo.
+  //   - map-reduce  → each session gets the base directive plus its own
+  //                   scope annotation ("your slice: src/api/"). Slices are
+  //                   auto-derived from the workspace's top-level dirs.
+  //   - others      → every session gets the same uniform directive.
   if (
     parsed.pattern !== 'blackboard' &&
     parsed.directive &&
     parsed.directive.trim()
   ) {
     const directive = parsed.directive;
+    let directives: string[];
+    if (parsed.pattern === 'map-reduce') {
+      const slices = await deriveSlices(parsed.workspace, sessions.length);
+      directives = sessions.map((_, i) =>
+        buildScopedDirective(directive, slices[i], i, sessions.length),
+      );
+    } else {
+      directives = sessions.map(() => directive);
+    }
     const postResults = await Promise.allSettled(
-      sessions.map((s) =>
-        postSessionMessageServer(s.id, parsed.workspace, directive)
+      sessions.map((s, i) =>
+        postSessionMessageServer(s.id, parsed.workspace, directives[i])
       )
     );
     postResults.forEach((r, i) => {
@@ -307,6 +329,21 @@ export async function POST(req: NextRequest): Promise<Response> {
           message,
         );
       });
+  }
+
+  // Step 5 (map-reduce only): kick off the synthesis orchestrator. Waits for
+  // every map session to idle, then posts a synthesis prompt to
+  // sessionIDs[0] with each sibling's final draft embedded. Runs fully in
+  // the background — the HTTP response returns before any member has even
+  // started working, let alone finished. Failures log and exit quietly; the
+  // per-member drafts still sit in their session transcripts so the human
+  // can reconcile manually even if synthesis never lands.
+  if (parsed.pattern === 'map-reduce') {
+    const runID = meta.swarmRunID;
+    runMapReduceSynthesis(runID).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[swarm/run] map-reduce synthesis for ${runID} failed:`, message);
+    });
   }
 
   const payload: SwarmRunResponse = {
