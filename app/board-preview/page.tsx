@@ -2,38 +2,42 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   MOCK_AGENTS,
   MOCK_BOARD,
-  type BoardAgent,
-  type BoardItem,
-  type BoardItemKind,
-  type BoardItemStatus,
 } from '@/lib/blackboard-mock';
+import type {
+  BoardAgent,
+  BoardItem,
+  BoardItemKind,
+  BoardItemStatus,
+} from '@/lib/blackboard/types';
 
-// Standalone prototype for the blackboard preset's board view. See
-// SWARM_PATTERNS.md §1 ("first real implementation target"). Zero backend
-// wiring: the page reads from MOCK_BOARD so the layout can settle before we
-// commit to SQLite vs per-run JSON for the store (§7.6 open). Live board data
-// would arrive from /api/swarm/run/<id>/board once the coordinator ships.
+// Board view for the blackboard preset. Runs in two modes:
+//   - /board-preview                  → mock data (design-time showcase, kept so
+//                                       the aesthetic can be validated offline)
+//   - /board-preview?swarmRun=<id>    → live data over the SQLite-backed API at
+//                                       /api/swarm/run/:id/board (step 4 of
+//                                       SWARM_PATTERNS.md §1 roadmap)
 //
-// Layout choice: a 5-column pipeline (open → claimed → active → stale →
-// done). A Kanban-ish read but the column ordering encodes time, not
-// priority — "stale" sits between active and done because its resolution is
-// replan-then-reclaim, which is closer to "undone" than to either active or
-// archived.
+// Layout: a 5-column pipeline (open → claimed → active → stale → done).
+// Kanban-ish, but the column ordering encodes time not priority — "stale" sits
+// between active and done because its resolution is replan-then-reclaim, which
+// is closer to "undone" than to either active or archived.
 //
-// Not a real route in the sense of "users discover this" — it's linked from
-// this file and reachable at /board-preview. Delete when the real view lands.
+// When we build a dedicated /run/<id>/board route later this file becomes a
+// thin redirect; leaving it at /board-preview keeps the URL stable for the
+// smoke scripts that drive it.
 
 const COLUMNS: {
   key: 'open' | 'claimed' | 'active' | 'stale' | 'done';
   label: string;
   matches: BoardItemStatus[];
-  tone: string;       // accent text for header
-  dot: string;        // dot color for header marker
-  tint: string;       // column bg wash
+  tone: string;
+  dot: string;
+  tint: string;
 }[] = [
   { key: 'open',    label: 'open',        matches: ['open'],                   tone: 'text-fog-300',  dot: 'bg-fog-500', tint: 'bg-ink-900/40' },
   { key: 'claimed', label: 'claimed',     matches: ['claimed'],                tone: 'text-iris',     dot: 'bg-iris',    tint: 'bg-iris/[0.04]' },
@@ -80,37 +84,126 @@ function fmtAge(ms: number, now: number): string {
   return `${h}h`;
 }
 
-export default function BoardPreviewPage() {
+const DERIVED_ACCENTS: BoardAgent['accent'][] = ['molten', 'mint', 'iris', 'amber', 'fog'];
+
+// Synthesize a BoardAgent from the board's ownerAgentId strings. The live
+// store doesn't carry agent metadata (names, glyphs, accents) — those are UI
+// sugar — so we derive a deterministic identity per unique owner id. Hashing
+// the id for accent keeps the same agent the same color across polls and
+// reloads. Falls back gracefully for non-`ag_*` shapes.
+function deriveAgents(items: BoardItem[]): BoardAgent[] {
+  const seen = new Set<string>();
+  const out: BoardAgent[] = [];
+  for (const it of items) {
+    const id = it.ownerAgentId;
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const bare = id.startsWith('ag_') ? id.slice(3) : id;
+    // `ag_build_12345678` -> 'build'. Matches the canonical agent-id shape
+    // (see memory reference_opencode_sdk_vocab / agent-abstraction translator).
+    const shortName = bare.split('_')[0] || bare;
+    let h = 0;
+    for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) | 0;
+    out.push({
+      id,
+      name: shortName,
+      accent: DERIVED_ACCENTS[Math.abs(h) % DERIVED_ACCENTS.length],
+      glyph: (shortName[0] ?? '?').toUpperCase(),
+    });
+  }
+  return out;
+}
+
+// Lightweight fetch+poll hook. SSE would be the eventual home, but board
+// writes are infrequent enough that a 2s poll is honest and avoids the
+// multiplex plumbing until we need it. Matches the runs-picker cadence
+// (see lib/server/swarm-registry CACHE_TTL_MS) so the two views stay in sync.
+function useLiveBoard(swarmRunID: string | null): {
+  items: BoardItem[] | null;
+  error: string | null;
+} {
+  const [items, setItems] = useState<BoardItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!swarmRunID) {
+      setItems(null);
+      setError(null);
+      return;
+    }
+    let cancelled = false;
+    async function fetchOnce() {
+      try {
+        const r = await fetch(`/api/swarm/run/${swarmRunID}/board`, {
+          cache: 'no-store',
+        });
+        const data = await r.json();
+        if (cancelled) return;
+        if (!r.ok) {
+          setError((data as { error?: string }).error ?? `HTTP ${r.status}`);
+          setItems(null);
+          return;
+        }
+        setItems((data as { items: BoardItem[] }).items);
+        setError(null);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      }
+    }
+    fetchOnce();
+    const timer = setInterval(fetchOnce, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [swarmRunID]);
+
+  return { items, error };
+}
+
+function BoardPreviewInner() {
+  const params = useSearchParams();
+  const swarmRunID = params.get('swarmRun');
+  const live = useLiveBoard(swarmRunID);
+
+  const isLive = Boolean(swarmRunID);
+  // In live mode we wait for the first fetch to land before rendering cards,
+  // so a blank run doesn't flash the mock fallback.
+  const items: BoardItem[] = isLive ? live.items ?? [] : MOCK_BOARD;
+  const agents: BoardAgent[] = isLive ? deriveAgents(items) : MOCK_AGENTS;
+
   const agentMap = useMemo(() => {
     const m = new Map<string, BoardAgent>();
-    MOCK_AGENTS.forEach((a) => m.set(a.id, a));
+    agents.forEach((a) => m.set(a.id, a));
     return m;
-  }, []);
+  }, [agents]);
 
   const counts = useMemo(() => {
     const out: Record<BoardItemStatus, number> = {
       open: 0, claimed: 0, 'in-progress': 0, blocked: 0, stale: 0, done: 0,
     };
-    MOCK_BOARD.forEach((it) => { out[it.status] += 1; });
+    items.forEach((it) => { out[it.status] += 1; });
     return out;
-  }, []);
+  }, [items]);
 
   const perAgentLoad = useMemo(() => {
     const load = new Map<string, number>();
-    MOCK_BOARD.forEach((it) => {
+    items.forEach((it) => {
       if (!it.ownerAgentId) return;
       if (it.status === 'done') return;
       load.set(it.ownerAgentId, (load.get(it.ownerAgentId) ?? 0) + 1);
     });
     return load;
-  }, []);
+  }, [items]);
 
-  // One reference "now" so every age column renders the same snapshot. Using
-  // the mock's implicit anchor (the newest createdAtMs from MOCK_BOARD).
-  const nowRef = useMemo(
-    () => Math.max(...MOCK_BOARD.map((b) => b.completedAtMs ?? b.createdAtMs)) + 60_000,
-    []
-  );
+  // Mock mode anchors nowRef off the newest item so synthetic ages stay stable
+  // across renders. Live mode uses real wall-clock — ages advance on every
+  // poll like any other live-view.
+  const nowRef = useMemo(() => {
+    if (isLive) return Date.now();
+    return Math.max(...MOCK_BOARD.map((b) => b.completedAtMs ?? b.createdAtMs)) + 60_000;
+  }, [isLive, items]); // items in deps so live mode re-anchors between polls
 
   return (
     <div className="min-h-screen bg-ink-950 text-fog-100 font-sans">
@@ -125,16 +218,37 @@ export default function BoardPreviewPage() {
         <span className="font-display italic text-[16px] tracking-tight text-fog-100">
           blackboard
         </span>
-        <span className="font-mono text-micro uppercase tracking-widest2 text-amber/80">
-          preview
-        </span>
-        <span className="font-mono text-[10px] text-fog-600 ml-2">
-          mock data · no backend yet
-        </span>
+        {isLive ? (
+          <>
+            <span className="font-mono text-micro uppercase tracking-widest2 text-mint/80">
+              live
+            </span>
+            <span className="font-mono text-[10px] text-fog-500 tabular-nums">
+              {swarmRunID}
+            </span>
+            {live.error && (
+              <span className="font-mono text-[10px] text-molten tabular-nums" title={live.error}>
+                error · {live.error.slice(0, 40)}
+              </span>
+            )}
+            {!live.error && live.items === null && (
+              <span className="font-mono text-[10px] text-fog-600">loading…</span>
+            )}
+          </>
+        ) : (
+          <>
+            <span className="font-mono text-micro uppercase tracking-widest2 text-amber/80">
+              preview
+            </span>
+            <span className="font-mono text-[10px] text-fog-600">
+              mock data · append ?swarmRun=&lt;id&gt; for live
+            </span>
+          </>
+        )}
         <span className="ml-auto font-mono text-[10px] uppercase tracking-widest2 text-fog-600 tabular-nums flex items-center gap-3">
-          <span>{MOCK_BOARD.length} items</span>
+          <span>{items.length} items</span>
           <span className="w-px h-3 bg-ink-700" />
-          <span>{MOCK_AGENTS.length} agents</span>
+          <span>{agents.length} agents</span>
           <span className="w-px h-3 bg-ink-700" />
           <span className="text-fog-500">{counts.open} open</span>
           <span className="text-iris">{counts.claimed} claimed</span>
@@ -144,7 +258,7 @@ export default function BoardPreviewPage() {
         </span>
       </header>
 
-      <AgentsRow agents={MOCK_AGENTS} load={perAgentLoad} />
+      <AgentsRow agents={agents} load={perAgentLoad} />
 
       <div className="grid grid-cols-5 gap-0 hairline-b">
         {COLUMNS.map((col) => (
@@ -157,7 +271,7 @@ export default function BoardPreviewPage() {
               {col.label}
             </span>
             <span className="font-mono text-[10px] text-fog-600 tabular-nums ml-auto">
-              {MOCK_BOARD.filter((b) => col.matches.includes(b.status)).length}
+              {items.filter((b) => col.matches.includes(b.status)).length}
             </span>
           </div>
         ))}
@@ -165,7 +279,7 @@ export default function BoardPreviewPage() {
 
       <div className="grid grid-cols-5 gap-0 min-h-[calc(100vh-12rem)]">
         {COLUMNS.map((col) => {
-          const items = MOCK_BOARD
+          const colItems = items
             .filter((b) => col.matches.includes(b.status))
             .sort((a, b) => b.createdAtMs - a.createdAtMs);
           return (
@@ -176,12 +290,12 @@ export default function BoardPreviewPage() {
                 col.tint
               )}
             >
-              {items.length === 0 && (
+              {colItems.length === 0 && (
                 <div className="px-3 h-8 flex items-center font-mono text-[10px] text-fog-700">
                   (none)
                 </div>
               )}
-              {items.map((item) => (
+              {colItems.map((item) => (
                 <BoardCard
                   key={item.id}
                   item={item}
@@ -194,6 +308,14 @@ export default function BoardPreviewPage() {
         })}
       </div>
     </div>
+  );
+}
+
+export default function BoardPreviewPage() {
+  return (
+    <Suspense fallback={null}>
+      <BoardPreviewInner />
+    </Suspense>
   );
 }
 
@@ -211,6 +333,11 @@ function AgentsRow({
       </span>
       <span className="w-px h-3 bg-ink-700 shrink-0" />
       <div className="flex items-center gap-1.5 flex-wrap">
+        {agents.length === 0 && (
+          <span className="font-mono text-[10px] text-fog-700">
+            (no agents yet — claims will populate this)
+          </span>
+        )}
         {agents.map((a) => {
           const n = load.get(a.id) ?? 0;
           return (
