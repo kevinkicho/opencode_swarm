@@ -16,6 +16,17 @@ import type { FileHeat } from '@/lib/opencode/transform';
 import type { Agent } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 
+// Strip the run's workspace prefix from a file path so rows don't all
+// start with the same 52-char `C:/Users/.../reponame/` noise. Normalize
+// slashes first because opencode paths use backslashes on Windows.
+function stripWorkspace(path: string, workspace: string): string {
+  const np = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const nw = workspace.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (nw && np.startsWith(nw + '/')) return np.slice(nw.length + 1);
+  if (nw && np === nw) return '';
+  return np;
+}
+
 const accentStripe: Record<Agent['accent'], string> = {
   molten: 'bg-molten',
   mint: 'bg-mint',
@@ -52,10 +63,15 @@ function fmtAgo(ms: number): string {
 export function HeatRail({
   heat,
   agents,
+  workspace,
   embedded = false,
 }: {
   heat: FileHeat[];
   agents: Agent[];
+  // Workspace root — used to strip the common prefix from displayed
+  // paths so rows are dense + readable. Passing empty string falls
+  // back to showing full paths.
+  workspace: string;
   embedded?: boolean;
 }) {
   const agentById = new Map(agents.map((a) => [a.id, a]));
@@ -69,7 +85,13 @@ export function HeatRail({
         </li>
       ) : (
         heat.map((h) => (
-          <HeatRow key={h.path} heat={h} maxCount={maxCount} agentById={agentById} />
+          <HeatRow
+            key={h.path}
+            heat={h}
+            workspace={workspace}
+            maxCount={maxCount}
+            agentById={agentById}
+          />
         ))
       )}
     </ul>
@@ -94,14 +116,17 @@ export function HeatRail({
 
 function HeatRow({
   heat,
+  workspace,
   maxCount,
   agentById,
 }: {
   heat: FileHeat;
+  workspace: string;
   maxCount: number;
   agentById: Map<string, Agent>;
 }) {
-  const { dir, base } = splitPath(heat.path);
+  const displayPath = stripWorkspace(heat.path, workspace);
+  const { dir, base } = splitPath(displayPath);
   const intensity = heat.editCount / maxCount; // 0..1
   // Stepped tone — continuous would be illegible in a narrow column.
   // Thresholds: 0–20% fog-800, 20–50% amber/20, 50–80% molten/30,
@@ -120,8 +145,8 @@ function HeatRow({
     .filter((a): a is Agent => a !== undefined);
 
   return (
-    <li className="relative">
-      <div className="pl-3 pr-2 h-6 flex items-center gap-2">
+    <li className="relative min-w-0">
+      <div className="pl-3 pr-2 h-6 flex items-center gap-2 min-w-0">
         {/* Intensity bar — a fixed 22px column. Width scales with count. */}
         <Tooltip
           content={`${heat.editCount} edit${heat.editCount === 1 ? '' : 's'}`}
@@ -151,9 +176,9 @@ function HeatRow({
           }
           side="right"
         >
-          <div className="flex items-baseline flex-1 min-w-0 font-mono text-[11.5px] cursor-default">
+          <div className="flex items-baseline flex-1 min-w-0 overflow-hidden font-mono text-[11.5px] cursor-default">
             {dir && (
-              <span className="text-fog-700 truncate-left min-w-0 flex-1">
+              <span className="text-fog-700 truncate-left min-w-0 flex-1 basis-0">
                 <bdi>{dir}/</bdi>
               </span>
             )}

@@ -595,6 +595,7 @@ function PageBody({
           agents={agents}
           messages={messages}
           heat={fileHeat}
+          workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
           selectedAgentId={selectedAgentId}
           onSelectAgent={rosterSelect}
           onInspectAgent={selectAgent}

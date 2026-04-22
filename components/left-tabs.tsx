@@ -18,6 +18,7 @@ export function LeftTabs({
   agents,
   messages,
   heat,
+  workspace,
   selectedAgentId,
   onSelectAgent,
   onInspectAgent,
@@ -35,6 +36,9 @@ export function LeftTabs({
   // Per-file edit counts aggregated from patch parts — stigmergy v0.
   // Empty array hides the heat tab entirely.
   heat: FileHeat[];
+  // Run's workspace root. HeatRail strips this prefix from displayed
+  // paths so rows don't all lead with the same repo-root string.
+  workspace: string;
   selectedAgentId: string | null;
   onSelectAgent: (id: string) => void;
   onInspectAgent: (id: string) => void;
@@ -192,7 +196,9 @@ export function LeftTabs({
         {tab === 'board' && boardSwarmRunID && (
           <BoardRail swarmRunID={boardSwarmRunID} embedded />
         )}
-        {tab === 'heat' && <HeatRail heat={heat} agents={agents} embedded />}
+        {tab === 'heat' && (
+          <HeatRail heat={heat} agents={agents} workspace={workspace} embedded />
+        )}
       </div>
     </section>
   );
