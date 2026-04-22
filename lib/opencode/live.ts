@@ -741,6 +741,193 @@ export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot
   };
 }
 
+// Live view across every session in a swarm run. Where useLiveSession binds
+// one EventSource to one sessionID, this hook fans across meta.sessionIDs —
+// the council preset's N parallel seed-identical members, or any future
+// multi-session pattern. Pattern='none' degenerates to a one-slot snapshot
+// so the same consumer code works for both.
+//
+// Architecture:
+//   - Initial hydrate  — one getSessionsByDirectoryBrowser(workspace) call
+//     (cheap, scoped) plus N getSessionMessagesBrowser calls in parallel.
+//     Cheaper than useLiveSession's getAllSessionsBrowser because we
+//     already know the workspace from meta and can skip the project
+//     fan-out entirely.
+//   - Live stream      — ONE opencode /event EventSource scoped by
+//     ?directory=<workspace>. All council members share a workspace, so
+//     they share a stream. On each event we check properties.sessionID
+//     against the meta's sessionID set and refetch just that slot's
+//     messages, keeping bandwidth proportional to real activity.
+//   - Safety poll      — same 30s safety net as useLiveSession; catches
+//     dropped streams by refetching every slot.
+//
+// Per-slot probe failures collapse to empty messages + null session — the
+// slot stays in place so the consumer can still render a spinner or empty
+// lane for it. A thrown refetch surfaces in the shared `error` channel.
+//
+// Not wired into app/page.tsx at S3 — that's S5's job after S4 rekeys the
+// agent transform on sessionID. Call this today from multi-session surfaces
+// (run-provenance drawer, future council lane view) where the per-session
+// partition is the value, not an implementation detail.
+export interface LiveSwarmSessionSlot {
+  sessionID: string;
+  // The OpencodeSession for this member, or null if the directory-scoped
+  // session list didn't include it (race on newly-created sessions, or the
+  // session was deleted out from under us). Consumers should tolerate null
+  // rather than hide the slot — the sessionID itself is authoritative.
+  session: OpencodeSession | null;
+  messages: OpencodeMessage[];
+  lastUpdated: number;
+}
+
+export interface LiveSwarmRunMessagesSnapshot {
+  // Same order as meta.sessionIDs. Consumers that want per-member lanes
+  // render in this order; consumers that want a merged transcript can
+  // flatten + sort by message time downstream.
+  slots: LiveSwarmSessionSlot[];
+  loading: boolean;
+  error: string | null;
+  // Max(slot.lastUpdated). Null when no slot has hydrated yet.
+  lastUpdated: number | null;
+}
+
+export function useLiveSwarmRunMessages(
+  meta: SwarmRunMeta | null,
+  fallbackPollMs = 30_000
+): LiveSwarmRunMessagesSnapshot {
+  const [slots, setSlots] = useState<LiveSwarmSessionSlot[]>([]);
+  const [loading, setLoading] = useState<boolean>(Boolean(meta));
+  const [error, setError] = useState<string | null>(null);
+
+  // Stable key for the effect: swarmRunID is unique, workspace pins the SSE
+  // directory, and the sessionIDs list is immutable for a given run (meta.json
+  // is write-once). Joining on a separator that can't appear in opencode IDs
+  // keeps this dep cheap + referentially stable across renders.
+  const swarmRunID = meta?.swarmRunID ?? null;
+  const workspace = meta?.workspace ?? null;
+  const sessionIDsKey = meta?.sessionIDs.join('|') ?? '';
+
+  useEffect(() => {
+    if (!meta || !workspace || meta.sessionIDs.length === 0) {
+      setSlots([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    const sessionIDs = meta.sessionIDs;
+    const sessionSet = new Set(sessionIDs);
+
+    let cancelled = false;
+    const controller = new AbortController();
+    let es: EventSource | null = null;
+    // Coalesce per-slot refetches — SSE can burst many part.updated events
+    // during a single assistant turn, and we only want one in-flight GET per
+    // slot at a time. A second refetch arrives = drop it; the first one will
+    // pick up the newer state on its next pass.
+    const pendingRefetches = new Set<string>();
+
+    async function hydrate() {
+      try {
+        const [directorySessions, messagesArrays] = await Promise.all([
+          getSessionsByDirectoryBrowser(workspace!, {
+            signal: controller.signal,
+          }).catch(() => [] as OpencodeSession[]),
+          Promise.all(
+            sessionIDs.map((sid) =>
+              getSessionMessagesBrowser(sid, { signal: controller.signal }).catch(
+                () => [] as OpencodeMessage[]
+              )
+            )
+          ),
+        ]);
+        if (cancelled) return;
+
+        const sessionById = new Map(directorySessions.map((s) => [s.id, s]));
+        const ts = Date.now();
+        const next: LiveSwarmSessionSlot[] = sessionIDs.map((sid, i) => ({
+          sessionID: sid,
+          session: sessionById.get(sid) ?? null,
+          messages: messagesArrays[i],
+          lastUpdated: ts,
+        }));
+        setSlots(next);
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+        if ((err as Error).name === 'AbortError') return;
+        setError((err as Error).message);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    async function refetchOne(sessionID: string) {
+      if (!sessionSet.has(sessionID)) return;
+      if (pendingRefetches.has(sessionID)) return;
+      pendingRefetches.add(sessionID);
+      try {
+        const messages = await getSessionMessagesBrowser(sessionID);
+        if (cancelled) return;
+        const ts = Date.now();
+        setSlots((prev) => {
+          const idx = prev.findIndex((s) => s.sessionID === sessionID);
+          if (idx < 0) return prev;
+          const copy = prev.slice();
+          copy[idx] = { ...copy[idx], messages, lastUpdated: ts };
+          return copy;
+        });
+      } catch (err) {
+        if (cancelled) return;
+        if ((err as Error).name === 'AbortError') return;
+        setError((err as Error).message);
+      } finally {
+        pendingRefetches.delete(sessionID);
+      }
+    }
+
+    setLoading(true);
+    hydrate();
+
+    const qs = new URLSearchParams({ directory: workspace! }).toString();
+    es = new EventSource(`/api/opencode/event?${qs}`);
+    es.onmessage = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.data) as {
+          type?: string;
+          properties?: { sessionID?: string };
+        };
+        const sid = parsed.properties?.sessionID;
+        if (!sid || !sessionSet.has(sid)) return;
+        refetchOne(sid);
+      } catch {
+        // heartbeat / connected frames — ignore
+      }
+    };
+
+    const pollId = setInterval(() => {
+      for (const sid of sessionIDs) refetchOne(sid);
+    }, fallbackPollMs);
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      if (es) es.close();
+      clearInterval(pollId);
+    };
+    // The individual fields are stable-by-construction for a given meta.json;
+    // splitting the dep array keeps React from tearing the effect down on
+    // every re-render where meta is a fresh object with the same contents.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [swarmRunID, workspace, sessionIDsKey, fallbackPollMs]);
+
+  const lastUpdated = slots.length
+    ? Math.max(...slots.map((s) => s.lastUpdated))
+    : null;
+
+  return { slots, loading, error, lastUpdated };
+}
+
 // Stream of run-level events. Consumes GET /api/swarm/run/:id/events and
 // accumulates both the L0 replay (replayed SwarmRunEvents tagged replay:true)
 // and the live feed. The control frames `swarm.run.attached`,
