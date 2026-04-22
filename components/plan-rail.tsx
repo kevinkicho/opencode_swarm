@@ -1,17 +1,16 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Agent, TodoItem, TodoStatus } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 
-const statusGlyph: Record<TodoStatus, string> = {
-  pending: '○',
-  in_progress: '◐',
-  completed: '●',
-  failed: '⨯',
-  abandoned: '⤺',
-};
+// Status is communicated via (1) the accent-stripe opacity — full tone for
+// in-progress, faded otherwise — (2) the content text color for terminal
+// states, and (3) the explicit label revealed when the row is expanded.
+// We dropped the leading ○◐●⨯⤺ glyph on 2026-04-22 — it was duplicating
+// information the accent stripe already carried and narrowing the room
+// for the content itself.
 
 const statusTone: Record<TodoStatus, string> = {
   pending: 'text-fog-600',
@@ -27,6 +26,14 @@ const statusLabel: Record<TodoStatus, string> = {
   completed: 'completed',
   failed: 'failed',
   abandoned: 'abandoned',
+};
+
+const contentTone: Record<TodoStatus, string> = {
+  pending: 'text-fog-200',
+  in_progress: 'text-fog-100',
+  completed: 'text-fog-500',
+  failed: 'text-rust/80',
+  abandoned: 'text-fog-700',
 };
 
 const accentStripe: Record<Agent['accent'], string> = {
@@ -112,9 +119,11 @@ function PlanRow({
   onJump: (messageId: string) => void;
   focused?: boolean;
 }) {
-  const clickable = !!item.taskMessageId;
   const tone = statusTone[item.status];
+  const contentColor = contentTone[item.status];
+  const hasDelegation = !!item.taskMessageId;
   const rowRef = useRef<HTMLLIElement | null>(null);
+  const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     if (focused && rowRef.current) {
@@ -130,14 +139,15 @@ function PlanRow({
         focused && 'bg-molten/15'
       )}
     >
+      {/* Clickable row — toggles inline detail. Any action that needs to
+          exit the plan rail (jump to delegation) lives inside the
+          expanded section as an explicit button, not as an implicit
+          click behavior. */}
       <button
         type="button"
-        disabled={!clickable}
-        onClick={() => item.taskMessageId && onJump(item.taskMessageId)}
-        className={clsx(
-          'w-full text-left pl-3 pr-2.5 h-6 flex items-center gap-2 relative transition',
-          clickable ? 'hover:bg-ink-800/60 cursor-pointer' : 'cursor-default'
-        )}
+        onClick={() => setExpanded((e) => !e)}
+        aria-expanded={expanded}
+        className="w-full text-left pl-3 pr-2.5 h-6 flex items-center gap-2 relative transition hover:bg-ink-800/60 cursor-pointer"
       >
         {owner && (
           <span
@@ -151,51 +161,13 @@ function PlanRow({
 
         <span
           className={clsx(
-            'shrink-0 w-3 text-center font-mono text-[11px] leading-none',
-            tone,
-            item.status === 'in_progress' && 'animate-pulse'
+            'text-[12px] truncate flex-1 min-w-0',
+            contentColor,
+            item.status === 'completed' && 'line-through decoration-fog-700'
           )}
-          aria-label={statusLabel[item.status]}
         >
-          {statusGlyph[item.status]}
+          {item.content}
         </span>
-
-        <Tooltip
-          side="right"
-          wide
-          content={
-            <div className="space-y-1">
-              <div className="font-mono text-[11px] text-fog-200 leading-snug">
-                {item.content}
-              </div>
-              <div className="font-mono text-[10px] text-fog-500">
-                <span className={tone}>{statusLabel[item.status]}</span>
-                {owner && (
-                  <>
-                    <span className="text-fog-700"> · </span>
-                    <span className="text-fog-400">{owner.name}</span>
-                  </>
-                )}
-                <span className="text-fog-700"> · </span>
-                <span className="uppercase tracking-widest2">{item.id}</span>
-              </div>
-              {item.note && (
-                <div className="font-mono text-[10px] text-fog-500 leading-snug">
-                  {item.note}
-                </div>
-              )}
-              {clickable && (
-                <div className="font-mono text-[10px] text-fog-600">
-                  click to jump to delegation
-                </div>
-              )}
-            </div>
-          }
-        >
-          <span className="text-[12px] text-fog-200 truncate flex-1 min-w-0 cursor-default">
-            {item.content}
-          </span>
-        </Tooltip>
 
         {owner ? (
           <Tooltip content={owner.name} side="top">
@@ -216,6 +188,59 @@ function PlanRow({
           </Tooltip>
         )}
       </button>
+
+      {expanded && (
+        <div className="pl-3 pr-2.5 pb-2 pt-0.5 bg-ink-850/60 hairline-b space-y-1.5">
+          {/* Full content — no truncate. */}
+          <div className="font-mono text-[11px] text-fog-200 leading-snug whitespace-pre-wrap break-words">
+            {item.content}
+          </div>
+
+          {/* Metadata row — status + owner + id. */}
+          <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 flex items-center gap-2 flex-wrap">
+            <span className={clsx('normal-case', tone)}>{statusLabel[item.status]}</span>
+            {owner && (
+              <>
+                <span className="text-fog-700">·</span>
+                <span className="text-fog-400 normal-case">{owner.name}</span>
+              </>
+            )}
+            <span className="text-fog-700">·</span>
+            <span className="text-fog-700">{item.id}</span>
+          </div>
+
+          {/* Worker-left annotation (blackboard coordinator writes these on
+              stale / skipped / blocked transitions). */}
+          {item.note && (
+            <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
+              <span className="uppercase tracking-widest2 text-fog-700">note </span>
+              {item.note}
+            </div>
+          )}
+
+          {/* Jump to delegation — explicit action, replaces the old
+              implicit click-to-jump behavior. Disabled when the todo
+              isn't yet bound to a task-tool call. */}
+          <div className="flex items-center gap-1 pt-0.5">
+            <button
+              type="button"
+              disabled={!hasDelegation}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (item.taskMessageId) onJump(item.taskMessageId);
+              }}
+              className={clsx(
+                'h-5 px-2 rounded-sm font-mono text-micro uppercase tracking-widest2 transition-colors',
+                hasDelegation
+                  ? 'bg-ink-700 hover:bg-molten/15 text-fog-300 hover:text-molten cursor-pointer'
+                  : 'bg-ink-800 text-fog-700 cursor-default'
+              )}
+            >
+              {hasDelegation ? '→ jump to delegation' : 'not yet delegated'}
+            </button>
+          </div>
+        </div>
+      )}
     </li>
   );
 }
