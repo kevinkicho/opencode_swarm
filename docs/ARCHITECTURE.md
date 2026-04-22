@@ -161,12 +161,18 @@ Ownership split:
 
 Invariants:
 
-- **At v1 N=1.** Every run wraps exactly one opencode session. Wire shapes
-  are plural-ready (`sessionIDs[]`) so blackboard / map-reduce / council
-  light up without breaking existing browser code.
-- **`pattern !== 'none'` returns 501.** The surface exists so the new-run
-  modal can hold preset tiles; the dispatch path rejects until coordinator
-  code ships. See `SWARM_PATTERNS.md` §"Backend gap".
+- **Multi-session by pattern.** `pattern='none'` runs N=1; `council`,
+  `blackboard`, and `map-reduce` all spawn N sessions on create
+  (`sessionIDs[]` populated) and their coordinators run concurrently —
+  blackboard via per-session tick fan-out in
+  `lib/server/blackboard/auto-ticker.ts` (shipped 2026-04-22), map-reduce
+  via parallel fan-out with a blackboard-routed synthesis claim, council
+  via the workspace-scoped SSE multiplexer. Wire shapes have been plural
+  since v1.
+- **Preset dispatch ships for `none` / `council` / `blackboard` /
+  `map-reduce`.** Stigmergy is still unimplemented and will 501 if ever
+  exposed through the UI — it's a layer over blackboard, not a separate
+  dispatch path. See `SWARM_PATTERNS.md` §4.
 - **L0 events.ndjson is the authoritative replay source**, not the live
   SSE stream. Future analytics / rollup workers read from disk; the live
   stream is a convenience for the browser.
