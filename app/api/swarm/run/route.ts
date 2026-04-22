@@ -25,6 +25,8 @@ import type { NextRequest } from 'next/server';
 
 import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
 import { createRun, deriveRunRowCached, listRuns } from '@/lib/server/swarm-registry';
+import { runPlannerSweep } from '@/lib/server/blackboard/planner';
+import { startAutoTicker } from '@/lib/server/blackboard/auto-ticker';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -35,7 +37,7 @@ import type { SwarmPattern } from '@/lib/swarm-types';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set(['none', 'council']);
+const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set(['none', 'council', 'blackboard']);
 
 // Hard cap on multi-session fan-out. Picked to stay well inside opencode's
 // parallel-prompt tolerance on the hosted Zen tier (probe margins, not a
@@ -151,7 +153,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return Response.json(
       {
         error: `pattern '${parsed.pattern}' is not implemented yet`,
-        hint: 'pattern="none" and pattern="council" ship today — see SWARM_PATTERNS.md',
+        hint: 'pattern="none", "council", and "blackboard" ship today — see SWARM_PATTERNS.md',
       },
       { status: 501 }
     );
@@ -222,7 +224,17 @@ export async function POST(req: NextRequest): Promise<Response> {
   // composer can re-fire the prompt, and one slow member shouldn't stall
   // the fast ones. opencode's /prompt_async returns before the model turn
   // completes, so the await here is just the HTTP ack, not the reply.
-  if (parsed.directive && parsed.directive.trim()) {
+  //
+  // Blackboard runs skip this broadcast: the directive is the planner
+  // sweep's input, not a worker prompt. Sessions stay idle until the
+  // coordinator (Step 4 below) assigns them a todo — posting the raw
+  // directive to every session up-front would have N workers all racing
+  // the same survey prompt while the planner is also running.
+  if (
+    parsed.pattern !== 'blackboard' &&
+    parsed.directive &&
+    parsed.directive.trim()
+  ) {
     const directive = parsed.directive;
     const postResults = await Promise.allSettled(
       sessions.map((s) =>
@@ -257,6 +269,44 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
       { status: 500 }
     );
+  }
+
+  // Step 4 (blackboard only): kick off the initial planner sweep, then
+  // start the auto-ticker once items land on the board. Both run in the
+  // background — the HTTP response is allowed to return before the sweep
+  // completes (90s upper bound) so the browser isn't stuck waiting.
+  //
+  // Ordering matters: we start the ticker *after* the sweep produces
+  // items. Starting it before would have it tick repeatedly on an empty
+  // board, and since auto-ticker auto-stops after 60s of idle, a slow
+  // sweep (up to 90s) could strand the ticker right when todos finally
+  // land. Starting post-sweep sidesteps the race.
+  //
+  // Sweep failure (zero todos / timeout / opencode error) logs and exits
+  // without starting the ticker. Callers can retry via
+  // POST /api/swarm/run/:id/board/sweep { "overwrite": true }.
+  if (parsed.pattern === 'blackboard') {
+    const runID = meta.swarmRunID;
+    runPlannerSweep(runID)
+      .then((result) => {
+        if (result.items.length === 0) {
+          console.warn(
+            `[swarm/run] blackboard sweep for ${runID} produced 0 todos — auto-ticker not started`,
+          );
+          return;
+        }
+        console.log(
+          `[swarm/run] blackboard sweep for ${runID} produced ${result.items.length} todos — starting auto-ticker`,
+        );
+        startAutoTicker(runID);
+      })
+      .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[swarm/run] blackboard sweep for ${runID} failed:`,
+          message,
+        );
+      });
   }
 
   const payload: SwarmRunResponse = {

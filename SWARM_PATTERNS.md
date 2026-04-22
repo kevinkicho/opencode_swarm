@@ -40,18 +40,20 @@ sessions into one logical run.
 
 ### 1. Blackboard `[~]` — first real implementation target
 
-> **Status 2026-04-21.** SQLite board store + HTTP API + live preview wired.
-> `/api/swarm/run/:id/board` (list + create) and `/api/swarm/run/:id/board/:itemId`
-> (claim / start / commit / block / unblock) both ship, with commit-time SHA
-> re-read for drift detection landing the item in `stale` when the workspace
-> moved under the claim. `/board-preview?swarmRun=<id>` polls the live board
-> at 2s cadence; MOCK_BOARD stays as the design-time showcase path.
-> CAS verified by `scripts/_blackboard_smoke.mjs` (store-layer) and
-> `scripts/_board_api_smoke.mjs` (HTTP round-trip). Still unwritten:
-> coordinator loop that posts claim-prompts to idle sessions, SSE mux across
-> N sessions for the board view. `pattern='blackboard'` still returns 501
-> until the coordinator lands — runs created through it would spawn sessions
-> with nothing driving them.
+> **Status 2026-04-21.** Coordinator loop end-to-end: SQLite board store,
+> HTTP API, live preview, planner sweep (3a), per-tick claim-and-work
+> (3b + 3c), and auto-ticker with idle auto-stop (3d) all wired.
+> `POST /api/swarm/run` now accepts `pattern='blackboard'` — on create it
+> spawns N sessions, fires a background `runPlannerSweep`, and once the
+> board has items, starts a 10s-cadence auto-ticker (`startAutoTicker`)
+> that calls `tickCoordinator` with an in-flight re-entrancy guard and
+> auto-stops after 6 consecutive idle ticks. `/board-preview?swarmRun=<id>`
+> still polls the live board at 2s cadence. CAS + drift verified by
+> `scripts/_blackboard_smoke.mjs` and `scripts/_board_api_smoke.mjs`;
+> coordinator pipeline verified by driving `POST /board/tick` manually
+> before wiring the auto-ticker. Still unwritten: SSE multiplex for
+> cross-session live updates in the board view (today's 2s polling
+> covers the gap), and a UI surface for auto-ticker state / restart.
 
 
 Agents post `claim`, `question`, `todo`, `finding` items to a shared board
@@ -260,7 +262,7 @@ landed against a pattern with simpler semantics.
 | # | Preset        | Status | Notes                                                                          |
 |---|---------------|--------|--------------------------------------------------------------------------------|
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
-| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview shipped; coordinator loop + SSE mux remain    |
+| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview + coordinator + auto-ticker ship; SSE mux tbd |
 | 3 | `map-reduce`  | `[ ]`  | Reuses blackboard's mux; synthesize phase claimed from the board, not pinned  |
 | 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 
