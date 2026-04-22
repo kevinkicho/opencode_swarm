@@ -40,13 +40,18 @@ sessions into one logical run.
 
 ### 1. Blackboard `[~]` — first real implementation target
 
-> **Status 2026-04-21.** UI prototype at `/board-preview` (mock data) + SQLite
-> board store landed at `lib/server/blackboard/{db,store,schema.sql}`. CAS
-> semantics verified end-to-end via `scripts/_blackboard_smoke.mjs`: atomic
-> `UPDATE … WHERE status IN (…)` transitions, first-writer-wins on concurrent
-> claims. Still unwritten: `/api/swarm/run/:id/board` route, coordinator loop,
-> SSE mux across N sessions, file-SHA re-read for commit-time drift detection.
-> `pattern='blackboard'` still returns 501.
+> **Status 2026-04-21.** SQLite board store + HTTP API + live preview wired.
+> `/api/swarm/run/:id/board` (list + create) and `/api/swarm/run/:id/board/:itemId`
+> (claim / start / commit / block / unblock) both ship, with commit-time SHA
+> re-read for drift detection landing the item in `stale` when the workspace
+> moved under the claim. `/board-preview?swarmRun=<id>` polls the live board
+> at 2s cadence; MOCK_BOARD stays as the design-time showcase path.
+> CAS verified by `scripts/_blackboard_smoke.mjs` (store-layer) and
+> `scripts/_board_api_smoke.mjs` (HTTP round-trip). Still unwritten:
+> coordinator loop that posts claim-prompts to idle sessions, SSE mux across
+> N sessions for the board view. `pattern='blackboard'` still returns 501
+> until the coordinator lands — runs created through it would spawn sessions
+> with nothing driving them.
 
 
 Agents post `claim`, `question`, `todo`, `finding` items to a shared board
@@ -255,7 +260,7 @@ landed against a pattern with simpler semantics.
 | # | Preset        | Status | Notes                                                                          |
 |---|---------------|--------|--------------------------------------------------------------------------------|
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
-| 2 | `blackboard`  | `[~]`  | UI prototype at `/board-preview`; coordinator / CAS / store still TBD         |
+| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview shipped; coordinator loop + SSE mux remain    |
 | 3 | `map-reduce`  | `[ ]`  | Reuses blackboard's mux; synthesize phase claimed from the board, not pinned  |
 | 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 
