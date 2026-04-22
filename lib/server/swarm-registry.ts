@@ -228,34 +228,28 @@ function sumRunMetrics(messages: OpencodeMessage[]): {
   return { costTotal, tokensTotal };
 }
 
-// Row-level derivation: one message fetch per run, two projections from
-// the response — live status (tail-only) and cumulative $/tokens (sum
-// across assistant messages). Folded into a single function so the list
-// endpoint doesn't fan out twice for what is the same underlying data.
-//
-// N=1 session at v1; when patterns ship, metrics aggregate across sessions
-// (sum) and status aggregates with priority (live > error > stale > idle).
-//
-// Never throws. A probe failure collapses to `unknown` status + zero
-// metrics — the list endpoint still returns the row so the picker renders
-// it, just without a status dot or cost readout.
-export async function deriveRunRow(
-  meta: SwarmRunMeta,
-  signal?: AbortSignal
-): Promise<{
+interface DerivedRow {
   status: SwarmRunStatus;
   lastActivityTs: number | null;
   costTotal: number;
   tokensTotal: number;
-}> {
-  const sessionID = meta.sessionIDs[0];
-  if (!sessionID) {
-    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
-  }
+}
 
+// Classify one session's tail + sum its assistant-message $/tokens. The
+// aggregate in deriveRunRow() composes these per-session rows; keeping the
+// single-session shape isolated means pattern='none' and pattern='council'
+// use the exact same classifier — no divergence to drift.
+//
+// Never throws. A probe failure collapses to `unknown` + zeros so the
+// aggregate can still fold this session in without rejecting the whole run.
+async function deriveSessionRow(
+  sessionID: string,
+  workspace: string,
+  signal?: AbortSignal
+): Promise<DerivedRow> {
   let messages;
   try {
-    messages = await getSessionMessagesServer(sessionID, meta.workspace, signal);
+    messages = await getSessionMessagesServer(sessionID, workspace, signal);
   } catch {
     // Could be the session was deleted out from under us, or opencode is
     // momentarily unreachable. Either way, not actionable by the picker —
@@ -301,6 +295,81 @@ export async function deriveRunRow(
   return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal };
 }
 
+// Priority for folding N per-session statuses into one run-level status.
+// Ordered so the aggregate answers the picker's real question — "what does
+// this run most need my attention for?" — without losing information:
+//   live   → someone is actively producing tokens, eclipses everything
+//   error  → at least one session is in a failure state, needs surfacing
+//   stale  → at least one session is a likely zombie (no completed, old)
+//   idle   → every session has completed cleanly
+//   unknown → we couldn't probe or nothing has happened yet
+// Higher number wins. Any session at a given level pins the run there.
+const STATUS_PRIORITY: Record<SwarmRunStatus, number> = {
+  live: 4,
+  error: 3,
+  stale: 2,
+  idle: 1,
+  unknown: 0,
+};
+
+// Row-level derivation: one message fetch per *session*, fanned out in
+// parallel across meta.sessionIDs, then folded into one row for the picker:
+//   - costTotal / tokensTotal  — sum across all sessions
+//   - lastActivityTs           — max across sessions (most recent thing seen)
+//   - status                   — priority-reduced via STATUS_PRIORITY
+//
+// Single-session runs (pattern='none') degenerate to the old behavior: one
+// fetch, one classification, no aggregation math to speak of. Multi-session
+// runs (pattern='council') fold every member's state in without branching —
+// same code path, same cache entry, same error-tolerance semantics.
+//
+// Never throws. Per-session probe failures already collapse to unknown +
+// zeros in deriveSessionRow, so Promise.allSettled is defense-in-depth
+// rather than load-bearing — but we keep it so a thrown-from-helper bug
+// can't take down an entire list fetch.
+export async function deriveRunRow(
+  meta: SwarmRunMeta,
+  signal?: AbortSignal
+): Promise<DerivedRow> {
+  if (meta.sessionIDs.length === 0) {
+    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+  }
+
+  const settled = await Promise.allSettled(
+    meta.sessionIDs.map((sid) => deriveSessionRow(sid, meta.workspace, signal))
+  );
+
+  let costTotal = 0;
+  let tokensTotal = 0;
+  let lastActivityTs: number | null = null;
+  let statusRank = STATUS_PRIORITY.unknown;
+  let status: SwarmRunStatus = 'unknown';
+
+  for (const r of settled) {
+    // deriveSessionRow is non-throwing; a rejection here would be an
+    // unexpected bug path. Treat as unknown + zeros so one pathological
+    // session doesn't poison the aggregate.
+    const row: DerivedRow =
+      r.status === 'fulfilled'
+        ? r.value
+        : { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+
+    costTotal += row.costTotal;
+    tokensTotal += row.tokensTotal;
+    if (row.lastActivityTs !== null) {
+      lastActivityTs =
+        lastActivityTs === null ? row.lastActivityTs : Math.max(lastActivityTs, row.lastActivityTs);
+    }
+    const rank = STATUS_PRIORITY[row.status];
+    if (rank > statusRank) {
+      statusRank = rank;
+      status = row.status;
+    }
+  }
+
+  return { status, lastActivityTs, costTotal, tokensTotal };
+}
+
 // ---- derived-row cache ----------------------------------------------------
 //
 // deriveRunRow() costs one opencode /message fetch per run. The list
@@ -327,12 +396,7 @@ export async function deriveRunRow(
 // multiple workers, this becomes a per-worker cache and runs with stale
 // entries across workers — fine for a status picker, but call it out here.
 interface CachedRow {
-  row: {
-    status: SwarmRunStatus;
-    lastActivityTs: number | null;
-    costTotal: number;
-    tokensTotal: number;
-  };
+  row: DerivedRow;
   fetchedAt: number;
 }
 
@@ -354,12 +418,7 @@ function derivedRowCache(): Map<string, CachedRow> {
 export async function deriveRunRowCached(
   meta: SwarmRunMeta,
   signal?: AbortSignal
-): Promise<{
-  status: SwarmRunStatus;
-  lastActivityTs: number | null;
-  costTotal: number;
-  tokensTotal: number;
-}> {
+): Promise<DerivedRow> {
   const cache = derivedRowCache();
   const now = Date.now();
   const hit = cache.get(meta.swarmRunID);
