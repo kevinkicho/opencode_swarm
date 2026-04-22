@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
@@ -846,6 +847,26 @@ function StatusRail({
           >
             <span className="font-mono text-[10px] uppercase tracking-widest2">cost</span>
           </button>
+        </Tooltip>
+        <Tooltip
+          side="top"
+          wide
+          content={
+            <div className="space-y-0.5">
+              <div className="font-mono text-[11px] text-fog-200">cross-preset metrics</div>
+              <div className="font-mono text-[10.5px] text-fog-600">
+                aggregates per pattern · avg duration, tokens, cost, stale%
+              </div>
+            </div>
+          }
+        >
+          <Link
+            href="/metrics"
+            className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
+            aria-label="open cross-preset metrics"
+          >
+            <span className="font-mono text-[10px] uppercase tracking-widest2">metrics</span>
+          </Link>
         </Tooltip>
       </div>
 

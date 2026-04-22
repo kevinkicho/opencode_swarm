@@ -216,6 +216,7 @@ This app is personal-use only (never SaaS). **Multi-tenant and multi-instance wo
 
 10. **Cross-run cost dashboard.** Aggregate `$` and tokens across every persisted run; group by workspace + rolling window. Data already exists in `meta.json` plus each session's messages — no new collection, just projection. First-class panel for answering *"where's my spend going this week?"* once the run count grows past ~20.
 11. **Run picker** (shipped as Tier 4, reads local `.opencode_swarm/`).
+12. **Cross-preset metrics** (shipped 2026-04-21 at `/metrics`). Answers *"is council worth the cost vs blackboard?"* by grouping every persisted run by `meta.pattern` and surfacing per-preset aggregates (runs, avg/med duration, avg $, avg tokens, live/stale/err %). Feeds from the same `GET /api/swarm/run` endpoint the run picker uses; grouping happens client-side in `CrossPresetMetrics::computePatternStats`. When N outgrows "tens of runs" the obvious next step is a server-side `/api/metrics` that pre-groups.
 
 GitHub integration (agent clones a repo, opens a PR, reads issues) is a **Phase 2 tool-capability concern**, not a Phase 4 identity concern — the user provides a classic PAT via env var; there is no sign-in flow.
 
