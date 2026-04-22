@@ -48,12 +48,17 @@ sessions into one logical run.
 > board has items, starts a 10s-cadence auto-ticker (`startAutoTicker`)
 > that calls `tickCoordinator` with an in-flight re-entrancy guard and
 > auto-stops after 6 consecutive idle ticks. `/board-preview?swarmRun=<id>`
-> still polls the live board at 2s cadence. CAS + drift verified by
+> still polls the live board at 2s cadence. **UI reachable 2026-04-21:**
+> blackboard tile is selectable in new-run-modal, and the topbar run-anchor
+> popover renders the pattern as a direct link to the board view when
+> `meta.pattern === 'blackboard'`. CAS + drift verified by
 > `scripts/_blackboard_smoke.mjs` and `scripts/_board_api_smoke.mjs`;
 > coordinator pipeline verified by driving `POST /board/tick` manually
-> before wiring the auto-ticker. Still unwritten: SSE multiplex for
-> cross-session live updates in the board view (today's 2s polling
-> covers the gap), and a UI surface for auto-ticker state / restart.
+> before wiring the auto-ticker; end-to-end (create → sweep → ticker →
+> done) verified by `scripts/_blackboard_e2e_watch.mjs`. Still unwritten:
+> SSE multiplex for cross-session live updates in the board view (today's
+> 2s polling covers the gap), and a UI surface for auto-ticker state /
+> restart.
 
 
 Agents post `claim`, `question`, `todo`, `finding` items to a shared board
@@ -262,7 +267,7 @@ landed against a pattern with simpler semantics.
 | # | Preset        | Status | Notes                                                                          |
 |---|---------------|--------|--------------------------------------------------------------------------------|
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
-| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview + coordinator + auto-ticker ship; SSE mux tbd |
+| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview + coordinator + auto-ticker + UI picker ship; SSE mux + inline board rail tbd |
 | 3 | `map-reduce`  | `[ ]`  | Reuses blackboard's mux; synthesize phase claimed from the board, not pinned  |
 | 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 

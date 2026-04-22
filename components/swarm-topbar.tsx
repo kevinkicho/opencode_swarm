@@ -220,7 +220,18 @@ function RunAnchorChip({
             <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
               pattern
             </span>
-            <span className="font-mono text-[11px] text-iris">{meta.pattern}</span>
+            {meta.pattern === 'blackboard' ? (
+              <a
+                href={`/board-preview?swarmRun=${meta.swarmRunID}`}
+                className="font-mono text-[11px] text-iris hover:text-iris/80 flex items-center gap-1 group w-fit"
+                title="open board view"
+              >
+                {meta.pattern}
+                <span className="text-fog-600 group-hover:text-fog-300 transition">→ board</span>
+              </a>
+            ) : (
+              <span className="font-mono text-[11px] text-iris">{meta.pattern}</span>
+            )}
             <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
               sessions
             </span>

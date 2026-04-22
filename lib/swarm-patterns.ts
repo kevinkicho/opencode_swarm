@@ -21,7 +21,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
   blackboard: {
     label: 'blackboard',
     tagline: 'shared board, claim any unresolved todo',
-    available: false,
+    available: true,
     accent: 'amber',
   },
   'map-reduce': {
