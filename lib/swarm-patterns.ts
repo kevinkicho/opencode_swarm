@@ -33,7 +33,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
   council: {
     label: 'council',
     tagline: 'n parallel drafts, human reconciles via permissions',
-    available: false,
+    available: true,
     accent: 'iris',
   },
 };
