@@ -243,8 +243,17 @@ export function SwarmRunsPicker({
                     <span className="text-[11.5px] text-fog-200 flex-1 min-w-0 whitespace-nowrap truncate">
                       {directiveTeaser(meta.directive)}
                     </span>
-                    <span className="font-mono text-[10px] text-fog-400 tabular-nums shrink-0 w-[40px] text-right">
-                      {meta.sessionIDs.length}
+                    <span className="font-mono text-[10px] tabular-nums shrink-0 w-[40px] flex items-center justify-end">
+                      {meta.sessionIDs.length > 1 ? (
+                        <span
+                          className="px-1 h-4 rounded bg-iris/15 text-iris flex items-center"
+                          title={`${meta.sessionIDs.length} parallel sessions`}
+                        >
+                          {meta.sessionIDs.length}×
+                        </span>
+                      ) : (
+                        <span className="text-fog-400">{meta.sessionIDs.length}</span>
+                      )}
                     </span>
                     <span className="font-mono text-[10px] text-fog-600 tabular-nums shrink-0 w-[64px] truncate">
                       {bounds || '—'}

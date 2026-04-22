@@ -224,9 +224,26 @@ function RunAnchorChip({
             <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
               sessions
             </span>
-            <span className="font-mono text-[11px] text-fog-300 tabular-nums">
-              {meta.sessionIDs.length}
-            </span>
+            {meta.sessionIDs.length > 1 ? (
+              <span className="flex flex-wrap items-center gap-1">
+                <span className="font-mono text-[11px] text-fog-300 tabular-nums mr-1">
+                  {meta.sessionIDs.length}×
+                </span>
+                {meta.sessionIDs.map((sid) => (
+                  <span
+                    key={sid}
+                    className="font-mono text-[10px] text-fog-400 tabular-nums px-1 h-4 flex items-center rounded bg-ink-800/60 hairline"
+                    title={sid}
+                  >
+                    {sid.slice(-8)}
+                  </span>
+                ))}
+              </span>
+            ) : (
+              <span className="font-mono text-[11px] text-fog-300 tabular-nums">
+                {meta.sessionIDs.length}
+              </span>
+            )}
             <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
               created
             </span>

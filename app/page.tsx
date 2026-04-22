@@ -166,11 +166,21 @@ function PageInner() {
         .sort((a, b) => a.info.time.created - b.info.time.created);
       const anchorSession = liveSwarmRun.slots[0]?.session ?? null;
       const { agents, agentOrder } = toAgents(merged);
+      const baseMeta = toRunMeta(anchorSession, merged);
+      // For multi-session runs the primary member's opencode title carries
+      // the `#1` member suffix we added at spawn time (swarm/run/route.ts).
+      // Users reading the topbar want the run-level title, not "foo #1" —
+      // so overlay meta.title (the seed title) and swarmRunID so the anchor
+      // reads as a run identity rather than a stray member.
       return {
         agents,
         agentOrder,
         messages: toMessages(merged),
-        runMeta: toRunMeta(anchorSession, merged),
+        runMeta: {
+          ...baseMeta,
+          id: swarmRun.meta?.swarmRunID ?? baseMeta.id,
+          title: swarmRun.meta?.title ?? baseMeta.title,
+        },
         providerSummary: toProviderSummary(agents, merged),
         runPlan: toRunPlan(merged),
         liveTurns: toLiveTurns(merged),
@@ -190,7 +200,7 @@ function PageInner() {
       };
     }
     return EMPTY_VIEW;
-  }, [isMultiSession, liveSwarmRun.slots, sessionId, liveData]);
+  }, [isMultiSession, liveSwarmRun.slots, swarmRun.meta, sessionId, liveData]);
 
   // Layer `waiting` on top of toAgents' status: a pending permission on the
   // session means whichever agent is mid-turn is actually blocked on human
