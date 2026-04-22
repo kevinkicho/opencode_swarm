@@ -85,9 +85,11 @@ import {
   toProviderSummary,
   toLiveTurns,
   toTurnCards,
+  toFileHeat,
   parseSessionDiffs,
   type LiveTurn,
   type TurnCard,
+  type FileHeat,
 } from '@/lib/opencode/transform';
 import { tokensForBudget } from '@/lib/opencode/pricing';
 import type { DiffData } from '@/lib/types';
@@ -104,6 +106,7 @@ interface SwarmView {
   runPlan: TodoItem[];
   liveTurns: LiveTurn[];
   turnCards: TurnCard[];
+  fileHeat: FileHeat[];
 }
 
 // Zero-state view for "no run active" — topbar chips render as 0/placeholder,
@@ -129,6 +132,7 @@ const EMPTY_VIEW: SwarmView = {
   runPlan: [],
   liveTurns: [],
   turnCards: [],
+  fileHeat: [],
 };
 
 export default function Page() {
@@ -231,6 +235,7 @@ function PageInner() {
         runPlan: toRunPlan(merged),
         liveTurns: toLiveTurns(merged),
         turnCards: toTurnCards(merged),
+        fileHeat: toFileHeat(merged),
       };
     }
     if (sessionId && liveData) {
@@ -245,6 +250,7 @@ function PageInner() {
         runPlan: toRunPlan(liveData.messages),
         liveTurns: toLiveTurns(liveData.messages),
         turnCards: toTurnCards(liveData.messages),
+        fileHeat: toFileHeat(liveData.messages),
       };
     }
     return EMPTY_VIEW;
@@ -263,7 +269,7 @@ function PageInner() {
     );
   }, [view.agents, permissions.pending.length]);
 
-  const { agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns, turnCards } = view;
+  const { agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns, turnCards, fileHeat } = view;
 
   const paletteNodes: TimelineNode[] = useMemo(
     () =>
@@ -318,6 +324,7 @@ function PageInner() {
         permissions={permissions}
         liveTurns={liveTurns}
         turnCards={turnCards}
+        fileHeat={fileHeat}
         liveLastUpdated={liveSwarmRun.lastUpdated ?? liveData?.lastUpdated ?? null}
         swarmRunID={swarmRunID}
         swarmRunMeta={swarmRun.meta}
@@ -342,6 +349,7 @@ function PageBody({
   permissions,
   liveTurns,
   turnCards,
+  fileHeat,
   liveLastUpdated,
   swarmRunID,
   swarmRunMeta,
@@ -361,6 +369,7 @@ function PageBody({
   permissions: ReturnType<typeof useLivePermissions>;
   liveTurns: LiveTurn[];
   turnCards: TurnCard[];
+  fileHeat: FileHeat[];
   liveLastUpdated: number | null;
   swarmRunID: string | null;
   swarmRunMeta: SwarmRunMeta | null;
@@ -386,7 +395,7 @@ function PageBody({
   // Left-panel tab is lifted so the timeline can reveal the plan when a task
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
-  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board'>('plan');
+  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board' | 'heat'>('plan');
   const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
   // Main-panel view toggle. Timeline = cross-lane event flow (default);
   // cards = per-turn conversation cards. The cards view is a complement —
@@ -582,6 +591,7 @@ function PageBody({
           plan={runPlan}
           agents={agents}
           messages={messages}
+          heat={fileHeat}
           selectedAgentId={selectedAgentId}
           onSelectAgent={rosterSelect}
           onInspectAgent={selectAgent}

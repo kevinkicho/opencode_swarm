@@ -3,18 +3,21 @@
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
+import type { FileHeat } from '@/lib/opencode/transform';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
+import { HeatRail } from './heat-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 
-export type Tab = 'plan' | 'roster' | 'board';
+export type Tab = 'plan' | 'roster' | 'board' | 'heat';
 
 export function LeftTabs({
   plan,
   agents,
   messages,
+  heat,
   selectedAgentId,
   onSelectAgent,
   onInspectAgent,
@@ -29,6 +32,9 @@ export function LeftTabs({
   plan: TodoItem[];
   agents: Agent[];
   messages: AgentMessage[];
+  // Per-file edit counts aggregated from patch parts — stigmergy v0.
+  // Empty array hides the heat tab entirely.
+  heat: FileHeat[];
   selectedAgentId: string | null;
   onSelectAgent: (id: string) => void;
   onInspectAgent: (id: string) => void;
@@ -56,10 +62,14 @@ export function LeftTabs({
   // If the active run stops being a blackboard (or we switch to a different
   // run that has no board), 'board' becomes an invalid selection. Fall back
   // to 'plan' so the header doesn't show a highlighted tab with no content.
+  // Same shape for the 'heat' tab — it vanishes when no files have been
+  // touched yet, so a mid-run tab switch back to 'heat' after a restart
+  // shouldn't leave the header in an invalid state.
   useEffect(() => {
     if (!boardSwarmRunID && tab === 'board') setTab('plan');
+    if (heat.length === 0 && tab === 'heat') setTab('plan');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardSwarmRunID, tab]);
+  }, [boardSwarmRunID, heat.length, tab]);
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -87,6 +97,14 @@ export function LeftTabs({
             onClick={() => setTab('board')}
             label="board"
             count=""
+          />
+        )}
+        {heat.length > 0 && (
+          <TabButton
+            active={tab === 'heat'}
+            onClick={() => setTab('heat')}
+            label="heat"
+            count={String(heat.length)}
           />
         )}
 
@@ -176,6 +194,7 @@ export function LeftTabs({
         {tab === 'board' && boardSwarmRunID && (
           <BoardRail swarmRunID={boardSwarmRunID} embedded />
         )}
+        {tab === 'heat' && <HeatRail heat={heat} agents={agents} embedded />}
       </div>
     </section>
   );
