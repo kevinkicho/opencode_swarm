@@ -25,6 +25,7 @@ import { randomBytes } from 'node:crypto';
 
 import { getRun } from '../swarm-registry';
 import {
+  abortSessionServer,
   getSessionMessagesServer,
   postSessionMessageServer,
 } from '../opencode-server';
@@ -33,7 +34,17 @@ import { insertBoardItem, listBoardItems } from './store';
 import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
-const DEFAULT_TIMEOUT_MS = 90_000;
+// Default timeout for a planner sweep. Raised from the original 90s after
+// 2026-04-22 incident: a real-repo sweep (kBioIntelBrowser04052026) spent
+// 31 exploratory assistant turns before emitting todowrite. 90s threw the
+// sweep's wait-loop but left the session running — it burned 5M tokens in
+// 70+ duplicate todowrite calls before a human noticed.
+//
+// 5min matches the dispatch deadline in runMapReduceSynthesis and gives a
+// model room to explore *once* before committing to a plan. The abort-on-
+// timeout path below is the real safety net; this just reduces how often
+// it fires for legitimate work.
+const DEFAULT_TIMEOUT_MS = 5 * 60_000;
 
 export interface PlannerSweepResult {
   items: BoardItem[];
@@ -48,6 +59,14 @@ function mintItemId(): string {
   return 't_' + randomBytes(4).toString('hex');
 }
 
+// Prompt rewrite 2026-04-22: the original version said "Use the todowrite
+// tool to output your list" but left the model free to grep/glob/read first.
+// On a directive like "audit for typos" a well-behaved model interprets
+// "audit" as "verify before claiming" — it explored the repo for 30+ turns
+// before calling todowrite, which blew the sweep timeout. The rewrite forces
+// todowrite as the very first tool call and explicitly names the read-side
+// tools (grep, glob, read) as forbidden for this turn. Exploration is the
+// claim-executor's job, not the planner's.
 function buildPlannerPrompt(directive: string | undefined): string {
   const base =
     directive?.trim() ||
@@ -57,15 +76,20 @@ function buildPlannerPrompt(directive: string | undefined): string {
     '',
     `Directive: ${base}`,
     '',
-    'Produce a list of 5-8 narrow, atomic todos for the directive above.',
-    'Each todo should be one concrete change a single agent can claim and',
-    'complete without blocking others. Prefer small file-scoped edits over',
-    'cross-cutting refactors. Rewrite vague asks into specific, verifiable',
-    'steps.',
+    'Your task: call the todowrite tool ONCE, immediately, with 5-8 atomic',
+    'todos for the directive above. Each todo is one concrete change a',
+    'single agent can claim and complete without blocking others. Prefer',
+    'small file-scoped edits over cross-cutting refactors. Rewrite vague',
+    'asks into specific, verifiable steps.',
     '',
-    'Use the todowrite tool to output your list. Do not edit files, do not',
-    'call task or bash. This is planning-only — other agents will claim and',
-    'execute the individual todos.',
+    'Rules:',
+    '- todowrite must be your FIRST tool call. Do not grep, glob, read, or',
+    '  bash before it. Do not explore the repo to verify the directive.',
+    '- Do not edit files. Do not call task or bash.',
+    '- You are planning only. Other agents will claim each todo and do the',
+    '  exploration + implementation.',
+    '',
+    'Call todowrite now.',
   ].join('\n');
 }
 
@@ -144,6 +168,21 @@ export async function runPlannerSweep(
     deadline,
   );
   if (!waited.ok) {
+    // Critical: abort the opencode session before re-throwing. Without this,
+    // a timed-out session keeps streaming turns into the void — the planner's
+    // poll loop has exited so nothing consumes todowrite calls, but the model
+    // has no stop condition. Incident 2026-04-22 burned 5M tokens across 70+
+    // orphaned todowrite calls before a human noticed.
+    try {
+      await abortSessionServer(sessionID, meta.workspace);
+    } catch (abortErr) {
+      const detail =
+        abortErr instanceof Error ? abortErr.message : String(abortErr);
+      console.warn(
+        `[planner] abort-on-timeout failed for ${sessionID}: ${detail} — ` +
+          `session may keep burning tokens`,
+      );
+    }
     if (waited.reason === 'timeout') {
       throw new Error(`planner sweep timed out after ${timeoutMs}ms`);
     }

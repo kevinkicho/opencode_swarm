@@ -90,6 +90,31 @@ export async function getSessionDiffServer(
   return (await res.json()) as Array<{ file: string; patch: string }>;
 }
 
+// Cancels any in-flight model turn for this session. Soft cancel — any tool
+// call that already dispatched finishes, but no further reasoning or tool
+// invocations fire. Mirrors `abortSessionBrowser` in lib/opencode/live.ts.
+//
+// Use this whenever a server-side orchestrator gives up on a session (timeout,
+// error, etc.) — without an explicit abort the opencode session keeps
+// streaming turns into the void, burning tokens on work that no longer has
+// a consumer.
+export async function abortSessionServer(
+  sessionId: string,
+  directory: string,
+): Promise<void> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await opencodeFetch(
+    `/session/${encodeURIComponent(sessionId)}/abort?${qs}`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `opencode abort -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`,
+    );
+  }
+}
+
 // Fire-and-forget prompt submission. Uses /prompt_async so the route handler
 // can return immediately — SSE surfaces the resulting parts via the run's
 // multiplexed events stream.
