@@ -146,14 +146,26 @@ function HeatRow({
 
   return (
     <li className="relative min-w-0">
-      <div className="pl-3 pr-2 h-6 flex items-center gap-2 min-w-0">
-        {/* Intensity bar — a fixed 22px column. Width scales with count. */}
+      {/* Grid layout so every row's columns line up on the same vertical
+          axes — intensity bar, path (right-aligned), agent badges, time
+          stamp. Earlier flex layout gave each row its own column widths
+          based on content, which made scanning ragged. */}
+      <div
+        className="px-3 h-6 min-w-0"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '22px minmax(0, 1fr) 60px 28px',
+          alignItems: 'center',
+          columnGap: '8px',
+        }}
+      >
+        {/* Intensity bar — fixed 22px column, bar width scales with count. */}
         <Tooltip
           content={`${heat.editCount} edit${heat.editCount === 1 ? '' : 's'}`}
           side="right"
         >
           <span
-            className="relative shrink-0 h-2 w-[22px] bg-ink-800 rounded-sm overflow-hidden cursor-default"
+            className="relative h-2 w-full bg-ink-800 rounded-sm overflow-hidden cursor-default"
             aria-label={`intensity ${Math.round(intensity * 100)}%`}
           >
             <span
@@ -163,11 +175,11 @@ function HeatRow({
           </span>
         </Tooltip>
 
-        {/* File path — basename bright, dir dim. The dir prefix uses
-            `.truncate-left` (rtl-direction trick in globals.css) so it
-            clips from the LEFT when it overflows; the basename sits in
-            a shrink-0 span beside it so it's always visible. Prior
-            single-span implementation didn't survive flex layout. */}
+        {/* Path — right-aligned so basenames end at a consistent vertical
+            axis; `.truncate-left` pushes overflow (long ancestor dirs)
+            off the LEFT side with an ellipsis, so the filename always
+            stays visible. `<bdi dir="ltr">` keeps the LTR content
+            readable inside the rtl container. */}
         <Tooltip
           content={
             <div className="font-mono text-[10.5px] text-fog-500 max-w-[420px] break-all">
@@ -176,23 +188,22 @@ function HeatRow({
           }
           side="right"
         >
-          <div className="flex items-baseline flex-1 min-w-0 overflow-hidden font-mono text-[11.5px] cursor-default">
-            {dir && (
-              <span className="text-fog-700 truncate-left min-w-0 flex-1 basis-0">
-                <bdi>{dir}/</bdi>
-              </span>
-            )}
-            <span className="text-fog-200 shrink-0">{base}</span>
-          </div>
+          <span className="truncate-left font-mono text-[11.5px] cursor-default min-w-0 w-full">
+            <bdi dir="ltr">
+              {dir && <span className="text-fog-700">{dir}/</span>}
+              <span className="text-fog-200">{base}</span>
+            </bdi>
+          </span>
         </Tooltip>
 
-        {/* Agent badges — one per distinct session that touched this file. */}
-        <div className="shrink-0 flex items-center gap-0.5">
-          {touchers.slice(0, 4).map((a) => (
+        {/* Agent badges — fixed 60px column so columns stay aligned
+            regardless of per-row badge count. Show up to 3, then +N. */}
+        <div className="flex items-center gap-0.5 justify-end min-w-0 overflow-hidden">
+          {touchers.slice(0, 3).map((a) => (
             <Tooltip key={a.id} content={a.name} side="top">
               <span
                 className={clsx(
-                  'w-3 h-3 rounded-sm font-mono text-[8.5px] leading-none grid place-items-center cursor-default',
+                  'shrink-0 w-3 h-3 rounded-sm font-mono text-[8.5px] leading-none grid place-items-center cursor-default',
                   accentBadge[a.accent],
                 )}
               >
@@ -200,9 +211,9 @@ function HeatRow({
               </span>
             </Tooltip>
           ))}
-          {touchers.length > 4 && (
-            <span className="font-mono text-[9px] text-fog-600 pl-0.5 tabular-nums">
-              +{touchers.length - 4}
+          {touchers.length > 3 && (
+            <span className="shrink-0 font-mono text-[9px] text-fog-600 pl-0.5 tabular-nums">
+              +{touchers.length - 3}
             </span>
           )}
         </div>
@@ -212,7 +223,7 @@ function HeatRow({
           content={new Date(heat.lastTouchedMs).toISOString()}
           side="left"
         >
-          <span className="shrink-0 font-mono text-[9px] text-fog-600 tabular-nums cursor-default w-6 text-right">
+          <span className="font-mono text-[9px] text-fog-600 tabular-nums cursor-default text-right">
             {fmtAgo(heat.lastTouchedMs)}
           </span>
         </Tooltip>

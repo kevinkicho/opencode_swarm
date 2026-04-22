@@ -77,4 +77,20 @@ preflightNativeModules();
 
 const port = await resolvePort();
 console.log(`\n[dev] using port ${port} (from ${PORT_FILE} — delete to reroll)\n`);
-spawn('next', ['dev', '-p', String(port)], { stdio: 'inherit', shell: true });
+// WSL mounts (/mnt/c/...) don't deliver inotify events reliably, so
+// Next's default native file-watcher misses edits made by WSL-side
+// tools. WATCHPACK_POLLING + CHOKIDAR_USEPOLLING force polling, which
+// adds a small CPU cost but guarantees HMR picks up every change.
+// Interval tuned at 300ms — fast enough to feel like HMR, slow enough
+// not to thrash the CPU on a repo with thousands of node_modules files.
+const devEnv = {
+  ...process.env,
+  WATCHPACK_POLLING: 'true',
+  CHOKIDAR_USEPOLLING: 'true',
+  CHOKIDAR_INTERVAL: '300',
+};
+spawn('next', ['dev', '-p', String(port)], {
+  stdio: 'inherit',
+  shell: true,
+  env: devEnv,
+});
