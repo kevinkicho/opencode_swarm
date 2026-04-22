@@ -39,6 +39,16 @@ import type { OpencodeMessage } from '@/lib/opencode/types';
 const POLL_INTERVAL_MS = 1000;
 const DEFAULT_TURN_TIMEOUT_MS = 5 * 60_000;
 
+// How long the session must be silent (no new activity, all turns completed)
+// before we treat it as "done". opencode emits one assistant message per
+// step (read → todowrite → wrap-up text …), each with its own `completed`
+// timestamp. A poll that catches the session between steps would see every
+// existing turn completed yet still have more work coming. 2s has empirically
+// covered the inter-step gap observed in e2e runs (inter-message creation
+// gap is typically <100ms but the buffer gives headroom for slower
+// backend flushes).
+const SESSION_IDLE_QUIET_MS = 2000;
+
 // Owner-id convention for the coordinator: ag_ses_<last8>. Keeps the id
 // short for UI columns while remaining unambiguous per session. Matches the
 // "board ownerAgentId is whatever the writer posts" contract in
@@ -125,30 +135,57 @@ function buildWorkPrompt(item: BoardItem): string {
   ].join('\n');
 }
 
-async function waitForNewAssistantTurn(
+// Poll until the session has finished processing whatever prompt we just
+// posted. A naive "first completed assistant message" check races
+// multi-step responses: opencode commits msg_1 (tool:read) → msg_2
+// (tool:todowrite) → msg_3 (wrap-up text) as separate assistant records,
+// each with its own completed timestamp. The planner and coordinator both
+// want the FULL response, not the first step. Shared here so fixes land
+// in one place.
+//
+// Exit conditions:
+//   ok=true   every new assistant message is completed, AND at least
+//             SESSION_IDLE_QUIET_MS has passed since the most recent
+//             completion (so we're not mid-sequence).
+//   ok=false  any new assistant message has an `error`; or the deadline
+//             fires before the session goes idle.
+export async function waitForSessionIdle(
   sessionID: string,
   workspace: string,
   knownIDs: Set<string>,
   deadline: number,
-): Promise<{
-  ok: true;
-  messages: OpencodeMessage[];
-  newIDs: Set<string>;
-} | { ok: false; reason: 'timeout' | 'error' }> {
+): Promise<
+  | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
+  | { ok: false; reason: 'timeout' | 'error' }
+> {
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     const messages = await getSessionMessagesServer(sessionID, workspace);
     const newIDs = new Set(
       messages.filter((m) => !knownIDs.has(m.info.id)).map((m) => m.info.id),
     );
-    const errored = messages.some(
-      (m) => newIDs.has(m.info.id) && m.info.role === 'assistant' && m.info.error,
+    const newAssistants = messages.filter(
+      (m) => newIDs.has(m.info.id) && m.info.role === 'assistant',
     );
-    if (errored) return { ok: false, reason: 'error' };
-    const completed = messages.some(
-      (m) => newIDs.has(m.info.id) && isAssistantComplete(m),
+    if (newAssistants.length === 0) continue;
+
+    if (newAssistants.some((m) => !!m.info.error)) {
+      return { ok: false, reason: 'error' };
+    }
+
+    // Any turn still running? Keep polling.
+    if (newAssistants.some((m) => !m.info.time.completed)) continue;
+
+    // All turns completed; require a quiet window so we don't catch a
+    // between-step state where the next message is about to be created.
+    const lastCompletedAt = Math.max(
+      ...newAssistants
+        .map((m) => m.info.time.completed)
+        .filter((t): t is number => t != null),
     );
-    if (completed) return { ok: true, messages, newIDs };
+    if (Date.now() - lastCompletedAt < SESSION_IDLE_QUIET_MS) continue;
+
+    return { ok: true, messages, newIDs };
   }
   return { ok: false, reason: 'timeout' };
 }
@@ -241,7 +278,7 @@ export async function tickCoordinator(
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
-  const waited = await waitForNewAssistantTurn(
+  const waited = await waitForSessionIdle(
     sessionID,
     meta.workspace,
     knownIDs,

@@ -28,11 +28,11 @@ import {
   getSessionMessagesServer,
   postSessionMessageServer,
 } from '../opencode-server';
+import { waitForSessionIdle } from './coordinator';
 import { insertBoardItem, listBoardItems } from './store';
 import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
-const POLL_INTERVAL_MS = 1000;
 const DEFAULT_TIMEOUT_MS = 90_000;
 
 export interface PlannerSweepResult {
@@ -104,10 +104,6 @@ function latestTodosFrom(
   return latest;
 }
 
-function isAssistantComplete(m: OpencodeMessage): boolean {
-  return m.info.role === 'assistant' && !!m.info.time.completed;
-}
-
 export async function runPlannerSweep(
   swarmRunID: string,
   opts: { timeoutMs?: number; overwrite?: boolean } = {},
@@ -136,49 +132,53 @@ export async function runPlannerSweep(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
 
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-    const messages = await getSessionMessagesServer(sessionID, meta.workspace);
-    const newIDs = new Set(
-      messages.filter((m) => !knownIDs.has(m.info.id)).map((m) => m.info.id),
-    );
-    const completed = messages.some(
-      (m) => newIDs.has(m.info.id) && isAssistantComplete(m),
-    );
-    if (!completed) continue;
-
-    const latest = latestTodosFrom(messages, newIDs);
-    if (!latest) {
-      // Assistant finished but didn't call todowrite. Return empty items —
-      // caller can decide whether to retry with a stricter prompt.
-      return { items: [], sessionID, planMessageID: null };
+  // waitForSessionIdle waits for every new assistant message to complete AND
+  // a brief quiet window — so we get the FULL response, not the first step.
+  // Without this, a model that reads a file first (tool:read step) before
+  // calling todowrite would race us: we'd catch the read step completing,
+  // find no todowrite in scope, and exit with 0 items.
+  const waited = await waitForSessionIdle(
+    sessionID,
+    meta.workspace,
+    knownIDs,
+    deadline,
+  );
+  if (!waited.ok) {
+    if (waited.reason === 'timeout') {
+      throw new Error(`planner sweep timed out after ${timeoutMs}ms`);
     }
-
-    // Spread createdAtMs by 1ms per item so the board's ORDER BY on
-    // created_ms produces a stable order within a sweep. Without this,
-    // every item in a batch shares Date.now() and ties fall through to
-    // listBoardItems' id ASC secondary sort — which works, but this way
-    // the timestamps themselves carry authoring order, which keeps the
-    // preview UI (ordered by createdAtMs in JS land) consistent without
-    // needing to also know about the SQL tiebreaker.
-    const baseMs = Date.now();
-    const items: BoardItem[] = [];
-    let offset = 0;
-    for (const raw of latest.todos) {
-      const content = raw.content.trim();
-      if (!content) continue;
-      const item = insertBoardItem(swarmRunID, {
-        id: mintItemId(),
-        kind: 'todo',
-        content,
-        status: 'open',
-        createdAtMs: baseMs + offset,
-      });
-      offset += 1;
-      items.push(item);
-    }
-    return { items, sessionID, planMessageID: latest.messageId };
+    throw new Error('planner sweep failed: assistant turn errored');
   }
 
-  throw new Error(`planner sweep timed out after ${timeoutMs}ms`);
+  const latest = latestTodosFrom(waited.messages, waited.newIDs);
+  if (!latest) {
+    // Assistant finished but didn't call todowrite. Return empty items —
+    // caller can decide whether to retry with a stricter prompt.
+    return { items: [], sessionID, planMessageID: null };
+  }
+
+  // Spread createdAtMs by 1ms per item so the board's ORDER BY on
+  // created_ms produces a stable order within a sweep. Without this,
+  // every item in a batch shares Date.now() and ties fall through to
+  // listBoardItems' id ASC secondary sort — which works, but this way
+  // the timestamps themselves carry authoring order, which keeps the
+  // preview UI (ordered by createdAtMs in JS land) consistent without
+  // needing to also know about the SQL tiebreaker.
+  const baseMs = Date.now();
+  const items: BoardItem[] = [];
+  let offset = 0;
+  for (const raw of latest.todos) {
+    const content = raw.content.trim();
+    if (!content) continue;
+    const item = insertBoardItem(swarmRunID, {
+      id: mintItemId(),
+      kind: 'todo',
+      content,
+      status: 'open',
+      createdAtMs: baseMs + offset,
+    });
+    offset += 1;
+    items.push(item);
+  }
+  return { items, sessionID, planMessageID: latest.messageId };
 }
