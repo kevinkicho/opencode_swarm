@@ -3,7 +3,13 @@
 import clsx from 'clsx';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { deriveBoardAgents, useLiveBoard } from '@/lib/blackboard/live';
+import {
+  deriveBoardAgents,
+  useLiveBoard,
+  useLiveTicker,
+  type LiveTicker,
+  type TickerState,
+} from '@/lib/blackboard/live';
 import type { BoardAgent, BoardItem, BoardItemKind, BoardItemStatus } from '@/lib/blackboard/types';
 import { Tooltip } from './ui/tooltip';
 
@@ -71,6 +77,7 @@ export function BoardRail({
   embedded?: boolean;
 }) {
   const live = useLiveBoard(swarmRunID);
+  const ticker = useLiveTicker(swarmRunID);
   const items = live.items ?? [];
 
   const agents = useMemo(() => deriveBoardAgents(items), [items]);
@@ -146,14 +153,17 @@ export function BoardRail({
   );
 
   const footer = (
-    <Link
-      href={`/board-preview?swarmRun=${swarmRunID}`}
-      className="h-6 hairline-t px-3 flex items-center gap-1 font-mono text-micro uppercase tracking-widest2 text-fog-600 hover:text-fog-200 hover:bg-ink-800/60 transition shrink-0"
-      title="open full board view"
-    >
-      full board
-      <span className="text-fog-700 group-hover:text-fog-400">→</span>
-    </Link>
+    <>
+      <TickerChip ticker={ticker} />
+      <Link
+        href={`/board-preview?swarmRun=${swarmRunID}`}
+        className="h-6 hairline-t px-3 flex items-center gap-1 font-mono text-micro uppercase tracking-widest2 text-fog-600 hover:text-fog-200 hover:bg-ink-800/60 transition shrink-0"
+        title="open full board view"
+      >
+        full board
+        <span className="text-fog-700 group-hover:text-fog-400">→</span>
+      </Link>
+    </>
   );
 
   if (embedded) {
@@ -277,4 +287,115 @@ function BoardRailRow({
       </div>
     </Tooltip>
   );
+}
+
+// TickerChip — surfaces the per-run auto-ticker state as a compact footer row.
+// Three shapes:
+//   - none     → fog dot, "none" (no ticker has ever run for this swarmRunID)
+//   - active   → mint dot (pulse while inFlight), idle counter "idle N/M" when
+//                consecutiveIdle > 0, tone escalates to amber past ⅔ of the
+//                auto-idle threshold so the user sees "about to stop" coming.
+//   - stopped  → amber dot, reason label, inline "restart" button. Clicking
+//                calls ticker.start() which hits POST /board/ticker {start}.
+// Title attribute carries started/last-tick/last-outcome detail for hover
+// inspection; the visible line stays h-6-friendly.
+function TickerChip({ ticker }: { ticker: LiveTicker }) {
+  const { state } = ticker;
+
+  if (state.state === 'none') {
+    return (
+      <div
+        className="h-6 hairline-t px-3 flex items-center gap-2 shrink-0 bg-ink-900/30"
+        title={ticker.error ?? 'no ticker has run for this run yet'}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-fog-700 shrink-0" />
+        <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
+          ticker
+        </span>
+        <span className="font-mono text-[10px] text-fog-700 ml-auto">none</span>
+      </div>
+    );
+  }
+
+  if (state.state === 'active') {
+    const { consecutiveIdle, idleThreshold, inFlight } = state;
+    const idleRatio = idleThreshold > 0 ? consecutiveIdle / idleThreshold : 0;
+    const idleTone =
+      consecutiveIdle === 0
+        ? 'text-mint'
+        : idleRatio >= 0.66
+          ? 'text-amber'
+          : 'text-fog-400';
+    return (
+      <div
+        className="h-6 hairline-t px-3 flex items-center gap-2 shrink-0 bg-ink-900/30"
+        title={ticker.error ?? tickerActiveTitle(state)}
+      >
+        <span
+          className={clsx(
+            'w-1.5 h-1.5 rounded-full shrink-0 bg-mint',
+            inFlight && 'animate-pulse',
+          )}
+        />
+        <span className="font-mono text-micro uppercase tracking-widest2 text-mint">
+          ticker
+        </span>
+        <span className={clsx('font-mono text-[10px] tabular-nums ml-auto', idleTone)}>
+          {inFlight
+            ? 'tick…'
+            : consecutiveIdle > 0
+              ? `idle ${consecutiveIdle}/${idleThreshold}`
+              : 'running'}
+        </span>
+      </div>
+    );
+  }
+
+  const reasonLabel = state.stopReason === 'auto-idle' ? 'auto-idle' : 'manual';
+  return (
+    <div
+      className="h-6 hairline-t px-3 flex items-center gap-2 shrink-0 bg-ink-900/30"
+      title={ticker.error ?? tickerStoppedTitle(state)}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-amber/70 shrink-0" />
+      <span className="font-mono text-micro uppercase tracking-widest2 text-amber">
+        ticker
+      </span>
+      <span className="font-mono text-[10px] text-fog-500 truncate">
+        stopped · {reasonLabel}
+      </span>
+      <button
+        type="button"
+        onClick={() => void ticker.start()}
+        disabled={ticker.busy}
+        className="ml-auto font-mono text-micro uppercase tracking-widest2 text-iris hover:text-iris/80 disabled:opacity-40 disabled:cursor-not-allowed"
+      >
+        {ticker.busy ? '…' : 'restart'}
+      </button>
+    </div>
+  );
+}
+
+function tickerActiveTitle(s: Extract<TickerState, { state: 'active' }>): string {
+  const parts = [`started ${formatAgo(s.startedAtMs)} ago`];
+  if (s.lastRanAtMs) parts.push(`last tick ${formatAgo(s.lastRanAtMs)} ago`);
+  if (s.lastOutcome) parts.push(`last outcome: ${s.lastOutcome.status}`);
+  parts.push(`interval ${Math.round(s.intervalMs / 1000)}s`);
+  return parts.join(' · ');
+}
+
+function tickerStoppedTitle(s: Extract<TickerState, { state: 'stopped' }>): string {
+  const parts = [`started ${formatAgo(s.startedAtMs)} ago`];
+  if (s.stoppedAtMs) parts.push(`stopped ${formatAgo(s.stoppedAtMs)} ago`);
+  parts.push(`reason: ${s.stopReason ?? 'manual'}`);
+  if (s.lastOutcome) parts.push(`last outcome: ${s.lastOutcome.status}`);
+  return parts.join(' · ');
+}
+
+function formatAgo(t: number): string {
+  const s = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m}m`;
+  return `${Math.round(m / 60)}h`;
 }

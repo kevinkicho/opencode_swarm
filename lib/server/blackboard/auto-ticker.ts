@@ -33,12 +33,16 @@ import { tickCoordinator, type TickOutcome } from './coordinator';
 const DEFAULT_INTERVAL_MS = 10_000;
 const IDLE_TICKS_BEFORE_STOP = 6;
 
+export type StopReason = 'auto-idle' | 'manual';
+
 interface TickerState {
   swarmRunID: string;
   intervalMs: number;
-  timer: NodeJS.Timeout;
+  timer: NodeJS.Timeout | null;
   inFlight: boolean;
   stopped: boolean;
+  stoppedAtMs?: number;
+  stopReason?: StopReason;
   consecutiveIdle: number;
   lastOutcome?: TickOutcome;
   lastRanAtMs?: number;
@@ -80,7 +84,7 @@ async function tickOnce(swarmRunID: string): Promise<void> {
         console.log(
           `[board/auto-ticker] ${swarmRunID}: idle for ${IDLE_TICKS_BEFORE_STOP} ticks — stopping`,
         );
-        stopAutoTicker(swarmRunID);
+        stopAutoTicker(swarmRunID, 'auto-idle');
       }
     } else {
       s.consecutiveIdle = 0;
@@ -109,6 +113,11 @@ export interface AutoTickerOpts {
 // already running, reset its idle counter so new activity can restart a
 // run that had auto-stopped. The interval on the existing timer is left
 // alone — changing cadence means stopping and starting fresh.
+//
+// On restart after a stopped entry, we reuse the map slot rather than
+// dropping the historical state — this way counters like startedAtMs
+// reset to wall-clock now but the caller still reads a coherent single
+// state (not "deleted then re-created" across a brief window).
 export function startAutoTicker(
   swarmRunID: string,
   opts: AutoTickerOpts = {},
@@ -136,37 +145,75 @@ export function startAutoTicker(
     timer,
     inFlight: false,
     stopped: false,
+    stoppedAtMs: undefined,
+    stopReason: undefined,
     consecutiveIdle: 0,
+    // Preserve lastOutcome / lastRanAtMs if we're restarting a previously
+    // stopped ticker — it's useful context in the UI ("restarted, last
+    // activity was 2m ago"). startedAtMs always reflects *this* run.
+    lastOutcome: existing?.lastOutcome,
+    lastRanAtMs: existing?.lastRanAtMs,
     startedAtMs: Date.now(),
   });
 }
 
-export function stopAutoTicker(swarmRunID: string): void {
+// Stop the ticker but KEEP the map entry so observers can distinguish
+// "never started" (no entry) from "ran and stopped" (stopped: true).
+// `reason` records why: 'auto-idle' after the idle-ticks threshold;
+// 'manual' from an explicit user action through the control route.
+// Entries persist for the life of the process — at prototype scale
+// (dozens of runs per session) this is a few hundred bytes total.
+export function stopAutoTicker(swarmRunID: string, reason: StopReason = 'manual'): void {
   const s = tickers().get(swarmRunID);
-  if (!s) return;
+  if (!s || s.stopped) return;
   s.stopped = true;
-  clearInterval(s.timer);
-  tickers().delete(swarmRunID);
+  s.stoppedAtMs = Date.now();
+  s.stopReason = reason;
+  if (s.timer) clearInterval(s.timer);
+  s.timer = null;
 }
 
-// Observability: surface current tickers for a debug route / smoke script.
-// Read-only; mutating the returned objects is not supported.
-export function listAutoTickers(): Array<{
+// Shape handed to clients via /api/swarm/run/:id/ticker. Keep this in
+// sync with components/board-rail.tsx's TickerChip expectations.
+export interface TickerSnapshot {
   swarmRunID: string;
   intervalMs: number;
   inFlight: boolean;
+  stopped: boolean;
+  stoppedAtMs?: number;
+  stopReason?: StopReason;
   consecutiveIdle: number;
+  idleThreshold: number;
   lastOutcome?: TickOutcome;
   lastRanAtMs?: number;
   startedAtMs: number;
-}> {
-  return [...tickers().values()].map((s) => ({
+}
+
+function snapshot(s: TickerState): TickerSnapshot {
+  return {
     swarmRunID: s.swarmRunID,
     intervalMs: s.intervalMs,
     inFlight: s.inFlight,
+    stopped: s.stopped,
+    stoppedAtMs: s.stoppedAtMs,
+    stopReason: s.stopReason,
     consecutiveIdle: s.consecutiveIdle,
+    idleThreshold: IDLE_TICKS_BEFORE_STOP,
     lastOutcome: s.lastOutcome,
     lastRanAtMs: s.lastRanAtMs,
     startedAtMs: s.startedAtMs,
-  }));
+  };
+}
+
+// Observability: surface current tickers for a debug route / smoke script.
+export function listAutoTickers(): TickerSnapshot[] {
+  return [...tickers().values()].map(snapshot);
+}
+
+// Single-run observability — feeds the board-rail ticker chip. Returns
+// null when no ticker has ever run for this id (vs. stopped, which keeps
+// an entry in the map with stopped: true).
+export function getTickerSnapshot(swarmRunID: string): TickerSnapshot | null {
+  const s = tickers().get(swarmRunID);
+  return s ? snapshot(s) : null;
 }

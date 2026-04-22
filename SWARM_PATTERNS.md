@@ -60,9 +60,13 @@ sessions into one logical run.
 > `scripts/_board_api_smoke.mjs`; coordinator pipeline verified by
 > driving `POST /board/tick` manually before wiring the auto-ticker;
 > end-to-end (create → sweep → ticker → done) verified by
-> `scripts/_blackboard_e2e_watch.mjs`. Still unwritten: SSE multiplex
-> for cross-session live updates in the board view (today's 2s polling
-> covers the gap), and a UI surface for auto-ticker state / restart.
+> `scripts/_blackboard_e2e_watch.mjs`. **Ticker-state surface shipped
+> 2026-04-21:** the rail footer shows `ticker · running` / `idle N/6`
+> (tone escalates to amber past ⅔ of the idle threshold) / `stopped ·
+> auto-idle|manual` with an inline `restart` action, backed by `GET`/`POST
+> /api/swarm/run/:id/board/ticker` and the shared `useLiveTicker` hook in
+> `lib/blackboard/live.ts`. Still unwritten: SSE multiplex for cross-session
+> live updates in the board view (today's 2s polling covers the gap).
 
 
 Agents post `claim`, `question`, `todo`, `finding` items to a shared board
@@ -271,7 +275,7 @@ landed against a pattern with simpler semantics.
 | # | Preset        | Status | Notes                                                                          |
 |---|---------------|--------|--------------------------------------------------------------------------------|
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
-| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview + coordinator + auto-ticker + UI picker + inline rail ship; SSE mux + ticker-state surface tbd |
+| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview + coordinator + auto-ticker + UI picker + inline rail + ticker-state surface ship; SSE mux tbd |
 | 3 | `map-reduce`  | `[ ]`  | Reuses blackboard's mux; synthesize phase claimed from the board, not pinned  |
 | 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 
