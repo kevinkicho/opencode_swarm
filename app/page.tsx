@@ -1,5 +1,6 @@
 'use client';
 
+import clsx from 'clsx';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -7,6 +8,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
+import { TurnCardsView } from '@/components/turn-cards-view';
 import { Inspector } from '@/components/inspector';
 // Modals and drawers below are gated by `open={...}` state that defaults to
 // closed — they cost 0 visual rent until the user opens them. Lazy-loading
@@ -82,8 +84,10 @@ import {
   toRunPlan,
   toProviderSummary,
   toLiveTurns,
+  toTurnCards,
   parseSessionDiffs,
   type LiveTurn,
+  type TurnCard,
 } from '@/lib/opencode/transform';
 import { tokensForBudget } from '@/lib/opencode/pricing';
 import type { DiffData } from '@/lib/types';
@@ -99,6 +103,7 @@ interface SwarmView {
   providerSummary: ProviderSummary[];
   runPlan: TodoItem[];
   liveTurns: LiveTurn[];
+  turnCards: TurnCard[];
 }
 
 // Zero-state view for "no run active" — topbar chips render as 0/placeholder,
@@ -123,6 +128,7 @@ const EMPTY_VIEW: SwarmView = {
   providerSummary: [],
   runPlan: [],
   liveTurns: [],
+  turnCards: [],
 };
 
 export default function Page() {
@@ -224,6 +230,7 @@ function PageInner() {
         providerSummary: toProviderSummary(agents, merged),
         runPlan: toRunPlan(merged),
         liveTurns: toLiveTurns(merged),
+        turnCards: toTurnCards(merged),
       };
     }
     if (sessionId && liveData) {
@@ -237,6 +244,7 @@ function PageInner() {
         providerSummary: toProviderSummary(agents, liveData.messages),
         runPlan: toRunPlan(liveData.messages),
         liveTurns: toLiveTurns(liveData.messages),
+        turnCards: toTurnCards(liveData.messages),
       };
     }
     return EMPTY_VIEW;
@@ -255,7 +263,7 @@ function PageInner() {
     );
   }, [view.agents, permissions.pending.length]);
 
-  const { agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns } = view;
+  const { agentOrder, messages, runMeta, providerSummary, runPlan, liveTurns, turnCards } = view;
 
   const paletteNodes: TimelineNode[] = useMemo(
     () =>
@@ -309,6 +317,7 @@ function PageInner() {
         liveDirectory={liveDirectory}
         permissions={permissions}
         liveTurns={liveTurns}
+        turnCards={turnCards}
         liveLastUpdated={liveSwarmRun.lastUpdated ?? liveData?.lastUpdated ?? null}
         swarmRunID={swarmRunID}
         swarmRunMeta={swarmRun.meta}
@@ -332,6 +341,7 @@ function PageBody({
   liveDirectory,
   permissions,
   liveTurns,
+  turnCards,
   liveLastUpdated,
   swarmRunID,
   swarmRunMeta,
@@ -350,6 +360,7 @@ function PageBody({
   liveDirectory: string | null;
   permissions: ReturnType<typeof useLivePermissions>;
   liveTurns: LiveTurn[];
+  turnCards: TurnCard[];
   liveLastUpdated: number | null;
   swarmRunID: string | null;
   swarmRunMeta: SwarmRunMeta | null;
@@ -377,6 +388,11 @@ function PageBody({
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
   const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board'>('plan');
   const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
+  // Main-panel view toggle. Timeline = cross-lane event flow (default);
+  // cards = per-turn conversation cards. The cards view is a complement —
+  // it collapses tool calls into chip rows but loses the wire/A2A topology
+  // the timeline exists to show. See DESIGN.md §2.
+  const [runView, setRunView] = useState<'timeline' | 'cards'>('timeline');
 
   const jumpToTodo = useCallback((todoId: string) => {
     setLeftTab('plan');
@@ -580,18 +596,53 @@ function PageBody({
           }
         />
 
-        <SwarmTimeline
-          agents={agents}
-          messages={messages}
-          agentOrder={agentOrder}
-          focusedId={focusedMsgId}
-          onFocus={focusMessage}
-          onClearFocus={clearFocus}
-          selectedAgentId={selectedAgentId}
-          onSelectAgent={selectAgent}
-          todos={runPlan}
-          onJumpToTodo={jumpToTodo}
-        />
+        <section className="flex-1 flex flex-col min-w-0 min-h-0">
+          <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
+            <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">view</span>
+            <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
+              {(['timeline', 'cards'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setRunView(v)}
+                  className={clsx(
+                    'h-5 px-2 rounded-sm transition-colors cursor-pointer',
+                    runView === v
+                      ? 'bg-molten/15 text-molten'
+                      : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
+                  )}
+                >
+                  {v}
+                </button>
+              ))}
+            </div>
+            <div className="flex-1" />
+            <span className="font-mono text-micro tabular-nums text-fog-700">
+              {runView === 'timeline' ? `${messages.length} events` : `${turnCards.length} turns`}
+            </span>
+          </div>
+          {runView === 'timeline' ? (
+            <SwarmTimeline
+              agents={agents}
+              messages={messages}
+              agentOrder={agentOrder}
+              focusedId={focusedMsgId}
+              onFocus={focusMessage}
+              onClearFocus={clearFocus}
+              selectedAgentId={selectedAgentId}
+              onSelectAgent={selectAgent}
+              todos={runPlan}
+              onJumpToTodo={jumpToTodo}
+            />
+          ) : (
+            <TurnCardsView
+              cards={turnCards}
+              agents={agents}
+              focusedId={focusedMsgId}
+              onFocus={focusMessage}
+            />
+          )}
+        </section>
       </main>
 
       <PermissionStrip

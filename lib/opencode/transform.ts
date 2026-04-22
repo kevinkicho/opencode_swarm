@@ -723,6 +723,159 @@ function firstTextPart(parts: OpencodePart[]): string | undefined {
   return undefined;
 }
 
+// Card-view projection — one card per (user prompt → assistant reply) pair.
+// Unlike toLiveTurns (patch-gated), this preserves every turn including the
+// analysis / read-only ones where no files were touched. Used by the
+// turn-cards view as a complementary projection to the event-level timeline.
+export interface TurnCard {
+  id: string;                   // assistant messageID
+  sessionID: string;            // source session — matters for multi-session runs
+  agent: string;                // assistant agent name (from info.agent)
+  modelID?: string;             // opencode model id, e.g. 'big-pickle'
+  providerID?: string;          // opencode provider id, e.g. 'opencode' or 'zen'
+  userPrompt?: string;          // full user-prompt text (may be undefined for auto-dispatched turns)
+  assistantText?: string;       // concatenated assistant text parts
+  reasoningText?: string;       // concatenated reasoning parts, if any
+  tools: Array<{                // every tool call made during this turn
+    id: string;
+    name: string;
+    state: 'pending' | 'running' | 'completed' | 'error';
+    summary?: string;           // tool-specific one-liner (filepath, command, etc.)
+  }>;
+  filesTouched: string[];       // dedup'd from any patch parts in the turn
+  startedMs: number;            // info.time.created
+  completedMs?: number;         // info.time.completed — undefined for still-running turns
+  status: 'success' | 'in_progress' | 'failure' | 'aborted';
+  tokens?: number;              // info.tokens.total
+  cost?: number;                // info.cost
+}
+
+interface PartWithState {
+  type: string;
+  tool?: string;
+  state?: unknown;
+  id?: string;
+  [key: string]: unknown;
+}
+
+function toolStateOf(p: PartWithState): TurnCard['tools'][number]['state'] {
+  const s = p.state;
+  if (!s) return 'pending';
+  if (typeof s === 'object' && s !== null) {
+    const status = (s as { status?: string }).status;
+    if (status === 'pending' || status === 'running' || status === 'completed' || status === 'error') {
+      return status;
+    }
+  }
+  return 'pending';
+}
+
+function toolSummaryOf(p: PartWithState): string | undefined {
+  const input = (p.state as { input?: Record<string, unknown> } | undefined)?.input;
+  if (!input) return undefined;
+  // Tool-specific hints — pick the most useful single field per tool.
+  const pick = (key: string): string | undefined => {
+    const v = input[key];
+    return typeof v === 'string' && v ? v : undefined;
+  };
+  switch (p.tool) {
+    case 'read':
+    case 'write':
+    case 'edit':
+      return pick('filePath');
+    case 'bash':
+      return pick('command');
+    case 'grep':
+    case 'glob':
+      return pick('pattern');
+    case 'task':
+      return pick('description') ?? pick('prompt');
+    case 'webfetch':
+      return pick('url');
+    case 'todowrite':
+      return undefined; // todos surface elsewhere; no point repeating here
+    default: {
+      // Best-effort fallback — pick the first string value.
+      for (const v of Object.values(input)) {
+        if (typeof v === 'string' && v) return v;
+      }
+      return undefined;
+    }
+  }
+}
+
+export function toTurnCards(messages: OpencodeMessage[]): TurnCard[] {
+  const cards: TurnCard[] = [];
+  let pendingUserPrompt: string | undefined;
+
+  for (const m of messages) {
+    if (m.info.role === 'user') {
+      // Collect the full user text — not just the first line — so the card
+      // can render the whole prompt. Multiple text parts are joined.
+      const parts = m.parts.filter((p): p is Extract<OpencodePart, { type: 'text' }> => p.type === 'text');
+      const joined = parts.map((p) => p.text).join('\n').trim();
+      pendingUserPrompt = joined || undefined;
+      continue;
+    }
+    if (m.info.role !== 'assistant') continue;
+
+    const textParts = m.parts.filter((p): p is Extract<OpencodePart, { type: 'text' }> => p.type === 'text');
+    const reasoningParts = m.parts.filter(
+      (p): p is Extract<OpencodePart, { type: 'reasoning' }> => p.type === 'reasoning',
+    );
+    const toolParts = m.parts.filter(
+      (p): p is Extract<OpencodePart, { type: 'tool' }> => p.type === 'tool',
+    );
+    const patchParts = m.parts.filter(
+      (p): p is Extract<OpencodePart, { type: 'patch' }> => p.type === 'patch',
+    );
+
+    const assistantText = textParts.map((p) => p.text).join('\n').trim() || undefined;
+    const reasoningText = reasoningParts.map((p) => p.text).join('\n').trim() || undefined;
+
+    const tools: TurnCard['tools'] = toolParts.map((p) => {
+      const asRec = p as unknown as PartWithState;
+      return {
+        id: p.id,
+        name: p.tool ?? 'unknown',
+        state: toolStateOf(asRec),
+        summary: toolSummaryOf(asRec),
+      };
+    });
+
+    const filesTouched = Array.from(new Set(patchParts.flatMap((p) => p.files)));
+
+    const completedMs = m.info.time.completed;
+    let status: TurnCard['status'];
+    if (m.info.error?.name === 'MessageAbortedError') status = 'aborted';
+    else if (m.info.error) status = 'failure';
+    else if (completedMs) status = 'success';
+    else status = 'in_progress';
+
+    cards.push({
+      id: m.info.id,
+      sessionID: m.info.sessionID,
+      agent: m.info.agent ?? 'assistant',
+      modelID: m.info.modelID,
+      providerID: m.info.providerID,
+      userPrompt: pendingUserPrompt,
+      assistantText,
+      reasoningText,
+      tools,
+      filesTouched,
+      startedMs: m.info.time.created,
+      completedMs,
+      status,
+      tokens: m.info.tokens?.total,
+      cost: m.info.cost,
+    });
+
+    pendingUserPrompt = undefined;
+  }
+
+  return cards;
+}
+
 function fmtClock(ms: number): string {
   const d = new Date(ms);
   const hh = d.getHours().toString().padStart(2, '0');
