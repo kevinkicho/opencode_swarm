@@ -61,12 +61,18 @@ function hydrate(row: BoardRow): BoardItem {
 // Board view: every item for a run, newest-first. The UI (board-preview
 // today, live view later) does its own column grouping and filtering;
 // returning the flat list keeps the API surface narrow.
+//
+// `id ASC` as the secondary sort breaks ties deterministically — matters
+// for the coordinator's "oldest open todo wins" picker, which takes the
+// last element of this list. Sweep-inserted batches share a wall-clock
+// ms, so without the tiebreaker two ticks could pick different items
+// depending on SQLite's internal row order.
 export function listBoardItems(swarmRunID: string): BoardItem[] {
   const rows = blackboardDb()
     .prepare(
       `SELECT * FROM board_items
        WHERE swarm_run_id = ?
-       ORDER BY created_ms DESC`,
+       ORDER BY created_ms DESC, id ASC`,
     )
     .all(swarmRunID) as BoardRow[];
   return rows.map(hydrate);

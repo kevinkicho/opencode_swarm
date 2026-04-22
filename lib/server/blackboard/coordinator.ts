@@ -93,6 +93,22 @@ function extractEditedPaths(
   return [...paths];
 }
 
+// opencode reports absolute paths in `patch.files` (e.g. on Windows,
+// `C:/Users/.../components/foo.tsx`). The board stores fileHashes for
+// cross-run comparison — absolute host paths make those records useless
+// if the repo ever moves. Relativize against the run's workspace and
+// normalize to forward slashes; fall back to the absolute path if the
+// edit landed outside the workspace (e.g. a shared config), since we'd
+// rather record something truthful than pretend an out-of-tree edit is
+// local.
+function relativizeToWorkspace(workspace: string, p: string): string {
+  const rel = path.relative(workspace, p);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
+    return p.replace(/\\/g, '/');
+  }
+  return rel.replace(/\\/g, '/');
+}
+
 function buildWorkPrompt(item: BoardItem): string {
   return [
     'Blackboard work prompt.',
@@ -242,12 +258,19 @@ export async function tickCoordinator(
     return { status: 'stale', sessionID, itemID: todo.id, reason };
   }
 
-  const editedPaths = extractEditedPaths(waited.messages, waited.newIDs);
+  const rawEditedPaths = extractEditedPaths(waited.messages, waited.newIDs);
+  const editedPaths = rawEditedPaths.map((p) =>
+    relativizeToWorkspace(meta.workspace, p),
+  );
 
   // Hash whatever was edited. A turn that produced no edits (skip: / text
   // answer / q-reply) still commits to done — the todo was addressed, just
   // without a patch. That's a legitimate outcome for questions or no-op
   // todos and the board reflects it as `done` with empty fileHashes.
+  //
+  // `rel` here may be relative (the common case — an in-workspace edit) or
+  // absolute (out-of-tree edit, already normalized to forward slashes).
+  // path.resolve handles both: an absolute arg wins over the base.
   const fileHashes: { path: string; sha: string }[] = [];
   for (const rel of editedPaths) {
     try {

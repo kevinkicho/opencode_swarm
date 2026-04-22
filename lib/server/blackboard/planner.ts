@@ -154,7 +154,16 @@ export async function runPlannerSweep(
       return { items: [], sessionID, planMessageID: null };
     }
 
+    // Spread createdAtMs by 1ms per item so the board's ORDER BY on
+    // created_ms produces a stable order within a sweep. Without this,
+    // every item in a batch shares Date.now() and ties fall through to
+    // listBoardItems' id ASC secondary sort — which works, but this way
+    // the timestamps themselves carry authoring order, which keeps the
+    // preview UI (ordered by createdAtMs in JS land) consistent without
+    // needing to also know about the SQL tiebreaker.
+    const baseMs = Date.now();
     const items: BoardItem[] = [];
+    let offset = 0;
     for (const raw of latest.todos) {
       const content = raw.content.trim();
       if (!content) continue;
@@ -163,7 +172,9 @@ export async function runPlannerSweep(
         kind: 'todo',
         content,
         status: 'open',
+        createdAtMs: baseMs + offset,
       });
+      offset += 1;
       items.push(item);
     }
     return { items, sessionID, planMessageID: latest.messageId };
