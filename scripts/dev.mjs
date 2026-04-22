@@ -7,6 +7,7 @@
 import net from 'node:net';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 
 const PORT_FILE = '.dev-port';
 const MIN = 49152;
@@ -40,6 +41,39 @@ async function resolvePort() {
   writeFileSync(PORT_FILE, String(picked));
   return picked;
 }
+
+// Pre-flight: better-sqlite3's native binding is platform-specific. If the
+// last `npm install` / `npm rebuild` ran on a different platform than this
+// one (e.g. installed on Windows, now starting dev from WSL), the require
+// throws ERR_DLOPEN_FAILED *inside* the blackboard DB path — which is only
+// hit once a swarm run spawns, so the failure surfaces minutes later as a
+// silently-dead planner sweep. Check up front and tell the user exactly
+// what to run. Cost: one require on startup.
+function preflightNativeModules() {
+  const require = createRequire(import.meta.url);
+  try {
+    require('better-sqlite3');
+  } catch (err) {
+    const code = err && err.code;
+    if (code === 'MODULE_NOT_FOUND') {
+      console.error(
+        '\n[dev] better-sqlite3 is not installed. Run `npm install` first.\n',
+      );
+    } else if (code === 'ERR_DLOPEN_FAILED') {
+      console.error(
+        '\n[dev] better-sqlite3 native binding is built for a different platform\n' +
+          `      (process.platform=${process.platform}, process.arch=${process.arch}).\n` +
+          '      Fix: `npm rebuild better-sqlite3`\n' +
+          '      Note: rebuilding in one environment breaks the other — WSL and\n' +
+          '      Windows each need their own rebuild after switching sides.\n',
+      );
+    } else {
+      console.error(`\n[dev] better-sqlite3 preflight failed: ${err.message}\n`);
+    }
+    process.exit(1);
+  }
+}
+preflightNativeModules();
 
 const port = await resolvePort();
 console.log(`\n[dev] using port ${port} (from ${PORT_FILE} — delete to reroll)\n`);
