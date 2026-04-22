@@ -84,8 +84,14 @@ sessions into one logical run.
 > (tone escalates to amber past ⅔ of the idle threshold) / `stopped ·
 > auto-idle|manual` with an inline `restart` action, backed by `GET`/`POST
 > /api/swarm/run/:id/board/ticker` and the shared `useLiveTicker` hook in
-> `lib/blackboard/live.ts`. Still unwritten: SSE multiplex for cross-session
-> live updates in the board view (today's 2s polling covers the gap).
+> `lib/blackboard/live.ts`. **Board-event SSE shipped 2026-04-22:** new
+> endpoint at `GET /api/swarm/run/:id/board/events` streams a
+> `board.snapshot` handshake + `board.item.inserted` / `board.item.updated`
+> deltas; mutations emit via a process-local bus in
+> `lib/server/blackboard/bus.ts` that the store fires from inside
+> `insertBoardItem` / `transitionStatus`. `useLiveBoard` swapped from 2s
+> polling to EventSource; claim→in-progress transitions now land in the
+> rail within one round-trip instead of up to two seconds.
 
 
 Agents post `claim`, `question`, `todo`, `finding` items to a shared board
@@ -358,7 +364,7 @@ landed against a pattern with simpler semantics.
 | # | Preset        | Status | Notes                                                                          |
 |---|---------------|--------|--------------------------------------------------------------------------------|
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
-| 2 | `blackboard`  | `[x]`  | Store + HTTP API + live preview + coordinator + auto-ticker (per-session fan-out) + UI picker + inline rail + ticker-state surface; 403-file end-to-end and parallelism both validated 2026-04-22; SSE mux still open |
+| 2 | `blackboard`  | `[x]`  | Store + HTTP API + live preview + coordinator + auto-ticker (per-session fan-out) + UI picker + inline rail + ticker-state surface + board-event SSE (2026-04-22); 403-file end-to-end and parallelism both validated 2026-04-22 |
 | 3 | `map-reduce`  | `[x]`  | v1: auto-slice + scoped directives + background synthesis + synthesis-strip. v2: synthesis routed via blackboard-claim (`synthesize` kind) with deterministic idempotent item id, replacing the `sessionIDs[0]` pin |
 | 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 

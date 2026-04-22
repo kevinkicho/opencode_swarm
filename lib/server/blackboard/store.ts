@@ -9,6 +9,7 @@
 // enforces this at runtime by the __dirname path resolution.
 
 import { blackboardDb } from './db';
+import { emitBoardEvent } from './bus';
 import type {
   BoardItem,
   BoardItemKind,
@@ -128,6 +129,7 @@ export function insertBoardItem(
       `insertBoardItem: row ${input.id} not found after INSERT — DB invariant broken`,
     );
   }
+  emitBoardEvent(swarmRunID, { type: 'item.inserted', item });
   return item;
 }
 
@@ -219,6 +221,7 @@ export function transitionStatus(
       `transitionStatus: row ${itemId} disappeared between UPDATE and SELECT — DB invariant broken`,
     );
   }
+  emitBoardEvent(swarmRunID, { type: 'item.updated', item });
   return { ok: true, item };
 }
 

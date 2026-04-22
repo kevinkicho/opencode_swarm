@@ -31,18 +31,43 @@ export type TickerState =
   | ({ state: 'active' } & TickerSnapshot)
   | ({ state: 'stopped' } & TickerSnapshot);
 
-// Shared polling hook for the blackboard `/board` endpoint. Lives in
+// Shared hook for the blackboard `/board` stream. Lives in
 // `lib/blackboard/` so both the full board page (`/board-preview`) and the
 // inline board rail in the run view (`components/board-rail.tsx`) go through
-// one code path. SSE would be the eventual home, but board writes are
-// infrequent enough that 2s polling stays honest — see SWARM_PATTERNS.md §1
-// status block for where SSE mux sits on the roadmap.
-
-const POLL_INTERVAL_MS = 2000;
+// one code path. Uses SSE at `/board/events` — a handshake `board.snapshot`
+// carries the initial item list, subsequent `board.item.inserted` /
+// `board.item.updated` frames upsert by id. EventSource reconnects on its
+// own if the connection drops; the next snapshot frame on reconnect re-
+// bases the item map, so we don't need client-side resync logic.
+//
+// Shape note: both insert and update collapse to the same upsert — the
+// client just keeps one item per id. The server emits distinct types so
+// future instrumentation (e.g. "N claims / minute") can disambiguate
+// without an extra round-trip.
 
 export interface LiveBoard {
   items: BoardItem[] | null;
   error: string | null;
+}
+
+interface BoardSnapshotFrame {
+  type: 'board.snapshot';
+  items: BoardItem[];
+}
+interface BoardItemFrame {
+  type: 'board.item.inserted' | 'board.item.updated';
+  item: BoardItem;
+}
+type BoardFrame = BoardSnapshotFrame | BoardItemFrame;
+
+// listBoardItems on the server orders by (created_ms DESC, id ASC). Mirror
+// that here so incremental upserts don't drift from the shape a fresh GET
+// would produce.
+function sortBoardItems(items: BoardItem[]): BoardItem[] {
+  return [...items].sort((a, b) => {
+    if (b.createdAtMs !== a.createdAtMs) return b.createdAtMs - a.createdAtMs;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
 }
 
 export function useLiveBoard(swarmRunID: string | null): LiveBoard {
@@ -55,31 +80,40 @@ export function useLiveBoard(swarmRunID: string | null): LiveBoard {
       setError(null);
       return;
     }
-    let cancelled = false;
-    async function fetchOnce() {
+
+    // Map kept in a ref-like closure variable so repeated upserts in quick
+    // succession aren't serialized through React state — we recompute the
+    // array once per frame and hand it to setItems.
+    const byId = new Map<string, BoardItem>();
+
+    const es = new EventSource(`/api/swarm/run/${swarmRunID}/board/events`);
+
+    es.onmessage = (ev) => {
+      let frame: BoardFrame;
       try {
-        const r = await fetch(`/api/swarm/run/${swarmRunID}/board`, {
-          cache: 'no-store',
-        });
-        const data = await r.json();
-        if (cancelled) return;
-        if (!r.ok) {
-          setError((data as { error?: string }).error ?? `HTTP ${r.status}`);
-          setItems(null);
-          return;
-        }
-        setItems((data as { items: BoardItem[] }).items);
-        setError(null);
-      } catch (e) {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : String(e));
+        frame = JSON.parse(ev.data) as BoardFrame;
+      } catch {
+        return;
       }
-    }
-    fetchOnce();
-    const timer = setInterval(fetchOnce, POLL_INTERVAL_MS);
+      if (frame.type === 'board.snapshot') {
+        byId.clear();
+        for (const it of frame.items) byId.set(it.id, it);
+      } else {
+        byId.set(frame.item.id, frame.item);
+      }
+      setItems(sortBoardItems([...byId.values()]));
+      setError(null);
+    };
+
+    es.onerror = () => {
+      // EventSource auto-reconnects; surface the error so the UI can hint
+      // at a dropped stream, but don't clear items — the last snapshot is
+      // still the best view we have.
+      setError('board stream disconnected');
+    };
+
     return () => {
-      cancelled = true;
-      clearInterval(timer);
+      es.close();
     };
   }, [swarmRunID]);
 

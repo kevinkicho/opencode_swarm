@@ -468,7 +468,7 @@ Attribution precedence in `reducePart` (patch branch):
 
 - **Roster badge (shipped).** `ActiveTodoChip` in `components/agent-roster.tsx` shows every in-progress todo an agent owns; popover lists the full set and click-to-focus jumps to the Plan tab + flashes the row.
 - **Timeline affordance (shipped).** A `task` delegation card surfaces the originating todo item inline as a `todo·X` button (`components/timeline-flow.tsx`); hover shows the full content, click jumps to the Plan tab.
-- **Inspector drawer (partial).** Plan → timeline hop still TODO — clicking a todo in the plan rail should scroll the timeline to the bound `task` card. The reverse hop (timeline → plan) is live.
+- **Inspector drawer (shipped).** Plan → timeline hop lives in `components/timeline-flow.tsx` — when `focusedId` changes (from a plan-rail click that calls `onJump(taskMessageId)` → `focusMessage` in `app/page.tsx`), a `useEffect` scrolls the virtualizer to the matching row and pans the lane column into view. The reverse hop (timeline → plan) is also live via `onJumpToTodo` → `jumpToTodo` → `setLeftTab('plan')` + `setFocusTodoId`.
 - **L2 rollup field (shipped).** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent. The reducer attributes each patch in priority order: (1) in-session `planState.inProgressHash` when the agent called `todowrite` before patching, (2) the parent task's injected `[todo:<id>]` prefix when the session was dispatched with one, (3) nothing. All IDs are `sha256(todo.content)[:16]` so the ID survives plan edits as long as the content is stable. The retro viewer resolves back to todo text by re-hashing the final plan's todos.
 
 ### 8.5 Open questions
