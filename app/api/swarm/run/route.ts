@@ -2,17 +2,20 @@
 // GET  /api/swarm/run — lists every persisted run (newest-first) for the
 //                       status-rail run picker.
 //
-// At v1 a "run" wraps exactly one opencode session (pattern='none'). The
-// surface is shaped for N sessions so the blackboard / map-reduce / council
-// patterns can light up here without breaking the wire contract. Those
-// patterns are rejected at request time (501) until their coordinator code
-// lands — see SWARM_PATTERNS.md §"Backend gap" for the roadmap.
+// A run wraps N opencode sessions under one swarm coordinator. N=1 for
+// pattern='none' (opencode native); N>=2 for multi-session presets like
+// 'council' where each session is a parallel member of the same run.
+// Patterns without coordinator code still reject at request time (501);
+// see SWARM_PATTERNS.md §"Backend gap" for the roadmap.
 //
 // Lifecycle on success:
-//   1. mint opencode session via createSessionServer()
-//   2. if directive is set, post it as the first message (fire-and-forget)
-//   3. persist meta.json via registry.createRun()
-//   4. return { swarmRunID, sessionIDs, meta } to the browser
+//   1. resolve effective teamSize (N) from pattern + request body
+//   2. mint N opencode sessions in parallel (Promise.allSettled) — partial
+//      success is accepted; zero survivors is a hard 502
+//   3. if directive is set, post it to every survivor in parallel
+//      (Promise.allSettled) — per-session failures log and continue
+//   4. persist meta.json via registry.createRun() with every survivor's id
+//   5. return { swarmRunID, sessionIDs, meta } to the browser
 //
 // Error shape matches the opencode proxy: { error, ...detail } with an
 // HTTP status that reflects who failed (400 = client, 501 = unsupported,
@@ -32,7 +35,30 @@ import type { SwarmPattern } from '@/lib/swarm-types';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set(['none']);
+const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set(['none', 'council']);
+
+// Hard cap on multi-session fan-out. Picked to stay well inside opencode's
+// parallel-prompt tolerance on the hosted Zen tier (probe margins, not a
+// hard SDK limit). If a pattern legitimately needs more, raise this after
+// measuring burst behavior — don't bypass it silently.
+const TEAM_SIZE_MAX = 8;
+
+// Pattern-specific defaults + floors. Encoded as a table so new patterns
+// opt in by adding a row, not by branching the validator:
+//   - `defaultSize`  is applied when the request omits teamSize
+//   - `minSize` / `maxSize` clamp what the body is allowed to carry
+// Patterns not in this table fall back to single-session (pattern='none'
+// shape) so unsupported presets still get sensible defaults if they ever
+// slip past SUPPORTED_PATTERNS.
+const PATTERN_TEAM_SIZE: Record<
+  SwarmPattern,
+  { defaultSize: number; minSize: number; maxSize: number }
+> = {
+  none: { defaultSize: 1, minSize: 1, maxSize: 1 },
+  council: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
+  blackboard: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
+  'map-reduce': { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
+};
 
 function isSwarmPattern(value: unknown): value is SwarmPattern {
   return (
@@ -73,8 +99,16 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.title = obj.title;
   }
   if (obj.teamSize !== undefined) {
-    if (typeof obj.teamSize !== 'number' || !Number.isFinite(obj.teamSize)) {
-      return 'teamSize must be a finite number';
+    if (
+      typeof obj.teamSize !== 'number' ||
+      !Number.isFinite(obj.teamSize) ||
+      !Number.isInteger(obj.teamSize)
+    ) {
+      return 'teamSize must be an integer';
+    }
+    const limits = PATTERN_TEAM_SIZE[req.pattern];
+    if (obj.teamSize < limits.minSize || obj.teamSize > limits.maxSize) {
+      return `teamSize for pattern '${req.pattern}' must be between ${limits.minSize} and ${limits.maxSize} (inclusive)`;
     }
     req.teamSize = obj.teamSize;
   }
@@ -117,55 +151,109 @@ export async function POST(req: NextRequest): Promise<Response> {
     return Response.json(
       {
         error: `pattern '${parsed.pattern}' is not implemented yet`,
-        hint: 'only pattern="none" ships at v1 — see SWARM_PATTERNS.md',
+        hint: 'pattern="none" and pattern="council" ship today — see SWARM_PATTERNS.md',
       },
       { status: 501 }
     );
   }
 
-  // Step 1: mint the opencode session. Title seed falls back to the first
-  // line of the directive so sessions that show up in opencode's session
-  // list have a human-readable label before the first model turn completes.
-  let session;
-  try {
-    const seedTitle = parsed.title ?? parsed.directive?.split('\n', 1)[0]?.trim();
-    session = await createSessionServer(parsed.workspace, seedTitle);
-  } catch (err) {
+  // Resolve effective teamSize. The body is authoritative when present (it
+  // was range-validated in parseRequest); otherwise fall back to the
+  // pattern's default. The resolved value is what drives how many sessions
+  // we spawn — meta.teamSize isn't persisted separately because
+  // meta.sessionIDs.length carries the truth.
+  const teamSize = parsed.teamSize ?? PATTERN_TEAM_SIZE[parsed.pattern].defaultSize;
+  const seedTitle = parsed.title ?? parsed.directive?.split('\n', 1)[0]?.trim();
+
+  // Step 1: mint N opencode sessions in parallel. Promise.allSettled rather
+  // than Promise.all so a partial failure (e.g. 2 of 3 spawn, one hits a
+  // transient opencode hiccup) still produces a viable run with the
+  // survivors. Zero survivors is a hard 502 — no amount of retry in the
+  // browser will recover a run that spawned no sessions.
+  //
+  // For N>1 we append a member suffix to the title so sessions show up
+  // distinctly in opencode's own UI. Single-session runs keep the title
+  // unchanged so 'none' output doesn't visually drift.
+  const titleFor = (idx: number): string | undefined => {
+    if (!seedTitle) return undefined;
+    return teamSize > 1 ? `${seedTitle} #${idx + 1}` : seedTitle;
+  };
+
+  const spawnResults = await Promise.allSettled(
+    Array.from({ length: teamSize }, (_, idx) =>
+      createSessionServer(parsed.workspace, titleFor(idx))
+    )
+  );
+
+  const sessions = spawnResults
+    .map((r, idx) => ({ result: r, idx }))
+    .filter(({ result }) => result.status === 'fulfilled')
+    .map(({ result, idx }) => ({
+      id: (result as PromiseFulfilledResult<Awaited<ReturnType<typeof createSessionServer>>>).value.id,
+      idx,
+    }));
+
+  const spawnFailures = spawnResults
+    .map((r, idx) => ({ result: r, idx }))
+    .filter(({ result }) => result.status === 'rejected');
+
+  for (const { result, idx } of spawnFailures) {
+    console.warn(
+      `[swarm/run] session ${idx + 1}/${teamSize} spawn failed:`,
+      (result as PromiseRejectedResult).reason instanceof Error
+        ? ((result as PromiseRejectedResult).reason as Error).message
+        : String((result as PromiseRejectedResult).reason)
+    );
+  }
+
+  if (sessions.length === 0) {
     return Response.json(
-      { error: 'opencode session create failed', message: (err as Error).message },
+      {
+        error: 'opencode session create failed',
+        message: `0 of ${teamSize} sessions spawned — opencode may be offline`,
+        attempts: teamSize,
+      },
       { status: 502 }
     );
   }
 
-  // Step 2: fire the first prompt if a directive was supplied. We await the
-  // POST so the browser sees a failure here as a 502, but opencode's
-  // /prompt_async returns before the model turn completes — the SSE stream
-  // is where progress actually shows up.
+  // Step 2: post the directive to every surviving session in parallel.
+  // Per-session failures log and continue — the session exists, the
+  // composer can re-fire the prompt, and one slow member shouldn't stall
+  // the fast ones. opencode's /prompt_async returns before the model turn
+  // completes, so the await here is just the HTTP ack, not the reply.
   if (parsed.directive && parsed.directive.trim()) {
-    try {
-      await postSessionMessageServer(session.id, parsed.workspace, parsed.directive);
-    } catch (err) {
-      // Don't abandon the run — the session exists, the meta write below
-      // will still succeed, and the user can re-prompt from the composer.
-      // Log and continue so the happy path isn't blocked by a transient
-      // opencode hiccup on the initial prompt.
-      console.warn('[swarm/run] initial directive post failed:', (err as Error).message);
-    }
+    const directive = parsed.directive;
+    const postResults = await Promise.allSettled(
+      sessions.map((s) =>
+        postSessionMessageServer(s.id, parsed.workspace, directive)
+      )
+    );
+    postResults.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.warn(
+          `[swarm/run] directive post failed for session ${sessions[i].id}:`,
+          r.reason instanceof Error ? r.reason.message : String(r.reason)
+        );
+      }
+    });
   }
 
-  // Step 3: persist meta.json. If this fails we've already created an
-  // opencode session — accept the orphan rather than introduce rollback.
-  // The user can see the session in opencode's own UI; our own ledger just
-  // won't know about it. Acceptable for a single-user prototype.
+  // Step 3: persist meta.json with every survivor. If this fails we've
+  // already created opencode sessions — accept the orphans rather than
+  // introduce rollback. The user can see them in opencode's own UI; our
+  // own ledger just won't know about them. Acceptable for a single-user
+  // prototype.
+  const sessionIDs = sessions.map((s) => s.id);
   let meta;
   try {
-    meta = await createRun(parsed, [session.id]);
+    meta = await createRun(parsed, sessionIDs);
   } catch (err) {
     return Response.json(
       {
         error: 'swarm-run registry write failed',
         message: (err as Error).message,
-        orphanSessionID: session.id,
+        orphanSessionIDs: sessionIDs,
       },
       { status: 500 }
     );
