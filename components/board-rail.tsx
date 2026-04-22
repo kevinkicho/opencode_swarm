@@ -34,6 +34,7 @@ const KIND_GLYPH: Record<BoardItemKind, string> = {
   question: '?',
   todo: '·',
   finding: '✓',
+  synthesize: 'Σ',
 };
 
 const KIND_TONE: Record<BoardItemKind, string> = {
@@ -41,6 +42,7 @@ const KIND_TONE: Record<BoardItemKind, string> = {
   question: 'text-amber',
   todo: 'text-fog-400',
   finding: 'text-mint',
+  synthesize: 'text-mint',
 };
 
 const ACCENT_BG: Record<BoardAgent['accent'], string> = {

@@ -4,11 +4,20 @@
 // annotation ("your slice: src/api/"). Sessions work in parallel; the backend
 // waits for all of them to go idle.
 //
-// Reduce phase: once every map session has settled, we post a synthesis
-// prompt to sessionIDs[0] with each sibling session's final text draft
-// embedded. sessionIDs[0] is a dispatcher choice, not a pinned "synthesizer
-// role" — see SWARM_PATTERNS.md §3 for the v2 target of routing synthesis
-// through a blackboard-claim so any idle session can pick it up.
+// Reduce phase (v2): once every map session has settled, we insert a single
+// `synthesize` item onto the run's blackboard with the full synthesis prompt
+// as its content. The coordinator's tick loop then picks the first idle
+// session, claims the item CAS-safely (open → claimed → in-progress), posts
+// the prompt verbatim, waits for the session to idle, and transitions the
+// item to done. Any idle session can win the claim — the synthesizer is a
+// phase, not a pinned role.
+//
+// Why this shape over "post to sessionIDs[0]": (a) the claim is observable
+// from the board (who ran synthesis, when, over which files) where before it
+// was invisible dispatcher state; (b) the item is idempotent under a
+// deterministic id, so a double-firing of this function produces one row
+// and one claim, not two; (c) the same CAS-lifecycle forensics that govern
+// blackboard todos now govern the reduce phase for free.
 //
 // Server-only. Never imported from client code.
 
@@ -16,11 +25,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { getRun } from './swarm-registry';
-import {
-  getSessionMessagesServer,
-  postSessionMessageServer,
-} from './opencode-server';
-import { waitForSessionIdle } from './blackboard/coordinator';
+import { getSessionMessagesServer } from './opencode-server';
+import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
+import { getBoardItem, insertBoardItem } from './blackboard/store';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
 // Directories we never include in an auto-slice. .git / node_modules / build
@@ -184,22 +191,71 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   }
 
   const synthesisPrompt = buildSynthesisPrompt(drafts, meta.directive);
-  const synthesizerSession = meta.sessionIDs[0];
-  try {
-    await postSessionMessageServer(
-      synthesizerSession,
-      meta.workspace,
-      synthesisPrompt,
-    );
+  const itemID = `synth_${swarmRunID}`;
+
+  // Idempotency guard. If this function fires twice (e.g. a retry after a
+  // transient failure upstream), the deterministic id lets us skip the
+  // duplicate insert and join whatever state the existing item is in.
+  const existing = getBoardItem(swarmRunID, itemID);
+  if (existing) {
     console.log(
-      `[map-reduce] run ${swarmRunID} — synthesis posted to ${synthesizerSession} with ${present.length}/${drafts.length} drafts`,
+      `[map-reduce] run ${swarmRunID} — synthesis item ${itemID} already exists (${existing.status}); skipping insert`,
     );
-  } catch (err) {
-    console.warn(
-      `[map-reduce] run ${swarmRunID} — synthesis post failed:`,
-      err instanceof Error ? err.message : String(err),
-    );
+  } else {
+    try {
+      insertBoardItem(swarmRunID, {
+        id: itemID,
+        kind: 'synthesize',
+        status: 'open',
+        content: synthesisPrompt,
+      });
+      console.log(
+        `[map-reduce] run ${swarmRunID} — synthesis item ${itemID} inserted with ${present.length}/${drafts.length} drafts`,
+      );
+    } catch (err) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — synthesis item insert failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
   }
+
+  // Direct tick loop rather than startAutoTicker: a synthesize item is a
+  // one-shot dispatch, not an ongoing work stream, so we don't need the
+  // auto-ticker's 6-idle auto-stop heuristic or its global timer state.
+  // Predictable failure mode: 5-minute overall deadline → log and exit,
+  // leaving the item observable on the board for forensics. Per-tick
+  // timeout (`tickCoordinator`'s inner waitForSessionIdle) still governs
+  // how long we wait for the synthesizer's own turn to complete.
+  const DISPATCH_DEADLINE_MS = 5 * 60 * 1000;
+  const TICK_INTERVAL_MS = 3000;
+  const dispatchDeadline = Date.now() + DISPATCH_DEADLINE_MS;
+
+  while (Date.now() < dispatchDeadline) {
+    const outcome = await tickCoordinator(swarmRunID);
+    if (outcome.status === 'picked' && outcome.itemID === itemID) {
+      console.log(
+        `[map-reduce] run ${swarmRunID} — synthesis claimed by ${outcome.sessionID} and completed`,
+      );
+      return;
+    }
+    if (outcome.status === 'stale' && outcome.itemID === itemID) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — synthesis stale: ${outcome.reason}`,
+      );
+      return;
+    }
+    // 'picked'/'stale' for a DIFFERENT item id is possible if the run is
+    // dual-mode (blackboard + map-reduce on the same swarmRunID, not a
+    // current combination but the store doesn't prevent it) — treat as
+    // progress and keep looping. 'skipped' just means try again soon.
+    await new Promise((r) => setTimeout(r, TICK_INTERVAL_MS));
+  }
+
+  console.warn(
+    `[map-reduce] run ${swarmRunID} — synthesis dispatch deadline exceeded; item ${itemID} left for forensics`,
+  );
 }
 
 // Pull the latest completed assistant text part. Mirrors the "last assistant

@@ -120,6 +120,12 @@ function relativizeToWorkspace(workspace: string, p: string): string {
 }
 
 function buildWorkPrompt(item: BoardItem): string {
+  // Synthesize items carry a complete, self-contained prompt (member drafts
+  // already embedded by the caller). Wrapping them in the blackboard-edit
+  // preamble would both mangle the synthesis directive and mislead the
+  // synthesizer into editing files. Post the content verbatim and let the
+  // CAS lifecycle handle progression.
+  if (item.kind === 'synthesize') return item.content;
   return [
     'Blackboard work prompt.',
     '',
@@ -200,11 +206,15 @@ export async function tickCoordinator(
     return { status: 'skipped', reason: 'run has no sessions' };
   }
 
-  // Work picker: oldest open todo wins. Oldest = lowest createdAtMs, which
-  // is the bottom of listBoardItems' newest-first output.
+  // Work picker: oldest open pickable item wins. Oldest = lowest createdAtMs,
+  // which is the bottom of listBoardItems' newest-first output. `synthesize`
+  // is claimable exactly like a todo — the only behavioral difference is the
+  // verbatim-content prompt shape (see buildWorkPrompt).
   const all = listBoardItems(swarmRunID);
   const openTodos = all.filter(
-    (i) => i.status === 'open' && (i.kind === 'todo' || i.kind === 'question'),
+    (i) =>
+      i.status === 'open' &&
+      (i.kind === 'todo' || i.kind === 'question' || i.kind === 'synthesize'),
   );
   if (openTodos.length === 0) {
     return { status: 'skipped', reason: 'no open todos' };

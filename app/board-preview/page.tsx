@@ -48,24 +48,27 @@ const COLUMNS: {
 ];
 
 const KIND_GLYPH: Record<BoardItemKind, string> = {
-  claim:    '◎',
-  question: '?',
-  todo:     '·',
-  finding:  '✓',
+  claim:      '◎',
+  question:   '?',
+  todo:       '·',
+  finding:    '✓',
+  synthesize: 'Σ',
 };
 
 const KIND_LABEL: Record<BoardItemKind, string> = {
-  claim:    'claim',
-  question: 'question',
-  todo:     'todo',
-  finding:  'finding',
+  claim:      'claim',
+  question:   'question',
+  todo:       'todo',
+  finding:    'finding',
+  synthesize: 'synthesize',
 };
 
 const KIND_TONE: Record<BoardItemKind, string> = {
-  claim:    'text-iris',
-  question: 'text-amber',
-  todo:     'text-fog-400',
-  finding:  'text-mint',
+  claim:      'text-iris',
+  question:   'text-amber',
+  todo:       'text-fog-400',
+  finding:    'text-mint',
+  synthesize: 'text-mint',
 };
 
 const ACCENT_BG: Record<BoardAgent['accent'], string> = {

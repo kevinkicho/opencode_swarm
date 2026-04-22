@@ -8,13 +8,24 @@
 // narrow — anything that would graduate to policy (retention, re-plan interval,
 // stale-retry bounds) belongs in the routing modal, not here.
 
-// Four board-item kinds per SWARM_PATTERNS.md §1:
-//   - claim    — an agent declared intent to work, recorded file hashes it
-//                intends to touch. Converts to in-progress once it's building.
-//   - question — an agent asked; any idle agent can answer. Resolves in place.
-//   - todo     — a work item on the board. Unclaimed (open), claimed, or done.
-//   - finding  — completed output. Immutable once posted.
-export type BoardItemKind = 'claim' | 'question' | 'todo' | 'finding';
+// Board-item kinds.
+//   - claim      — an agent declared intent to work, recorded file hashes it
+//                  intends to touch. Converts to in-progress once it's building.
+//   - question   — an agent asked; any idle agent can answer. Resolves in place.
+//   - todo       — a work item on the board. Unclaimed (open), claimed, or done.
+//   - finding    — completed output. Immutable once posted.
+//   - synthesize — map-reduce reduce-phase work. Content is the full synthesis
+//                  prompt (member drafts already embedded). Coordinator posts
+//                  content verbatim instead of wrapping in the "edit relevant
+//                  files" todo preamble. See SWARM_PATTERNS.md §3 v2 migration
+//                  and lib/server/map-reduce.ts::runMapReduceSynthesis for the
+//                  dispatch contract.
+export type BoardItemKind =
+  | 'claim'
+  | 'question'
+  | 'todo'
+  | 'finding'
+  | 'synthesize';
 
 export type BoardItemStatus =
   | 'open'         // on the board, nobody claimed it
