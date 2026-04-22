@@ -142,62 +142,22 @@ export function LeftTabs({
           />
         )}
 
+        {/* Right-side chrome. The "read-only" labels that used to live
+            here (for plan / board / heat tabs) were redundant once the
+            tab-buttons themselves got descriptive tooltips — agent-owned
+            / coordinator-written / observation-only are all spelled out
+            on hover. Only the "spawn agent" action remains, and only
+            when the roster tab is active. */}
         <div className="ml-auto flex items-center">
-          {tab === 'plan' && (
-            <Tooltip
-              side="bottom"
-              align="end"
-              wide
-              content={
-                <div className="space-y-1">
-                  <div className="font-mono text-[11px] text-fog-200">
-                    agent-owned state
-                  </div>
-                  <div className="font-mono text-[10.5px] text-fog-500">
-                    written by whichever agent is holding the plan via{' '}
-                    <span className="text-fog-300">todowrite</span>. humans re-plan
-                    via the command palette, not by editing rows.
-                  </div>
-                </div>
-              }
-            >
-              <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700 cursor-help pr-2">
-                read-only
-              </span>
-            </Tooltip>
-          )}
           {tab === 'roster' && (
             <Tooltip content="spawn new agent" side="bottom" align="end">
               <button
+                type="button"
                 onClick={onSpawn}
-                className="w-6 h-6 grid place-items-center rounded hairline bg-ink-800 hover:border-molten/40 hover:text-molten text-fog-500 transition"
+                className="w-6 h-6 grid place-items-center rounded hairline bg-ink-800 hover:border-molten/40 hover:text-molten text-fog-500 transition cursor-pointer"
               >
                 <IconPlus size={11} />
               </button>
-            </Tooltip>
-          )}
-          {tab === 'board' && (
-            <Tooltip
-              side="bottom"
-              align="end"
-              wide
-              content={
-                <div className="space-y-1">
-                  <div className="font-mono text-[11px] text-fog-200">
-                    blackboard state
-                  </div>
-                  <div className="font-mono text-[10.5px] text-fog-500">
-                    items and claims are written by the coordinator loop (see{' '}
-                    <span className="text-fog-300">SWARM_PATTERNS.md §1</span>).
-                    polls every 2s. for the 5-column kanban, follow the
-                    footer link.
-                  </div>
-                </div>
-              }
-            >
-              <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700 cursor-help pr-2">
-                read-only
-              </span>
             </Tooltip>
           )}
         </div>
