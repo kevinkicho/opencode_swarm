@@ -1,13 +1,13 @@
 # opencode_swarm
 
-> Multi-agent coding swarm for opencode. Spawn specialist agents, route work by declarative policy, watch every tool call and decision land on a per-agent timeline. — **UI prototype only, mock data, no backend yet.**
+> Multi-agent coding swarm for opencode. Spawn specialist agents, route work by declarative policy, watch every tool call and decision land on a per-agent timeline. **UI prototype with mock data; no backend yet.**
 
 `opencode_swarm` reimagines the opencode session view as a 2-D timeline: one lane per agent, time flowing downward, and every tool call / sub-agent spawn / routing decision rendered as a first-class visual node. Built for keyboard-first developers who want to read a 5-agent run as easily as a 1-agent run.
 
 ## Status
 
 - **Stack:** Next.js 14 (App Router) · TypeScript · Tailwind CSS · framer-motion · cmdk · @floating-ui/react
-- **Data:** all mocked in `lib/swarm-data.ts` — no opencode runtime is wired in
+- **Data:** Mocked data in `lib/swarm-data.ts` — no opencode runtime wired in
 - **What works:** the entire interactive UI surface (timeline, roster, inspector, palette, routing policy modal, spawn modal, branch history, glossary, composer)
 - **What's missing:** the backend — see [`DESIGN.md`](./DESIGN.md) §6 for the wiring plan
 
@@ -42,7 +42,7 @@ If you are about to write backend code or extend the UI, read `DESIGN.md` first.
 
 Secondary references:
 - [`docs/opencode-vocabulary.md`](./docs/opencode-vocabulary.md) — canonical opencode SDK names
-- In-product **glossary modal** (footer link) — actor/transcript vocabulary at a glance
+- In-app **glossary modal** (footer link) — actor/transcript vocabulary at a glance
 
 ## Contributing
 
@@ -57,6 +57,4 @@ are all welcome. Before opening a feature PR, read `DESIGN.md` §12 — the one 
 
 TBD
 
-## Connection
 
-Testing opencode-app network socket connection.
