@@ -113,13 +113,15 @@ body {
 
 /* Softer seam between primary surfaces — used instead of hairline-r when
    two adjacent panels have different background tones (e.g. left rail
-   vs main view). An inset highlight + outer shadow reads as a fade,
-   not a drawn line. Tuned to be perceptible at normal zoom: the first
-   iteration at 0.03 opacity + -8px spread was effectively invisible. */
+   vs main view). Two stacked inset shadows on the right edge: a
+   visible highlight hair, plus a soft inward-darkening fade that
+   reads as depth rather than a drawn line. Only the element holding
+   this class must not have overflow:hidden (it clips inset box-shadow
+   rendering in some browsers when combined with border-radius). */
 .sidebar-seam {
   box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.08),
-    4px 0 12px -4px rgba(0, 0, 0, 0.55);
+    inset -1px 0 0 0 rgba(255, 255, 255, 0.12),
+    inset -8px 0 10px -8px rgba(0, 0, 0, 0.45);
 }
 
 /* Left-truncation for filepaths — `direction: rtl` flips overflow so

@@ -77,7 +77,11 @@ export function LeftTabs({
   ).length;
 
   return (
-    <section className="relative flex flex-col min-w-0 min-h-0 overflow-hidden bg-ink-850 sidebar-seam">
+    // overflow-hidden moved OFF this section: it was clipping the inset
+    // seam shadow. Inner scroll containers (plan-rail / heat-rail /
+    // board-rail ul + board-rail section) carry their own overflow
+    // rules, so clipping at this level isn't needed anyway.
+    <section className="relative flex flex-col min-w-0 min-h-0 bg-ink-850 sidebar-seam">
       <div className="h-10 hairline-b px-2 flex items-center gap-0.5 bg-ink-850/80 backdrop-blur">
         <TabButton
           active={tab === 'plan'}

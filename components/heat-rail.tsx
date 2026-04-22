@@ -138,11 +138,11 @@ function HeatRow({
           </span>
         </Tooltip>
 
-        {/* File path — basename bright, dir dim. `truncate-left` (css in
-            globals.css) flips overflow direction so when the path
-            exceeds the column width, the ellipsis appears on the LEFT
-            and the basename stays intact on the RIGHT. `<bdi>` keeps
-            the LTR content readable inside the rtl container. */}
+        {/* File path — basename bright, dir dim. The dir prefix uses
+            `.truncate-left` (rtl-direction trick in globals.css) so it
+            clips from the LEFT when it overflows; the basename sits in
+            a shrink-0 span beside it so it's always visible. Prior
+            single-span implementation didn't survive flex layout. */}
         <Tooltip
           content={
             <div className="font-mono text-[10.5px] text-fog-500 max-w-[420px] break-all">
@@ -151,12 +151,14 @@ function HeatRow({
           }
           side="right"
         >
-          <span className="text-[11.5px] font-mono truncate-left flex-1 min-w-0 cursor-default">
-            <bdi>
-              {dir && <span className="text-fog-700">{dir}/</span>}
-              <span className="text-fog-200">{base}</span>
-            </bdi>
-          </span>
+          <div className="flex items-baseline flex-1 min-w-0 font-mono text-[11.5px] cursor-default">
+            {dir && (
+              <span className="text-fog-700 truncate-left min-w-0 flex-1">
+                <bdi>{dir}/</bdi>
+              </span>
+            )}
+            <span className="text-fog-200 shrink-0">{base}</span>
+          </div>
         </Tooltip>
 
         {/* Agent badges — one per distinct session that touched this file. */}
