@@ -13,10 +13,14 @@
 //   shape='parts'   — hits `parts` (+ parts_fts when filter.query is set),
 //                     returns per-part snippets. For "show me the exact
 //                     edit part that touched src/auth.ts".
-//   shape='diffs'   — currently falls through to 'parts' filtered to
-//                     part_type='patch'. True diff expansion (full hunks
-//                     from L0) is a follow-up — needs content-addressed
-//                     resolution by diffHash, which isn't built yet.
+//   shape='diffs'   — hits `parts` filtered to part_type='patch' and
+//                     LEFT JOINs the `diffs` table to populate `hunks[]`
+//                     on each returned item. Hunk text is the session-
+//                     aggregate unified diff captured at rollup time
+//                     (opencode's /session/{id}/diff is session-scoped,
+//                     not per-patch — see DESIGN.md §7.5 + schema.sql).
+//                     Patch parts whose session hasn't been rolled up
+//                     yet come back with an empty hunks array.
 //
 // Budget: we cap `limit` at 50 server-side so a misconfigured caller can't
 // blow an agent's context window. Callers paginate by advancing an offset
@@ -115,14 +119,19 @@ function globToRegex(pattern: string): RegExp {
   return new RegExp(re);
 }
 
-// Does any path in a `|p1|p2|`-delimited column match the compiled glob?
-function filePathsMatch(encoded: string | null, rx: RegExp): boolean {
-  if (!encoded) return false;
-  // Strip leading/trailing | before split so we don't get '' entries.
+// Split a `|p1|p2|`-delimited column back into its path components.
+// Shared by filePathsMatch and the shape='diffs' hunk hydration pass.
+function decodeFilePaths(encoded: string | null): string[] {
+  if (!encoded) return [];
   const trimmed = encoded.startsWith('|') ? encoded.slice(1) : encoded;
   const ready = trimmed.endsWith('|') ? trimmed.slice(0, -1) : trimmed;
-  if (!ready) return false;
-  for (const p of ready.split('|')) {
+  if (!ready) return [];
+  return ready.split('|').filter(Boolean);
+}
+
+// Does any path in a `|p1|p2|`-delimited column match the compiled glob?
+function filePathsMatch(encoded: string | null, rx: RegExp): boolean {
+  for (const p of decodeFilePaths(encoded)) {
     if (rx.test(p)) return true;
   }
   return false;
@@ -352,11 +361,37 @@ function queryParts(
     matched.push(...rows.slice(0, limit));
   }
 
+  // For shape='diffs', hydrate each matched patch part with the session-
+  // aggregate hunk text captured at rollup time. Build a (session_id,
+  // file_path) → patch map in one query so N matched parts cost one IN-list
+  // lookup, not N per-row joins. Rows with no diff row in the table (session
+  // not yet rolled up) get an empty hunks array.
+  const hunkMap = new Map<string, string>();
+  if (shape === 'diffs' && matched.length > 0) {
+    const sessionIDs = Array.from(new Set(matched.map((r) => r.session_id)));
+    if (sessionIDs.length > 0) {
+      const sessParams: Record<string, unknown> = {};
+      const diffSql = `
+        SELECT session_id, file_path, patch
+        FROM diffs
+        WHERE session_id IN (${bindList('ds', sessionIDs, sessParams)})
+      `;
+      const diffRows = db.prepare(diffSql).all(sessParams) as Array<{
+        session_id: string;
+        file_path: string;
+        patch: string;
+      }>;
+      for (const d of diffRows) {
+        hunkMap.set(`${d.session_id}\u0000${d.file_path}`, d.patch);
+      }
+    }
+  }
+
   let tokenEstimate = 0;
   const items: RecallPartItem[] = matched.map((r) => {
     const snippet = r.snip ?? '';
     tokenEstimate += estimateTokens(snippet);
-    return {
+    const base: RecallPartItem = {
       kind: 'part',
       partID: r.part_id,
       swarmRunID: r.swarm_run_id,
@@ -367,6 +402,19 @@ function queryParts(
       createdMs: r.created_ms,
       snippet,
     };
+    if (shape === 'diffs') {
+      const hunks: Array<{ filePath: string; patch: string }> = [];
+      const paths = decodeFilePaths(r.file_paths);
+      for (const filePath of paths) {
+        const patch = hunkMap.get(`${r.session_id}\u0000${filePath}`);
+        if (patch) {
+          hunks.push({ filePath, patch });
+          tokenEstimate += estimateTokens(patch);
+        }
+      }
+      base.hunks = hunks;
+    }
+    return base;
   });
 
   // `truncated` reports whether the caller likely has more to paginate

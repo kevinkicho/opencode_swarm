@@ -144,6 +144,13 @@ export interface RecallPartItem {
   toolName: string | null;
   createdMs: number;
   snippet: string;               // FTS highlight when query was set, else text[0:N]
+  // Session-aggregate unified diff for each file this part touched. Populated
+  // only when shape='diffs' and the part_type is 'patch' or 'file' — other
+  // parts don't carry file attribution. Opencode's /diff endpoint is
+  // session-scoped (not per-patch), so every patch-part in the same session
+  // surfaces the *same* hunk text for a given file. Truncated at
+  // DIFF_PATCH_CAP (16 KB) per file at capture time.
+  hunks?: Array<{ filePath: string; patch: string }>;
 }
 
 export type RecallItem = RecallSummaryItem | RecallPartItem;

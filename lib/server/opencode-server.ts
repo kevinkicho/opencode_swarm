@@ -66,6 +66,30 @@ export async function getSessionMessagesServer(
   return (await res.json()) as OpencodeMessage[];
 }
 
+// Session-aggregate diff. Opencode returns one entry per changed file with a
+// unified-diff string covering every patch that landed in the session. There
+// is no per-turn granularity from this endpoint (?messageID= / ?hash= are
+// ignored — probed 2026-04-20); the memory layer stores these at rollup time
+// so shape='diffs' recall can return real hunks instead of just part metadata.
+export async function getSessionDiffServer(
+  sessionId: string,
+  directory: string,
+  signal?: AbortSignal
+): Promise<Array<{ file: string; patch: string }>> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await opencodeFetch(
+    `/session/${encodeURIComponent(sessionId)}/diff?${qs}`,
+    { signal }
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `opencode session diff -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+    );
+  }
+  return (await res.json()) as Array<{ file: string; patch: string }>;
+}
+
 // Fire-and-forget prompt submission. Uses /prompt_async so the route handler
 // can return immediately — SSE surfaces the resulting parts via the run's
 // multiplexed events stream.

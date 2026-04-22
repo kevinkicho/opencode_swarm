@@ -105,3 +105,22 @@ CREATE TABLE IF NOT EXISTS rollups (
 
 CREATE INDEX IF NOT EXISTS rollups_workspace ON rollups(workspace);
 CREATE INDEX IF NOT EXISTS rollups_closed_at ON rollups(closed_at);
+
+-- Per-session per-file unified-diff store. Populated at rollup time by
+-- fetching /session/{id}/diff and splitting on file. Keyed by (session_id,
+-- file_path) rather than the patch part's hash because opencode's diff
+-- endpoint is session-aggregate — a single file's hunk covers every patch
+-- that landed in the session, so per-patch deltas aren't retrievable anyway.
+-- shape='diffs' recall LEFT JOINs against this table to enrich patch-part
+-- items with real hunk text. Rows are replaced on rollup re-run so
+-- later patches are reflected without accumulating stale blobs.
+CREATE TABLE IF NOT EXISTS diffs (
+  swarm_run_id TEXT NOT NULL,
+  session_id TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  patch TEXT NOT NULL,             -- unified-diff text for this file
+  captured_ms INTEGER NOT NULL,    -- server clock at capture
+  PRIMARY KEY (session_id, file_path)
+);
+CREATE INDEX IF NOT EXISTS diffs_swarm_run ON diffs(swarm_run_id);
+CREATE INDEX IF NOT EXISTS diffs_file_path ON diffs(file_path);

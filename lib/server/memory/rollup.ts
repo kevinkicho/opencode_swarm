@@ -20,7 +20,7 @@ import crypto from 'node:crypto';
 
 import { memoryDb } from './db';
 import { getRun, listRuns } from '../swarm-registry';
-import { getSessionMessagesServer } from '../opencode-server';
+import { getSessionMessagesServer, getSessionDiffServer } from '../opencode-server';
 import { priceFor } from '../../opencode/pricing';
 import type {
   OpencodeMessage,
@@ -29,6 +29,65 @@ import type {
 } from '../../opencode/types';
 import type { SwarmRunMeta } from '../../swarm-run-types';
 import type { AgentRollup, RunRetro } from './types';
+
+// Per-file cap on stored unified diffs. Opencode's diff endpoint can return
+// large blobs for long-running sessions; capping keeps the memory DB small
+// and bounds the token cost of shape='diffs' recall. Agents that need the
+// full hunk can follow up via /session/{id}/diff directly — the memory
+// layer is a searchable projection, not authoritative storage.
+const DIFF_PATCH_CAP = 16 * 1024;
+
+// Writes one diffs row per changed file in the session. Best-effort — if
+// opencode's diff endpoint fails (network, session gone) we log and return 0
+// rather than abort the whole rollup. The rollup's counters + retro still
+// land; hunks just stay empty until the next capture attempt.
+async function captureSessionDiffs(
+  swarmRunID: string,
+  sessionID: string,
+  workspace: string
+): Promise<number> {
+  let diffs: Array<{ file: string; patch: string }> = [];
+  try {
+    diffs = await getSessionDiffServer(sessionID, workspace);
+  } catch (err) {
+    console.warn(
+      `[rollup] diff capture failed for ${sessionID}: ${(err as Error).message}`
+    );
+    return 0;
+  }
+  if (diffs.length === 0) return 0;
+
+  const db = memoryDb();
+  const upsert = db.prepare(
+    `INSERT INTO diffs (swarm_run_id, session_id, file_path, patch, captured_ms)
+     VALUES (@swarm_run_id, @session_id, @file_path, @patch, @captured_ms)
+     ON CONFLICT(session_id, file_path) DO UPDATE SET
+       swarm_run_id = excluded.swarm_run_id,
+       patch        = excluded.patch,
+       captured_ms  = excluded.captured_ms`
+  );
+  const now = Date.now();
+  const writeAll = db.transaction(() => {
+    let n = 0;
+    for (const row of diffs) {
+      if (!row.file || typeof row.patch !== 'string') continue;
+      const patch =
+        row.patch.length > DIFF_PATCH_CAP
+          ? row.patch.slice(0, DIFF_PATCH_CAP)
+          : row.patch;
+      upsert.run({
+        swarm_run_id: swarmRunID,
+        session_id: sessionID,
+        file_path: row.file,
+        patch,
+        captured_ms: now,
+      });
+      n += 1;
+    }
+    return n;
+  });
+  return writeAll();
+}
 
 // A decision heuristic: reasoning parts that start with (or contain early)
 // one of these verbs get promoted to the `decisions[]` list. The full text
@@ -401,6 +460,10 @@ export async function generateRollup(meta: SwarmRunMeta): Promise<{
     }
     if (messages.length === 0) continue;
     agentRollups.push(reduceSession(meta.swarmRunID, meta.workspace, sessionID, messages));
+    // Capture unified diffs for this session so shape='diffs' recall can
+    // return real hunks alongside patch-part metadata. Best-effort — the
+    // helper logs and returns 0 on failure rather than aborting the rollup.
+    await captureSessionDiffs(meta.swarmRunID, sessionID, meta.workspace);
   }
 
   const retro = aggregateRetro(meta, agentRollups);
