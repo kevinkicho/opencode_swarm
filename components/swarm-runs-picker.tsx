@@ -147,6 +147,7 @@ export function SwarmRunsPicker({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="filter by directive, id, pattern, source…"
+              aria-label="filter by directive, id, pattern, source"
               className="flex-1 bg-transparent border-0 outline-none font-mono text-[11px] text-fog-100 placeholder:text-fog-700"
               autoFocus
             />
