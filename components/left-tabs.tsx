@@ -77,19 +77,36 @@ export function LeftTabs({
   ).length;
 
   return (
-    <section className="relative flex flex-col min-w-0 min-h-0 overflow-hidden bg-ink-850 hairline-r">
+    <section className="relative flex flex-col min-w-0 min-h-0 overflow-hidden bg-ink-850 sidebar-seam">
       <div className="h-10 hairline-b px-2 flex items-center gap-0.5 bg-ink-850/80 backdrop-blur">
         <TabButton
           active={tab === 'plan'}
           onClick={() => setTab('plan')}
           label="plan"
           count={`${planCompleted}/${plan.length}`}
+          tooltip={
+            <div className="space-y-0.5 max-w-[260px]">
+              <div className="font-mono text-[11px] text-fog-200">plan</div>
+              <div className="font-mono text-[10.5px] text-fog-500">
+                agent-owned todos written via <span className="text-fog-300">todowrite</span>. click a row to
+                expand details + jump to its delegation.
+              </div>
+            </div>
+          }
         />
         <TabButton
           active={tab === 'roster'}
           onClick={() => setTab('roster')}
           label="roster"
           count={`${agentsActive}/${agents.length}`}
+          tooltip={
+            <div className="space-y-0.5 max-w-[260px]">
+              <div className="font-mono text-[11px] text-fog-200">roster</div>
+              <div className="font-mono text-[10.5px] text-fog-500">
+                every live agent in the run — identity, model, status, tokens + cost. click a row to open the inspector.
+              </div>
+            </div>
+          }
         />
         {boardSwarmRunID && (
           <TabButton
@@ -97,6 +114,14 @@ export function LeftTabs({
             onClick={() => setTab('board')}
             label="board"
             count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[260px]">
+                <div className="font-mono text-[11px] text-fog-200">blackboard</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  shared board — items claimed via CAS, status transitions live-streamed (SWARM_PATTERNS.md §1).
+                </div>
+              </div>
+            }
           />
         )}
         {heat.length > 0 && (
@@ -105,6 +130,15 @@ export function LeftTabs({
             onClick={() => setTab('heat')}
             label="heat"
             count={String(heat.length)}
+            tooltip={
+              <div className="space-y-0.5 max-w-[260px]">
+                <div className="font-mono text-[11px] text-fog-200">heat</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  file-edit convergence — which files the swarm has touched, hot-first. observation only, never
+                  assignment (stigmergy v0).
+                </div>
+              </div>
+            }
           />
         )}
 
@@ -205,17 +239,23 @@ function TabButton({
   onClick,
   label,
   count,
+  tooltip,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   count: string;
+  tooltip?: React.ReactNode;
 }) {
-  return (
+  const btn = (
     <button
+      type="button"
       onClick={onClick}
       className={clsx(
-        'h-6 px-2 rounded flex items-center gap-1.5 transition font-mono text-micro uppercase tracking-widest2',
+        // Fixed width per tab so the four labels (plan/roster/board/heat)
+        // align as a grid regardless of count length. Counts are hidden
+        // visually on overflow — tooltip carries the full picture.
+        'w-[68px] h-6 rounded flex items-center justify-center gap-1 transition font-mono text-micro uppercase tracking-widest2 cursor-pointer shrink-0',
         active
           ? 'bg-ink-800 text-fog-100'
           : 'text-fog-600 hover:text-fog-200 hover:bg-ink-800/50'
@@ -225,7 +265,7 @@ function TabButton({
       {count && (
         <span
           className={clsx(
-            'tabular-nums normal-case',
+            'tabular-nums normal-case text-[9px]',
             active ? 'text-fog-400' : 'text-fog-700'
           )}
         >
@@ -233,5 +273,11 @@ function TabButton({
         </span>
       )}
     </button>
+  );
+  if (!tooltip) return btn;
+  return (
+    <Tooltip side="bottom" wide content={tooltip}>
+      {btn}
+    </Tooltip>
   );
 }

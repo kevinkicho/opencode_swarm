@@ -138,9 +138,11 @@ function HeatRow({
           </span>
         </Tooltip>
 
-        {/* File path — basename bright, dir dim. Truncate from left so
-            the basename stays visible (right side) even when the dir is
-            long. */}
+        {/* File path — basename bright, dir dim. `truncate-left` (css in
+            globals.css) flips overflow direction so when the path
+            exceeds the column width, the ellipsis appears on the LEFT
+            and the basename stays intact on the RIGHT. `<bdi>` keeps
+            the LTR content readable inside the rtl container. */}
         <Tooltip
           content={
             <div className="font-mono text-[10.5px] text-fog-500 max-w-[420px] break-all">
@@ -149,9 +151,11 @@ function HeatRow({
           }
           side="right"
         >
-          <span className="text-[11.5px] font-mono truncate flex-1 min-w-0 cursor-default">
-            {dir && <span className="text-fog-700">{dir}/</span>}
-            <span className="text-fog-200">{base}</span>
+          <span className="text-[11.5px] font-mono truncate-left flex-1 min-w-0 cursor-default">
+            <bdi>
+              {dir && <span className="text-fog-700">{dir}/</span>}
+              <span className="text-fog-200">{base}</span>
+            </bdi>
           </span>
         </Tooltip>
 

@@ -111,6 +111,28 @@ body {
   border-left: 1px solid rgba(255, 255, 255, 0.04);
 }
 
+/* Softer seam between primary surfaces — used instead of hairline-r when
+   two adjacent panels have different background tones (e.g. left rail
+   vs main view). An inset highlight + subtle outer shadow reads as a
+   fade, not a drawn line. */
+.sidebar-seam {
+  box-shadow:
+    inset -1px 0 0 rgba(255, 255, 255, 0.03),
+    6px 0 14px -8px rgba(0, 0, 0, 0.4);
+}
+
+/* Left-truncation for filepaths — `direction: rtl` flips overflow so
+   ellipsis shows on the LEFT while `<bdi>` / `dir="ltr"` children
+   preserve normal reading order for the LTR content inside. Basename
+   stays visible; ancestor dirs get clipped. */
+.truncate-left {
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Inline keyboard chip */
 .kbd {
   display: inline-flex;

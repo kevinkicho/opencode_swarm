@@ -84,24 +84,35 @@ async function sha7(absPath: string): Promise<string> {
 }
 
 // Stigmergy v1 — pheromone-weighted pick. Score a todo by summing the
-// edit counts of files whose paths appear in its content. Full-path
-// matches count double (strong signal); bare-basename matches count
-// once (weaker, but covers the "edit package.json" -> heat path
-// "src/config/package.json" mismatch). Basenames under 4 chars are
-// skipped — matching "ts" or "js" would be noise.
+// edit counts of heat entries whose path or containing dir or basename
+// appears in the todo's content. Three match tiers:
 //
-// The picker sorts OPEN todos by this score ASC (exploratory bias —
-// steer workers toward unexplored files) with createdAtMs ASC as the
-// tiebreak. A todo with no file attribution scores 0 and sorts with
-// the other "unexplored" items — i.e. it falls back to the original
-// oldest-first behavior, which is the correct degenerate case.
+//   * Full-path match (content includes `src/foo/bar.ts`): +2x count
+//     — strong signal, the todo explicitly names the file
+//   * Directory match (content includes `src/foo/` when h.path is
+//     `src/foo/bar.ts`): +1x count — todo targets the dir that owns
+//     this file. Covers the "fix everything in src/components/" case.
+//   * Basename match (content includes `bar.ts`, len ≥ 4): +1x count
+//     — weakest, covers the "edit bar.ts" case where h.path has a
+//     different leading dir
+//
+// Basenames under 4 chars are skipped — matching "ts" or "js" would
+// be noise. The picker sorts OPEN todos by this score ASC
+// (exploratory bias — steer workers toward unexplored files) with
+// createdAtMs ASC as the tiebreak. A todo with no file attribution
+// scores 0 and falls back to oldest-first, which is the correct
+// degenerate case.
 function scoreTodoByHeat(content: string, heat: FileHeat[]): number {
   let score = 0;
   for (const h of heat) {
     const norm = h.path.replace(/\\/g, '/');
-    const base = norm.split('/').pop() ?? '';
+    const lastSlash = norm.lastIndexOf('/');
+    const base = lastSlash >= 0 ? norm.slice(lastSlash + 1) : norm;
+    const dirWithSlash = lastSlash >= 0 ? norm.slice(0, lastSlash + 1) : '';
     if (content.includes(h.path) || content.includes(norm)) {
       score += h.editCount * 2;
+    } else if (dirWithSlash && content.includes(dirWithSlash)) {
+      score += h.editCount;
     } else if (base.length >= 4 && content.includes(base)) {
       score += h.editCount;
     }
