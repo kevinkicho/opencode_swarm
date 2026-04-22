@@ -6,6 +6,7 @@ import type { Agent, AgentMessage, PartType, TodoItem, ToolName } from '@/lib/sw
 import { IconSearch, IconFilter } from './icons';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 import { TimelineFlow, TIMELINE_GUTTER_WIDTH } from './timeline-flow';
 import { partMeta, partHex, partOrder, toolMeta, isCrossLane } from '@/lib/part-taxonomy';
 import { compact } from '@/lib/format';
@@ -454,6 +455,7 @@ export function SwarmTimeline({
           </div>
         </div>
       </div>
+      <ScrollToBottomButton scrollRef={scrollRef} />
     </section>
   );
 }

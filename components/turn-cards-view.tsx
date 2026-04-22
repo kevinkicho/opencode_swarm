@@ -16,6 +16,7 @@ import { useEffect, useRef } from 'react';
 import type { TurnCard } from '@/lib/opencode/transform';
 import type { Agent } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 import { compact } from '@/lib/format';
 
 const accentStripe: Record<Agent['accent'], string> = {
@@ -133,8 +134,13 @@ export function TurnCardsView({
   const hasAny =
     columns.some((c) => c.cards.length > 0) || otherCards.length > 0;
 
+  const scrollRef = useRef<HTMLElement>(null);
+
   return (
-    <section className="flex-1 min-w-0 min-h-0 overflow-auto bg-ink-900">
+    <section
+      ref={scrollRef}
+      className="relative flex-1 min-w-0 min-h-0 overflow-auto bg-ink-900"
+    >
       {!hasAny ? (
         <div className="h-full grid place-items-center">
           <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
@@ -142,28 +148,31 @@ export function TurnCardsView({
           </div>
         </div>
       ) : (
-        <div
-          className="flex items-stretch min-h-full"
-          style={{ width: columns.length * COLUMN_WIDTH + (otherCards.length > 0 ? COLUMN_WIDTH : 0) }}
-        >
-          {columns.map((col) => (
-            <AgentColumn
-              key={col.agent.id}
-              agent={col.agent}
-              cards={col.cards}
-              focusedId={focusedId}
-              onFocus={onFocus}
-            />
-          ))}
-          {otherCards.length > 0 && (
-            <AgentColumn
-              agent={null}
-              cards={otherCards}
-              focusedId={focusedId}
-              onFocus={onFocus}
-            />
-          )}
-        </div>
+        <>
+          <div
+            className="flex items-stretch min-h-full"
+            style={{ width: columns.length * COLUMN_WIDTH + (otherCards.length > 0 ? COLUMN_WIDTH : 0) }}
+          >
+            {columns.map((col) => (
+              <AgentColumn
+                key={col.agent.id}
+                agent={col.agent}
+                cards={col.cards}
+                focusedId={focusedId}
+                onFocus={onFocus}
+              />
+            ))}
+            {otherCards.length > 0 && (
+              <AgentColumn
+                agent={null}
+                cards={otherCards}
+                focusedId={focusedId}
+                onFocus={onFocus}
+              />
+            )}
+          </div>
+          <ScrollToBottomButton scrollRef={scrollRef} />
+        </>
       )}
     </section>
   );
