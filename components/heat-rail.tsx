@@ -64,6 +64,7 @@ export function HeatRail({
   heat,
   agents,
   workspace,
+  onSelect,
   embedded = false,
 }: {
   heat: FileHeat[];
@@ -72,6 +73,10 @@ export function HeatRail({
   // paths so rows are dense + readable. Passing empty string falls
   // back to showing full paths.
   workspace: string;
+  // Row clicked — parent opens the file inspector with this heat
+  // record. Optional so the component still works in read-only
+  // contexts (e.g. a future retro view).
+  onSelect?: (heat: FileHeat) => void;
   embedded?: boolean;
 }) {
   const agentById = new Map(agents.map((a) => [a.id, a]));
@@ -91,6 +96,7 @@ export function HeatRail({
             workspace={workspace}
             maxCount={maxCount}
             agentById={agentById}
+            onSelect={onSelect}
           />
         ))
       )}
@@ -119,11 +125,13 @@ function HeatRow({
   workspace,
   maxCount,
   agentById,
+  onSelect,
 }: {
   heat: FileHeat;
   workspace: string;
   maxCount: number;
   agentById: Map<string, Agent>;
+  onSelect?: (heat: FileHeat) => void;
 }) {
   const displayPath = stripWorkspace(heat.path, workspace);
   const { dir, base } = splitPath(displayPath);
@@ -149,9 +157,27 @@ function HeatRow({
       {/* Grid layout so every row's columns line up on the same vertical
           axes — intensity bar, path (right-aligned), agent badges, time
           stamp. Earlier flex layout gave each row its own column widths
-          based on content, which made scanning ragged. */}
+          based on content, which made scanning ragged. Whole row is
+          clickable when a parent wired an onSelect handler; clicking
+          opens the file inspector with this heat record. */}
       <div
-        className="px-3 h-6 min-w-0"
+        role={onSelect ? 'button' : undefined}
+        tabIndex={onSelect ? 0 : undefined}
+        onClick={onSelect ? () => onSelect(heat) : undefined}
+        onKeyDown={
+          onSelect
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect(heat);
+                }
+              }
+            : undefined
+        }
+        className={clsx(
+          'px-3 h-6 min-w-0 transition-colors',
+          onSelect && 'cursor-pointer hover:bg-ink-800/50',
+        )}
         style={{
           display: 'grid',
           gridTemplateColumns: '22px minmax(0, 1fr) 60px 28px',

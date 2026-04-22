@@ -379,6 +379,10 @@ function PageBody({
   const router = useRouter();
   const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  // A row in the heat rail that was clicked to open the file inspector.
+  // Orthogonal to focusedMsgId / selectedAgentId — they mutually exclude
+  // each other so the drawer shows exactly one thing at a time.
+  const [selectedFileHeat, setSelectedFileHeat] = useState<FileHeat | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [routingOpen, setRoutingOpen] = useState(false);
@@ -505,6 +509,7 @@ function PageBody({
         return null;
       }
       setSelectedAgentId(null);
+      setSelectedFileHeat(null);
       setDrawerOpen(true);
       return id;
     });
@@ -513,24 +518,42 @@ function PageBody({
   const clearFocus = useCallback(() => {
     setFocusedMsgId(null);
     setSelectedAgentId(null);
+    setSelectedFileHeat(null);
     setDrawerOpen(false);
   }, []);
 
   const selectAgent = useCallback((id: string) => {
     setSelectedAgentId(id);
     setFocusedMsgId(null);
+    setSelectedFileHeat(null);
     setDrawerOpen(true);
   }, []);
 
   const rosterSelect = useCallback((id: string) => {
     setSelectedAgentId(id);
     setFocusedMsgId(null);
+    setSelectedFileHeat(null);
+  }, []);
+
+  const selectFileHeat = useCallback((heat: FileHeat) => {
+    // Toggle: clicking the same file again closes the drawer.
+    setSelectedFileHeat((prev) => {
+      if (prev?.path === heat.path) {
+        setDrawerOpen(false);
+        return null;
+      }
+      setFocusedMsgId(null);
+      setSelectedAgentId(null);
+      setDrawerOpen(true);
+      return heat;
+    });
   }, []);
 
   const closeDrawer = useCallback(() => {
     setDrawerOpen(false);
     setFocusedMsgId(null);
     setSelectedAgentId(null);
+    setSelectedFileHeat(null);
   }, []);
 
   useEffect(() => {
@@ -601,6 +624,7 @@ function PageBody({
           onInspectAgent={selectAgent}
           onFocus={focusMessage}
           onJump={focusMessage}
+          onSelectFileHeat={selectFileHeat}
           onSpawn={() => setSpawnOpen(true)}
           tab={leftTab}
           onTabChange={setLeftTab}
@@ -806,7 +830,7 @@ function PageBody({
       />
 
       <Drawer
-        open={drawerOpen && (!!focusedMsgId || !!selectedAgentId)}
+        open={drawerOpen && (!!focusedMsgId || !!selectedAgentId || !!selectedFileHeat)}
         onClose={closeDrawer}
         eyebrow={drawerEyebrow}
         title={drawerTitle}
@@ -817,6 +841,8 @@ function PageBody({
           messages={messages}
           focusedMessageId={focusedMsgId}
           selectedAgentId={selectedAgentId}
+          selectedFileHeat={selectedFileHeat}
+          workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
           onFocus={focusMessage}
           embedded
         />

@@ -24,6 +24,7 @@ export function LeftTabs({
   onInspectAgent,
   onFocus,
   onJump,
+  onSelectFileHeat,
   onSpawn,
   tab: tabProp,
   onTabChange,
@@ -44,6 +45,9 @@ export function LeftTabs({
   onInspectAgent: (id: string) => void;
   onFocus: (id: string) => void;
   onJump: (messageId: string) => void;
+  // Heat row clicked — opens the file inspector. Forwarded through to
+  // HeatRail embedded body.
+  onSelectFileHeat: (heat: FileHeat) => void;
   onSpawn: () => void;
   // Controlled tab state is optional — the component falls back to its own
   // local state. Lifting is needed only for cross-component jumps (e.g. a
@@ -197,7 +201,13 @@ export function LeftTabs({
           <BoardRail swarmRunID={boardSwarmRunID} embedded />
         )}
         {tab === 'heat' && (
-          <HeatRail heat={heat} agents={agents} workspace={workspace} embedded />
+          <HeatRail
+            heat={heat}
+            agents={agents}
+            workspace={workspace}
+            onSelect={onSelectFileHeat}
+            embedded
+          />
         )}
       </div>
     </section>
