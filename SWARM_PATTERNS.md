@@ -40,6 +40,13 @@ sessions into one logical run.
 
 ### 1. Blackboard `[~]` — first real implementation target
 
+> **Status 2026-04-21.** UI prototype landed at `/board-preview` — mock-data
+> 5-column pipeline (open → claimed → in-progress → stale → done) so the
+> layout can settle before the coordinator commits to SQLite vs per-run JSON
+> (§7.6). Backend is still unwritten: no board store, no SSE mux across N
+> sessions, no CAS-at-commit sweep. `pattern='blackboard'` still returns 501.
+
+
 Agents post `claim`, `question`, `todo`, `finding` items to a shared board
 keyed to one run. Any idle agent can pick up any unresolved item. No
 turn-taking, no coordinator, no pinned role — the board is the only
@@ -98,7 +105,19 @@ subtree (distinct seed directives). Reduce phase = one board-claimed
 synthesis todo that reads each session's `session.diff` and produces the
 unified output.
 
-### 4. Council — parallel drafts + reconcile `[ ]`
+### 4. Council — parallel drafts + reconcile `[x]`
+
+> **Status 2026-04-21.** Shipped end-to-end: `POST /api/swarm/run` accepts
+> `pattern='council'` with teamSize 2–8, fans out to N seed-identical
+> opencode sessions, aggregates status / tokens / cost across slots,
+> multiplexes a single workspace-scoped SSE stream, and rekeys the agent
+> transform on sessionID so council members don't collide under one
+> agent-config name. The run view merges every slot's messages into one
+> chronological transcript; reconcile is surfaced as a read-only iris
+> strip above the composer (`ReconcileStrip`) showing `N / N drafts` with
+> click-to-focus pills — observation + selection only, no auto-accept.
+> Real reconcile *actions* (forward accepted draft back to opencode,
+> clipboard copy, Round 2 fan-out) are not yet wired.
 
 Round 1: N agents answer the seed independently with no shared
 transcript. Round 2: drafts are revealed, agents revise or vote. The
@@ -110,7 +129,7 @@ role**. V1 options, none of which pin a role:
 - Semantic merge (run the diffs through `session.diff` and pick the
   overlap)
 - **Human reconcile via the permission strip** — cheapest for v1 since
-  the plumbing already exists
+  the plumbing already exists (this is what `ReconcileStrip` does today)
 
 **opencode fit.** N parallel sessions with the same seed directive;
 reconcile = a board-claimed `reconcile` todo or a permission prompt to
@@ -219,12 +238,18 @@ See DESIGN.md §6 Phase 2 for where this slots into the roadmap.
 
 ## Roadmap
 
-| # | Preset        | Why this order                                                                 |
-|---|---------------|--------------------------------------------------------------------------------|
-| 1 | `blackboard`  | Biggest architectural lift; captures the coordinator-above-opencode pattern    |
-| 2 | `map-reduce`  | Reuses the blackboard's multi-session mux; exercises the synthesize-as-phase reframe |
-| 3 | `council`     | Reuses the multi-session mux; first real use of the permission strip for reconcile |
-| 4 | Stigmergy     | Layer on blackboard — pheromone scoring as a signal, not a separate preset     |
+Ordering changed in practice: council shipped first because the multi-
+session mux it required (workspace-scoped SSE, sessionID-keyed agent
+transform, registry aggregation across N slots) is strictly a subset of
+what blackboard needs. Building council first meant the heavy lifts
+landed against a pattern with simpler semantics.
+
+| # | Preset        | Status | Notes                                                                          |
+|---|---------------|--------|--------------------------------------------------------------------------------|
+| 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
+| 2 | `blackboard`  | `[~]`  | UI prototype at `/board-preview`; coordinator / CAS / store still TBD         |
+| 3 | `map-reduce`  | `[ ]`  | Reuses blackboard's mux; synthesize phase claimed from the board, not pinned  |
+| 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 
 Critic loops, debate, orchestrator-worker, and role differentiation are
 **not on this roadmap**. If someone pushes for them, point at DESIGN.md §9
