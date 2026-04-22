@@ -26,8 +26,22 @@ interface PartUpdatedProps {
     sessionID?: string;
     type?: string;
     tool?: string;
-    state?: { status?: string } | string | null;
+    // Task-tool state carries the spawned child sessionID in addition to
+    // status — we capture it into child_session_id for §8.3 binding.
+    state?:
+      | { status?: string; sessionID?: string; childSessionID?: string }
+      | string
+      | null;
     text?: string;
+    // Task-tool input carries the description/prompt the agent delegated.
+    // When the dispatcher injects `[todo:<id>]` per DESIGN.md §8.3 (a),
+    // we parse the hash out here so rollup can bind child sessions back
+    // to the originating todo.
+    input?: {
+      description?: string;
+      prompt?: string;
+      subagent_type?: string;
+    };
     // variant shapes carry distinct content locations — we coalesce below.
     filename?: string;
     source?: string;
@@ -40,6 +54,12 @@ interface PartUpdatedProps {
     files?: string[];
   };
 }
+
+// §8.3 option (a): agents (or an app-side wrapper) prefix task descriptions
+// with `[todo:<16-hex>]` so the child session inherits the originating todo.
+// 16 hex chars = sha256(todo.content)[:16], matching rollup.ts's sha256()
+// helper — both sides must agree on the slice length.
+const TODO_PREFIX_RE = /^\s*\[todo:([0-9a-f]{16})\]/;
 
 // Bounded text slice stored in the row. L0 already has the full content;
 // L1 is a *searchable* projection, not a full copy. 4 KB is enough for
@@ -72,6 +92,43 @@ function extractToolState(part: NonNullable<PartUpdatedProps['part']>): string |
   if (typeof s === 'string') return s;
   if (typeof s === 'object' && typeof s.status === 'string') return s.status;
   return null;
+}
+
+// §8.3 option (a): pull the 16-hex todo ID out of a task call's description
+// or prompt. Returns null on non-task parts or when no prefix is present.
+// Only the *first* match across candidates wins — description beats prompt
+// so agents can put the ID on the human-facing label without polluting the
+// model input.
+function extractOriginTodoID(
+  part: NonNullable<PartUpdatedProps['part']>
+): string | null {
+  if (part.type !== 'tool' || part.tool !== 'task') return null;
+  const input = part.input;
+  if (!input || typeof input !== 'object') return null;
+  const candidates = [input.description, input.prompt];
+  for (const c of candidates) {
+    if (typeof c !== 'string') continue;
+    const m = TODO_PREFIX_RE.exec(c);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+// §8.3 option (a): capture the child session a task call spawned. Opencode
+// writes this into `part.state.sessionID` (the SDK has used both names over
+// time — check both to be resilient). Returns null for non-task parts or
+// states that haven't landed a child session yet.
+function extractChildSessionID(
+  part: NonNullable<PartUpdatedProps['part']>
+): string | null {
+  if (part.type !== 'tool' || part.tool !== 'task') return null;
+  const s = part.state;
+  if (!s || typeof s !== 'object') return null;
+  const id =
+    (typeof s.sessionID === 'string' && s.sessionID) ||
+    (typeof s.childSessionID === 'string' && s.childSessionID) ||
+    null;
+  return id || null;
 }
 
 // Serializes a part's file attribution into a |-delimited column value. The
@@ -108,10 +165,12 @@ export async function reindexRun(
   const insert = db.prepare(
     `INSERT OR REPLACE INTO parts
       (part_id, swarm_run_id, session_id, workspace, message_id,
-       part_type, tool_name, tool_state, agent, text, file_paths, created_ms, event_seq)
+       part_type, tool_name, tool_state, agent, text, file_paths,
+       origin_todo_id, child_session_id, created_ms, event_seq)
      VALUES
       (@part_id, @swarm_run_id, @session_id, @workspace, @message_id,
-       @part_type, @tool_name, @tool_state, @agent, @text, @file_paths, @created_ms, @event_seq)`
+       @part_type, @tool_name, @tool_state, @agent, @text, @file_paths,
+       @origin_todo_id, @child_session_id, @created_ms, @event_seq)`
   );
   const upsertCursor = db.prepare(
     `INSERT INTO ingest_cursors (swarm_run_id, last_seq, last_ts, updated_at)
@@ -193,6 +252,8 @@ function buildRow(
     agent: null,                   // opencode doesn't expose agent-name on the part; populate later from session info
     text: extractText(part),
     file_paths: extractFilePaths(part),
+    origin_todo_id: extractOriginTodoID(part),
+    child_session_id: extractChildSessionID(part),
     created_ms: ev.ts,
     event_seq: seq,
   };

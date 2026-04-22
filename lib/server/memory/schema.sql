@@ -40,6 +40,19 @@ CREATE TABLE IF NOT EXISTS parts (
   -- back filter.filePath queries (DESIGN.md §7.5).
   file_paths TEXT,
 
+  -- Intent binding (DESIGN.md §8.3 option (a) — app-injected ID). Populated
+  -- only on tool parts where tool_name='task':
+  --   origin_todo_id   — 16-hex id parsed from `[todo:<id>]` prefix in the
+  --                      task's input.description or input.prompt
+  --   child_session_id — the downstream session the task spawned, lifted
+  --                      from state.sessionID / state.childSessionID when
+  --                      the task lands
+  -- Rollup reduces these together: a child session with no in-session
+  -- planState falls back to its parent task-call's origin_todo_id for
+  -- artifact attribution.
+  origin_todo_id TEXT,
+  child_session_id TEXT,
+
   -- timing
   created_ms INTEGER NOT NULL,     -- epoch ms of the originating opencode event
   event_seq INTEGER NOT NULL       -- 0-based line number in events.ndjson (replay anchor)
@@ -55,6 +68,12 @@ CREATE INDEX IF NOT EXISTS parts_time      ON parts(created_ms);
 -- the NULL majority. Speeds up "which parts touched any file?" pre-filters.
 CREATE INDEX IF NOT EXISTS parts_file_paths
   ON parts(file_paths) WHERE file_paths IS NOT NULL;
+-- Partial index: only task-tool rows with a resolved child session populate
+-- child_session_id. Lets reduceSession do a cheap point-lookup
+-- "which parent task spawned this session?" when falling back from in-session
+-- planState to the app-injected origin_todo_id (DESIGN.md §8.3).
+CREATE INDEX IF NOT EXISTS parts_child_session
+  ON parts(child_session_id) WHERE child_session_id IS NOT NULL;
 
 -- FTS5 companion. contentless virtual table syncs via triggers — keeps the
 -- FTS rowid aligned with parts.rowid without duplicating text at read time.

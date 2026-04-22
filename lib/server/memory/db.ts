@@ -81,6 +81,15 @@ function migrate(db: DB): void {
   if (!has('file_paths')) {
     db.exec('ALTER TABLE parts ADD COLUMN file_paths TEXT');
   }
+  // §8.3 option (a): bind each task call to its originating todo ID and to
+  // the child session it spawned. Both nullable — older rows stay NULL and
+  // reduceSession falls through to temporal attribution.
+  if (!has('origin_todo_id')) {
+    db.exec('ALTER TABLE parts ADD COLUMN origin_todo_id TEXT');
+  }
+  if (!has('child_session_id')) {
+    db.exec('ALTER TABLE parts ADD COLUMN child_session_id TEXT');
+  }
 }
 
 // Schema path resolves differently under next's bundled server vs. a

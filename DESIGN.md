@@ -446,20 +446,29 @@ Three things the backend owns on top of the native primitives:
 
 ### 8.3 The `todoID ↔ taskID` binding
 
-Two viable mechanisms:
+Two mechanisms, used in priority order:
 
-**(a) App-injected ID — recommended.** When an agent writes a todo, the app mints a stable `todoID`. When it delegates, the app injects the ID into the `task` description (e.g. `[todo:abc123] research JWT library options`). Backend parses on observation. Simple, explicit, robust to re-ordering or content edits.
+**(a) App-injected ID — shipped 2026-04-21 (receiver side).** When an agent writes a todo, the app mints a stable `todoID = sha256(content)[:16]`. When it delegates, the dispatcher prefixes the `task` description with `[todo:<16-hex>]` (e.g. `[todo:abc123def456789a] research JWT library options`). The memory layer catches both sides of the pairing at ingest:
+  - `lib/server/memory/ingest.ts:extractOriginTodoID` parses the prefix from `part.input.description` (preferred) or `part.input.prompt` on any `part_type='tool' AND tool_name='task'` row
+  - `lib/server/memory/ingest.ts:extractChildSessionID` captures `part.state.sessionID` (or `childSessionID`) from the same row once opencode resolves the spawn
+  - Both land on dedicated columns in `parts` (`origin_todo_id`, `child_session_id`), indexed via `parts_child_session` partial index for cheap point-lookups
+  - `lib/server/memory/rollup.ts:lookupSessionOrigin` resolves the pairing at rollup time: a child session inherits its parent task's `origin_todo_id` as the default for any patch made before its own `todowrite` call
 
-**(b) Prompt-hash match — fallback.** Hash the todo content, hash the `task` prompt, match on overlap. Fragile — an agent may reword between plan and delegation, and near-duplicates across items collide.
+**(b) Prompt-hash match / temporal attribution — fallback.** When no `[todo:<id>]` prefix was injected, the reducer falls back to attributing patches to whichever todo was `in_progress` in the same session's `planState` at patch time. Fragile if an agent rewords between plan and delegation, and near-duplicates across items collide — but it's the best we can do without cooperation from the dispatcher.
 
-Prefer (a). Implementation path: a thin tool wrapper around `task` that auto-injects the ID, plus a system-prompt pattern that teaches any plan-holding agent to preserve it.
+Attribution precedence in `reducePart` (patch branch):
+1. In-session `planState.inProgressHash` — most specific, agent wrote its own plan before patching
+2. `sessionOriginTodoID` — inherited from parent task's injected prefix (§8.3 a)
+3. `undefined` — no attribution; artifact still records `filePath` + `diffHash`
+
+**Still to build:** app-side dispatcher. Today agents prefix on their own via system-prompt pattern; a future thin tool wrapper around `task` will auto-inject for any agent that doesn't. The receiver-side infra is live and will opportunistically capture prefixes as they appear.
 
 ### 8.4 What this lights up in the UI
 
 - **Roster badge (shipped).** `ActiveTodoChip` in `components/agent-roster.tsx` shows every in-progress todo an agent owns; popover lists the full set and click-to-focus jumps to the Plan tab + flashes the row.
 - **Timeline affordance (shipped).** A `task` delegation card surfaces the originating todo item inline as a `todo·X` button (`components/timeline-flow.tsx`); hover shows the full content, click jumps to the Plan tab.
 - **Inspector drawer (partial).** Plan → timeline hop still TODO — clicking a todo in the plan rail should scroll the timeline to the bound `task` card. The reverse hop (timeline → plan) is live.
-- **L2 rollup field (shipped).** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent. The reducer attributes each patch temporally to the todo that was `in_progress` at patch time — keyed on `sha256(todo.content)[:16]` so the ID survives plan edits as long as the content is stable. The retro viewer resolves back to todo text by re-hashing the final plan's todos.
+- **L2 rollup field (shipped).** `AgentRollup.artifacts[].originTodoID` closes the loop from memory back to intent. The reducer attributes each patch in priority order: (1) in-session `planState.inProgressHash` when the agent called `todowrite` before patching, (2) the parent task's injected `[todo:<id>]` prefix when the session was dispatched with one, (3) nothing. All IDs are `sha256(todo.content)[:16]` so the ID survives plan edits as long as the content is stable. The retro viewer resolves back to todo text by re-hashing the final plan's todos.
 
 ### 8.5 Open questions
 

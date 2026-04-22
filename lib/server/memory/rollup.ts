@@ -115,6 +115,28 @@ function sha256(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
+// §8.3 option (a) fallback: when a child session patches files but never
+// calls todowrite itself, inherit the origin_todo_id from the parent task
+// call that spawned it. Ingest stashes that pairing on the parent's parts
+// row at observation time (ingest.ts extractOriginTodoID + child_session_id),
+// so this is a cheap point-lookup on the parts_child_session partial index.
+// Returns null when no parent task row exists or the dispatcher didn't
+// inject a prefix — reduceSession falls back to option (b) temporal
+// attribution via planState.inProgressHash in that case.
+function lookupSessionOrigin(sessionID: string): string | null {
+  const db = memoryDb();
+  const row = db
+    .prepare(
+      `SELECT origin_todo_id FROM parts
+       WHERE child_session_id = ?
+         AND origin_todo_id IS NOT NULL
+       ORDER BY created_ms ASC
+       LIMIT 1`
+    )
+    .get(sessionID) as { origin_todo_id: string } | undefined;
+  return row?.origin_todo_id ?? null;
+}
+
 // Plan-state tracker: walks todowrite snapshots across a session so we can
 // attribute each patch to whichever todo was in_progress when it landed.
 // DESIGN.md §8.4 — temporal attribution, v1. Multiple concurrent in_progress
@@ -194,6 +216,10 @@ function reduceSession(
   );
 
   const planState: PlanState = { inProgressHash: null, lastTodos: null };
+  // §8.3 option (a) anchor: if this session was spawned by a task call with
+  // an injected `[todo:<id>]` prefix, inherit that as the default origin for
+  // any patch the agent makes without first calling todowrite itself.
+  const sessionOriginTodoID = lookupSessionOrigin(sessionID);
 
   for (const m of ordered) {
     const info = m.info;
@@ -219,6 +245,7 @@ function reduceSession(
         decisions,
         spawned,
         planState,
+        sessionOriginTodoID,
         onToolCall: () => (toolCalls += 1),
         onRetry: () => (retries += 1),
         onCompaction: () => (compactions += 1),
@@ -281,6 +308,10 @@ interface PartReduceContext {
   decisions: AgentRollup['decisions'];
   spawned: string[];
   planState: PlanState;
+  // §8.3 (a) session-level fallback. Null when the session wasn't spawned
+  // by a prefix-tagged task call. In-session planState.inProgressHash still
+  // wins when present — it's the most specific attribution available.
+  sessionOriginTodoID: string | null;
   onToolCall: () => void;
   onRetry: () => void;
   onCompaction: () => void;
@@ -327,7 +358,15 @@ function reducePart(p: OpencodePart, ctx: PartReduceContext): void {
       // +/- lines requires fetching the session diff (not done here — the
       // rollup stays cheap). Leave added/removed undefined; the viewer can
       // resolve via /session/{id}/diff when the detail is asked for.
-      const originTodoID = ctx.planState.inProgressHash ?? undefined;
+      //
+      // Attribution precedence (DESIGN.md §8.3):
+      //   1. In-session planState.inProgressHash — agent called todowrite
+      //      within this session before patching; most specific signal.
+      //   2. sessionOriginTodoID — parent task injected `[todo:<id>]` when
+      //      dispatching this child; inherited across session boundaries.
+      //   3. undefined — no attribution; viewer falls back to filename only.
+      const originTodoID =
+        ctx.planState.inProgressHash ?? ctx.sessionOriginTodoID ?? undefined;
       for (const filePath of p.files) {
         ctx.artifacts.push({
           type: 'patch',
