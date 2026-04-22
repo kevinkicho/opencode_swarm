@@ -67,7 +67,7 @@ export function LeftTabs({
   ).length;
 
   return (
-    <section className="relative flex flex-col min-w-0 min-h-0 bg-ink-850 hairline-r">
+    <section className="relative flex flex-col min-w-0 min-h-0 overflow-hidden bg-ink-850 hairline-r">
       <div className="h-10 hairline-b px-2 flex items-center gap-0.5 bg-ink-850/80 backdrop-blur">
         <TabButton
           active={tab === 'plan'}

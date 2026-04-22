@@ -72,7 +72,7 @@ export function PlanRail({
   const completed = items.filter((i) => i.status === 'completed').length;
 
   const body = (
-    <ul className="flex-1 overflow-y-auto py-1 list-none">
+    <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
       {items.map((item) => (
         <PlanRow
           key={item.id}
