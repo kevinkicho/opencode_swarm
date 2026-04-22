@@ -423,6 +423,15 @@ export function toMessages(
     }
   }
 
+  // Global chronological sort by part wall time. Without this, multi-session
+  // runs interleave out of order: a tool part that fired late in session A's
+  // message (time.start = T+15) can land above session B's earlier part
+  // (time.start = T+10) because the parent-message sort key is
+  // info.time.created, not the per-part time.start. JS Array.sort is stable
+  // since ES2019, so parts sharing the same tsMs preserve their emitted
+  // order within a single message.
+  out.sort((a, b) => (a.tsMs ?? 0) - (b.tsMs ?? 0));
+
   return out;
 }
 
@@ -806,15 +815,21 @@ function toolSummaryOf(p: PartWithState): string | undefined {
 
 export function toTurnCards(messages: OpencodeMessage[]): TurnCard[] {
   const cards: TurnCard[] = [];
-  let pendingUserPrompt: string | undefined;
+  // Per-session pending user prompt. A flat pointer would mis-attribute
+  // under multi-session runs: session B's user prompt would land on
+  // session A's next assistant reply whenever B spoke most recently in
+  // the merged stream. See toMessages() for the same discipline.
+  const pendingUserPromptBySession = new Map<string, string>();
 
   for (const m of messages) {
+    const sessionID = m.info.sessionID;
     if (m.info.role === 'user') {
       // Collect the full user text — not just the first line — so the card
       // can render the whole prompt. Multiple text parts are joined.
       const parts = m.parts.filter((p): p is Extract<OpencodePart, { type: 'text' }> => p.type === 'text');
       const joined = parts.map((p) => p.text).join('\n').trim();
-      pendingUserPrompt = joined || undefined;
+      if (joined) pendingUserPromptBySession.set(sessionID, joined);
+      else pendingUserPromptBySession.delete(sessionID);
       continue;
     }
     if (m.info.role !== 'assistant') continue;
@@ -854,11 +869,11 @@ export function toTurnCards(messages: OpencodeMessage[]): TurnCard[] {
 
     cards.push({
       id: m.info.id,
-      sessionID: m.info.sessionID,
+      sessionID,
       agent: m.info.agent ?? 'assistant',
       modelID: m.info.modelID,
       providerID: m.info.providerID,
-      userPrompt: pendingUserPrompt,
+      userPrompt: pendingUserPromptBySession.get(sessionID),
       assistantText,
       reasoningText,
       tools,
@@ -870,8 +885,13 @@ export function toTurnCards(messages: OpencodeMessage[]): TurnCard[] {
       cost: m.info.cost,
     });
 
-    pendingUserPrompt = undefined;
+    pendingUserPromptBySession.delete(sessionID);
   }
+
+  // Chronological sort by assistant start time. Messages arrive sorted by
+  // info.time.created already, but belt-and-suspenders this so callers that
+  // pass an unsorted array still get a linear timebar.
+  cards.sort((a, b) => a.startedMs - b.startedMs);
 
   return cards;
 }
