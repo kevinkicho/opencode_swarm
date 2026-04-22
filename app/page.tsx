@@ -29,6 +29,7 @@ import {
   useLiveSession,
   useLivePermissions,
   useLiveSwarmRun,
+  useLiveSwarmRunMessages,
   useSessionDiff,
   useSwarmRuns,
   postSessionMessageBrowser,
@@ -141,10 +142,40 @@ function PageInner() {
       ? swarmRun.primarySessionID
       : directSessionId;
   const { data: liveData } = useLiveSession(sessionId);
+  // Multi-session fan-out for council / future N-member patterns. The hook
+  // collapses to a one-slot no-op when meta is null or carries a single
+  // sessionID, so we can call it unconditionally and let the view decide
+  // which channel to consume.
+  const liveSwarmRun = useLiveSwarmRunMessages(swarmRun.meta);
+  const isMultiSession = (swarmRun.meta?.sessionIDs.length ?? 0) > 1;
   const liveDirectory = liveData?.session?.directory ?? null;
   const permissions = useLivePermissions(sessionId, liveDirectory);
 
   const view: SwarmView = useMemo(() => {
+    // Council / multi-session: merge every slot's messages into a single
+    // chronological stream, then feed the transform pipeline. toAgents and
+    // toMessages are session-aware (S4 rekey), so merging is safe — IDs
+    // stay disambiguated by sessionID and user→assistant routing resolves
+    // per-session rather than cross-session. The primary slot's session is
+    // the anchor for runMeta; workspace / title are identical across
+    // council members by construction.
+    if (isMultiSession && liveSwarmRun.slots.length > 0) {
+      const merged = liveSwarmRun.slots
+        .flatMap((s) => s.messages)
+        .slice()
+        .sort((a, b) => a.info.time.created - b.info.time.created);
+      const anchorSession = liveSwarmRun.slots[0]?.session ?? null;
+      const { agents, agentOrder } = toAgents(merged);
+      return {
+        agents,
+        agentOrder,
+        messages: toMessages(merged),
+        runMeta: toRunMeta(anchorSession, merged),
+        providerSummary: toProviderSummary(agents, merged),
+        runPlan: toRunPlan(merged),
+        liveTurns: toLiveTurns(merged),
+      };
+    }
     if (sessionId && liveData) {
       const { agents, agentOrder } = toAgents(liveData.messages);
       const messages = toMessages(liveData.messages);
@@ -159,7 +190,7 @@ function PageInner() {
       };
     }
     return EMPTY_VIEW;
-  }, [sessionId, liveData]);
+  }, [isMultiSession, liveSwarmRun.slots, sessionId, liveData]);
 
   // Layer `waiting` on top of toAgents' status: a pending permission on the
   // session means whichever agent is mid-turn is actually blocked on human
@@ -228,7 +259,7 @@ function PageInner() {
         liveDirectory={liveDirectory}
         permissions={permissions}
         liveTurns={liveTurns}
-        liveLastUpdated={liveData?.lastUpdated ?? null}
+        liveLastUpdated={liveSwarmRun.lastUpdated ?? liveData?.lastUpdated ?? null}
         swarmRunID={swarmRunID}
         swarmRunMeta={swarmRun.meta}
         swarmRunStatus={currentRunStatus}

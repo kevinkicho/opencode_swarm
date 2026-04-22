@@ -329,14 +329,24 @@ export function toMessages(
   const anchor = messages[0].info.time.created;
   const out: AgentMessage[] = [];
 
-  // Track most recent assistant agent so user messages route to it
-  let lastAssistant: string | undefined;
+  // Per-session user→assistant routing. A flat `lastAssistant` pointer would
+  // cross-route under council: session B's user prompt would land on session
+  // A's assistant whenever A spoke most recently in the merged timeline.
+  // Instead, track the latest assistant *per session* so a user message only
+  // routes to its own session's agent. The prefill with each session's first
+  // assistant preserves single-session behavior where a user prompt that
+  // arrives before any assistant reply still points at the (soon-to-speak)
+  // assistant rather than back at the human.
+  const firstAssistantBySession = new Map<string, string>();
   for (const m of messages) {
-    if (m.info.role === 'assistant') {
-      lastAssistant = agentIdFor(m.info.agent, 'assistant', m.info.sessionID);
-      break;
-    }
+    if (m.info.role !== 'assistant') continue;
+    if (firstAssistantBySession.has(m.info.sessionID)) continue;
+    firstAssistantBySession.set(
+      m.info.sessionID,
+      agentIdFor(m.info.agent, 'assistant', m.info.sessionID)
+    );
   }
+  const latestAssistantBySession = new Map<string, string>(firstAssistantBySession);
 
   for (const m of messages) {
     const role = m.info.role;
@@ -344,11 +354,12 @@ export function toMessages(
       role === 'user'
         ? 'human'
         : agentIdFor(m.info.agent, 'assistant', m.info.sessionID);
-    if (role === 'assistant') lastAssistant = fromAgentId;
+    if (role === 'assistant') latestAssistantBySession.set(m.info.sessionID, fromAgentId);
+    const sessionAssistant = latestAssistantBySession.get(m.info.sessionID);
     const toAgentIds =
       role === 'user'
-        ? lastAssistant
-          ? [lastAssistant]
+        ? sessionAssistant
+          ? [sessionAssistant]
           : ['human']
         : ['human'];
 
