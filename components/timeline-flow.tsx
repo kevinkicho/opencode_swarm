@@ -23,6 +23,22 @@ const CHIP_HEIGHT = 16;
 const CHIP_GAP = 2;
 const CHIP_TOP_PAD = 3;
 const CHIP_INSET = 6;
+// Left gutter shows wall-clock HH:MM:SS per row so events can be mapped
+// to real time. Width kept narrow — the time label is ~54px at 10px font.
+// Parent (swarm-timeline.tsx) reads this to offset lane headers + grid.
+export const TIMELINE_GUTTER_WIDTH = 56;
+
+function fmtWallClock(tsMs: number): string {
+  const d = new Date(tsMs);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+function fmtIso(tsMs: number): string {
+  return new Date(tsMs).toISOString();
+}
 
 function accentFor(m: AgentMessage): string {
   if (m.toolName) return toolMeta[m.toolName].hex;
@@ -183,7 +199,7 @@ export function TimelineFlow({
     if (!el) return;
     const fromIdx =
       focusedMsg.fromAgentId === 'human' ? 0 : agentIndex.get(focusedMsg.fromAgentId) ?? 0;
-    const cardX = fromIdx * LANE_WIDTH + LANE_WIDTH / 2 - NODE_WIDTH / 2;
+    const cardX = TIMELINE_GUTTER_WIDTH + fromIdx * LANE_WIDTH + LANE_WIDTH / 2 - NODE_WIDTH / 2;
     const viewLeft = el.scrollLeft;
     const viewRight = viewLeft + el.clientWidth;
     if (cardX < viewLeft || cardX + NODE_WIDTH > viewRight) {
@@ -315,6 +331,40 @@ export function TimelineFlow({
           />
         ));
       })}
+
+      {/* Left gutter — wall-clock HH:MM:SS per row (tooltip: full ISO). Held
+          above the lane columns by a hairline right-border so it reads as
+          navigation chrome, not content. */}
+      {virtualItems.map((vi, idx) => {
+        const row = layouts[idx];
+        if (!row) return null;
+        const tsMs = row.event.msg.tsMs;
+        const y = vi.start + TOP_PAD;
+        return (
+          <div
+            key={`ts-${row.event.id}`}
+            className="absolute font-mono text-micro tabular-nums text-fog-600 hairline-r bg-ink-850/80 backdrop-blur select-none"
+            style={{
+              left: 0,
+              top: y,
+              width: TIMELINE_GUTTER_WIDTH,
+              height: NODE_HEIGHT,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              paddingRight: 8,
+            }}
+          >
+            {tsMs != null ? (
+              <Tooltip content={fmtIso(tsMs)} side="right">
+                <span className="cursor-default">{fmtWallClock(tsMs)}</span>
+              </Tooltip>
+            ) : (
+              <span className="text-fog-700">{row.event.msg.timestamp}</span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -329,7 +379,7 @@ function buildRow(
 ): RowLayout {
   const m = row.a2a;
   const fromIdx = m.fromAgentId === 'human' ? 0 : agentIndex.get(m.fromAgentId) ?? 0;
-  const fromCenterX = fromIdx * LANE_WIDTH + LANE_WIDTH / 2;
+  const fromCenterX = TIMELINE_GUTTER_WIDTH + fromIdx * LANE_WIDTH + LANE_WIDTH / 2;
   const cardX = fromCenterX - NODE_WIDTH / 2;
   const phase = phaseFor(m, clockSec);
   const progress = phase === 'streaming' ? streamProgress(m, clockSec) : 1;
@@ -373,7 +423,7 @@ function buildRow(
     receivers.forEach((tid, ti) => {
       const toIdx = tid === 'human' ? 0 : agentIndex.get(tid);
       if (toIdx === undefined) return;
-      const toLaneX = toIdx * LANE_WIDTH + LANE_WIDTH / 2;
+      const toLaneX = TIMELINE_GUTTER_WIDTH + toIdx * LANE_WIDTH + LANE_WIDTH / 2;
       const goesRight = toLaneX > fromCenterX;
       const sx = goesRight ? fromCenterX + NODE_WIDTH / 2 : fromCenterX - NODE_WIDTH / 2;
       const edgeInvolvesAgent =
@@ -407,7 +457,7 @@ function buildRow(
 
   const chips: ChipLayout[] = row.chips.map((cm) => {
     const cIdx = cm.fromAgentId === 'human' ? 0 : agentIndex.get(cm.fromAgentId) ?? 0;
-    const laneLeft = cIdx * LANE_WIDTH + CHIP_INSET;
+    const laneLeft = TIMELINE_GUTTER_WIDTH + cIdx * LANE_WIDTH + CHIP_INSET;
     const cPhase = phaseFor(cm, clockSec);
     const chipFocused = focusedId === cm.id;
     const otherFocusedForChip = focusedId != null && focusedId !== cm.id;

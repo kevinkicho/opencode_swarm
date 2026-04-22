@@ -6,7 +6,7 @@ import type { Agent, AgentMessage, PartType, TodoItem, ToolName } from '@/lib/sw
 import { IconSearch, IconFilter } from './icons';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
-import { TimelineFlow } from './timeline-flow';
+import { TimelineFlow, TIMELINE_GUTTER_WIDTH } from './timeline-flow';
 import { partMeta, partHex, partOrder, toolMeta, isCrossLane } from '@/lib/part-taxonomy';
 import { compact } from '@/lib/format';
 import {
@@ -171,7 +171,7 @@ export function SwarmTimeline({
   );
 
   const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + TOP_PAD * 2;
-  const totalWidth = agentOrder.length * LANE_WIDTH;
+  const totalWidth = TIMELINE_GUTTER_WIDTH + agentOrder.length * LANE_WIDTH;
 
   // Stick-to-bottom: on a fresh session (first message id changes) always
   // land at the latest; on new messages within a session follow only if the
@@ -300,6 +300,14 @@ export function SwarmTimeline({
               if (e.target === e.currentTarget) onClearFocus();
             }}
           >
+            {/* Gutter spacer — aligns lane columns with the timestamp column
+                rendered per-row inside TimelineFlow. */}
+            <div
+              className="shrink-0 hairline-r font-mono text-micro uppercase tracking-widest2 text-fog-600 flex items-center justify-end"
+              style={{ width: TIMELINE_GUTTER_WIDTH, paddingRight: 8 }}
+            >
+              time
+            </div>
             {agentOrder.map((id) => {
               const a = agentMap.get(id)!;
               const active = selectedAgentId === id;
@@ -410,7 +418,7 @@ export function SwarmTimeline({
                 'absolute top-0 bottom-0 w-px',
                 selectedAgentId === id ? 'bg-molten/20' : 'bg-ink-600/40',
               )}
-              style={{ left: i * LANE_WIDTH + LANE_WIDTH / 2 }}
+              style={{ left: TIMELINE_GUTTER_WIDTH + i * LANE_WIDTH + LANE_WIDTH / 2 }}
             />
           ))}
 

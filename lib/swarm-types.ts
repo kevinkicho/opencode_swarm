@@ -112,7 +112,10 @@ export interface AgentMessage {
   body?: string;
   toolSubtitle?: string;
   toolPreview?: string;
-  timestamp: string; // "mm:ss"
+  timestamp: string; // "mm:ss" relative to run anchor (compact display)
+  tsMs?: number;     // absolute ms since epoch — used by the timeline gutter
+                     // for HH:MM:SS wall-clock + full-date tooltip. Optional
+                     // because mock fixtures don't carry wall time.
   duration?: string;
   tokens?: number;
   cost?: number;

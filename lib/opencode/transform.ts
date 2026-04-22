@@ -391,6 +391,7 @@ export function toMessages(
         body: bodyOf(part),
         toolPreview: previewOf(part),
         timestamp: fmtTs(tMs, anchor),
+        tsMs: tMs,
         duration: fmtDuration(
           (part as { time?: { start: number; end?: number } }).time?.start,
           (part as { time?: { start: number; end?: number } }).time?.end
@@ -415,6 +416,7 @@ export function toMessages(
         title: 'interrupted',
         body: msg,
         timestamp: fmtTs(completedMs, anchor),
+        tsMs: completedMs,
         status: 'abandoned',
         threadId: m.info.id,
       });
