@@ -568,6 +568,73 @@ function PageBody({
         isMultiSession={(swarmRunMeta?.sessionIDs.length ?? 0) > 1}
         onFocus={focusMessage}
         focusedMsgId={focusedMsgId}
+        onCopyDraft={async (draft) => {
+          const text = draft.body ?? draft.title ?? '';
+          if (!text) return;
+          try {
+            await navigator.clipboard.writeText(text);
+          } catch (err) {
+            console.error('[reconcile/copy] clipboard blocked', err);
+          }
+        }}
+        onForwardDraft={async (draft, agent) => {
+          if (!swarmRunMeta) return;
+          const body = (draft.body ?? draft.title ?? '').trim();
+          if (!body) return;
+          const text = [
+            `The council has accepted ${agent.name}'s draft. Continuing from:`,
+            '',
+            body,
+          ].join('\n');
+          for (const sid of swarmRunMeta.sessionIDs) {
+            try {
+              await postSessionMessageBrowser(sid, swarmRunMeta.workspace, text);
+            } catch (err) {
+              if (err instanceof CostCapError) {
+                setCostCapBlock({
+                  swarmRunID: err.swarmRunID,
+                  costTotal: err.costTotal,
+                  costCap: err.costCap,
+                  message: err.message,
+                });
+                return;
+              }
+              console.error('[reconcile/forward] session failed', sid, err);
+            }
+          }
+        }}
+        onStartRoundTwo={async (drafts) => {
+          if (!swarmRunMeta) return;
+          const block = drafts
+            .map(
+              ({ agent, draft }) =>
+                `--- ${agent.name} ---\n${(draft.body ?? draft.title ?? '').trim()}`,
+            )
+            .join('\n\n');
+          const text = [
+            'Round 2. Below are the Round-1 drafts from every council member.',
+            'Revise your own response in light of the others, or state clearly',
+            'which member\'s draft you accept and why. Respond now.',
+            '',
+            block,
+          ].join('\n');
+          for (const sid of swarmRunMeta.sessionIDs) {
+            try {
+              await postSessionMessageBrowser(sid, swarmRunMeta.workspace, text);
+            } catch (err) {
+              if (err instanceof CostCapError) {
+                setCostCapBlock({
+                  swarmRunID: err.swarmRunID,
+                  costTotal: err.costTotal,
+                  costCap: err.costCap,
+                  message: err.message,
+                });
+                return;
+              }
+              console.error('[reconcile/round2] session failed', sid, err);
+            }
+          }
+        }}
       />
 
       {costCapBlock && (

@@ -137,9 +137,13 @@ unified output.
 > agent-config name. The run view merges every slot's messages into one
 > chronological transcript; reconcile is surfaced as a read-only iris
 > strip above the composer (`ReconcileStrip`) showing `N / N drafts` with
-> click-to-focus pills — observation + selection only, no auto-accept.
-> Real reconcile *actions* (forward accepted draft back to opencode,
-> clipboard copy, Round 2 fan-out) are not yet wired.
+> click-to-focus pills. **Reconcile actions shipped 2026-04-21:** focusing
+> a draft enables `copy` (clipboard) and `forward →` (fan-outs a
+> ratification of that draft to every council session); `↻ round 2`
+> fan-outs a revise-or-accept prompt with every Round-1 draft embedded.
+> All three are fired via the existing `postSessionMessageBrowser`
+> primitive (serial loop over `sessionIDs` so cost-cap rejections bail
+> cleanly on the first failure).
 
 Round 1: N agents answer the seed independently with no shared
 transcript. Round 2: drafts are revealed, agents revise or vote. The
