@@ -1,21 +1,58 @@
 'use client';
 
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
 import { Inspector } from '@/components/inspector';
-import { CommandPalette, type PaletteAction } from '@/components/command-palette';
-import { RoutingModal } from '@/components/routing-modal';
-import { LiveCommitHistory } from '@/components/live-commit-history';
-import { SpawnAgentModal } from '@/components/spawn-agent-modal';
-import { GlossaryModal } from '@/components/glossary-modal';
-import { NewRunModal } from '@/components/new-run-modal';
-import { RunProvenanceDrawer } from '@/components/run-provenance-drawer';
+// Modals and drawers below are gated by `open={...}` state that defaults to
+// closed — they cost 0 visual rent until the user opens them. Lazy-loading
+// via next/dynamic keeps them out of the initial JS bundle, which matters
+// because page.tsx is the largest client chunk in the app (~6 MB in dev).
+// ssr:false is safe: each component is already client-only code rendered
+// inside a client page, and nothing on the closed state needs pre-render.
+const CommandPalette = dynamic(
+  () => import('@/components/command-palette').then((m) => m.CommandPalette),
+  { ssr: false },
+);
+const RoutingModal = dynamic(
+  () => import('@/components/routing-modal').then((m) => m.RoutingModal),
+  { ssr: false },
+);
+const LiveCommitHistory = dynamic(
+  () =>
+    import('@/components/live-commit-history').then((m) => m.LiveCommitHistory),
+  { ssr: false },
+);
+const SpawnAgentModal = dynamic(
+  () =>
+    import('@/components/spawn-agent-modal').then((m) => m.SpawnAgentModal),
+  { ssr: false },
+);
+const GlossaryModal = dynamic(
+  () => import('@/components/glossary-modal').then((m) => m.GlossaryModal),
+  { ssr: false },
+);
+const NewRunModal = dynamic(
+  () => import('@/components/new-run-modal').then((m) => m.NewRunModal),
+  { ssr: false },
+);
+const RunProvenanceDrawer = dynamic(
+  () =>
+    import('@/components/run-provenance-drawer').then(
+      (m) => m.RunProvenanceDrawer,
+    ),
+  { ssr: false },
+);
+const CostDashboard = dynamic(
+  () => import('@/components/cost-dashboard').then((m) => m.CostDashboard),
+  { ssr: false },
+);
+import type { PaletteAction } from '@/components/command-palette';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
-import { CostDashboard } from '@/components/cost-dashboard';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
