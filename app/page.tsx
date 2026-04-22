@@ -587,7 +587,7 @@ function PageBody({
       />
 
       <main
-        className="flex-1 grid min-h-0 gap-3"
+        className="flex-1 grid min-h-0"
         style={{ gridTemplateColumns: '320px 1fr' }}
       >
         <LeftTabs
@@ -610,7 +610,7 @@ function PageBody({
           }
         />
 
-        <section className="flex-1 flex flex-col min-w-0 min-h-0">
+        <section className="flex-1 flex flex-col min-w-0 min-h-0 pl-3">
           <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">view</span>
             <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
