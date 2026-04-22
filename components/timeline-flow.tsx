@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useCallback, useMemo, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
@@ -149,6 +149,47 @@ export function TimelineFlow({
       buildRow(rows[vi.index], agentIndex, agentMap, clockSec, focusedId, selectedAgentId),
     );
   }, [virtualItems, rows, agentIndex, agentMap, clockSec, focusedId, selectedAgentId]);
+
+  // Plan → timeline hop (DESIGN.md §8.3). When focusedId changes (from the
+  // plan rail, inspector jump, or anywhere else that isn't a click on the
+  // timeline itself), bring the corresponding row + lane into view. We skip
+  // the scroll when the card is already visible on both axes — otherwise
+  // clicking a card that's already in-frame would re-center it jarringly.
+  const lastFocusHandled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusedId) {
+      lastFocusHandled.current = null;
+      return;
+    }
+    if (lastFocusHandled.current === focusedId) return;
+
+    const rowIndex = rows.findIndex(
+      (r) => r.a2a.id === focusedId || r.chips.some((c) => c.id === focusedId),
+    );
+    if (rowIndex < 0) return;
+
+    const row = rows[rowIndex];
+    const focusedMsg =
+      row.a2a.id === focusedId
+        ? row.a2a
+        : row.chips.find((c) => c.id === focusedId) ?? null;
+    if (!focusedMsg) return;
+
+    lastFocusHandled.current = focusedId;
+
+    virtualizer.scrollToIndex(rowIndex, { behavior: 'smooth', align: 'auto' });
+
+    const el = scrollRef.current;
+    if (!el) return;
+    const fromIdx =
+      focusedMsg.fromAgentId === 'human' ? 0 : agentIndex.get(focusedMsg.fromAgentId) ?? 0;
+    const cardX = fromIdx * LANE_WIDTH + LANE_WIDTH / 2 - NODE_WIDTH / 2;
+    const viewLeft = el.scrollLeft;
+    const viewRight = viewLeft + el.clientWidth;
+    if (cardX < viewLeft || cardX + NODE_WIDTH > viewRight) {
+      el.scrollTo({ left: Math.max(0, cardX - 80), behavior: 'smooth' });
+    }
+  }, [focusedId, rows, virtualizer, agentIndex, scrollRef]);
 
   return (
     <div
