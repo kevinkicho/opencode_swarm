@@ -164,9 +164,25 @@ function isHumanAgentId(id: string | undefined): boolean {
   return !id || id === 'user' || id === 'human';
 }
 
-function agentIdFor(agentName: string | undefined, role: 'user' | 'assistant'): string {
+// Agent identity = (agent-config name, sessionID). Keying on sessionID keeps
+// N parallel council members from colliding under a single roster row when
+// they all share the same opencode agent-config (e.g. three "build" members).
+// The last 8 chars of sessionID are enough to disambiguate at prototype scale
+// — opencode IDs are long b32 suffixes, a 40-bit slice gives collision-free
+// separation across any run size we care about.
+//
+// Single-session runs (pattern='none') still produce stable IDs — the same
+// sessionID + name always rehydrates the same ag_* identifier, so URL state
+// and bookmarked lookups stay consistent across polls.
+function agentIdFor(
+  agentName: string | undefined,
+  role: 'user' | 'assistant',
+  sessionID: string
+): string {
   if (role === 'user') return 'human';
-  return `ag_${(agentName ?? 'assistant').replace(/[^a-z0-9_-]/gi, '')}`;
+  const name = (agentName ?? 'assistant').replace(/[^a-z0-9_-]/gi, '');
+  const sid = sessionID.replace(/[^a-z0-9_-]/gi, '').slice(-8);
+  return `ag_${name}_${sid}`;
 }
 
 export function toAgents(messages: OpencodeMessage[]): {
@@ -178,7 +194,7 @@ export function toAgents(messages: OpencodeMessage[]): {
 
   messages.forEach((m, idx) => {
     if (m.info.role !== 'assistant') return;
-    const id = agentIdFor(m.info.agent, 'assistant');
+    const id = agentIdFor(m.info.agent, 'assistant', m.info.sessionID);
     const existing = byId.get(id);
     const tokens = m.info.tokens?.total ?? 0;
     const cost = derivedCost(m.info);
@@ -232,7 +248,10 @@ export function toAgents(messages: OpencodeMessage[]): {
   const latestMsgIdxByAgent = new Map<string, number>();
   messages.forEach((m, idx) => {
     if (m.info.role !== 'assistant') return;
-    latestMsgIdxByAgent.set(agentIdFor(m.info.agent, 'assistant'), idx);
+    latestMsgIdxByAgent.set(
+      agentIdFor(m.info.agent, 'assistant', m.info.sessionID),
+      idx
+    );
   });
   const overallLastIdx = messages.length - 1;
 
@@ -277,6 +296,29 @@ export function toAgents(messages: OpencodeMessage[]): {
     }
   }
 
+  // Name-collision disambiguation. Council members all share one opencode
+  // agent-config, so `m.info.agent` is identical across N sessions (e.g.
+  // every member is named "build"). With sessionID-keyed IDs the roster
+  // rows are already distinct, but the display names would still collide.
+  // Suffix each colliding row with ` #N` in first-appearance order so the
+  // roster / routing modal can tell members apart at a glance. Singletons
+  // are untouched so pattern='none' output stays identical to before.
+  const nameGroups = new Map<string, string[]>();
+  for (const id of order) {
+    const agent = byId.get(id);
+    if (!agent) continue;
+    const group = nameGroups.get(agent.name);
+    if (group) group.push(id);
+    else nameGroups.set(agent.name, [id]);
+  }
+  for (const [, ids] of nameGroups) {
+    if (ids.length <= 1) continue;
+    ids.forEach((id, i) => {
+      const agent = byId.get(id);
+      if (agent) agent.name = `${agent.name} #${i + 1}`;
+    });
+  }
+
   return { agents: Array.from(byId.values()), agentOrder: order };
 }
 
@@ -291,14 +333,17 @@ export function toMessages(
   let lastAssistant: string | undefined;
   for (const m of messages) {
     if (m.info.role === 'assistant') {
-      lastAssistant = agentIdFor(m.info.agent, 'assistant');
+      lastAssistant = agentIdFor(m.info.agent, 'assistant', m.info.sessionID);
       break;
     }
   }
 
   for (const m of messages) {
     const role = m.info.role;
-    const fromAgentId = role === 'user' ? 'human' : agentIdFor(m.info.agent, 'assistant');
+    const fromAgentId =
+      role === 'user'
+        ? 'human'
+        : agentIdFor(m.info.agent, 'assistant', m.info.sessionID);
     if (role === 'assistant') lastAssistant = fromAgentId;
     const toAgentIds =
       role === 'user'
@@ -464,6 +509,11 @@ function mapTodoStatus(s: string | undefined): TodoStatus {
 // a backend tool wrapper we don't have yet).
 interface TaskCall {
   messageId: string;
+  // sessionID of the delegating assistant message. Used to disambiguate
+  // ownerAgentId across council members — a task call from member A's
+  // session binds its subagent to member A's roster row, not to a shared
+  // ag_<subagentName> that would collapse every council member's delegations.
+  sessionID: string;
   subagentName?: string;  // from input.subagent_type (opencode convention)
   text: string;           // description + prompt, lowercased, for token matching
 }
@@ -486,6 +536,7 @@ function taskCallsFrom(messages: OpencodeMessage[]): TaskCall[] {
       const subagent = typeof io.subagent_type === 'string' ? io.subagent_type : undefined;
       calls.push({
         messageId: m.info.id,
+        sessionID: m.info.sessionID,
         subagentName: subagent,
         text: `${description}\n${prompt}`.toLowerCase(),
       });
@@ -570,7 +621,7 @@ export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
       boundByIndex.set(i, {
         taskMessageId: call.messageId,
         ownerAgentId: call.subagentName
-          ? agentIdFor(call.subagentName, 'assistant')
+          ? agentIdFor(call.subagentName, 'assistant', call.sessionID)
           : undefined,
       });
     }
