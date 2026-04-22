@@ -18,6 +18,7 @@ import { CostDashboard } from '@/components/cost-dashboard';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
+import { ReconcileStrip } from '@/components/reconcile-strip';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
@@ -556,6 +557,14 @@ function PageBody({
         onApprove={permissions.approve}
         onReject={permissions.reject}
         error={permissions.error}
+      />
+
+      <ReconcileStrip
+        agents={agents}
+        messages={messages}
+        isMultiSession={(swarmRunMeta?.sessionIDs.length ?? 0) > 1}
+        onFocus={focusMessage}
+        focusedMsgId={focusedMsgId}
       />
 
       {costCapBlock && (
