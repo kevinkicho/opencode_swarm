@@ -113,24 +113,29 @@ body {
 
 /* Softer seam between primary surfaces — used instead of hairline-r when
    two adjacent panels have different background tones (e.g. left rail
-   vs main view). An inset highlight + subtle outer shadow reads as a
-   fade, not a drawn line. */
+   vs main view). An inset highlight + outer shadow reads as a fade,
+   not a drawn line. Tuned to be perceptible at normal zoom: the first
+   iteration at 0.03 opacity + -8px spread was effectively invisible. */
 .sidebar-seam {
   box-shadow:
-    inset -1px 0 0 rgba(255, 255, 255, 0.03),
-    6px 0 14px -8px rgba(0, 0, 0, 0.4);
+    inset -1px 0 0 rgba(255, 255, 255, 0.08),
+    4px 0 12px -4px rgba(0, 0, 0, 0.55);
 }
 
 /* Left-truncation for filepaths — `direction: rtl` flips overflow so
    ellipsis shows on the LEFT while `<bdi>` / `dir="ltr"` children
    preserve normal reading order for the LTR content inside. Basename
-   stays visible; ancestor dirs get clipped. */
+   stays visible; ancestor dirs get clipped. `display: block` is
+   required because `<span>` is inline by default and overflow-clip
+   has no effect on inline elements. */
 .truncate-left {
+  display: block;
   direction: rtl;
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Inline keyboard chip */

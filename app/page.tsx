@@ -586,7 +586,7 @@ function PageBody({
         swarmRunStatus={swarmRunStatus}
       />
 
-      <main className="flex-1 grid min-h-0" style={{ gridTemplateColumns: '260px 1fr' }}>
+      <main className="flex-1 grid min-h-0" style={{ gridTemplateColumns: '320px 1fr' }}>
         <LeftTabs
           plan={runPlan}
           agents={agents}
