@@ -37,6 +37,7 @@ import {
   postSessionMessageServer,
 } from '../opencode-server';
 import { listBoardItems, transitionStatus } from './store';
+import { toFileHeat, type FileHeat } from '@/lib/opencode/transform';
 import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
@@ -80,6 +81,32 @@ export interface TickOpts {
 async function sha7(absPath: string): Promise<string> {
   const buf = await fs.readFile(absPath);
   return createHash('sha1').update(buf).digest('hex').slice(0, 7);
+}
+
+// Stigmergy v1 — pheromone-weighted pick. Score a todo by summing the
+// edit counts of files whose paths appear in its content. Full-path
+// matches count double (strong signal); bare-basename matches count
+// once (weaker, but covers the "edit package.json" -> heat path
+// "src/config/package.json" mismatch). Basenames under 4 chars are
+// skipped — matching "ts" or "js" would be noise.
+//
+// The picker sorts OPEN todos by this score ASC (exploratory bias —
+// steer workers toward unexplored files) with createdAtMs ASC as the
+// tiebreak. A todo with no file attribution scores 0 and sorts with
+// the other "unexplored" items — i.e. it falls back to the original
+// oldest-first behavior, which is the correct degenerate case.
+function scoreTodoByHeat(content: string, heat: FileHeat[]): number {
+  let score = 0;
+  for (const h of heat) {
+    const norm = h.path.replace(/\\/g, '/');
+    const base = norm.split('/').pop() ?? '';
+    if (content.includes(h.path) || content.includes(norm)) {
+      score += h.editCount * 2;
+    } else if (base.length >= 4 && content.includes(base)) {
+      score += h.editCount;
+    }
+  }
+  return score;
 }
 
 function isAssistantComplete(m: OpencodeMessage): boolean {
@@ -216,10 +243,6 @@ export async function tickCoordinator(
     return { status: 'skipped', reason: 'run has no sessions' };
   }
 
-  // Work picker: oldest open pickable item wins. Oldest = lowest createdAtMs,
-  // which is the bottom of listBoardItems' newest-first output. `synthesize`
-  // is claimable exactly like a todo — the only behavioral difference is the
-  // verbatim-content prompt shape (see buildWorkPrompt).
   const all = listBoardItems(swarmRunID);
   const openTodos = all.filter(
     (i) =>
@@ -229,18 +252,23 @@ export async function tickCoordinator(
   if (openTodos.length === 0) {
     return { status: 'skipped', reason: 'no open todos' };
   }
-  const todo = openTodos[openTodos.length - 1];
 
   // Session picker: skip any session that owns a claimed/in-progress item
   // (coordinator-visible busy state) or has an in-flight assistant turn
   // (opencode-visible busy state). First idle wins. When restrictToSessionID
   // is set, only that session is considered — enables per-session fan-out
   // from the auto-ticker without requiring a second picker code path.
+  //
+  // We fetch every candidate session's messages here both for the busy
+  // check and to feed toFileHeat for the stigmergy-weighted todo picker
+  // below. Fetching once per tick keeps the fan-out cost linear in
+  // sessionIDs.
   const sessionCandidates = opts.restrictToSessionID
     ? meta.sessionIDs.includes(opts.restrictToSessionID)
       ? [opts.restrictToSessionID]
       : []
     : meta.sessionIDs;
+  const messagesByCandidate = new Map<string, OpencodeMessage[]>();
   let pickedSession: string | null = null;
   for (const sessionID of sessionCandidates) {
     const ownerId = ownerIdForSession(sessionID);
@@ -251,10 +279,42 @@ export async function tickCoordinator(
     );
     if (busyOnBoard) continue;
     const messages = await getSessionMessagesServer(sessionID, meta.workspace);
+    messagesByCandidate.set(sessionID, messages);
     if (messages.some(isAssistantInFlight)) continue;
-    pickedSession = sessionID;
-    break;
+    if (!pickedSession) pickedSession = sessionID;
   }
+
+  // Work picker: stigmergy v1 exploratory bias. Score open todos by
+  // heat-summed file matches in their content (see scoreTodoByHeat).
+  // Ascending sort means low-heat (unexplored) todos get picked first;
+  // ties break on oldest createdAtMs (preserves the pre-stigmergy
+  // "oldest first" behavior when heat can't differentiate).
+  //
+  // Heat is derived from every session's patch parts in the run. At
+  // v0 (observation-only) it was computed client-side; at v1 we also
+  // need it server-side here. We already fetched the busy-check
+  // messages above, so the only incremental cost is the merge.
+  const allMessages = [...messagesByCandidate.values()].flat();
+  const heat = toFileHeat(allMessages);
+  const heatWeightedPick = heat.length > 0;
+  const scored = openTodos.map((t) => ({
+    todo: t,
+    score: heatWeightedPick ? scoreTodoByHeat(t.content, heat) : 0,
+  }));
+  scored.sort((a, b) => {
+    if (a.score !== b.score) return a.score - b.score;
+    return a.todo.createdAtMs - b.todo.createdAtMs;
+  });
+  const todo = scored[0].todo;
+  if (heatWeightedPick && scored[0].score !== scored[scored.length - 1].score) {
+    // Log only when heat actually changed the order — diagnostic signal
+    // that stigmergy fired. Quiet otherwise to avoid log spam on runs
+    // where every todo maps to the same bucket of files.
+    console.log(
+      `[coordinator] heat-weighted pick: "${todo.content.slice(0, 50)}..." (score=${scored[0].score}, max=${scored[scored.length - 1].score})`,
+    );
+  }
+
   if (!pickedSession) {
     return {
       status: 'skipped',

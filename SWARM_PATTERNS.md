@@ -121,22 +121,31 @@ small atomic units.
   because no plan lives long enough to rot. This is the closest
   architecturally honest approximation of stigmergic behavior.
 
-### 2. Stigmergy / pheromone trails `[~]`
+### 2. Stigmergy / pheromone trails `[x]`
 
-> **Status 2026-04-22 (v0 shipped).** Observability substrate — a new
-> `heat` tab in `LeftTabs` (visible when ≥1 file has been touched)
-> aggregates every patch part's file list across the run into per-file
-> edit counts + distinct-session counts + last-touched timestamps
-> (`toFileHeat` in `lib/opencode/transform.ts`). The rail is read-only
-> per DESIGN.md §4.2 — no reassignment, no pinning, just "look, agents
-> keep converging on src/auth/". Hot-first sort with recency tiebreak
-> so stale-high-count files don't outrank freshly contested ones.
+> **Status 2026-04-22 (v1 shipped).** `tickCoordinator` in
+> `lib/server/blackboard/coordinator.ts` now sorts open todos by
+> heat-score (ascending — exploratory bias), tiebreak on oldest
+> `createdAtMs`. `scoreTodoByHeat` sums edit counts across every
+> `FileHeat` entry whose path or basename appears in the todo's
+> content: full-path matches count double, basename-only (length ≥ 4)
+> matches count single. Todos with no file attribution score 0 and
+> fall back to the oldest-first order — the degenerate case preserves
+> pre-stigmergy behavior exactly. Coordinator logs
+> `[coordinator] heat-weighted pick: "..."` only when heat actually
+> shifted the pick order (score spread > 0), otherwise silent.
 >
-> **v1 (deferred):** weight the blackboard picker using these scores —
-> exploratory bias toward low-pheromone files or convergence bias
-> toward contentious ones. Requires extending `tickCoordinator` with a
-> scoring hook. v0 ships the substrate v1 would need anyway, and is
-> useful on its own for any pattern that produces patches.
+> v1 reuses the v0 observability substrate: `toFileHeat` is invoked
+> inside the tick, fed by the same session-message fetches the
+> busy-check already needed, so the incremental per-tick cost is
+> just the merge + score pass.
+>
+> **Status 2026-04-22 (v0 shipped earlier).** Observability
+> substrate — a `heat` tab in `LeftTabs` (visible when ≥1 file has
+> been touched) aggregates patch parts into per-file edit counts +
+> distinct-session counts + last-touched timestamps. Read-only per
+> DESIGN.md §4.2: the rail reports convergence, never enables
+> reassignment.
 
 Agents leave confidence/interest scores on files they edit. Other agents
 prefer unexplored or contentious files. Zero-coordinator emergence —
@@ -381,7 +390,7 @@ landed against a pattern with simpler semantics.
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
 | 2 | `blackboard`  | `[x]`  | Store + HTTP API + live preview + coordinator + auto-ticker (per-session fan-out) + UI picker + inline rail + ticker-state surface + board-event SSE (2026-04-22); 403-file end-to-end and parallelism both validated 2026-04-22 |
 | 3 | `map-reduce`  | `[x]`  | v1: auto-slice + scoped directives + background synthesis + synthesis-strip. v2: synthesis routed via blackboard-claim (`synthesize` kind) with deterministic idempotent item id, replacing the `sessionIDs[0]` pin |
-| 4 | Stigmergy     | `[~]`  | v0 (observability): per-file edit counts surfaced as `heat` tab in LeftTabs (2026-04-22). v1 (picker weighting in `tickCoordinator`) deferred.        |
+| 4 | Stigmergy     | `[x]`  | v0 (observability): per-file edit counts surfaced as `heat` tab in LeftTabs (2026-04-22). v1 (picker weighting in `tickCoordinator` — exploratory bias + oldest tiebreak) shipped 2026-04-22. |
 
 Critic loops, debate, orchestrator-worker, and role differentiation are
 **not on this roadmap**. If someone pushes for them, point at DESIGN.md §9
