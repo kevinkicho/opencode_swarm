@@ -332,14 +332,22 @@ export function TimelineFlow({
         ));
       })}
 
-      {/* Left gutter — wall-clock HH:MM:SS per row (tooltip: full ISO). Held
-          above the lane columns by a hairline right-border so it reads as
-          navigation chrome, not content. */}
+      {/* Left gutter — wall-clock HH:MM:SS per row, deduped so N events in
+          the same second render as one label + N blanks. Held above the
+          lane columns by a hairline right-border so it reads as navigation
+          chrome, not content. */}
       {virtualItems.map((vi, idx) => {
         const row = layouts[idx];
         if (!row) return null;
         const tsMs = row.event.msg.tsMs;
         const y = vi.start + TOP_PAD;
+        // Dedup against the previous row in the full `rows` array (not the
+        // virtualItems slice) so scroll-starts mid-run still collapse
+        // repeats correctly. Second-level granularity matches the display
+        // format — finer would show noise without gaining signal.
+        const prevTsMs = vi.index > 0 ? rows[vi.index - 1]?.a2a.tsMs : undefined;
+        const sameSecond =
+          tsMs != null && prevTsMs != null && Math.floor(tsMs / 1000) === Math.floor(prevTsMs / 1000);
         return (
           <div
             key={`ts-${row.event.id}`}
@@ -355,12 +363,12 @@ export function TimelineFlow({
               paddingRight: 8,
             }}
           >
-            {tsMs != null ? (
+            {tsMs == null ? (
+              <span className="text-fog-700">{row.event.msg.timestamp}</span>
+            ) : sameSecond ? null : (
               <Tooltip content={fmtIso(tsMs)} side="right">
                 <span className="cursor-default">{fmtWallClock(tsMs)}</span>
               </Tooltip>
-            ) : (
-              <span className="text-fog-700">{row.event.msg.timestamp}</span>
             )}
           </div>
         );
