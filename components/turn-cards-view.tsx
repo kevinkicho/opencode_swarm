@@ -72,55 +72,166 @@ function fmtDuration(startMs: number, endMs?: number): string | null {
   return `${m}m${s.toString().padStart(2, '0')}s`;
 }
 
+// Agent columns across the top, cards flowing down underneath — mirrors
+// the timeline's lane structure so switching views doesn't shift the
+// mental model of "who did what". Cards flow down each agent's column
+// in chronological order. There is no cross-column time alignment: a
+// card's vertical position reflects the reading order within its own
+// column, not global wall-clock time. Use the timeline if you need
+// cross-lane temporal alignment.
+//
+// Width is fixed per column so the header bar stays crisp; the whole
+// view scrolls horizontally when there are more agents than fit.
+const COLUMN_WIDTH = 340;
+const COLUMN_HEADER_HEIGHT = 32;
+
 export function TurnCardsView({
   cards,
   agents,
+  agentOrder,
   focusedId,
   onFocus,
 }: {
   cards: TurnCard[];
   agents: Agent[];
+  agentOrder: string[];
   focusedId: string | null;
   onFocus: (id: string) => void;
 }) {
   const agentById = new Map(agents.map((a) => [a.id, a]));
-  // Index by sessionID fallback: agent.id for live sessions is the sessionID
-  // itself (see toAgents). So agentById.get(sessionID) should generally hit.
+
+  // Group cards into their owning agent column. sessionID == agent.id for
+  // live sessions (toAgents mints the id from the sessionID). Cards with
+  // a sessionID not in agentOrder fall into a synthetic "other" column at
+  // the far right — usually child task-spawn sessions that aren't in the
+  // top-level roster.
+  const cardsByAgent = new Map<string, TurnCard[]>();
+  const otherCards: TurnCard[] = [];
+  for (const c of cards) {
+    const agent = agentById.get(c.sessionID);
+    if (agent) {
+      const list = cardsByAgent.get(agent.id);
+      if (list) list.push(c);
+      else cardsByAgent.set(agent.id, [c]);
+    } else {
+      otherCards.push(c);
+    }
+  }
+  for (const list of cardsByAgent.values()) {
+    list.sort((a, b) => a.startedMs - b.startedMs);
+  }
+  otherCards.sort((a, b) => a.startedMs - b.startedMs);
+
+  const columns = [
+    ...agentOrder
+      .map((id) => ({ agent: agentById.get(id), cards: cardsByAgent.get(id) ?? [] }))
+      .filter(
+        (c): c is { agent: Agent; cards: TurnCard[] } => c.agent !== undefined,
+      ),
+  ];
+
+  const hasAny =
+    columns.some((c) => c.cards.length > 0) || otherCards.length > 0;
 
   return (
-    <section className="flex-1 min-w-0 min-h-0 overflow-y-auto bg-ink-900">
-      {cards.length === 0 ? (
+    <section className="flex-1 min-w-0 min-h-0 overflow-auto bg-ink-900">
+      {!hasAny ? (
         <div className="h-full grid place-items-center">
           <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
             no turns yet
           </div>
         </div>
       ) : (
-        <ul className="flex flex-col">
-          {cards.map((c) => {
-            const agent = agentById.get(c.sessionID);
-            const accent = agent?.accent ?? 'fog';
-            return (
-              <TurnCardRow
-                key={c.id}
-                card={c}
-                accent={accent}
-                agentName={agent?.name ?? c.agent}
-                focused={focusedId === c.id}
-                onFocus={onFocus}
-              />
-            );
-          })}
-        </ul>
+        <div
+          className="flex items-stretch min-h-full"
+          style={{ width: columns.length * COLUMN_WIDTH + (otherCards.length > 0 ? COLUMN_WIDTH : 0) }}
+        >
+          {columns.map((col) => (
+            <AgentColumn
+              key={col.agent.id}
+              agent={col.agent}
+              cards={col.cards}
+              focusedId={focusedId}
+              onFocus={onFocus}
+            />
+          ))}
+          {otherCards.length > 0 && (
+            <AgentColumn
+              agent={null}
+              cards={otherCards}
+              focusedId={focusedId}
+              onFocus={onFocus}
+            />
+          )}
+        </div>
       )}
     </section>
+  );
+}
+
+function AgentColumn({
+  agent,
+  cards,
+  focusedId,
+  onFocus,
+}: {
+  agent: Agent | null;
+  cards: TurnCard[];
+  focusedId: string | null;
+  onFocus: (id: string) => void;
+}) {
+  const accent = agent?.accent ?? 'fog';
+  const name = agent?.name ?? '(sub-agents)';
+  const glyph = agent?.glyph ?? '·';
+  return (
+    <div
+      className="shrink-0 flex flex-col hairline-r"
+      style={{ width: COLUMN_WIDTH }}
+    >
+      <div
+        className="sticky top-0 z-10 hairline-b bg-ink-850/95 backdrop-blur flex items-center gap-2 px-3"
+        style={{ height: COLUMN_HEADER_HEIGHT }}
+      >
+        <span
+          className={clsx(
+            'inline-flex items-center justify-center w-4 h-4 rounded-sm font-mono text-[9.5px] leading-none',
+            `${accentStripe[accent]}/15`.replace('bg-', 'bg-'),
+            accentText[accent],
+          )}
+        >
+          {glyph}
+        </span>
+        <span className={clsx('font-mono text-[11px]', accentText[accent])}>{name}</span>
+        <span className="font-mono text-micro text-fog-700 tabular-nums">
+          {cards.length} turn{cards.length === 1 ? '' : 's'}
+        </span>
+      </div>
+
+      <ul className="flex flex-col flex-1 py-1">
+        {cards.length === 0 ? (
+          <li className="px-3 py-2 font-mono text-micro uppercase tracking-widest2 text-fog-700">
+            idle
+          </li>
+        ) : (
+          cards.map((c) => (
+            <TurnCardRow
+              key={c.id}
+              card={c}
+              accent={accent}
+              agentName={name}
+              focused={focusedId === c.id}
+              onFocus={onFocus}
+            />
+          ))
+        )}
+      </ul>
+    </div>
   );
 }
 
 function TurnCardRow({
   card,
   accent,
-  agentName,
   focused,
   onFocus,
 }: {
@@ -148,14 +259,12 @@ function TurnCardRow({
       )}
       onClick={() => onFocus(card.id)}
     >
-      {/* Accent stripe — agent identity */}
+      {/* Accent stripe — agent identity (column header also colors the name) */}
       <div className={clsx('absolute left-0 top-0 bottom-0 w-[2px]', accentStripe[accent])} />
 
       <div className="pl-3 pr-3 py-2 space-y-1.5">
-        {/* Header row — dense scannable identity+time+status */}
+        {/* Header row — time/status/tokens only; agent name is in column header */}
         <div className="flex items-center gap-2 font-mono text-micro uppercase tracking-widest2">
-          <span className={clsx('text-[11px] normal-case', accentText[accent])}>{agentName}</span>
-          <span className="text-fog-700">·</span>
           <Tooltip content={new Date(card.startedMs).toISOString()} side="top">
             <span className="text-fog-500 tabular-nums cursor-default">
               {fmtWallClock(card.startedMs)}
@@ -171,10 +280,7 @@ function TurnCardRow({
             {statusGlyph[card.status]}
           </span>
           <div className="flex-1" />
-          {card.modelID && (
-            <span className="text-fog-600 normal-case">{card.modelID}</span>
-          )}
-          {card.tokens != null && (
+          {card.tokens != null && card.tokens > 0 && (
             <Tooltip content={`${card.tokens.toLocaleString()} total tokens`} side="top">
               <span className="text-fog-500 tabular-nums cursor-default">
                 {compact(card.tokens)}

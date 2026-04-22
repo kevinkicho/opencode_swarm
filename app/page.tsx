@@ -638,6 +638,7 @@ function PageBody({
             <TurnCardsView
               cards={turnCards}
               agents={agents}
+              agentOrder={agentOrder}
               focusedId={focusedMsgId}
               onFocus={focusMessage}
             />
