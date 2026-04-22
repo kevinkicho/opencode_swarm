@@ -1,50 +1,17 @@
-// Prototype-only board shape for the /board-preview route. Settles the UI
-// before committing to backend plumbing (per SWARM_PATTERNS.md §1: blackboard
-// is the "biggest architectural lift" — board store, optimistic+CAS commits,
-// re-plan sweeps, SSE mux across N sessions). Keep this file disposable:
-// once the real coordinator lands, it writes to SQLite (or whatever §7.6
-// resolves to) and the UI reads from an API. Nothing here is a contract.
-//
-// Four board-item kinds per §1:
-//   - claim    — an agent declared intent to work, recorded file hashes it
-//                intends to touch. Converts to in-progress once it's building.
-//   - question — an agent asked; any idle agent can answer. Resolves in place.
-//   - todo     — a work item on the board. Unclaimed (open), claimed, or done.
-//   - finding  — completed output. Immutable once posted.
+// Mock data for the /board-preview standalone route. The types themselves now
+// live in lib/blackboard/types.ts — re-exported here so the existing import
+// path (`@/lib/blackboard-mock`) keeps working while the preview is still the
+// sole consumer. Delete this file when the preview is replaced by the live
+// view over the real store at lib/server/blackboard/*.
 
-export type BoardItemKind = 'claim' | 'question' | 'todo' | 'finding';
+export type {
+  BoardItemKind,
+  BoardItemStatus,
+  BoardAgent,
+  BoardItem,
+} from './blackboard/types';
 
-export type BoardItemStatus =
-  | 'open'         // on the board, nobody claimed it
-  | 'claimed'      // owner declared intent, hasn't started producing output
-  | 'in-progress'  // actively being worked on
-  | 'done'         // completed
-  | 'stale'        // CAS rejection: files moved under the claim; replan needed
-  | 'blocked';     // owner hit a dependency / question; waiting on a sibling
-
-export interface BoardAgent {
-  id: string;
-  name: string;
-  accent: 'molten' | 'mint' | 'iris' | 'amber' | 'fog';
-  glyph: string;
-}
-
-export interface BoardItem {
-  id: string;
-  kind: BoardItemKind;
-  content: string;
-  status: BoardItemStatus;
-  ownerAgentId?: string;
-  // SHAs the claim snapshotted at pickup time. Mismatch at commit time →
-  // status transitions to 'stale'. Prototype: dummy 7-char hex values.
-  fileHashes?: { path: string; sha: string }[];
-  // Populated on transition to 'stale' so the UI can show "moved under you".
-  staleSinceSha?: string;
-  createdAtMs: number;
-  completedAtMs?: number;
-  // Short annotation, e.g. "waiting on t_002 answer".
-  note?: string;
-}
+import type { BoardAgent, BoardItem } from './blackboard/types';
 
 export const MOCK_AGENTS: BoardAgent[] = [
   { id: 'ag_zed',    name: 'zed',    accent: 'molten', glyph: 'Z' },

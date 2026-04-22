@@ -1,0 +1,49 @@
+// Board shape for the blackboard preset. Shared between the `/board-preview`
+// client view and the server-side store at `lib/server/blackboard/*`. Moved
+// out of lib/blackboard-mock.ts when the SQLite store landed; the mock file
+// now re-exports from here and retains MOCK_AGENTS / MOCK_BOARD only.
+//
+// See SWARM_PATTERNS.md §1 for the semantic model (claim/question/todo/finding
+// + optimistic-CAS-with-file-hashes lifecycle). The types are deliberately
+// narrow — anything that would graduate to policy (retention, re-plan interval,
+// stale-retry bounds) belongs in the routing modal, not here.
+
+// Four board-item kinds per SWARM_PATTERNS.md §1:
+//   - claim    — an agent declared intent to work, recorded file hashes it
+//                intends to touch. Converts to in-progress once it's building.
+//   - question — an agent asked; any idle agent can answer. Resolves in place.
+//   - todo     — a work item on the board. Unclaimed (open), claimed, or done.
+//   - finding  — completed output. Immutable once posted.
+export type BoardItemKind = 'claim' | 'question' | 'todo' | 'finding';
+
+export type BoardItemStatus =
+  | 'open'         // on the board, nobody claimed it
+  | 'claimed'      // owner declared intent, hasn't started producing output
+  | 'in-progress'  // actively being worked on
+  | 'done'         // completed
+  | 'stale'        // CAS rejection: files moved under the claim; replan needed
+  | 'blocked';     // owner hit a dependency / question; waiting on a sibling
+
+export interface BoardAgent {
+  id: string;
+  name: string;
+  accent: 'molten' | 'mint' | 'iris' | 'amber' | 'fog';
+  glyph: string;
+}
+
+export interface BoardItem {
+  id: string;
+  kind: BoardItemKind;
+  content: string;
+  status: BoardItemStatus;
+  ownerAgentId?: string;
+  // SHAs the claim snapshotted at pickup time. Mismatch at commit time →
+  // status transitions to 'stale'. Stored as 7-char hex (git-short style).
+  fileHashes?: { path: string; sha: string }[];
+  // Populated on transition to 'stale' so the UI can show "moved under you".
+  staleSinceSha?: string;
+  createdAtMs: number;
+  completedAtMs?: number;
+  // Short annotation, e.g. "waiting on t_002 answer".
+  note?: string;
+}

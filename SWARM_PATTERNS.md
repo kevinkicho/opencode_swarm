@@ -40,11 +40,13 @@ sessions into one logical run.
 
 ### 1. Blackboard `[~]` — first real implementation target
 
-> **Status 2026-04-21.** UI prototype landed at `/board-preview` — mock-data
-> 5-column pipeline (open → claimed → in-progress → stale → done) so the
-> layout can settle before the coordinator commits to SQLite vs per-run JSON
-> (§7.6). Backend is still unwritten: no board store, no SSE mux across N
-> sessions, no CAS-at-commit sweep. `pattern='blackboard'` still returns 501.
+> **Status 2026-04-21.** UI prototype at `/board-preview` (mock data) + SQLite
+> board store landed at `lib/server/blackboard/{db,store,schema.sql}`. CAS
+> semantics verified end-to-end via `scripts/_blackboard_smoke.mjs`: atomic
+> `UPDATE … WHERE status IN (…)` transitions, first-writer-wins on concurrent
+> claims. Still unwritten: `/api/swarm/run/:id/board` route, coordinator loop,
+> SSE mux across N sessions, file-SHA re-read for commit-time drift detection.
+> `pattern='blackboard'` still returns 501.
 
 
 Agents post `claim`, `question`, `todo`, `finding` items to a shared board
@@ -205,8 +207,10 @@ swarm patterns span multiple sessions. Missing pieces:
 
 1. **`/api/swarm/run` endpoint.** Accepts
    `{ source, pattern, directive?, teamSize }`; returns a `swarmRunID`.
-2. **Server-side state store** for the blackboard — todos, claims, file
-   hashes. SQLite vs. per-run JSON is an open question (§7.6).
+2. ~~**Server-side state store** for the blackboard — todos, claims, file
+   hashes. SQLite vs. per-run JSON is an open question~~ **Done 2026-04-21:**
+   SQLite at `.opencode_swarm/blackboard.sqlite`, schema + CRUD + atomic
+   CAS transitions in `lib/server/blackboard/`.
 3. **SSE multiplexer.** Unions events across the N child sessions into
    one event stream keyed by `swarmRunID`. The existing single-session
    SSE subscriber (`lib/opencode/live.ts`) is the model.
@@ -221,9 +225,13 @@ See DESIGN.md §6 Phase 2 for where this slots into the roadmap.
 
 ## Open questions
 
-- **Persistence.** Blackboard claims must survive a server restart so
+- ~~**Persistence.** Blackboard claims must survive a server restart so
   in-flight work isn't orphaned. SQLite, flat JSON, or an opencode
-  extension hook?  (§7.6 is the current location for this.)
+  extension hook?~~ **Resolved 2026-04-21:** SQLite at
+  `.opencode_swarm/blackboard.sqlite` — separate file from `memory.sqlite`
+  because board state is authoritative (claims can't be regenerated from
+  events.ndjson) while memory is derived. Schema + store at
+  `lib/server/blackboard/`.
 - **Run-view transcript.** The UI is timeline-first (DESIGN.md §2).
   Blackboard wants a board view; map-reduce wants a tree view. Likely a
   per-preset renderer over the same event stream, not separate screens.
