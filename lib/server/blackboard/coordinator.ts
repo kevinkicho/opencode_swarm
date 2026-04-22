@@ -12,14 +12,18 @@
 //      them, and transition in-progress → done with those hashes attached.
 //      On error/timeout, transition to stale with a note.
 //
-// Single-coordinator-per-run assumption: ticks are serialized by the caller.
-// CAS at the SQL layer still protects against accidental concurrent claims,
-// but the prompt-send side has no re-entry guard — don't call tick twice
-// concurrently for the same run.
+// Concurrency model: concurrent calls are safe IFF each call targets a
+// distinct session via opts.restrictToSessionID. The auto-ticker uses this
+// to fan out per-session tickers for parallelism (SWARM_PATTERNS.md §1
+// Open questions → Blackboard parallelism). CAS at the SQL layer protects
+// against two sessions racing on the same todo (the loser gets `skipped:
+// claim lost race`). Calls without restrictToSessionID still use the
+// "first idle session wins" picker and should NOT overlap — the map-reduce
+// synthesis loop relies on that.
 //
-// No drift detection yet. Fine for single-agent-at-a-time serialization;
-// when multi-agent parallelism lands, switch to pre-snapshot SHAs at claim
-// time and let the existing /commit action route handle the drift check.
+// No drift detection yet. When multi-agent parallelism grows teeth, switch
+// to pre-snapshot SHAs at claim time and let the existing /commit action
+// route handle the drift check.
 //
 // Server-only. Never imported from client code.
 
@@ -64,6 +68,12 @@ export type TickOutcome =
 
 export interface TickOpts {
   timeoutMs?: number;
+  // Restrict the session picker to a single sessionID. When set, the tick
+  // uses that session if idle, or returns skipped otherwise — it does not
+  // fall back to other sessions. The auto-ticker passes this to fan out
+  // one tick per session in parallel; map-reduce synthesis omits it so
+  // any idle session can claim the synthesize item.
+  restrictToSessionID?: string;
 }
 
 // Same pattern as planner.ts::sha7 — 7-char git-short SHA1 of file contents.
@@ -223,9 +233,16 @@ export async function tickCoordinator(
 
   // Session picker: skip any session that owns a claimed/in-progress item
   // (coordinator-visible busy state) or has an in-flight assistant turn
-  // (opencode-visible busy state). First idle wins.
+  // (opencode-visible busy state). First idle wins. When restrictToSessionID
+  // is set, only that session is considered — enables per-session fan-out
+  // from the auto-ticker without requiring a second picker code path.
+  const sessionCandidates = opts.restrictToSessionID
+    ? meta.sessionIDs.includes(opts.restrictToSessionID)
+      ? [opts.restrictToSessionID]
+      : []
+    : meta.sessionIDs;
   let pickedSession: string | null = null;
-  for (const sessionID of meta.sessionIDs) {
+  for (const sessionID of sessionCandidates) {
     const ownerId = ownerIdForSession(sessionID);
     const busyOnBoard = all.some(
       (i) =>
@@ -239,7 +256,12 @@ export async function tickCoordinator(
     break;
   }
   if (!pickedSession) {
-    return { status: 'skipped', reason: 'no idle sessions' };
+    return {
+      status: 'skipped',
+      reason: opts.restrictToSessionID
+        ? `session ${opts.restrictToSessionID.slice(-8)} busy or unknown`
+        : 'no idle sessions',
+    };
   }
 
   const sessionID = pickedSession;

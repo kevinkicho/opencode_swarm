@@ -38,8 +38,27 @@ sessions into one logical run.
 
 ## Patterns compatible with the project stance
 
-### 1. Blackboard `[~]` — first real implementation target
+### 1. Blackboard `[x]` — first real implementation target
 
+> **Status 2026-04-22.** Validated end-to-end against a real repo
+> (`kBioIntelBrowser04052026`) after the planner-sweep triad fix
+> (abort-on-timeout + 5-min deadline + todowrite-first prompt — commit
+> `05d2fbe`). A trailing-newline smoke (`run_moaayofk_lvd5br`) produced
+> 7 todos, drained all 7 to done in 171s, and committed 403 file edits
+> to the workspace (git confirmed exact file-count match). Planner-sweep
+> regression fixed: prior attempt burned 5M tokens on 79 orphan turns
+> after a 90s timeout left the session uncancelled — now `runPlannerSweep`
+> always calls `abortSessionServer` on timeout and forces todowrite as
+> the first tool call. **Parallelism fix shipped same day:** pre-fix,
+> `auto-ticker.ts` ran ONE ticker per run with an `inFlight` guard and
+> `tickCoordinator` awaited `waitForSessionIdle` (5+ min) before
+> returning — so only one claim was in flight at any moment, and session 2
+> sat idle in every smoke. Replaced with per-session tick fan-out
+> (per-session slots, `restrictToSessionID` opt in `tickCoordinator`).
+> Validated by `scripts/_blackboard_parallelism_watch.mjs` on
+> `run_moachkl8_axhpxe`: 8 todos drained in 121s with work split 5/3
+> across sessions and max concurrent owners = 2 observed at multiple polls.
+>
 > **Status 2026-04-21.** Coordinator loop end-to-end: SQLite board store,
 > HTTP API, live preview, planner sweep (3a), per-tick claim-and-work
 > (3b + 3c), and auto-ticker with idle auto-stop (3d) all wired.
@@ -305,8 +324,26 @@ See DESIGN.md §6 Phase 2 for where this slots into the roadmap.
   cost, and a quality proxy (tests green, diff size, `session.diff`
   conflict rate). Decide before shipping preset #2.
 - **Parallel-session ceiling.** How many opencode sessions can one
-  instance run concurrently? Probe before committing a `teamSize` bound
-  range in the UI.
+  instance run concurrently? 2026-04-22 parallelism fix unblocks probing
+  — floor is now N-session throughput, ceiling is unknown. Probe before
+  committing a `teamSize` bound range in the UI.
+- ~~**Blackboard parallelism.**~~ **Resolved 2026-04-22.** Pre-fix
+  symptom: `auto-ticker.ts` ran one run-scoped ticker with an `inFlight`
+  re-entrancy guard; `tickCoordinator` blocked inside the tick awaiting
+  `waitForSessionIdle` (5-min deadline); the picker's "first idle session
+  wins" bias locked the same session every tick. Session 2 in 2-session
+  runs sat idle through every smoke run. **Fix:** per-session tick
+  fan-out — `tickCoordinator` accepts `restrictToSessionID`; the ticker
+  maintains a per-session slot map with its own `inFlight` + `consecutiveIdle`
+  and `void tickSession(...)`s every slot per interval fire; auto-stop
+  fires only when every slot has been idle for the threshold. CAS at the
+  store layer handles todo-claim races (loser records `skipped: claim
+  lost race` and retries next tick). Snapshot rollup (`inFlight` = any
+  in-flight slot, `consecutiveIdle` = min across slots) keeps the UI
+  contract unchanged. Validated by `scripts/_blackboard_parallelism_watch.mjs`
+  against `kBioIntelBrowser04052026`: `run_moachkl8_axhpxe` drained 8
+  todos in 121s with work split 5/3 across sessions; max concurrent
+  owners=2 observed at multiple polls.
 
 ---
 
@@ -321,7 +358,7 @@ landed against a pattern with simpler semantics.
 | # | Preset        | Status | Notes                                                                          |
 |---|---------------|--------|--------------------------------------------------------------------------------|
 | 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
-| 2 | `blackboard`  | `[~]`  | Store + HTTP API + live preview + coordinator + auto-ticker + UI picker + inline rail + ticker-state surface ship; SSE mux tbd |
+| 2 | `blackboard`  | `[x]`  | Store + HTTP API + live preview + coordinator + auto-ticker (per-session fan-out) + UI picker + inline rail + ticker-state surface; 403-file end-to-end and parallelism both validated 2026-04-22; SSE mux still open |
 | 3 | `map-reduce`  | `[x]`  | v1: auto-slice + scoped directives + background synthesis + synthesis-strip. v2: synthesis routed via blackboard-claim (`synthesize` kind) with deterministic idempotent item id, replacing the `sessionIDs[0]` pin |
 | 4 | Stigmergy     | `[ ]`  | Layer on blackboard — pheromone scoring as a signal, not a separate preset   |
 
