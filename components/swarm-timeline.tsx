@@ -6,6 +6,7 @@ import type { Agent, AgentMessage, PartType, TodoItem, ToolName } from '@/lib/sw
 import { IconSearch, IconFilter } from './icons';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
+import { Popover } from './ui/popover';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 import { TimelineFlow, TIMELINE_GUTTER_WIDTH } from './timeline-flow';
 import { partMeta, partHex, partOrder, toolMeta, isCrossLane } from '@/lib/part-taxonomy';
@@ -233,11 +234,11 @@ export function SwarmTimeline({
               counts={partCounts}
             />
 
-            <Tooltip
+            <Popover
               side="bottom"
               align="end"
               wide
-              content={
+              content={(close) => (
                 <div className="space-y-1.5 min-w-[220px]">
                   <div className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
                     quick filter
@@ -246,9 +247,13 @@ export function SwarmTimeline({
                     {filters.map((f) => (
                       <Tooltip key={f.key} content={f.hint} side="top">
                         <button
-                          onClick={() => setFilter(f.key)}
+                          type="button"
+                          onClick={() => {
+                            setFilter(f.key);
+                            close();
+                          }}
                           className={clsx(
-                            'h-6 px-2 rounded flex items-center transition',
+                            'h-6 px-2 rounded flex items-center transition cursor-pointer',
                             filter === f.key
                               ? 'bg-molten/15 text-molten border border-molten/30'
                               : 'bg-ink-800 text-fog-400 hairline hover:border-ink-500',
@@ -262,11 +267,12 @@ export function SwarmTimeline({
                     ))}
                   </div>
                 </div>
-              }
+              )}
             >
               <button
+                type="button"
                 className={clsx(
-                  'flex items-center gap-1.5 h-6 px-2 rounded bg-ink-900 hairline hover:border-ink-500 transition',
+                  'flex items-center gap-1.5 h-6 px-2 rounded bg-ink-900 hairline hover:border-ink-500 transition cursor-pointer',
                   filter !== 'all' && 'border-molten/30 bg-molten/5 text-molten',
                 )}
               >
@@ -275,7 +281,7 @@ export function SwarmTimeline({
                   {filter === 'all' ? 'filter' : filter}
                 </span>
               </button>
-            </Tooltip>
+            </Popover>
           </div>
         </div>
       </div>
@@ -519,13 +525,17 @@ function PartLegend({
   counts: Map<PartType, number>;
 }) {
   const active = partFilter !== 'all';
+  // Popover (click-pin), not Tooltip: the rows inside are interactive —
+  // click a label to isolate that part in the main view. Tooltip would
+  // collapse the moment the mouse moved onto a row and the click would
+  // never register. See the interactive_tooltip project memory.
   return (
-    <Tooltip
+    <Popover
       side="bottom"
       align="end"
       wide
-      content={
-        <div className="space-y-2 min-w-[260px]">
+      content={(close) => (
+        <div className="space-y-2 min-w-[320px]">
           <div className="flex items-center gap-2">
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
               part types
@@ -534,43 +544,68 @@ function PartLegend({
               opencode sdk
             </span>
             <button
+              type="button"
               onClick={() => onChange('all')}
               className={clsx(
-                'ml-auto font-mono text-micro uppercase tracking-wider transition',
+                'ml-auto font-mono text-micro uppercase tracking-wider transition cursor-pointer',
                 partFilter === 'all' ? 'text-molten' : 'text-fog-600 hover:text-fog-200',
               )}
             >
               show all
             </button>
           </div>
-          <ul className="space-y-1">
+
+          {/* Grid: label | blurb | count. tabular-nums on the count column
+              so digits align vertically across rows. */}
+          <ul
+            className="list-none"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'max-content 1fr max-content',
+              columnGap: '10px',
+              rowGap: '1px',
+            }}
+          >
             {partOrder.map((p) => {
               const selected = partFilter === p;
               const count = counts.get(p) ?? 0;
               if (count === 0) return null;
               return (
-                <li key={p}>
+                <li key={p} className="contents">
                   <button
-                    onClick={() => onChange(selected ? 'all' : p)}
+                    type="button"
+                    onClick={() => {
+                      onChange(selected ? 'all' : p);
+                      close();
+                    }}
                     className={clsx(
-                      'w-full flex items-center gap-2 h-6 px-2 rounded transition',
-                      selected ? 'bg-ink-700' : 'hover:bg-ink-800',
+                      'contents font-mono text-micro uppercase tracking-wider cursor-pointer group',
                     )}
+                    aria-label={`isolate ${partMeta[p].label}`}
                   >
                     <span
-                      className="w-1.5 h-1.5 rounded-full shrink-0"
-                      style={{ backgroundColor: partHex[p] }}
-                    />
-                    <span
-                      className="font-mono text-micro uppercase tracking-wider shrink-0"
+                      className={clsx(
+                        'h-6 px-2 flex items-center rounded-l',
+                        selected ? 'bg-ink-700' : 'group-hover:bg-ink-800',
+                      )}
                       style={{ color: partHex[p] }}
                     >
                       {partMeta[p].label}
                     </span>
-                    <span className="font-mono text-[10.5px] text-fog-600 truncate">
+                    <span
+                      className={clsx(
+                        'h-6 flex items-center text-[10.5px] text-fog-500 normal-case truncate',
+                        selected ? 'bg-ink-700' : 'group-hover:bg-ink-800',
+                      )}
+                    >
                       {partMeta[p].blurb}
                     </span>
-                    <span className="ml-auto font-mono text-[10.5px] text-fog-600 tabular-nums shrink-0">
+                    <span
+                      className={clsx(
+                        'h-6 px-2 flex items-center justify-end text-[10.5px] text-fog-400 tabular-nums rounded-r',
+                        selected ? 'bg-ink-700' : 'group-hover:bg-ink-800',
+                      )}
+                    >
                       {count}
                     </span>
                   </button>
@@ -578,30 +613,19 @@ function PartLegend({
               );
             })}
           </ul>
-          <div className="hairline-t pt-1 font-mono text-[10.5px] text-fog-600 opacity-20">
-            click a row to isolate that part type
+          <div className="hairline-t pt-1 font-mono text-[10.5px] text-fog-600 opacity-40">
+            click a label to isolate that part type in the main view
           </div>
         </div>
-      }
+      )}
     >
       <button
+        type="button"
         className={clsx(
-          'flex items-center gap-1.5 h-6 px-2 rounded hairline transition',
+          'flex items-center gap-1.5 h-6 px-2 rounded hairline transition cursor-pointer',
           active ? 'border-molten/30 bg-molten/5' : 'bg-ink-900 hover:border-ink-500',
         )}
       >
-        <div className="flex items-center gap-[3px]">
-          {partOrder.slice(0, 5).map((p) => (
-            <span
-              key={p}
-              className={clsx(
-                'w-1.5 h-1.5 rounded-full transition',
-                !active || partFilter === p ? 'opacity-100' : 'opacity-25',
-              )}
-              style={{ backgroundColor: partHex[p] }}
-            />
-          ))}
-        </div>
         <span
           className={clsx(
             'font-mono text-micro uppercase tracking-wider',
@@ -610,8 +634,13 @@ function PartLegend({
         >
           {active ? partMeta[partFilter as PartType].label : 'parts'}
         </span>
+        {active && (
+          <span className="font-mono text-[9px] text-fog-600 tabular-nums">
+            {counts.get(partFilter as PartType) ?? 0}
+          </span>
+        )}
       </button>
-    </Tooltip>
+    </Popover>
   );
 }
 
