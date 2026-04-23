@@ -186,6 +186,9 @@ export function SwarmRunsPicker({
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[108px] text-right shrink-0">
               when
             </span>
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[56px] text-right shrink-0">
+              retro
+            </span>
           </div>
           <ul className="max-h-[360px] overflow-y-auto divide-y divide-ink-800">
             {error && !loading && (
@@ -203,14 +206,17 @@ export function SwarmRunsPicker({
               // shows the empty-state with the generate-curl recipe.
               const retroEligible = row.status !== 'live' && row.status !== 'unknown';
               return (
-                <li key={meta.swarmRunID} className="group relative">
+                <li
+                  key={meta.swarmRunID}
+                  className={clsx(
+                    'group flex items-center h-7 pr-1 hover:bg-ink-800/60 transition',
+                    isCurrent && 'bg-iris/10 hover:bg-iris/15',
+                  )}
+                >
                   <Link
                     href={`/?swarmRun=${meta.swarmRunID}`}
                     onClick={() => close()}
-                    className={clsx(
-                      'px-3 h-7 flex items-center gap-3 hover:bg-ink-800/60 transition',
-                      isCurrent && 'bg-iris/10 hover:bg-iris/15'
-                    )}
+                    className="flex-1 min-w-0 px-3 h-full flex items-center gap-3"
                     title={[
                       `status: ${row.status}`,
                       meta.swarmRunID,
@@ -271,22 +277,23 @@ export function SwarmRunsPicker({
                       {fmtDateTime(row.lastActivityTs ?? meta.createdAt)}
                     </span>
                   </Link>
-                  {retroEligible && (
-                    // Absolute-positioned retro action. The WHEN column
-                    // sits directly beneath this button, so we give the
-                    // retro chip a solid backdrop (bg-ink-800) that
-                    // visually replaces the timestamp on hover instead
-                    // of overlapping it. Vertically centered so the
-                    // chip sits cleanly within the 28px row.
-                    <Link
-                      href={`/retro/${meta.swarmRunID}`}
-                      onClick={() => close()}
-                      title="open retro for this run"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 h-5 px-2 rounded font-mono text-[9px] uppercase tracking-widest2 text-fog-400 bg-ink-800 border border-fog-700 hover:text-molten hover:bg-molten/10 hover:border-molten/30 transition-opacity opacity-0 group-hover:opacity-100 flex items-center"
-                    >
-                      retro
-                    </Link>
-                  )}
+                  {/* Retro column — dedicated 56px slot, right of the
+                      row-level Link so clicking it navigates to the
+                      retro page instead of the run view. Reveal on
+                      group-hover (non-hovered rows keep the slot
+                      reserved but empty). */}
+                  <div className="w-[56px] shrink-0 flex items-center justify-end pr-1">
+                    {retroEligible && (
+                      <Link
+                        href={`/retro/${meta.swarmRunID}`}
+                        onClick={() => close()}
+                        title="open retro for this run"
+                        className="h-5 px-2 rounded font-mono text-[9px] uppercase tracking-widest2 text-fog-400 bg-ink-800 border border-fog-700 hover:text-molten hover:bg-molten/10 hover:border-molten/30 transition-opacity opacity-0 group-hover:opacity-100 flex items-center"
+                      >
+                        retro
+                      </Link>
+                    )}
+                  </div>
                 </li>
               );
             })}
