@@ -56,6 +56,34 @@ enough that scanning it doesn't match the actual state.
   `StatsStream` component itself survives — `agent-roster.tsx`
   still uses it (a separate mock surface; out of scope today).
 
+### 2026-04-23 — small-polish sweep (4 items)
+
+- **Tier indicator chip in the run topbar.** Renders to the right of
+  the run-anchor chip when a ticker exists — shows `tier 3/5 ·
+  capabilities` live while the ambition ratchet climbs. Reads off
+  `liveTicker.state` (extended client-side `TickerSnapshot` to
+  include `currentTier` / `maxTier` / `tierExhausted` — mirror of
+  the server snapshot fields shipped earlier). Iris accent when
+  escalating, dims to fog when `tierExhausted`.
+- **Startup auto-cleanup of orphan sessions.** `auto-ticker.ts`'s
+  `tickers()` init now runs a one-shot `listRuns() → abort all
+  sessions` pass on first module load, restricted to runs created
+  in the last 48 h. Closes the SIGKILL / crash / reboot gap the
+  shutdown-hook fix couldn't reach — if a previous dev died
+  uncleanly, the next dev boot auto-heals any in-flight opencode
+  turns before the user can spawn new work on top.
+- **Per-row bundle chip on cost-dashboard.** Small mint `bundle`
+  label renders next to the `$` figure when a row has
+  `costTotal === 0 && tokensTotal > 0` — same heuristic the
+  aggregate banner uses, applied per-row so subscription-bundle
+  runs aren't confused with genuinely-zero runs at a glance.
+- **Agent-roster stats-stream removal.** Replaced the fake
+  `tokens: used * 1200` animated stream in the per-agent popover
+  with a plain rows panel showing real tokens / cost / messages
+  sent / received. Completes the topbar-de-mock cleanup — stream
+  component survives in `components/ui/stats-stream.tsx` but has
+  no readers now (safe to delete if a future pass wants to).
+
 ### 2026-04-23 — harden session cleanup on server exit
 
 - **Shutdown hook now awaits session aborts with a 5 s budget.**

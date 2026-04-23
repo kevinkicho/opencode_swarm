@@ -38,7 +38,7 @@
 //
 // Server-only. Not imported from client code.
 
-import { deriveRunRow, getRun } from '../swarm-registry';
+import { deriveRunRow, getRun, listRuns } from '../swarm-registry';
 import { abortSessionServer } from '../opencode-server';
 import { liveExports, publishExports } from '../hmr-exports';
 import {
@@ -197,14 +197,57 @@ type TickerMap = Map<string, TickerState>;
 
 const globalTickerKey = Symbol.for('opencode_swarm.boardAutoTickers');
 const globalShutdownHookKey = Symbol.for('opencode_swarm.boardAutoTickers.shutdownHook');
+const globalBootCleanupKey = Symbol.for('opencode_swarm.boardAutoTickers.bootCleanup');
 type GlobalWithTickers = typeof globalThis & {
   [globalTickerKey]?: TickerMap;
   [globalShutdownHookKey]?: boolean;
+  [globalBootCleanupKey]?: boolean;
 };
+
+// Horizon for startup cleanup: only runs created in the last 48 h get
+// audited. Anything older is near-certainly settled (Zen 429s time out
+// well before this) and aborting sessions on it just spams opencode.
+// If we ever see actual bleed from older runs, widen this; for now it's
+// the noise / safety tradeoff that fits the size of our registry.
+const STARTUP_CLEANUP_HORIZON_MS = 48 * 60 * 60 * 1000;
 
 function tickers(): TickerMap {
   const g = globalThis as GlobalWithTickers;
   if (!g[globalTickerKey]) g[globalTickerKey] = new Map();
+  // Startup orphan-session cleanup. Covers the SIGKILL / crash / reboot
+  // gap where no shutdown handler ran and any in-flight opencode turns
+  // were left burning tokens. Fires once per process, early, before the
+  // user can launch a new run on top of the orphans. Restricted to runs
+  // created within STARTUP_CLEANUP_HORIZON_MS so we don't spray opencode
+  // with aborts on long-dead runs.
+  if (!g[globalBootCleanupKey]) {
+    g[globalBootCleanupKey] = true;
+    void (async () => {
+      try {
+        const all = await listRuns();
+        const cutoff = Date.now() - STARTUP_CLEANUP_HORIZON_MS;
+        const recent = all.filter((m) => m.createdAt >= cutoff);
+        if (recent.length === 0) return;
+        let targets = 0;
+        await Promise.allSettled(
+          recent.flatMap((meta) => {
+            const sids = [...meta.sessionIDs];
+            if (meta.criticSessionID) sids.push(meta.criticSessionID);
+            targets += sids.length;
+            return sids.map((sid) =>
+              abortSessionServer(sid, meta.workspace).catch(() => undefined),
+            );
+          }),
+        );
+        console.log(
+          `[board/auto-ticker] startup: aborted ${targets} session(s) across ${recent.length} recent run(s) (< ${Math.round(STARTUP_CLEANUP_HORIZON_MS / 3600000)}h old)`,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[board/auto-ticker] startup cleanup failed: ${message}`);
+      }
+    })();
+  }
   // Install shutdown hook once per process so a dev-server Ctrl+C or
   // a parent-signal kill cleanly stops every live ticker — clearInterval
   // on each, flip state.stopped=true. Without this, SIGTERM dumps the
