@@ -38,7 +38,7 @@
 //
 // Server-only. Not imported from client code.
 
-import { getRun } from '../swarm-registry';
+import { deriveRunRow, getRun } from '../swarm-registry';
 import { tickCoordinator, type TickOutcome } from './coordinator';
 import { runPlannerSweep } from './planner';
 import { listBoardItems } from './store';
@@ -61,7 +61,25 @@ const IDLE_TICKS_BEFORE_EAGER_SWEEP = 3;
 // land its new todos before the next one starts reasoning about them.
 const MIN_MS_BETWEEN_SWEEPS = 2 * 60 * 1000;
 
-export type StopReason = 'auto-idle' | 'manual';
+// Liveness watchdog — detects the case where opencode accepts prompts
+// (HTTP 204 from /prompt_async) but never generates any tokens. The
+// 2026-04-23 overnight run hit this at ~01:15: every sweep queued to
+// stuck sessions, no LLM output, run dead for 4 hours until human
+// intervention. Silent because our code-side signals (ticker firing,
+// HTTP 200s on reads) all looked fine.
+const LIVENESS_CHECK_INTERVAL_MS = 60_000;
+// If tokens haven't moved for this long AND we've seen tokens produce
+// before, declare frozen. Chosen at 10 min because legitimate long
+// turns can go 5-10 min without a token update on slow tool calls;
+// shorter thresholds trip false positives.
+const FROZEN_TOKENS_THRESHOLD_MS = 10 * 60 * 1000;
+// If a brand-new run produces zero tokens for this long, also declare
+// frozen. Planner should emit within ~90s; actual worker turns start
+// within 2 min. 15 min is generous — any run not making any noise by
+// then is broken in a way worth stopping.
+const STARTUP_GRACE_MS = 15 * 60 * 1000;
+
+export type StopReason = 'auto-idle' | 'manual' | 'opencode-frozen';
 
 interface PerSessionSlot {
   sessionID: string;
@@ -105,6 +123,13 @@ interface TickerState {
   // as the MIN_MS_BETWEEN_SWEEPS floor so rapid-drain runs don't stack
   // planner calls faster than they can land.
   lastSweepAtMs: number;
+  // Liveness watchdog state. livenessTimer polls opencode token growth
+  // every LIVENESS_CHECK_INTERVAL_MS. lastSeenTokens / lastTokensChangedAtMs
+  // detect the "opencode accepts prompts but produces nothing" failure mode
+  // that killed the 2026-04-23 overnight run.
+  livenessTimer: NodeJS.Timeout | null;
+  lastSeenTokens: number;
+  lastTokensChangedAtMs: number;
 }
 
 type TickerMap = Map<string, TickerState>;
@@ -138,6 +163,8 @@ function tickers(): TickerMap {
           state.timer = null;
           if (state.periodicSweepTimer) clearInterval(state.periodicSweepTimer);
           state.periodicSweepTimer = null;
+          if (state.livenessTimer) clearInterval(state.livenessTimer);
+          state.livenessTimer = null;
           state.stopped = true;
           state.stoppedAtMs = Date.now();
           state.stopReason = 'manual';
@@ -335,6 +362,61 @@ async function attemptReSweep(state: TickerState): Promise<void> {
   }
 }
 
+// Liveness check — the opencode-frozen watchdog. Polls token growth on
+// a fresh deriveRunRow call; compares to the last check. Declares frozen
+// and stops the ticker in two cases:
+//   - tokens > 0 has been observed, but tokens haven't advanced for
+//     FROZEN_TOKENS_THRESHOLD_MS (opencode was alive but went silent)
+//   - tokens === 0 and the ticker has been running for STARTUP_GRACE_MS
+//     (startup freeze — opencode never started producing)
+// Fire-and-forget via setInterval; per-run single-flight via the timer.
+// Errors inside the check log and exit without stopping the ticker — a
+// transient opencode read failure shouldn't kill a healthy run.
+async function checkLiveness(state: TickerState): Promise<void> {
+  if (state.stopped) return;
+  try {
+    const meta = await getRun(state.swarmRunID);
+    if (!meta) return;
+    const row = await deriveRunRow(meta);
+    const tokens = row.tokensTotal ?? 0;
+    const now = Date.now();
+
+    if (tokens === 0) {
+      // Nothing produced yet — grace period before calling it frozen.
+      const age = now - state.startedAtMs;
+      if (age >= STARTUP_GRACE_MS) {
+        console.warn(
+          `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen (startup) — 0 tokens after ${Math.round(age / 60_000)}min. Stopping ticker. Restart opencode + the ticker to recover.`,
+        );
+        stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+      }
+      return;
+    }
+
+    if (tokens !== state.lastSeenTokens) {
+      // Progress! Reset the clock.
+      state.lastSeenTokens = tokens;
+      state.lastTokensChangedAtMs = now;
+      return;
+    }
+
+    // Tokens stuck. If long enough, declare frozen.
+    const stuckFor = now - state.lastTokensChangedAtMs;
+    if (stuckFor >= FROZEN_TOKENS_THRESHOLD_MS) {
+      console.warn(
+        `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen — no token delta in ${Math.round(stuckFor / 60_000)}min (tokens stuck at ${tokens}). Stopping ticker. Restart opencode + the ticker to recover.`,
+      );
+      stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[board/auto-ticker] ${state.swarmRunID}: liveness check threw:`,
+      message,
+    );
+  }
+}
+
 // Long-running cadenced planner sweep. Unlike attemptReSweep (end-of-life
 // one-shot), this fires on a timer regardless of whether the board is
 // idle — the point is to periodically re-examine the repo as it evolves
@@ -454,6 +536,17 @@ export function startAutoTicker(
     );
   }
 
+  // Liveness watchdog. Always-on for every ticker regardless of short-run
+  // vs long-run mode — detects opencode silent-freeze on any run shape.
+  const livenessTimer = setInterval(() => {
+    const s = tickers().get(swarmRunID);
+    if (!s || s.stopped) return;
+    void checkLiveness(s);
+  }, LIVENESS_CHECK_INTERVAL_MS);
+  if (typeof (livenessTimer as NodeJS.Timeout).unref === 'function') {
+    (livenessTimer as NodeJS.Timeout).unref();
+  }
+
   // Preserve slot history across restart so the UI can show "last activity
   // 2m ago" instead of "never". inFlight and consecutiveIdle reset — the
   // old values belong to the previous run instance.
@@ -470,6 +563,7 @@ export function startAutoTicker(
     });
   }
 
+  const nowMs = Date.now();
   tickers().set(swarmRunID, {
     swarmRunID,
     intervalMs,
@@ -477,7 +571,7 @@ export function startAutoTicker(
     stopped: false,
     stoppedAtMs: undefined,
     stopReason: undefined,
-    startedAtMs: Date.now(),
+    startedAtMs: nowMs,
     sessionIDs,
     slots,
     resweepInFlight: false,
@@ -487,7 +581,12 @@ export function startAutoTicker(
     // The initial planner sweep just ran before startAutoTicker was
     // called, so seeding lastSweepAtMs to now prevents the eager-idle
     // check from firing a redundant sweep in the first MIN_MS window.
-    lastSweepAtMs: Date.now(),
+    lastSweepAtMs: nowMs,
+    // Liveness watchdog state. 0 tokens at start is expected — the
+    // STARTUP_GRACE_MS window governs whether that stays OK.
+    livenessTimer,
+    lastSeenTokens: 0,
+    lastTokensChangedAtMs: nowMs,
   });
 }
 
@@ -510,6 +609,8 @@ export function stopAutoTicker(
   s.timer = null;
   if (s.periodicSweepTimer) clearInterval(s.periodicSweepTimer);
   s.periodicSweepTimer = null;
+  if (s.livenessTimer) clearInterval(s.livenessTimer);
+  s.livenessTimer = null;
 }
 
 // Shape handed to clients via /api/swarm/run/:id/ticker. Keep this in
@@ -586,3 +687,4 @@ export function getTickerSnapshot(swarmRunID: string): TickerSnapshot | null {
   const s = tickers().get(swarmRunID);
   return s ? snapshot(s) : null;
 }
+// hmr-reload-token: 2026-04-23T01:15:00

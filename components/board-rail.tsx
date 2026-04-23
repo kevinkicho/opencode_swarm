@@ -373,7 +373,12 @@ function TickerChip({ ticker }: { ticker: LiveTicker }) {
     );
   }
 
-  const reasonLabel = state.stopReason === 'auto-idle' ? 'auto-idle' : 'manual';
+  const reasonLabel =
+    state.stopReason === 'auto-idle'
+      ? 'auto-idle'
+      : state.stopReason === 'opencode-frozen'
+        ? 'opencode-frozen'
+        : 'manual';
   return (
     <div
       className="h-6 hairline-t px-3 flex items-center gap-2 shrink-0 bg-ink-900/30"

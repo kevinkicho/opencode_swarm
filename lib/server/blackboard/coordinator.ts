@@ -587,3 +587,4 @@ export async function tickCoordinator(
 
   return { status: 'picked', sessionID, itemID: todo.id, editedPaths };
 }
+// hmr-reload-token: 2026-04-23T01:15:00

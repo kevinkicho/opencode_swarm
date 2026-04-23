@@ -12,7 +12,7 @@ export interface TickerSnapshot {
   inFlight: boolean;
   stopped: boolean;
   stoppedAtMs?: number;
-  stopReason?: 'auto-idle' | 'manual';
+  stopReason?: 'auto-idle' | 'manual' | 'opencode-frozen';
   consecutiveIdle: number;
   idleThreshold: number;
   lastOutcome?:
