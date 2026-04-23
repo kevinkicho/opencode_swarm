@@ -390,7 +390,16 @@ export async function runPlannerSweep(
     readme,
     opts.escalationTier,
   );
-  await postSessionMessageServer(sessionID, meta.workspace, prompt);
+  // Route the planner prompt through opencode's `plan` agent so users
+  // can pin a smarter/more-expensive model for the planner via
+  // opencode.json's `agent.plan.model` override, while leaving worker
+  // turns on whatever default model is cheap. Before this, the planner
+  // defaulted to the `build` agent (same model as workers), which
+  // wasted reasoning quality on simple worker tasks or overpaid on
+  // planning. See feedback_zen_model_preference.md.
+  await postSessionMessageServer(sessionID, meta.workspace, prompt, {
+    agent: 'plan',
+  });
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const deadline = Date.now() + timeoutMs;
