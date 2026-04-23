@@ -6,7 +6,6 @@ import type { Agent, AgentMessage, AgentStatus, TodoItem } from '@/lib/swarm-typ
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
-import { StatsStream } from './ui/stats-stream';
 import { IconPlus } from './icons';
 import { ToolList } from './part-chip';
 import { compact } from '@/lib/format';
@@ -273,29 +272,23 @@ function AgentRow({
                 side="right"
                 align="start"
                 content={() => (
-                  <StatsStream
-                    live={agent.status === 'working' || agent.status === 'thinking'}
-                    seed={{
-                      label: `${agent.name} live`,
-                      tokens: agent.tokensUsed,
-                      cost: agent.costUsed,
-                      duration: 12,
-                      status:
-                        agent.status === 'working' || agent.status === 'thinking'
-                          ? 'running'
-                          : agent.status === 'error'
-                            ? 'error'
-                            : agent.status === 'done'
-                              ? 'complete'
-                              : 'queued',
-                    }}
-                  />
+                  <div className="w-[220px] p-2.5 space-y-1">
+                    <div className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
+                      {agent.name} · {agent.status}
+                    </div>
+                    <div className="hairline-t pt-1.5 space-y-0.5 font-mono text-[10.5px] tabular-nums">
+                      <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">tokens</span><span className="text-fog-100">{agent.tokensUsed.toLocaleString()}</span></div>
+                      <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">cost</span><span className="text-fog-100">${agent.costUsed.toFixed(2)}</span></div>
+                      <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">sent</span><span className="text-fog-100">{agent.messagesSent}</span></div>
+                      <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">received</span><span className="text-fog-100">{agent.messagesRecv}</span></div>
+                    </div>
+                  </div>
                 )}
               >
                 <button
                   onClick={(e) => e.stopPropagation()}
                   className="tabular-nums cursor-pointer hover:text-fog-200 transition"
-                  aria-label="view cost stream"
+                  aria-label={`${agent.name} stats`}
                 >
                   ${agent.costUsed.toFixed(2)}
                 </button>
