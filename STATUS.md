@@ -29,6 +29,28 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — session cleanup on run end
+
+- **`stopAutoTicker` now fire-and-forget aborts every session on
+  the run** (workers in `meta.sessionIDs` + `meta.criticSessionID`
+  when present) via `abortSessionServer`. Fires on every stop path:
+  auto-idle, tier-exhausted, opencode-frozen, manual, SIGINT/SIGTERM
+  shutdown. Cancels any in-flight assistant turn so no orphaned
+  session keeps streaming tokens with no consumer after the run is
+  declared done.
+- **Root-cause:** observed during the 2026-04-23 critic-gate test:
+  the test run got 429'd on its first sweep, but nothing cleaned up
+  the 4 opencode sessions (3 workers + 1 critic). That run plus 22
+  older ones all had sessions still present on opencode. None were
+  actively producing (a completed-but-empty turn from a 429 is safe),
+  but the accumulation clutters the session list and any still-in-
+  flight turn from a 429 retry would keep burning tokens with no
+  consumer.
+- **One-shot back-cleanup executed** against all 23 existing runs:
+  64 session turns aborted, 0 errors. Mostly no-ops (turns were
+  already completed or error-finished) but cleared any zombie
+  state that had survived the retry-stale + opencode-frozen paths.
+
 ### 2026-04-23 — anti-busywork critic gate
 
 - **`enableCriticGate: true` run option** spawns one extra opencode
@@ -264,6 +286,16 @@ Todo count raised to 6-15 with mix of sizes.
   An in-flight run whose opencode process died will have stuck sessions
   from its view; we don't reconcile. User workflow: stop the ticker,
   maybe fire a fresh run.
+
+- **Non-ticker pattern runs still leak sessions at end-of-life.**
+  The 2026-04-23 `stopAutoTicker` auto-abort covers blackboard-family
+  runs (they route through the ticker). Council / map-reduce / debate-
+  judge / critic-loop complete through their own orchestrators and
+  currently just return without aborting anything. Not bleeding tokens
+  as long as their turns finished cleanly, but zombie turns from
+  unfinished orchestrator runs would still linger. Fix is a small
+  run-complete hook in each orchestrator module. Low priority — those
+  patterns are short-lived by design, so the window is narrow.
 
 ### UI
 

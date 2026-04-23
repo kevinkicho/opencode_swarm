@@ -39,6 +39,7 @@
 // Server-only. Not imported from client code.
 
 import { deriveRunRow, getRun } from '../swarm-registry';
+import { abortSessionServer } from '../opencode-server';
 import { liveExports, publishExports } from '../hmr-exports';
 import {
   COORDINATOR_EXPORTS_KEY,
@@ -726,6 +727,34 @@ export function stopAutoTicker(
   s.periodicSweepTimer = null;
   if (s.livenessTimer) clearInterval(s.livenessTimer);
   s.livenessTimer = null;
+
+  // Fire-and-forget abort on every session associated with this run.
+  // Purpose: ensure no opencode assistant turn keeps streaming tokens
+  // into the void after the coordinator has given up on it. A turn
+  // already completed is a no-op; one in flight gets cancelled.
+  //
+  // Includes the critic session when present — it's outside sessionIDs
+  // (workers-only pool) but equally capable of hanging a turn if a review
+  // was in flight when the run was stopped.
+  //
+  // abortSessionServer is swallowed per-call; if opencode is down or
+  // the session no longer exists the stop still completes. We never
+  // block the stop path on opencode reachability — that would defeat
+  // the point of the liveness watchdog.
+  void (async () => {
+    const meta = await getRun(swarmRunID).catch(() => null);
+    if (!meta) return;
+    const targets = [...meta.sessionIDs];
+    if (meta.criticSessionID) targets.push(meta.criticSessionID);
+    await Promise.allSettled(
+      targets.map((sid) =>
+        abortSessionServer(sid, meta.workspace).catch(() => undefined),
+      ),
+    );
+    console.log(
+      `[board/auto-ticker] ${swarmRunID}: stop(${reason}) aborted ${targets.length} session(s)`,
+    );
+  })();
 }
 
 // Shape handed to clients via /api/swarm/run/:id/ticker. Keep this in
