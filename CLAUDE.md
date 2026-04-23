@@ -9,6 +9,10 @@ Briefing for Claude Code (and any agent that respects this convention) opening t
 4. **`docs/ARCHITECTURE.md`** — runtime data-flow, component role map, extension recipes, debugging playbook. Start here when debugging or extending — the operational companion to DESIGN.md's static contracts.
 5. **`docs/opencode-vocabulary.md`** — canonical opencode SDK part / tool / event names. Use these instead of inventing new terms.
 
+## Check when orienting — not durable, not design
+
+- **`STATUS.md`** — time-scoped snapshot: what shipped recently, what has known rough edges, what's queued. Check when asking "where are we right now?" — NOT when asking "how does X work?" (use the 5 docs above for that). Maintenance: append-only during work; rewrite every couple months.
+
 ## Always
 - Run `npx tsc --noEmit` after edits. The repo is TypeScript strict; type-clean is the bar.
 - Use **opencode SDK names** (`task`, `subtask`, `reasoning`, `patch`, `bash`, `grep`, …) — never invented synonyms.
