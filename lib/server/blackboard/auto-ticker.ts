@@ -212,26 +212,77 @@ function tickers(): TickerMap {
   // reloads don't re-register 200 listeners.
   if (!g[globalShutdownHookKey]) {
     g[globalShutdownHookKey] = true;
-    const shutdown = (signal: string) => {
+    // Guard so repeated signals don't re-enter the shutdown. Also
+    // prevents the `beforeExit` handler from firing a second time
+    // after our own async work unblocks it.
+    let shuttingDown = false;
+    // Hard cap on how long we'll wait for the abort HTTP calls to
+    // resolve before forcing exit. Important: if opencode itself is
+    // hung (the very state that often triggers a shutdown), the
+    // abort calls can take the full opencode timeout. 5s keeps exit
+    // snappy while still giving the quick path (opencode alive and
+    // reachable) a realistic budget to finish N parallel aborts.
+    const ABORT_BUDGET_MS = 5_000;
+    const shutdown = async (signal: string, exitCode?: number) => {
+      if (shuttingDown) return;
+      shuttingDown = true;
       const map = g[globalTickerKey];
-      if (!map || map.size === 0) return;
-      console.log(
-        `[board/auto-ticker] ${signal}: stopping ${map.size} ticker(s) before exit`,
-      );
-      // Route every live ticker through stopAutoTicker so the session-
-      // abort side-effect fires (prevents dev-restart / SIGTERM from
-      // leaking in-flight opencode turns that would keep streaming
-      // tokens with no consumer). See stopAutoTicker body for the
-      // abort-all-sessions logic. Previously this loop inlined just
-      // the timer cleanup and skipped the abort — now we defer so
-      // future additions to stop behavior apply to signals too.
-      for (const state of map.values()) {
-        if (!state.stopped) stopAutoTicker(state.swarmRunID, 'manual');
+      if (!map || map.size === 0) {
+        if (exitCode !== undefined) process.exit(exitCode);
+        return;
       }
+      console.log(
+        `[board/auto-ticker] ${signal}: stopping ${map.size} ticker(s) + aborting sessions before exit`,
+      );
+      // Clear timers synchronously first — they'd otherwise keep the
+      // event loop alive past our exit call. Then collect abort work
+      // and await it with a budget so we don't hang an interactive
+      // shell. fire-and-forget (our pre-b70d594 approach) loses the
+      // HTTP responses when the process exits; this version actually
+      // waits for opencode to acknowledge each abort.
+      const aborts: Promise<unknown>[] = [];
+      for (const state of map.values()) {
+        if (state.stopped) continue;
+        if (state.timer) clearInterval(state.timer);
+        state.timer = null;
+        if (state.periodicSweepTimer) clearInterval(state.periodicSweepTimer);
+        state.periodicSweepTimer = null;
+        if (state.livenessTimer) clearInterval(state.livenessTimer);
+        state.livenessTimer = null;
+        state.stopped = true;
+        state.stoppedAtMs = Date.now();
+        state.stopReason = 'manual';
+        const swarmRunID = state.swarmRunID;
+        aborts.push(
+          (async () => {
+            const meta = await getRun(swarmRunID).catch(() => null);
+            if (!meta) return;
+            const targets = [...meta.sessionIDs];
+            if (meta.criticSessionID) targets.push(meta.criticSessionID);
+            await Promise.allSettled(
+              targets.map((sid) =>
+                abortSessionServer(sid, meta.workspace).catch(() => undefined),
+              ),
+            );
+          })(),
+        );
+      }
+      await Promise.race([
+        Promise.allSettled(aborts),
+        new Promise((r) => setTimeout(r, ABORT_BUDGET_MS)),
+      ]);
+      console.log(
+        `[board/auto-ticker] ${signal}: shutdown complete (${aborts.length} run(s) aborted or budget-timed-out)`,
+      );
+      if (exitCode !== undefined) process.exit(exitCode);
     };
-    process.on('SIGINT', () => shutdown('SIGINT'));
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('beforeExit', () => shutdown('beforeExit'));
+    // SIGINT=130, SIGTERM=143 are the conventional "user interrupted"
+    // exit codes. `beforeExit` fires for natural (no-signal) exits and
+    // we let Node finish on its own — calling process.exit inside its
+    // handler is an anti-pattern.
+    process.on('SIGINT', () => void shutdown('SIGINT', 130));
+    process.on('SIGTERM', () => void shutdown('SIGTERM', 143));
+    process.on('beforeExit', () => void shutdown('beforeExit'));
   }
   return g[globalTickerKey]!;
 }

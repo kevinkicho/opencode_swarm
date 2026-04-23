@@ -56,6 +56,30 @@ enough that scanning it doesn't match the actual state.
   `StatsStream` component itself survives — `agent-roster.tsx`
   still uses it (a separate mock surface; out of scope today).
 
+### 2026-04-23 — harden session cleanup on server exit
+
+- **Shutdown hook now awaits session aborts with a 5 s budget.**
+  The prior shutdown routed through `stopAutoTicker` which fires the
+  abort as fire-and-forget async work — on `SIGTERM` / `SIGINT` /
+  `beforeExit`, Node could exit before the abort HTTP calls reached
+  opencode. Now the shutdown handler is async: clears timers
+  synchronously, then `await`s all outstanding abort requests (with
+  a 5 s hard cap so a hung opencode can't freeze dev exit), then
+  `process.exit(exitCode)`. SIGINT → 130, SIGTERM → 143, beforeExit
+  lets Node finish naturally.
+- **Why it matters:** an in-flight opencode turn with no consumer
+  keeps burning tokens until the LLM call errors or completes.
+  Fire-and-forget abort on exit meant the process could die before
+  opencode acknowledged the cancel. Now exit waits for the
+  acknowledgement. Test-cycle use case: a `pkill -TERM next dev`
+  now cleanly cancels every live run's turns before the process
+  terminates.
+- **Not covered** (still a gap — queued as known-limitation):
+  `SIGKILL` / crash / machine-kernel-kill. No handler can run during
+  those, so sessions would leak. Only safeguard today is hitting the
+  back-cleanup endpoint on next dev boot; startup auto-cleanup is the
+  natural follow-up if that becomes painful.
+
 ### 2026-04-23 — session cleanup on run end
 
 - **`stopAutoTicker` now fire-and-forget aborts every session on
