@@ -53,7 +53,10 @@ export interface CoordinatorExports {
   // types so the declaration order works out.
   tickCoordinator: (
     swarmRunID: string,
-    opts?: { restrictToSessionID?: string },
+    opts?: {
+      restrictToSessionID?: string;
+      excludeSessionIDs?: readonly string[];
+    },
   ) => Promise<TickOutcome>;
   waitForSessionIdle: (
     sessionID: string,
@@ -117,6 +120,11 @@ export interface TickOpts {
   // one tick per session in parallel; map-reduce synthesis omits it so
   // any idle session can claim the synthesize item.
   restrictToSessionID?: string;
+  // Exclude these sessions from the dispatch picker. Used by the
+  // orchestrator-worker pattern to keep the orchestrator (session 0)
+  // focused on planning while only workers (sessions 1..N) claim todos.
+  // Applied before restrictToSessionID — a session in both is excluded.
+  excludeSessionIDs?: readonly string[];
 }
 
 // Same pattern as planner.ts::sha7 — 7-char git-short SHA1 of file contents.
@@ -403,11 +411,13 @@ export async function tickCoordinator(
   // check and to feed toFileHeat for the stigmergy-weighted todo picker
   // below. Fetching once per tick keeps the fan-out cost linear in
   // sessionIDs.
+  const excluded = new Set(opts.excludeSessionIDs ?? []);
   const sessionCandidates = opts.restrictToSessionID
-    ? meta.sessionIDs.includes(opts.restrictToSessionID)
+    ? meta.sessionIDs.includes(opts.restrictToSessionID) &&
+      !excluded.has(opts.restrictToSessionID)
       ? [opts.restrictToSessionID]
       : []
-    : meta.sessionIDs;
+    : meta.sessionIDs.filter((sid) => !excluded.has(sid));
   const messagesByCandidate = new Map<string, OpencodeMessage[]>();
   let pickedSession: string | null = null;
   for (const sessionID of sessionCandidates) {

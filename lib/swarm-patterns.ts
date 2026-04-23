@@ -8,7 +8,7 @@ export interface PatternMeta {
   label: string;
   tagline: string;          // short description shown inside the tile
   available: boolean;       // drives disabled state + "coming soon" indicator
-  accent: 'molten' | 'amber' | 'mint' | 'iris';
+  accent: 'molten' | 'amber' | 'mint' | 'iris' | 'rust';
 }
 
 export const patternMeta: Record<SwarmPattern, PatternMeta> = {
@@ -36,6 +36,12 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'iris',
   },
+  'orchestrator-worker': {
+    label: 'orchestrator',
+    tagline: 'one orchestrator plans, n workers claim and implement',
+    available: true,
+    accent: 'rust',
+  },
 };
 
 // Static class-name maps so Tailwind's JIT purger keeps these utilities in
@@ -45,6 +51,7 @@ export const patternAccentText: Record<PatternMeta['accent'], string> = {
   amber: 'text-amber',
   mint: 'text-mint',
   iris: 'text-iris',
+  rust: 'text-rust',
 };
 
 export const patternAccentBorder: Record<PatternMeta['accent'], string> = {
@@ -52,4 +59,5 @@ export const patternAccentBorder: Record<PatternMeta['accent'], string> = {
   amber: 'border-amber/40',
   mint: 'border-mint/40',
   iris: 'border-iris/40',
+  rust: 'border-rust/40',
 };

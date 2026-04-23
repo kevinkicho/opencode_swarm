@@ -33,6 +33,7 @@ import {
   deriveSlices,
   runMapReduceSynthesis,
 } from '@/lib/server/map-reduce';
+import { runOrchestratorWorkerKickoff } from '@/lib/server/orchestrator-worker';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -48,6 +49,7 @@ const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set([
   'council',
   'blackboard',
   'map-reduce',
+  'orchestrator-worker',
 ]);
 
 // Hard cap on multi-session fan-out. Picked to stay well inside opencode's
@@ -71,6 +73,14 @@ const PATTERN_TEAM_SIZE: Record<
   council: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
   blackboard: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
   'map-reduce': { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
+  // Orchestrator-worker: 1 orchestrator + at least 1 worker = minSize 2.
+  // Default 4 = 1 orchestrator + 3 workers. Maxes match the other
+  // multi-session patterns.
+  'orchestrator-worker': {
+    defaultSize: 4,
+    minSize: 2,
+    maxSize: TEAM_SIZE_MAX,
+  },
 };
 
 function isSwarmPattern(value: unknown): value is SwarmPattern {
@@ -78,7 +88,8 @@ function isSwarmPattern(value: unknown): value is SwarmPattern {
     value === 'none' ||
     value === 'blackboard' ||
     value === 'map-reduce' ||
-    value === 'council'
+    value === 'council' ||
+    value === 'orchestrator-worker'
   );
 }
 
@@ -89,7 +100,7 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
   if (!raw || typeof raw !== 'object') return 'body must be a JSON object';
   const obj = raw as Record<string, unknown>;
 
-  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council';
+  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker';
   if (typeof obj.workspace !== 'string' || !obj.workspace.trim()) {
     return 'workspace (absolute path) is required';
   }
@@ -152,8 +163,12 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     ) {
       return 'persistentSweepMinutes must be a non-negative finite number';
     }
-    if (req.pattern !== 'blackboard' && obj.persistentSweepMinutes > 0) {
-      return `persistentSweepMinutes only applies to pattern='blackboard' (got '${req.pattern}')`;
+    if (
+      req.pattern !== 'blackboard' &&
+      req.pattern !== 'orchestrator-worker' &&
+      obj.persistentSweepMinutes > 0
+    ) {
+      return `persistentSweepMinutes only applies to pattern='blackboard' or 'orchestrator-worker' (got '${req.pattern}')`;
     }
     req.persistentSweepMinutes = obj.persistentSweepMinutes;
   }
@@ -258,8 +273,13 @@ export async function POST(req: NextRequest): Promise<Response> {
   //                   scope annotation ("your slice: src/api/"). Slices are
   //                   auto-derived from the workspace's top-level dirs.
   //   - others      → every session gets the same uniform directive.
+  // Skip orchestrator-worker too: only session 0 (the orchestrator) gets
+  // a directive-flavored message, posted by runOrchestratorWorkerKickoff
+  // with agent='orchestrator' so the roster labels it correctly. Workers
+  // stay quiet until the orchestrator's planner-sweep seeds todos for them.
   if (
     parsed.pattern !== 'blackboard' &&
+    parsed.pattern !== 'orchestrator-worker' &&
     parsed.directive &&
     parsed.directive.trim()
   ) {
@@ -377,6 +397,26 @@ export async function POST(req: NextRequest): Promise<Response> {
     runCouncilRounds(runID).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[swarm/run] council auto-rounds for ${runID} failed:`, message);
+    });
+  }
+
+  // Step 7 (orchestrator-worker only): post the orchestrator intro to
+  // session 0 with agent='orchestrator', fire the initial planner
+  // sweep against that same session, then start the auto-ticker with
+  // the orchestrator excluded from worker dispatch. Runs fully in the
+  // background — the HTTP response returns before the orchestrator has
+  // even started thinking. Failures log and exit; the sessions exist
+  // and the human can manually kick things off from the composer.
+  if (parsed.pattern === 'orchestrator-worker') {
+    const runID = meta.swarmRunID;
+    runOrchestratorWorkerKickoff(runID, {
+      persistentSweepMinutes: parsed.persistentSweepMinutes,
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[swarm/run] orchestrator-worker kickoff for ${runID} failed:`,
+        message,
+      );
     });
   }
 

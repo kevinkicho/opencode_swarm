@@ -7,7 +7,12 @@ export type Provider = 'zen' | 'go' | 'byok';
 // task-tool for sub-agents). Others are coordinator-above-opencode presets
 // defined in SWARM_PATTERNS.md. Presence of a pattern type does NOT imply a
 // backend exists — `lib/swarm-patterns.ts` carries the `available` flag.
-export type SwarmPattern = 'none' | 'blackboard' | 'map-reduce' | 'council';
+export type SwarmPattern =
+  | 'none'
+  | 'blackboard'
+  | 'map-reduce'
+  | 'council'
+  | 'orchestrator-worker';
 
 // UI agent status — superset of opencode SessionStatus (idle/busy/retry)
 // with extra rendering states for the roster

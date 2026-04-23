@@ -169,6 +169,10 @@ interface TickerState {
   // Default 0 preserves the original short-run single-sweep behavior.
   periodicSweepMs: number;
   periodicSweepTimer: NodeJS.Timeout | null;
+  // Orchestrator-worker: session ID that's exempt from worker dispatch.
+  // Empty string when not in orchestrator-worker mode — all sessions
+  // are workers on self-organizing patterns.
+  orchestratorSessionID: string;
   // Timestamp of the most recent sweep (initial, periodic, or eager). Used
   // as the MIN_MS_BETWEEN_SWEEPS floor so rapid-drain runs don't stack
   // planner calls faster than they can land.
@@ -269,6 +273,9 @@ async function tickSession(
   try {
     const outcome = await liveCoordinator().tickCoordinator(state.swarmRunID, {
       restrictToSessionID: sessionID,
+      excludeSessionIDs: state.orchestratorSessionID
+        ? [state.orchestratorSessionID]
+        : undefined,
     });
     slot.lastOutcome = outcome;
     slot.lastRanAtMs = Date.now();
@@ -361,8 +368,12 @@ async function fanout(swarmRunID: string): Promise<void> {
   // Re-check after the await — could have been stopped while resolving run.
   if (s.stopped) return;
   // Fire per-session ticks without awaiting. Each has its own inFlight
-  // guard, so slow sessions don't block fast ones.
+  // guard, so slow sessions don't block fast ones. Orchestrator-worker
+  // runs skip the orchestrator — it's the planner, not a worker.
   for (const sessionID of s.sessionIDs) {
+    if (s.orchestratorSessionID && sessionID === s.orchestratorSessionID) {
+      continue;
+    }
     void tickSession(s, sessionID);
   }
 }
@@ -535,6 +546,12 @@ export interface AutoTickerOpts {
   // Omit / set to 0 for the original "drain once, maybe re-sweep, stop"
   // shape used by short smokes and the battle tests.
   periodicSweepMs?: number;
+  // The orchestrator's session ID for `orchestrator-worker` runs. Excluded
+  // from the dispatch picker so the orchestrator stays focused on planning
+  // rather than claiming worker todos. Also skipped by the per-session
+  // tick fanout. Omit for self-organizing patterns — every session is a
+  // worker by default.
+  orchestratorSessionID?: string;
 }
 
 // Start (or re-arm) the ticker for a run. Idempotent: if a ticker is
@@ -559,6 +576,7 @@ export function startAutoTicker(
 
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
   const periodicSweepMs = opts.periodicSweepMs ?? 0;
+  const orchestratorSessionID = opts.orchestratorSessionID ?? '';
   // All three setInterval callbacks route via liveAutoTicker() so HMR
   // reloads of this module (new fanout / runPeriodicSweep / checkLiveness
   // implementations) propagate to existing tickers without needing
@@ -632,6 +650,7 @@ export function startAutoTicker(
     resweepAttempted: false,
     periodicSweepMs,
     periodicSweepTimer,
+    orchestratorSessionID,
     // The initial planner sweep just ran before startAutoTicker was
     // called, so seeding lastSweepAtMs to now prevents the eager-idle
     // check from firing a redundant sweep in the first MIN_MS window.
