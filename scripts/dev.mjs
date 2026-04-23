@@ -89,8 +89,50 @@ const devEnv = {
   CHOKIDAR_USEPOLLING: 'true',
   CHOKIDAR_INTERVAL: '300',
 };
-spawn('next', ['dev', '-p', String(port)], {
+const child = spawn('next', ['dev', '-p', String(port)], {
   stdio: 'inherit',
   shell: true,
   env: devEnv,
 });
+
+// Forward signals to the child so Ctrl+C, `kill <pid>`, or a parent
+// process restart cleanly tears down next-dev and frees the listening
+// port. Without this, `shell: true` can leave the grandchild running
+// on the dev port, blocking the next launch with EADDRINUSE.
+function forward(signal) {
+  if (!child.killed) {
+    try {
+      child.kill(signal);
+    } catch {
+      // Child already dead — no-op.
+    }
+  }
+}
+process.on('SIGINT', () => forward('SIGINT'));
+process.on('SIGTERM', () => forward('SIGTERM'));
+process.on('SIGHUP', () => forward('SIGHUP'));
+
+// Exit with the child's exit code so monitors (npm scripts, systemd,
+// etc.) see the real outcome. If the child is killed by a signal we
+// relay that as a non-zero exit.
+child.on('exit', (code, signal) => {
+  if (signal) {
+    console.log(`\n[dev] child exited via ${signal}`);
+    process.exit(128 + (signalNumber(signal) ?? 15));
+  }
+  process.exit(code ?? 0);
+});
+
+function signalNumber(signal) {
+  // Minimal POSIX lookup — enough for the signals we forward.
+  switch (signal) {
+    case 'SIGINT':
+      return 2;
+    case 'SIGTERM':
+      return 15;
+    case 'SIGHUP':
+      return 1;
+    default:
+      return null;
+  }
+}

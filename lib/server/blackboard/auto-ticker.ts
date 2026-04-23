@@ -82,13 +82,42 @@ interface TickerState {
 type TickerMap = Map<string, TickerState>;
 
 const globalTickerKey = Symbol.for('opencode_swarm.boardAutoTickers');
+const globalShutdownHookKey = Symbol.for('opencode_swarm.boardAutoTickers.shutdownHook');
 type GlobalWithTickers = typeof globalThis & {
   [globalTickerKey]?: TickerMap;
+  [globalShutdownHookKey]?: boolean;
 };
 
 function tickers(): TickerMap {
   const g = globalThis as GlobalWithTickers;
   if (!g[globalTickerKey]) g[globalTickerKey] = new Map();
+  // Install shutdown hook once per process so a dev-server Ctrl+C or
+  // a parent-signal kill cleanly stops every live ticker — clearInterval
+  // on each, flip state.stopped=true. Without this, SIGTERM dumps the
+  // ticker map mid-tick with no trace. Guarded by a symbol so HMR
+  // reloads don't re-register 200 listeners.
+  if (!g[globalShutdownHookKey]) {
+    g[globalShutdownHookKey] = true;
+    const shutdown = (signal: string) => {
+      const map = g[globalTickerKey];
+      if (!map || map.size === 0) return;
+      console.log(
+        `[board/auto-ticker] ${signal}: stopping ${map.size} ticker(s) before exit`,
+      );
+      for (const state of map.values()) {
+        if (!state.stopped && state.timer) {
+          clearInterval(state.timer);
+          state.timer = null;
+          state.stopped = true;
+          state.stoppedAtMs = Date.now();
+          state.stopReason = 'manual';
+        }
+      }
+    };
+    process.on('SIGINT', () => shutdown('SIGINT'));
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('beforeExit', () => shutdown('beforeExit'));
+  }
   return g[globalTickerKey]!;
 }
 
