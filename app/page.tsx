@@ -490,17 +490,31 @@ function PageBody({
     });
   }, [agentsIn, bounds.costCap]);
 
-  // Only fetch the diff when the live drawer is actually open; refetch when
-  // a new turn lands.
+  // Fetch the diff whenever a live session exists so per-file +/- stats
+  // can render in the cards view's file list. The history drawer also
+  // reads from the same `liveDiffs` signal so nothing downstream
+  // breaks. Refetches on liveLastUpdated.
   const {
     diffs: rawDiffs,
     loading: diffLoading,
     error: diffError,
-  } = useSessionDiff(liveSessionId, historyOpen, liveLastUpdated);
+  } = useSessionDiff(liveSessionId, !!liveSessionId, liveLastUpdated);
   const liveDiffs: DiffData[] | null = useMemo(
     () => (rawDiffs ? parseSessionDiffs(rawDiffs) : null),
     [rawDiffs]
   );
+  // Per-file add/delete stats for the cards view's file list. Built
+  // from liveDiffs if present; empty map otherwise. Multi-session runs
+  // only cover the primary session's diff today — a future pass can
+  // aggregate across every sessionID in meta.
+  const diffStatsByPath = useMemo(() => {
+    const m = new Map<string, { added: number; deleted: number }>();
+    if (!liveDiffs) return m;
+    for (const d of liveDiffs) {
+      m.set(d.file, { added: d.additions ?? 0, deleted: d.deletions ?? 0 });
+    }
+    return m;
+  }, [liveDiffs]);
 
   const focusMessage = useCallback((id: string) => {
     setFocusedMsgId((prev) => {
@@ -678,6 +692,7 @@ function PageBody({
               agents={agents}
               agentOrder={agentOrder}
               workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
+              diffStatsByPath={diffStatsByPath}
               focusedId={focusedMsgId}
               onFocus={focusMessage}
             />

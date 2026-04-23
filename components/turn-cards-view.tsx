@@ -98,11 +98,17 @@ function stripWorkspace(path: string, workspace: string): string {
   return np;
 }
 
+// Per-file add/delete stats, keyed by absolute path. Sourced from the
+// run's session-diff at the page level; missing files render with "—"
+// in the +/- columns instead of blanks.
+export type DiffStatsByPath = Map<string, { added: number; deleted: number }>;
+
 export function TurnCardsView({
   cards,
   agents,
   agentOrder,
   workspace,
+  diffStatsByPath,
   focusedId,
   onFocus,
 }: {
@@ -113,6 +119,7 @@ export function TurnCardsView({
   // file paths inside cards, same as the heat rail. Cards not in a
   // run (empty string) show full paths.
   workspace: string;
+  diffStatsByPath: DiffStatsByPath;
   focusedId: string | null;
   onFocus: (id: string) => void;
 }) {
@@ -180,6 +187,7 @@ export function TurnCardsView({
                 agent={col.agent}
                 cards={col.cards}
                 workspace={workspace}
+                diffStatsByPath={diffStatsByPath}
                 focusedId={focusedId}
                 onFocus={onFocus}
               />
@@ -189,6 +197,7 @@ export function TurnCardsView({
                 agent={null}
                 cards={otherCards}
                 workspace={workspace}
+                diffStatsByPath={diffStatsByPath}
                 focusedId={focusedId}
                 onFocus={onFocus}
               />
@@ -205,12 +214,14 @@ function AgentColumn({
   agent,
   cards,
   workspace,
+  diffStatsByPath,
   focusedId,
   onFocus,
 }: {
   agent: Agent | null;
   cards: TurnCard[];
   workspace: string;
+  diffStatsByPath: DiffStatsByPath;
   focusedId: string | null;
   onFocus: (id: string) => void;
 }) {
@@ -251,6 +262,7 @@ function AgentColumn({
               accent={accent}
               agentName={name}
               workspace={workspace}
+              diffStatsByPath={diffStatsByPath}
               focused={focusedId === c.id}
               onFocus={onFocus}
             />
@@ -270,6 +282,7 @@ function TurnCardRow({
   card,
   accent,
   workspace,
+  diffStatsByPath,
   focused,
   onFocus,
 }: {
@@ -277,6 +290,7 @@ function TurnCardRow({
   accent: Agent['accent'];
   agentName: string;
   workspace: string;
+  diffStatsByPath: DiffStatsByPath;
   focused: boolean;
   onFocus: (id: string) => void;
 }) {
@@ -400,22 +414,32 @@ function TurnCardRow({
           </div>
         )}
 
-        {/* Files touched — right-aligned grid with truncate-left so the
-            basename stays visible while long ancestor dirs clip on the
-            left. Collapsed: show up to 3 files + "+N"; expanded: all. */}
+        {/* Files touched — 3-column grid: path (right-aligned,
+            truncate-left) | +added | -deleted. Stats come from the
+            session's diff via diffStatsByPath; when a file hasn't
+            been resolved yet (null) the +/- cells show "—" placeholders
+            so the grid columns stay aligned across rows. Collapsed:
+            top 3 files + "+N more"; expanded: all. */}
         {card.filesTouched.length > 0 && (
           <div className="pt-0.5">
             <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700 mb-0.5">
               wrote {card.filesTouched.length} file{card.filesTouched.length === 1 ? '' : 's'}
             </div>
             <ul
-              className="list-none space-y-[1px]"
-              style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' }}
+              className="list-none"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) max-content max-content',
+                columnGap: '6px',
+                rowGap: '1px',
+                alignItems: 'center',
+              }}
             >
               {(expanded ? card.filesTouched : card.filesTouched.slice(0, 3)).map((f) => {
                 const rel = stripWorkspace(f, workspace);
+                const stats = diffStatsByPath.get(f);
                 return (
-                  <li key={f} className="min-w-0">
+                  <li key={f} className="contents">
                     <Tooltip
                       content={
                         <div className="font-mono text-[10.5px] text-fog-500 max-w-[420px] break-all">
@@ -430,11 +454,30 @@ function TurnCardRow({
                         <bdi dir="ltr">{rel || f}</bdi>
                       </span>
                     </Tooltip>
+                    <span
+                      className={clsx(
+                        'font-mono text-[10.5px] tabular-nums text-right',
+                        stats && stats.added > 0 ? 'text-mint' : 'text-fog-700',
+                      )}
+                    >
+                      {stats ? `+${stats.added}` : '—'}
+                    </span>
+                    <span
+                      className={clsx(
+                        'font-mono text-[10.5px] tabular-nums text-right',
+                        stats && stats.deleted > 0 ? 'text-rust' : 'text-fog-700',
+                      )}
+                    >
+                      {stats ? `-${stats.deleted}` : '—'}
+                    </span>
                   </li>
                 );
               })}
               {!expanded && card.filesTouched.length > 3 && (
-                <li className="font-mono text-micro text-fog-600">
+                <li
+                  className="col-span-3 font-mono text-micro text-fog-600 pt-0.5"
+                  style={{ gridColumn: '1 / -1' }}
+                >
                   +{card.filesTouched.length - 3} more
                 </li>
               )}
