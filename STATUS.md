@@ -319,12 +319,20 @@ Todo count raised to 6-15 with mix of sizes.
 <!-- Remaining pattern-UI items shipped 2026-04-23; see "Shipped" section. -->
 
 - **Playwright grounding tool for the planner** (ambition-ratchet
-  companion layer #2). We already have `scripts/_ui_audit.mjs` and
-  `scripts/_run_view_audit.mjs` driving headless Chromium. Wire a
-  similar capability as a tool exposed to the planner session so it
-  can actually verify README claims end-to-end before emitting
-  tier-3+ todos. Closes the "agents wrote code but is the product
-  better?" gap — external ground truth beats internal self-assessment.
+  companion layer #2) — *parked 2026-04-23, awaiting signal*. Scope
+  as discussed: (a) dev-server lifecycle for the target repo so it
+  actually runs, (b) a verifier session analogous to the critic that
+  runs `npx playwright` via `bash` and replies `VERIFIED /
+  NOT_VERIFIED`, (c) a `requiresVerification` flag the planner sets
+  on UX-outcome todos. Roughly a day of work, most of it in the
+  dev-server plumbing we have no scaffolding for today. **Hold
+  condition:** run a handful of sessions with `enableCriticGate:
+  true` and observe whether the critic alone catches the
+  tier-3+ "added feature X" lies. If yes → leave parked; the critic
+  + ambition ratchet + retry-stale stack is enough. If tier-3+ runs
+  ship convincing-sounding commits whose features don't actually
+  work → ship this next, because it's the only layer that grounds
+  in external observation rather than LLM self-report.
 
 - **Tier indicator in the ticker chip / run header.** The snapshot
   already carries `currentTier` / `tierExhausted` / `maxTier`; one
