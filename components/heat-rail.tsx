@@ -228,18 +228,23 @@ function HeatRow({
         <Tooltip
           content={
             <div className="space-y-1 max-w-[420px]">
+              {/* Relative path with run's workspace as root — the
+                  absolute path wasn't adding information since every
+                  row in the run shares the same prefix. */}
               <div className="font-mono text-[10.5px] text-fog-200 break-all">
-                {heat.path}
+                {displayPath || heat.path}
               </div>
-              <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 flex items-center gap-2">
-                <span className="tabular-nums">{fmtAgo(heat.lastTouchedMs)}</span>
-                <span className="text-fog-700">·</span>
-                <span className="tabular-nums">
-                  {new Date(heat.lastTouchedMs).toLocaleTimeString()}
-                </span>
+              {/* Timestamp: date + time on one line, relative age
+                  underneath. Separator dots dropped — whitespace is
+                  enough. */}
+              <div className="font-mono text-[10.5px] text-fog-400 tabular-nums">
+                {new Date(heat.lastTouchedMs).toLocaleString()}
+              </div>
+              <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 tabular-nums">
+                {fmtAgo(heat.lastTouchedMs)} ago
               </div>
               {touchers.length > 0 && (
-                <div className="flex items-center gap-1 pt-0.5">
+                <div className="flex items-center gap-1 pt-0.5 flex-wrap">
                   <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
                     touched by
                   </span>
