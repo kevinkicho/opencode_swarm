@@ -8,7 +8,7 @@ export interface PatternMeta {
   label: string;
   tagline: string;          // short description shown inside the tile
   available: boolean;       // drives disabled state + "coming soon" indicator
-  accent: 'molten' | 'amber' | 'mint' | 'iris' | 'rust';
+  accent: 'molten' | 'amber' | 'mint' | 'iris' | 'rust' | 'fog';
 }
 
 export const patternMeta: Record<SwarmPattern, PatternMeta> = {
@@ -42,6 +42,30 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'rust',
   },
+  'role-differentiated': {
+    label: 'roles',
+    tagline: 'n workers with pinned roles (architect, tester, …)',
+    available: true,
+    accent: 'iris',
+  },
+  'debate-judge': {
+    label: 'debate',
+    tagline: 'n generators propose, one judge evaluates and picks',
+    available: true,
+    accent: 'amber',
+  },
+  'critic-loop': {
+    label: 'critic',
+    tagline: 'worker drafts, critic reviews, worker revises (n iterations)',
+    available: true,
+    accent: 'mint',
+  },
+  'deliberate-execute': {
+    label: 'deliberate→execute',
+    tagline: 'council deliberation → synthesis → blackboard execution',
+    available: true,
+    accent: 'fog',
+  },
 };
 
 // Static class-name maps so Tailwind's JIT purger keeps these utilities in
@@ -52,6 +76,7 @@ export const patternAccentText: Record<PatternMeta['accent'], string> = {
   mint: 'text-mint',
   iris: 'text-iris',
   rust: 'text-rust',
+  fog: 'text-fog-400',
 };
 
 export const patternAccentBorder: Record<PatternMeta['accent'], string> = {
@@ -60,4 +85,5 @@ export const patternAccentBorder: Record<PatternMeta['accent'], string> = {
   mint: 'border-mint/40',
   iris: 'border-iris/40',
   rust: 'border-rust/40',
+  fog: 'border-fog-500/40',
 };

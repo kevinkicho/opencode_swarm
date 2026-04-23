@@ -12,7 +12,11 @@ export type SwarmPattern =
   | 'blackboard'
   | 'map-reduce'
   | 'council'
-  | 'orchestrator-worker';
+  | 'orchestrator-worker'
+  | 'role-differentiated'
+  | 'debate-judge'
+  | 'critic-loop'
+  | 'deliberate-execute';
 
 // UI agent status — superset of opencode SessionStatus (idle/busy/retry)
 // with extra rendering states for the roster

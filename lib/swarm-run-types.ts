@@ -24,12 +24,25 @@ export interface SwarmRunRequest {
   title?: string;             // session title seed; falls back to directive line 1
   teamSize?: number;          // aspirational — ignored for pattern='none'
   bounds?: SwarmRunBounds;    // costCap is enforced by the proxy gate (DESIGN.md §9); minutesCap still aspirational
-  // Blackboard-only. When > 0, the auto-ticker fires a fresh planner sweep
-  // every N minutes for the life of the run and disables its auto-idle
-  // stop. Intended for long-running (hours+) runs where new refactoring
-  // opportunities surface as the workers edit the codebase. Omit / set to 0
-  // for the default short-run "drain once, maybe re-sweep, stop" shape.
+  // Blackboard-only (and orchestrator-worker). When > 0, the auto-ticker
+  // fires a fresh planner sweep every N minutes for the life of the run
+  // and disables its auto-idle stop. Intended for long-running (hours+)
+  // runs where new refactoring opportunities surface as the workers edit
+  // the codebase. Omit / set to 0 for the default short-run shape.
   persistentSweepMinutes?: number;
+  // Role-differentiated pattern only. One role name per session. When
+  // provided, must have exactly `teamSize` entries. Names become each
+  // session's `agent` field (visible in roster) + seed the role-framed
+  // intro prompt. Omit to default to numeric role names ("member-1", ...).
+  teamRoles?: string[];
+  // Critic-loop pattern only. Maximum iterations (worker → critic →
+  // worker revise) before shipping the current draft regardless of
+  // critic approval. Default 3.
+  criticMaxIterations?: number;
+  // Debate-judge pattern only. Maximum debate rounds (generators →
+  // judge → possible revision prompts to losers) before the judge's
+  // verdict is final. Default 2.
+  debateMaxRounds?: number;
 }
 
 export interface SwarmRunBounds {
@@ -51,6 +64,12 @@ export interface SwarmRunMeta {
   directive?: string;
   title?: string;
   bounds?: SwarmRunBounds;
+  // Pattern-specific configs persisted alongside the meta so orchestrator
+  // modules can read them on periodic re-sweeps / kickoffs without the
+  // HTTP request context. Mirror of the SwarmRunRequest fields.
+  teamRoles?: string[];
+  criticMaxIterations?: number;
+  debateMaxRounds?: number;
 }
 
 // --- response shape ---------------------------------------------------------

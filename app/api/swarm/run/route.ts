@@ -34,6 +34,7 @@ import {
   runMapReduceSynthesis,
 } from '@/lib/server/map-reduce';
 import { runOrchestratorWorkerKickoff } from '@/lib/server/orchestrator-worker';
+import { runRoleDifferentiatedKickoff } from '@/lib/server/role-differentiated';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -50,6 +51,10 @@ const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set([
   'blackboard',
   'map-reduce',
   'orchestrator-worker',
+  'role-differentiated',
+  'debate-judge',
+  'critic-loop',
+  'deliberate-execute',
 ]);
 
 // Hard cap on multi-session fan-out. Picked to stay well inside opencode's
@@ -81,6 +86,38 @@ const PATTERN_TEAM_SIZE: Record<
     minSize: 2,
     maxSize: TEAM_SIZE_MAX,
   },
+  // Role-differentiated: N workers with pinned roles. Default 4 gives
+  // the planner room to distribute todos across architect/impl/test/review
+  // archetypes without overspending sessions on a 2-3 person shop.
+  'role-differentiated': {
+    defaultSize: 4,
+    minSize: 2,
+    maxSize: TEAM_SIZE_MAX,
+  },
+  // Debate+judge: 1 judge + at least 2 generators = minSize 3.
+  // Default 4 = 1 judge + 3 generators (same shape as council but with
+  // an automated decision surface instead of human reconcile).
+  'debate-judge': {
+    defaultSize: 4,
+    minSize: 3,
+    maxSize: TEAM_SIZE_MAX,
+  },
+  // Critic loop: exactly 2 parties (1 worker + 1 critic). Larger teams
+  // don't map cleanly onto this shape — critic specialization assumes a
+  // stable single reviewer.
+  'critic-loop': {
+    defaultSize: 2,
+    minSize: 2,
+    maxSize: 2,
+  },
+  // Deliberate→Execute: council deliberation + blackboard execution in
+  // sequence on the SAME session pool. N members all deliberate then all
+  // execute. Default 3 mirrors council's default.
+  'deliberate-execute': {
+    defaultSize: 3,
+    minSize: 2,
+    maxSize: TEAM_SIZE_MAX,
+  },
 };
 
 function isSwarmPattern(value: unknown): value is SwarmPattern {
@@ -89,7 +126,11 @@ function isSwarmPattern(value: unknown): value is SwarmPattern {
     value === 'blackboard' ||
     value === 'map-reduce' ||
     value === 'council' ||
-    value === 'orchestrator-worker'
+    value === 'orchestrator-worker' ||
+    value === 'role-differentiated' ||
+    value === 'debate-judge' ||
+    value === 'critic-loop' ||
+    value === 'deliberate-execute'
   );
 }
 
@@ -100,7 +141,7 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
   if (!raw || typeof raw !== 'object') return 'body must be a JSON object';
   const obj = raw as Record<string, unknown>;
 
-  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker';
+  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker, role-differentiated, debate-judge, critic-loop, deliberate-execute';
   if (typeof obj.workspace !== 'string' || !obj.workspace.trim()) {
     return 'workspace (absolute path) is required';
   }
@@ -166,11 +207,55 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     if (
       req.pattern !== 'blackboard' &&
       req.pattern !== 'orchestrator-worker' &&
+      req.pattern !== 'role-differentiated' &&
       obj.persistentSweepMinutes > 0
     ) {
-      return `persistentSweepMinutes only applies to pattern='blackboard' or 'orchestrator-worker' (got '${req.pattern}')`;
+      return `persistentSweepMinutes only applies to blackboard / orchestrator-worker / role-differentiated (got '${req.pattern}')`;
     }
     req.persistentSweepMinutes = obj.persistentSweepMinutes;
+  }
+
+  if (obj.teamRoles !== undefined) {
+    if (
+      !Array.isArray(obj.teamRoles) ||
+      obj.teamRoles.some((r) => typeof r !== 'string' || !r.trim())
+    ) {
+      return 'teamRoles must be an array of non-empty strings';
+    }
+    if (req.pattern !== 'role-differentiated') {
+      return `teamRoles only applies to pattern='role-differentiated' (got '${req.pattern}')`;
+    }
+    req.teamRoles = (obj.teamRoles as string[]).map((r) => r.trim());
+  }
+
+  if (obj.criticMaxIterations !== undefined) {
+    if (
+      typeof obj.criticMaxIterations !== 'number' ||
+      !Number.isInteger(obj.criticMaxIterations) ||
+      obj.criticMaxIterations < 1 ||
+      obj.criticMaxIterations > 10
+    ) {
+      return 'criticMaxIterations must be an integer between 1 and 10';
+    }
+    if (req.pattern !== 'critic-loop') {
+      return `criticMaxIterations only applies to pattern='critic-loop' (got '${req.pattern}')`;
+    }
+    req.criticMaxIterations = obj.criticMaxIterations;
+  }
+
+  if (obj.debateMaxRounds !== undefined) {
+    if (
+      typeof obj.debateMaxRounds !== 'number' ||
+      !Number.isInteger(obj.debateMaxRounds) ||
+      obj.debateMaxRounds < 1 ||
+      obj.debateMaxRounds > 5
+    ) {
+      return 'debateMaxRounds must be an integer between 1 and 5';
+    }
+    if (req.pattern !== 'debate-judge') {
+      return `debateMaxRounds only applies to pattern='debate-judge' (got '${req.pattern}')`;
+    }
+    req.debateMaxRounds = obj.debateMaxRounds;
   }
 
   return req;
@@ -273,13 +358,23 @@ export async function POST(req: NextRequest): Promise<Response> {
   //                   scope annotation ("your slice: src/api/"). Slices are
   //                   auto-derived from the workspace's top-level dirs.
   //   - others      → every session gets the same uniform directive.
-  // Skip orchestrator-worker too: only session 0 (the orchestrator) gets
-  // a directive-flavored message, posted by runOrchestratorWorkerKickoff
-  // with agent='orchestrator' so the roster labels it correctly. Workers
-  // stay quiet until the orchestrator's planner-sweep seeds todos for them.
+  // Skip patterns that post their own pattern-specific intros:
+  //   - blackboard:           no directive post; planner sweep seeds work
+  //   - orchestrator-worker:  orchestrator intro to session 0, workers quiet
+  //   - role-differentiated:  role intros to each session, planner on arch
+  //   - debate-judge:         generators + judge get different intros
+  //   - critic-loop:          worker + critic get different intros
+  //   - deliberate-execute:   starts like council, directive to all — DOES
+  //                           go through this branch
+  const patternsWithCustomIntro: ReadonlySet<SwarmPattern> = new Set([
+    'blackboard',
+    'orchestrator-worker',
+    'role-differentiated',
+    'debate-judge',
+    'critic-loop',
+  ]);
   if (
-    parsed.pattern !== 'blackboard' &&
-    parsed.pattern !== 'orchestrator-worker' &&
+    !patternsWithCustomIntro.has(parsed.pattern) &&
     parsed.directive &&
     parsed.directive.trim()
   ) {
@@ -415,6 +510,23 @@ export async function POST(req: NextRequest): Promise<Response> {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(
         `[swarm/run] orchestrator-worker kickoff for ${runID} failed:`,
+        message,
+      );
+    });
+  }
+
+  // Step 8 (role-differentiated only): post role-framed intros to workers,
+  // fire planner sweep on session 0 (the architect), start auto-ticker
+  // for standard board-claim dispatch. All sessions are workers from the
+  // coordinator's POV — roles shape what they self-select, not routing.
+  if (parsed.pattern === 'role-differentiated') {
+    const runID = meta.swarmRunID;
+    runRoleDifferentiatedKickoff(runID, {
+      persistentSweepMinutes: parsed.persistentSweepMinutes,
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[swarm/run] role-differentiated kickoff for ${runID} failed:`,
         message,
       );
     });

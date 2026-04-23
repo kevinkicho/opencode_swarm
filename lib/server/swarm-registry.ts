@@ -123,6 +123,9 @@ export async function createRun(
     directive: req.directive,
     title: req.title,
     bounds: req.bounds,
+    teamRoles: req.teamRoles,
+    criticMaxIterations: req.criticMaxIterations,
+    debateMaxRounds: req.debateMaxRounds,
   };
   await fs.mkdir(runDir(swarmRunID), { recursive: true });
   await fs.writeFile(metaPath(swarmRunID), JSON.stringify(meta, null, 2), 'utf8');
