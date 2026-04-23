@@ -57,4 +57,11 @@ export interface BoardItem {
   completedAtMs?: number;
   // Short annotation, e.g. "waiting on t_002 answer".
   note?: string;
+  // Playwright grounding: when true and the run has enableVerifierGate
+  // set, the coordinator consults the verifier session (browser-
+  // automated check) after the critic gate approves — before marking
+  // the item done. For todos that claim user-observable outcomes
+  // ("the dashboard renders X", "clicking Y opens Z"). Planner sets
+  // this on its todowrite emission for items that fit.
+  requiresVerification?: boolean;
 }

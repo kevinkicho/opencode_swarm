@@ -52,6 +52,21 @@ export interface SwarmRunRequest {
   // Only applies to blackboard-family patterns (the other patterns
   // don't route commits through the board coordinator).
   enableCriticGate?: boolean;
+  // Playwright grounding (companion layer #2 to the ambition ratchet).
+  // When true AND workspaceDevUrl is set, the run creates a dedicated
+  // "verifier" opencode session. For board items the planner flags
+  // `requiresVerification: true`, the coordinator consults the verifier
+  // AFTER the critic gate approves. The verifier uses Playwright (via
+  // opencode's bash tool) to navigate the running target app and
+  // assert on DOM / screenshot / flow. NOT_VERIFIED verdicts send the
+  // item back to stale with `[verifier-rejected]` note. Default false.
+  // Also blackboard-family only.
+  enableVerifierGate?: boolean;
+  // Base URL of the target repo's running dev server (e.g.,
+  // "http://localhost:3000"). User is responsible for running the dev
+  // server — we don't manage its lifecycle. Required when
+  // enableVerifierGate is true; ignored otherwise.
+  workspaceDevUrl?: string;
 }
 
 export interface SwarmRunBounds {
@@ -86,6 +101,13 @@ export interface SwarmRunMeta {
   // be ticked by the coordinator. Absent when enableCriticGate is false
   // or the critic spawn failed (run continues without the gate).
   criticSessionID?: string;
+  // Playwright grounding mirror — see SwarmRunRequest for semantics.
+  enableVerifierGate?: boolean;
+  workspaceDevUrl?: string;
+  // Dedicated verifier session, spawned once at createRun when
+  // enableVerifierGate is true. Also NOT in sessionIDs. Absent when
+  // the flag is false or spawn failed.
+  verifierSessionID?: string;
 }
 
 // --- response shape ---------------------------------------------------------

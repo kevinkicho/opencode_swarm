@@ -233,6 +233,7 @@ function tickers(): TickerMap {
           recent.flatMap((meta) => {
             const sids = [...meta.sessionIDs];
             if (meta.criticSessionID) sids.push(meta.criticSessionID);
+            if (meta.verifierSessionID) sids.push(meta.verifierSessionID);
             targets += sids.length;
             return sids.map((sid) =>
               abortSessionServer(sid, meta.workspace).catch(() => undefined),
@@ -302,6 +303,7 @@ function tickers(): TickerMap {
             if (!meta) return;
             const targets = [...meta.sessionIDs];
             if (meta.criticSessionID) targets.push(meta.criticSessionID);
+            if (meta.verifierSessionID) targets.push(meta.verifierSessionID);
             await Promise.allSettled(
               targets.map((sid) =>
                 abortSessionServer(sid, meta.workspace).catch(() => undefined),
@@ -837,6 +839,7 @@ export function stopAutoTicker(
     if (!meta) return;
     const targets = [...meta.sessionIDs];
     if (meta.criticSessionID) targets.push(meta.criticSessionID);
+    if (meta.verifierSessionID) targets.push(meta.verifierSessionID);
     await Promise.allSettled(
       targets.map((sid) =>
         abortSessionServer(sid, meta.workspace).catch(() => undefined),

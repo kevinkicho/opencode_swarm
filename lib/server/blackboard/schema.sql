@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS board_items (
   created_ms INTEGER NOT NULL,
   completed_ms INTEGER,
 
+  -- Playwright grounding flag. When 1 and the run has
+  -- enableVerifierGate set, the coordinator consults the verifier
+  -- session after the critic gate approves, before marking done.
+  -- 0 for board items that don't claim a user-observable outcome
+  -- (refactors, internal cleanup, etc.). See SWARM_PATTERNS.md
+  -- "Tiered execution" companion layer #2.
+  requires_verification INTEGER NOT NULL DEFAULT 0,
+
   PRIMARY KEY (swarm_run_id, id)
 );
 

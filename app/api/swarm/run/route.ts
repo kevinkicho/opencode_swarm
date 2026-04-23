@@ -283,6 +283,43 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.enableCriticGate = obj.enableCriticGate;
   }
 
+  if (obj.enableVerifierGate !== undefined) {
+    if (typeof obj.enableVerifierGate !== 'boolean') {
+      return 'enableVerifierGate must be boolean';
+    }
+    // Same pattern constraint as the critic gate.
+    if (
+      obj.enableVerifierGate === true &&
+      req.pattern !== 'blackboard' &&
+      req.pattern !== 'orchestrator-worker' &&
+      req.pattern !== 'role-differentiated' &&
+      req.pattern !== 'deliberate-execute'
+    ) {
+      return `enableVerifierGate only applies to blackboard-family patterns (got '${req.pattern}')`;
+    }
+    req.enableVerifierGate = obj.enableVerifierGate;
+  }
+
+  if (obj.workspaceDevUrl !== undefined) {
+    if (typeof obj.workspaceDevUrl !== 'string' || !obj.workspaceDevUrl.trim()) {
+      return 'workspaceDevUrl must be a non-empty string';
+    }
+    try {
+      // eslint-disable-next-line no-new -- validation only
+      new URL(obj.workspaceDevUrl);
+    } catch {
+      return 'workspaceDevUrl must be a valid URL (e.g. http://localhost:3000)';
+    }
+    req.workspaceDevUrl = obj.workspaceDevUrl;
+  }
+
+  // enableVerifierGate + workspaceDevUrl must come as a pair — the
+  // verifier needs a target URL to navigate. Silent-ignoring a truthy
+  // flag without a URL would mislead; better to reject up front.
+  if (req.enableVerifierGate === true && !req.workspaceDevUrl) {
+    return 'enableVerifierGate=true requires workspaceDevUrl (the target app URL to verify against)';
+  }
+
   return req;
 }
 
@@ -451,6 +488,26 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  // Step 2.6 (opt-in): same treatment for the verifier session (Playwright
+  // grounding). Spawned only when enableVerifierGate is true AND the
+  // user supplied workspaceDevUrl (validator already enforced this
+  // pairing). See lib/server/blackboard/verifier.ts for the review path.
+  let verifierSessionID: string | undefined;
+  if (parsed.enableVerifierGate && parsed.workspaceDevUrl) {
+    try {
+      const verifier = await createSessionServer(
+        parsed.workspace,
+        seedTitle ? `${seedTitle} · verifier` : undefined,
+      );
+      verifierSessionID = verifier.id;
+    } catch (err) {
+      console.warn(
+        '[swarm/run] verifier session spawn failed — run continues without verifier gate:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   // Step 3: persist meta.json with every survivor. If this fails we've
   // already created opencode sessions — accept the orphans rather than
   // introduce rollback. The user can see them in opencode's own UI; our
@@ -459,7 +516,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const sessionIDs = sessions.map((s) => s.id);
   let meta;
   try {
-    meta = await createRun(parsed, sessionIDs, { criticSessionID });
+    meta = await createRun(parsed, sessionIDs, { criticSessionID, verifierSessionID });
   } catch (err) {
     return Response.json(
       {

@@ -225,6 +225,18 @@ function buildPlannerPrompt(
     '',
     'Each todo must be a decisive, verifiable act that advances the Mission.',
     '',
+    '**Flagging user-observable todos for Playwright verification.** If a',
+    "todo claims a UX-visible outcome the user would notice in a browser —",
+    '"the dashboard renders X", "clicking Y opens Z", "the chart shows',
+    'data from API", "the form submits to the /api/foo endpoint" — prefix',
+    'its `content` with the literal token `[verify]` (including brackets).',
+    'Example: `[verify] Dashboard market-heatmap panel renders from live',
+    "API data`. Todos that don't claim a user-observable outcome",
+    '(refactors, internal cleanup, pure test additions, docs) must NOT',
+    'carry the prefix. The prefix opts the todo into a browser-automated',
+    "check after the critic gate approves; overflagging just slows the",
+    'swarm, so be selective.',
+    '',
     'Rules:',
     '- todowrite must fire within your first 12 tool calls total.',
     '- Do not edit files yourself. Do not call task or bash.',
@@ -302,6 +314,31 @@ interface RawTodo {
   content: string;
   status?: string;
   priority?: string;
+  // Computed by latestTodosFrom — not on the wire. True when the
+  // planner tagged this todo's content with a leading `[verify]`
+  // prefix, indicating the todo claims a user-observable outcome
+  // that merits Playwright verification after commit. See
+  // buildPlannerPrompt + the insert path in runPlannerSweep.
+  requiresVerification?: boolean;
+}
+
+// Strips the `[verify]` opt-in prefix from a todo's content and
+// reports whether it was present. The prefix is the wire protocol
+// the planner uses to flag UX-claiming todos (opencode's todowrite
+// tool only supports content/status/priority, so we overload
+// content rather than invent a new tool). Case-insensitive; allows
+// variants like `[verify]`, `[VERIFY]`, `[Verify]`.
+const VERIFY_TAG_RE = /^\s*\[verify\]\s*/i;
+function stripVerifyTag(content: string): {
+  content: string;
+  requiresVerification: boolean;
+} {
+  const m = VERIFY_TAG_RE.exec(content);
+  if (!m) return { content, requiresVerification: false };
+  return {
+    content: content.slice(m[0].length).trim(),
+    requiresVerification: true,
+  };
 }
 
 // Last todowrite among the given message IDs wins. Mirrors
@@ -322,13 +359,18 @@ export function latestTodosFrom(
       const state = part.state as { input?: { todos?: unknown } } | undefined;
       const raw = state?.input?.todos;
       if (!Array.isArray(raw)) continue;
-      const todos = raw.filter(
-        (t): t is RawTodo =>
-          !!t &&
-          typeof t === 'object' &&
-          typeof (t as RawTodo).content === 'string' &&
-          (t as RawTodo).content.trim().length > 0,
-      );
+      const todos = raw
+        .filter(
+          (t): t is RawTodo =>
+            !!t &&
+            typeof t === 'object' &&
+            typeof (t as RawTodo).content === 'string' &&
+            (t as RawTodo).content.trim().length > 0,
+        )
+        .map((t) => {
+          const { content, requiresVerification } = stripVerifyTag(t.content);
+          return { ...t, content, requiresVerification };
+        });
       if (todos.length > 0) latest = { todos, messageId: m.info.id };
     }
   }
@@ -462,6 +504,7 @@ export async function runPlannerSweep(
       kind: 'todo',
       content,
       status: 'open',
+      requiresVerification: raw.requiresVerification === true,
       createdAtMs: baseMs + offset,
     });
     offset += 1;

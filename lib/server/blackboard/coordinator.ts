@@ -40,6 +40,7 @@ import {
 import { publishExports } from '../hmr-exports';
 import { roleNamesBySessionID } from '@/lib/blackboard/roles';
 import { reviewWorkerDiff } from './critic';
+import { verifyWorkerOutcome } from './verifier';
 import { listBoardItems, transitionStatus } from './store';
 import { toFileHeat, type FileHeat } from '@/lib/opencode/transform';
 import type { BoardItem } from '@/lib/blackboard/types';
@@ -683,6 +684,53 @@ export async function tickCoordinator(
     if (review.verdict === 'unclear') {
       console.log(
         `[coordinator] ${swarmRunID}/${todo.id}: critic returned 'unclear' (${review.reason}) — failing open`,
+      );
+    }
+  }
+
+  // Playwright grounding (opt-in via meta.enableVerifierGate + per-todo
+  // requiresVerification). Runs AFTER the critic gate approves, BEFORE
+  // the done transition. Same fail-open posture as critic — any verifier
+  // malfunction drops through to done. Only applies to items the planner
+  // flagged as claiming a user-observable outcome; others skip straight
+  // to done. See lib/server/blackboard/verifier.ts.
+  if (
+    todo.requiresVerification &&
+    meta.enableVerifierGate &&
+    meta.verifierSessionID &&
+    meta.workspaceDevUrl
+  ) {
+    const workerText = extractWorkerAssistantText(
+      waited.messages,
+      waited.newIDs,
+    );
+    const v = await verifyWorkerOutcome({
+      swarmRunID,
+      verifierSessionID: meta.verifierSessionID,
+      workspace: meta.workspace,
+      workspaceDevUrl: meta.workspaceDevUrl,
+      directive: meta.directive,
+      todo,
+      workerAssistantText: workerText,
+    });
+    if (v.verdict === 'not-verified') {
+      const rejected = transitionStatus(swarmRunID, todo.id, {
+        from: 'in-progress',
+        to: 'stale',
+        note: `[verifier-rejected] ${v.reason}`.slice(0, 200),
+      });
+      if (rejected.ok) {
+        return {
+          status: 'stale',
+          sessionID,
+          itemID: todo.id,
+          reason: `verifier-rejected: ${v.reason}`,
+        };
+      }
+    }
+    if (v.verdict === 'unclear') {
+      console.log(
+        `[coordinator] ${swarmRunID}/${todo.id}: verifier returned 'unclear' (${v.reason}) — failing open`,
       );
     }
   }

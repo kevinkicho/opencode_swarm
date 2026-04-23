@@ -111,7 +111,7 @@ function mintSwarmRunID(): string {
 export async function createRun(
   req: SwarmRunRequest,
   sessionIDs: string[],
-  extras: { criticSessionID?: string } = {},
+  extras: { criticSessionID?: string; verifierSessionID?: string } = {},
 ): Promise<SwarmRunMeta> {
   const swarmRunID = mintSwarmRunID();
   const meta: SwarmRunMeta = {
@@ -130,9 +130,12 @@ export async function createRun(
     // enableCriticGate is copied only when truthy so meta stays terse for
     // the default case. criticSessionID is only populated when the extra
     // session spawn succeeded — callers fall back to no-gate behavior
-    // when it's absent.
+    // when it's absent. Same shape for verifier.
     enableCriticGate: req.enableCriticGate ? true : undefined,
     criticSessionID: extras.criticSessionID,
+    enableVerifierGate: req.enableVerifierGate ? true : undefined,
+    workspaceDevUrl: req.workspaceDevUrl,
+    verifierSessionID: extras.verifierSessionID,
   };
   await fs.mkdir(runDir(swarmRunID), { recursive: true });
   await fs.writeFile(metaPath(swarmRunID), JSON.stringify(meta, null, 2), 'utf8');

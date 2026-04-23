@@ -63,11 +63,25 @@ export function blackboardDb(): DB {
   return db;
 }
 
-function migrate(_db: DB): void {
-  // No migrations yet. Pattern: inspect PRAGMA table_info and ALTER TABLE
-  // … ADD COLUMN when a column is absent, BEFORE db.exec(schema) runs so
-  // schema.sql's partial indexes can validate against the new column. See
-  // lib/server/memory/db.ts migrate() for a worked example.
+function migrate(db: DB): void {
+  // ALTER TABLE is idempotent via pragma probe — run it BEFORE
+  // db.exec(schema) so schema.sql's CREATE TABLE IF NOT EXISTS doesn't
+  // re-trigger on an already-populated DB and fight with our column add.
+  // Pattern from lib/server/memory/db.ts migrate().
+  const columns = db
+    .prepare(`PRAGMA table_info(board_items)`)
+    .all() as Array<{ name: string }>;
+  // `board_items` may not exist yet on a fresh install — the result is
+  // an empty array, in which case schema.sql below creates it with all
+  // columns including requires_verification. Skip the ALTER then.
+  if (columns.length === 0) return;
+  const have = new Set(columns.map((c) => c.name));
+  if (!have.has('requires_verification')) {
+    db.exec(
+      `ALTER TABLE board_items
+       ADD COLUMN requires_verification INTEGER NOT NULL DEFAULT 0`,
+    );
+  }
 }
 
 function resolveSchema(): string {

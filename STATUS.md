@@ -29,6 +29,49 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — Playwright grounding (verifier gate, MVP)
+
+- **Opt-in via `enableVerifierGate: true` + `workspaceDevUrl`.** Run
+  request gains two paired fields: the flag, and the URL of the
+  target repo's already-running dev server (user manages the dev
+  server lifecycle; we don't spawn it). Validator rejects the flag
+  without the URL since the verifier needs somewhere to navigate.
+- **Dedicated verifier session.** Analogous to the critic session.
+  Spawned once at run creation, held outside `sessionIDs`. Per-run
+  mutex serializes verifier prompts. Fail-open on timeout / parse /
+  HTTP errors.
+- **Per-todo `requiresVerification` flag.** Planner opts individual
+  todos into browser verification by prefixing their `content` with
+  the literal `[verify]` token. `latestTodosFrom` strips the prefix
+  and sets the flag on the board item. Added a
+  `requires_verification` column to the `board_items` SQLite schema
+  with idempotent `ALTER TABLE` migration for existing DBs.
+- **Coordinator hook.** After the critic gate approves a commit, if
+  the item has `requiresVerification && meta.enableVerifierGate &&
+  meta.verifierSessionID && meta.workspaceDevUrl`, the coordinator
+  calls `verifyWorkerOutcome`. NOT_VERIFIED → item goes stale with
+  `[verifier-rejected] {reason}` note (retry-stale revives it, same
+  as critic-rejected).
+- **Verifier prompt.** Tells the verifier session to use opencode's
+  `bash` tool to run `npx playwright` against `workspaceDevUrl`,
+  assert on DOM/text/flow, return `VERIFIED:` / `NOT_VERIFIED:` /
+  `UNCLEAR:` on one line. The verifier composes its own Playwright
+  script per review — we don't ship test code.
+- **Session cleanup paths updated.** Startup auto-cleanup,
+  shutdown-hook SIGTERM abort, and stopAutoTicker all now iterate
+  `meta.verifierSessionID` alongside `meta.sessionIDs` and
+  `meta.criticSessionID`.
+
+**Not yet shipped (parked for follow-up):**
+- Auto-spawning the target repo's dev server. Still user's job to
+  `npm run dev` in the workspace.
+- Verifier-verdict UI on the board items. Today you see
+  `[verifier-rejected]` notes in the board JSON; a dedicated
+  chip/badge would be the next step.
+- Planner prompt testing — the `[verify]` prefix teaching is new
+  and needs real-run observation to see if the planner uses it
+  appropriately (or overflagging).
+
 ### 2026-04-23 — topbar de-mocking
 
 - **Bundle-cost fallback in the topbar's `$` chip.** `toRunMeta` in
