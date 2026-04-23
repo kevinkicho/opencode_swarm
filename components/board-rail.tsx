@@ -124,12 +124,16 @@ export function BoardRail({
           board is empty — the planner sweep may still be running.
         </div>
       )}
+      {/* All 6 sections always rendered (in-progress / claimed / open /
+          stale / blocked / done) so the user has a stable set of
+          collapsible containers regardless of which statuses the run
+          currently has items in. Empty sections show "(none)" when
+          expanded so the header carries all the signal when collapsed. */}
       {SECTIONS.map((section) => {
         const secItems = items
           .filter((it) => section.matches.includes(it.status))
           // newest first for active sections; done can stay created-desc too
           .sort((a, b) => (b.completedAtMs ?? b.createdAtMs) - (a.completedAtMs ?? a.createdAtMs));
-        if (secItems.length === 0) return null;
         const isOpen = expanded[section.key];
         return (
           <div key={section.key}>
@@ -138,8 +142,17 @@ export function BoardRail({
               onClick={() =>
                 setExpanded((prev) => ({ ...prev, [section.key]: !prev[section.key] }))
               }
-              className="w-full h-6 px-3 flex items-center gap-2 text-left hover:bg-ink-800/60 transition"
+              className="w-full h-6 px-3 flex items-center gap-2 text-left hover:bg-ink-800/60 transition cursor-pointer"
             >
+              <span
+                className={clsx(
+                  'text-[10px] text-fog-600 leading-none shrink-0 w-2 transition-transform',
+                  isOpen && 'rotate-90',
+                )}
+                aria-hidden
+              >
+                ▸
+              </span>
               <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', section.dot)} />
               <span className={clsx('font-mono text-micro uppercase tracking-widest2', section.tone)}>
                 {section.label}
@@ -147,18 +160,22 @@ export function BoardRail({
               <span className="font-mono text-[10px] text-fog-600 tabular-nums ml-auto">
                 {secItems.length}
               </span>
-              <span className="font-mono text-[9px] text-fog-700 w-2 text-right">
-                {isOpen ? '−' : '+'}
-              </span>
             </button>
-            {isOpen &&
-              secItems.map((item) => (
-                <BoardRailRow
-                  key={item.id}
-                  item={item}
-                  owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) ?? null : null}
-                />
-              ))}
+            {isOpen && (
+              secItems.length === 0 ? (
+                <div className="pl-10 pr-2 h-5 flex items-center font-mono text-[10px] text-fog-700">
+                  (none)
+                </div>
+              ) : (
+                secItems.map((item) => (
+                  <BoardRailRow
+                    key={item.id}
+                    item={item}
+                    owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) ?? null : null}
+                  />
+                ))
+              )
+            )}
           </div>
         );
       })}

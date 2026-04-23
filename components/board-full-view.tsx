@@ -1,14 +1,17 @@
 'use client';
 
-// Big-view blackboard accordion for the main area — sits alongside
-// timeline/cards in the view toggle. Six collapsible sections, one per
-// status, stacked vertically so a dozen in-progress items doesn't
-// compete for space with 200 done items. Active work (in-progress,
-// claimed, open) expanded by default; outcomes (stale, blocked, done)
-// start collapsed so the eye lands on what's live.
+// Big-view blackboard kanban for the main area — sits alongside
+// timeline/cards in the view toggle. The left-rail "board" tab gives a
+// compact read-only glance; this view scales to the main pane so a
+// multi-hour run with dozens of items stays scannable.
+//
+// Six columns keyed to lifecycle time: open → claimed → in-progress →
+// done, with stale + blocked as dead-end outcomes. The data source is
+// the same LiveBoard that the left rail consumes, passed in from page
+// level (subscription survives tab switches).
 
 import clsx from 'clsx';
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import { deriveBoardAgents } from '@/lib/blackboard/live';
 import type {
@@ -18,24 +21,64 @@ import type {
 } from '@/lib/blackboard/types';
 import { Tooltip } from './ui/tooltip';
 
-interface SectionSpec {
-  key: BoardItemStatus;
+interface ColSpec {
+  key: string;
   label: string;
+  matches: BoardItemStatus[];
   tone: string;
   dot: string;
   tint: string;
-  // Whether the section starts expanded. Active work is worth seeing;
-  // outcomes are worth counting — so done/stale/blocked start collapsed.
-  defaultExpanded: boolean;
 }
 
-const SECTIONS: SectionSpec[] = [
-  { key: 'in-progress', label: 'in-progress', tone: 'text-mint',    dot: 'bg-mint',      tint: 'bg-mint/[0.04]',   defaultExpanded: true  },
-  { key: 'claimed',     label: 'claimed',     tone: 'text-iris',    dot: 'bg-iris',      tint: 'bg-iris/[0.04]',   defaultExpanded: true  },
-  { key: 'open',        label: 'open',        tone: 'text-fog-300', dot: 'bg-fog-500',   tint: 'bg-transparent',   defaultExpanded: true  },
-  { key: 'stale',       label: 'stale',       tone: 'text-amber',   dot: 'bg-amber',     tint: 'bg-amber/[0.04]',  defaultExpanded: false },
-  { key: 'blocked',     label: 'blocked',     tone: 'text-amber',   dot: 'bg-amber',     tint: 'bg-amber/[0.04]',  defaultExpanded: false },
-  { key: 'done',        label: 'done',        tone: 'text-fog-500', dot: 'bg-fog-600',   tint: 'bg-transparent',   defaultExpanded: false },
+const COLUMNS: ColSpec[] = [
+  {
+    key: 'in-progress',
+    label: 'in-progress',
+    matches: ['in-progress'],
+    tone: 'text-mint',
+    dot: 'bg-mint',
+    tint: 'bg-mint/[0.03]',
+  },
+  {
+    key: 'claimed',
+    label: 'claimed',
+    matches: ['claimed'],
+    tone: 'text-iris',
+    dot: 'bg-iris',
+    tint: 'bg-iris/[0.03]',
+  },
+  {
+    key: 'open',
+    label: 'open',
+    matches: ['open'],
+    tone: 'text-fog-300',
+    dot: 'bg-fog-500',
+    tint: 'bg-transparent',
+  },
+  {
+    key: 'stale',
+    label: 'stale',
+    matches: ['stale'],
+    tone: 'text-amber',
+    dot: 'bg-amber',
+    tint: 'bg-amber/[0.04]',
+  },
+  {
+    key: 'blocked',
+    label: 'blocked',
+    matches: ['blocked'],
+    tone: 'text-amber',
+    dot: 'bg-amber',
+    tint: 'bg-amber/[0.04]',
+  },
+  {
+    key: 'done',
+    label: 'done',
+    matches: ['done'],
+    tone: 'text-fog-500',
+    dot: 'bg-fog-600',
+    tint: 'bg-transparent',
+  },
 ];
 
 const accentClass: Record<BoardAgent['accent'], string> = {
@@ -71,14 +114,6 @@ export function BoardFullView({
   }, [agents]);
   const now = Date.now();
 
-  // Expanded state per section. Keyed by status so toggling persists
-  // across re-renders (items list mutates frequently via SSE).
-  const [expanded, setExpanded] = useState<Record<BoardItemStatus, boolean>>(() => {
-    const out = {} as Record<BoardItemStatus, boolean>;
-    for (const s of SECTIONS) out[s.key] = s.defaultExpanded;
-    return out;
-  });
-
   if (loading) {
     return (
       <section className="flex-1 min-w-0 min-h-0 grid place-items-center bg-ink-900">
@@ -107,61 +142,72 @@ export function BoardFullView({
 
   return (
     <section className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-ink-900">
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        {SECTIONS.map((sec) => {
-          const sectionItems = items
-            .filter((b) => b.status === sec.key)
-            .sort((a, b) => b.createdAtMs - a.createdAtMs);
-          const isExpanded = expanded[sec.key];
+      <div
+        className="hairline-b"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {COLUMNS.map((col) => {
+          const count = items.filter((b) => col.matches.includes(b.status)).length;
           return (
-            <div key={sec.key} className={clsx('hairline-b', sec.tint)}>
-              <button
-                type="button"
-                onClick={() =>
-                  setExpanded((prev) => ({ ...prev, [sec.key]: !prev[sec.key] }))
-                }
-                className="w-full h-8 px-3 flex items-center gap-2 hover:bg-ink-800/40 transition cursor-pointer"
-              >
-                <span
-                  className={clsx(
-                    'text-[10px] text-fog-600 leading-none transition-transform',
-                    isExpanded && 'rotate-90',
-                  )}
-                  aria-hidden
-                >
-                  ▸
-                </span>
-                <span className={clsx('w-1.5 h-1.5 rounded-full', sec.dot)} />
-                <span
-                  className={clsx(
-                    'font-mono text-[10.5px] uppercase tracking-widest2',
-                    sec.tone,
-                  )}
-                >
-                  {sec.label}
-                </span>
-                <span className="font-mono text-[10px] text-fog-600 tabular-nums">
-                  {sectionItems.length}
-                </span>
-              </button>
-              {isExpanded && (
-                <ul className="list-none pb-1">
-                  {sectionItems.length === 0 ? (
-                    <li className="px-7 h-6 flex items-center font-mono text-[10px] text-fog-700">
-                      (none)
-                    </li>
-                  ) : (
-                    sectionItems.map((item) => (
-                      <BoardCard
-                        key={item.id}
-                        item={item}
-                        owner={item.ownerAgentId ? agentMap.get(item.ownerAgentId) ?? null : null}
-                        now={now}
-                      />
-                    ))
-                  )}
-                </ul>
+            <div
+              key={col.key}
+              className={clsx(
+                'h-8 px-3 flex items-center gap-2 hairline-r last:border-r-0',
+                col.tint,
               )}
+            >
+              <span className={clsx('w-1.5 h-1.5 rounded-full', col.dot)} />
+              <span
+                className={clsx(
+                  'font-mono text-[10.5px] uppercase tracking-widest2',
+                  col.tone,
+                )}
+              >
+                {col.label}
+              </span>
+              <span className="font-mono text-[10px] text-fog-600 tabular-nums ml-auto">
+                {count}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        className="flex-1 min-h-0 overflow-hidden"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(0, 1fr))`,
+        }}
+      >
+        {COLUMNS.map((col) => {
+          const colItems = items
+            .filter((b) => col.matches.includes(b.status))
+            .sort((a, b) => b.createdAtMs - a.createdAtMs);
+          return (
+            <div
+              key={col.key}
+              className={clsx(
+                'hairline-r last:border-r-0 flex flex-col py-1 overflow-y-auto',
+                col.tint,
+              )}
+            >
+              {colItems.length === 0 && (
+                <div className="px-3 h-7 flex items-center font-mono text-[10px] text-fog-700">
+                  (none)
+                </div>
+              )}
+              {colItems.map((item) => (
+                <BoardCard
+                  key={item.id}
+                  item={item}
+                  owner={item.ownerAgentId ? agentMap.get(item.ownerAgentId) ?? null : null}
+                  now={now}
+                />
+              ))}
             </div>
           );
         })}
@@ -201,23 +247,14 @@ function BoardCard({
       ? `${Math.round((item.completedAtMs - item.createdAtMs) / 1000)}s`
       : null;
 
-  // Strip `[retry:N] ` / `[final ...] ` prefix out of the note so the
-  // card shows the reason prominently while keeping the retry count
-  // visible as its own small pill.
-  let retryTag: string | null = null;
-  let noteBody = item.note ?? '';
-  const m = /^\[(retry:\d+|final[^\]]*)\]\s*(.*)$/.exec(noteBody);
-  if (m) {
-    retryTag = m[1];
-    noteBody = m[2];
-  }
-
   return (
-    <li className="pl-7 pr-3 py-1 hairline-b last:border-b-0">
-      <div className="font-mono text-[11.5px] text-fog-100 leading-snug break-words">
-        {item.content}
+    <div className="px-3 py-1.5 hairline-b last:border-b-0">
+      <div className="flex items-start gap-2">
+        <span className="font-mono text-[11.5px] text-fog-100 leading-snug flex-1 min-w-0 break-words">
+          {item.content}
+        </span>
       </div>
-      <div className="flex items-center gap-2 mt-0.5 font-mono text-[9.5px] uppercase tracking-widest2 text-fog-700">
+      <div className="flex items-center gap-2 mt-1 font-mono text-[9.5px] uppercase tracking-widest2 text-fog-700">
         {owner && (
           <Tooltip content={owner.name} side="top">
             <span
@@ -233,22 +270,12 @@ function BoardCard({
         <span className="tabular-nums">{item.id}</span>
         <span className="tabular-nums">{age}</span>
         {dur && <span className="text-fog-500 tabular-nums">·{dur}</span>}
-        {retryTag && (
-          <span className="px-1 h-4 inline-flex items-center rounded-sm border border-amber/30 bg-amber/10 text-amber normal-case">
-            {retryTag}
-          </span>
-        )}
         {item.staleSinceSha && (
           <span className="text-amber tabular-nums" title="drift detected">
             ↯{item.staleSinceSha.slice(0, 4)}
           </span>
         )}
       </div>
-      {noteBody && (
-        <div className="font-mono text-[10px] text-fog-500 italic mt-0.5 pl-0 leading-snug">
-          {noteBody}
-        </div>
-      )}
-    </li>
+    </div>
   );
 }
