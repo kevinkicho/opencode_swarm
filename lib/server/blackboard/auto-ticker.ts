@@ -218,18 +218,15 @@ function tickers(): TickerMap {
       console.log(
         `[board/auto-ticker] ${signal}: stopping ${map.size} ticker(s) before exit`,
       );
+      // Route every live ticker through stopAutoTicker so the session-
+      // abort side-effect fires (prevents dev-restart / SIGTERM from
+      // leaking in-flight opencode turns that would keep streaming
+      // tokens with no consumer). See stopAutoTicker body for the
+      // abort-all-sessions logic. Previously this loop inlined just
+      // the timer cleanup and skipped the abort — now we defer so
+      // future additions to stop behavior apply to signals too.
       for (const state of map.values()) {
-        if (!state.stopped) {
-          if (state.timer) clearInterval(state.timer);
-          state.timer = null;
-          if (state.periodicSweepTimer) clearInterval(state.periodicSweepTimer);
-          state.periodicSweepTimer = null;
-          if (state.livenessTimer) clearInterval(state.livenessTimer);
-          state.livenessTimer = null;
-          state.stopped = true;
-          state.stoppedAtMs = Date.now();
-          state.stopReason = 'manual';
-        }
+        if (!state.stopped) stopAutoTicker(state.swarmRunID, 'manual');
       }
     };
     process.on('SIGINT', () => shutdown('SIGINT'));
