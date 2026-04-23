@@ -39,14 +39,18 @@ export const STATUS_VISUAL: Record<
   unknown: { dot: 'bg-fog-700',            label: '—',       rank: 4, tone: 'text-fog-700' },
 };
 
-function fmtAge(ms: number): string {
-  const s = Math.floor((Date.now() - ms) / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
+// Date + time formatter for the runs-picker row. The previous relative-
+// age ("3h", "9h") lost the specific moment once runs piled up — user
+// wanted exact wall-clock down to seconds. Compact "M/D HH:MM:SS" fits
+// in a 108px column at 10px mono without wrapping.
+function fmtDateTime(ms: number): string {
+  const d = new Date(ms);
+  const mon = d.getMonth() + 1;
+  const day = d.getDate();
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${mon}/${day} ${hh}:${mm}:${ss}`;
 }
 
 // Strip the "run_" prefix so the id column shows the sortable payload
@@ -164,7 +168,7 @@ export function SwarmRunsPicker({
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[52px] shrink-0">
               status
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[42px] shrink-0">
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[90px] shrink-0">
               pat
             </span>
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[124px] shrink-0">
@@ -173,14 +177,14 @@ export function SwarmRunsPicker({
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 flex-1 min-w-0">
               directive
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[40px] text-right shrink-0">
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[28px] text-right shrink-0">
               sess
             </span>
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[64px] shrink-0">
               caps
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[32px] text-right shrink-0">
-              age
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[108px] text-right shrink-0">
+              when
             </span>
           </div>
           <ul className="max-h-[360px] overflow-y-auto divide-y divide-ink-800">
@@ -227,7 +231,7 @@ export function SwarmRunsPicker({
                     </span>
                     <span
                       className={clsx(
-                        'font-mono text-[10px] uppercase tracking-widest2 w-[42px] shrink-0 whitespace-nowrap',
+                        'font-mono text-[10px] uppercase tracking-widest2 w-[90px] shrink-0 truncate',
                         meta.pattern === 'none' ? 'text-fog-600' : 'text-iris'
                       )}
                     >
@@ -244,23 +248,27 @@ export function SwarmRunsPicker({
                     <span className="text-[11.5px] text-fog-200 flex-1 min-w-0 whitespace-nowrap truncate">
                       {directiveTeaser(meta.directive)}
                     </span>
-                    <span className="font-mono text-[10px] tabular-nums shrink-0 w-[40px] flex items-center justify-end">
-                      {meta.sessionIDs.length > 1 ? (
-                        <span
-                          className="px-1 h-4 rounded bg-iris/15 text-iris flex items-center"
-                          title={`${meta.sessionIDs.length} parallel sessions`}
-                        >
-                          {meta.sessionIDs.length}×
-                        </span>
-                      ) : (
-                        <span className="text-fog-400">{meta.sessionIDs.length}</span>
+                    <span
+                      className={clsx(
+                        'font-mono text-[10px] tabular-nums shrink-0 w-[28px] text-right',
+                        meta.sessionIDs.length > 1 ? 'text-iris' : 'text-fog-400',
                       )}
+                      title={
+                        meta.sessionIDs.length > 1
+                          ? `${meta.sessionIDs.length} parallel sessions`
+                          : undefined
+                      }
+                    >
+                      {meta.sessionIDs.length}
                     </span>
                     <span className="font-mono text-[10px] text-fog-600 tabular-nums shrink-0 w-[64px] truncate">
                       {bounds || '—'}
                     </span>
-                    <span className="font-mono text-[10px] text-fog-600 tabular-nums shrink-0 w-[32px] text-right">
-                      {fmtAge(row.lastActivityTs ?? meta.createdAt)}
+                    <span
+                      className="font-mono text-[10px] text-fog-600 tabular-nums shrink-0 w-[108px] text-right whitespace-nowrap"
+                      title={new Date(row.lastActivityTs ?? meta.createdAt).toLocaleString()}
+                    >
+                      {fmtDateTime(row.lastActivityTs ?? meta.createdAt)}
                     </span>
                   </Link>
                   {retroEligible && (
