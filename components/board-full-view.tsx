@@ -159,7 +159,6 @@ export function BoardFullView({
                 col.tint,
               )}
             >
-              <span className={clsx('w-1.5 h-1.5 rounded-full', col.dot)} />
               <span
                 className={clsx(
                   'font-mono text-[10.5px] uppercase tracking-widest2',

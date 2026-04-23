@@ -144,16 +144,6 @@ export function BoardRail({
               }
               className="w-full h-6 px-3 flex items-center gap-2 text-left hover:bg-ink-800/60 transition cursor-pointer"
             >
-              <span
-                className={clsx(
-                  'text-[10px] text-fog-600 leading-none shrink-0 w-2 transition-transform',
-                  isOpen && 'rotate-90',
-                )}
-                aria-hidden
-              >
-                ▸
-              </span>
-              <span className={clsx('w-1.5 h-1.5 rounded-full shrink-0', section.dot)} />
               <span className={clsx('font-mono text-micro uppercase tracking-widest2', section.tone)}>
                 {section.label}
               </span>
@@ -163,7 +153,7 @@ export function BoardRail({
             </button>
             {isOpen && (
               secItems.length === 0 ? (
-                <div className="pl-10 pr-2 h-5 flex items-center font-mono text-[10px] text-fog-700">
+                <div className="pl-5 pr-2 h-5 flex items-center font-mono text-[10px] text-fog-700">
                   (none)
                 </div>
               ) : (
