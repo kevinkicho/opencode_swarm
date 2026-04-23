@@ -46,6 +46,21 @@ import { listBoardItems } from './store';
 const DEFAULT_INTERVAL_MS = 10_000;
 const IDLE_TICKS_BEFORE_STOP = 6;
 
+// Eager re-sweep threshold. When every session has been idle for this many
+// ticks AND we're in long-running mode (periodicSweepMs > 0) AND the last
+// sweep was long enough ago, fire a fresh planner sweep immediately
+// instead of waiting for the periodic timer. Practical effect: 10-15 todos
+// drain in ~5 min, sessions go idle, 30s later a new batch lands — no more
+// sitting idle for 15 min waiting for the 20-min periodic tick.
+const IDLE_TICKS_BEFORE_EAGER_SWEEP = 3;
+
+// Floor on how frequently sweeps fire. Even if the board drains instantly,
+// the planner needs ~60-90s per sweep, and stacking sweeps back-to-back
+// would burn tokens on constant re-planning and race the "overwrite guard"
+// in runPlannerSweep. 2 minutes gives the previous sweep time to fully
+// land its new todos before the next one starts reasoning about them.
+const MIN_MS_BETWEEN_SWEEPS = 2 * 60 * 1000;
+
 export type StopReason = 'auto-idle' | 'manual';
 
 interface PerSessionSlot {
@@ -86,6 +101,10 @@ interface TickerState {
   // Default 0 preserves the original short-run single-sweep behavior.
   periodicSweepMs: number;
   periodicSweepTimer: NodeJS.Timeout | null;
+  // Timestamp of the most recent sweep (initial, periodic, or eager). Used
+  // as the MIN_MS_BETWEEN_SWEEPS floor so rapid-drain runs don't stack
+  // planner calls faster than they can land.
+  lastSweepAtMs: number;
 }
 
 type TickerMap = Map<string, TickerState>;
@@ -181,6 +200,31 @@ async function tickSession(
     } else {
       slot.consecutiveIdle = 0;
     }
+    const slots = [...state.slots.values()];
+
+    // Eager re-sweep (long-running mode only). When every session has
+    // been idle past IDLE_TICKS_BEFORE_EAGER_SWEEP and MIN_MS_BETWEEN_SWEEPS
+    // has elapsed, fire a fresh planner sweep immediately instead of
+    // waiting for the periodic timer. This turns the "board drained,
+    // sessions idle 15min waiting for timer" dead zone into "board
+    // drained, 30s later a new batch lands."
+    // `state.lastSweepAtMs ?? 0` is defensive: an existing ticker created
+    // before this field was added won't have it. Treating missing as "long
+    // ago" lets in-flight HMR'd runs pick up eager-sweep behavior without
+    // needing a restart.
+    if (
+      state.periodicSweepMs > 0 &&
+      !state.resweepInFlight &&
+      slots.length > 0 &&
+      slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_EAGER_SWEEP) &&
+      Date.now() - (state.lastSweepAtMs ?? 0) >= MIN_MS_BETWEEN_SWEEPS
+    ) {
+      console.log(
+        `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle ${IDLE_TICKS_BEFORE_EAGER_SWEEP}+ ticks and ≥${MIN_MS_BETWEEN_SWEEPS / 1000}s since last sweep — firing eager re-sweep`,
+      );
+      void runPeriodicSweep(state);
+    }
+
     // Auto-stop when every session is simultaneously idle-past-threshold.
     // A single active session (consecutiveIdle == 0) holds the run open.
     //
@@ -189,7 +233,6 @@ async function tickSession(
     // sweeps is a normal phase, not a shutdown signal. Without this
     // skip, a long-running run would auto-stop on the first drain
     // before the first periodic sweep ever fired.
-    const slots = [...state.slots.values()];
     if (
       state.periodicSweepMs === 0 &&
       slots.length > 0 &&
@@ -252,6 +295,7 @@ async function fanout(swarmRunID: string): Promise<void> {
 // resweepAttempted so the next auto-idle cascade stops for real.
 async function attemptReSweep(state: TickerState): Promise<void> {
   const swarmRunID = state.swarmRunID;
+  state.lastSweepAtMs = Date.now();
   try {
     const beforeOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
@@ -300,8 +344,19 @@ async function attemptReSweep(state: TickerState): Promise<void> {
 async function runPeriodicSweep(state: TickerState): Promise<void> {
   if (state.stopped) return;
   if (state.resweepInFlight) return;
+  // Floor to prevent stacking: if a sweep just fired, skip this one.
+  // Both the periodic timer and the eager-idle check route here, so
+  // whichever one wins the race first is the one that runs.
+  const sinceLast = Date.now() - (state.lastSweepAtMs ?? 0);
+  if (sinceLast < MIN_MS_BETWEEN_SWEEPS) {
+    console.log(
+      `[board/auto-ticker] ${state.swarmRunID}: sweep requested ${Math.round(sinceLast / 1000)}s after last — under ${MIN_MS_BETWEEN_SWEEPS / 1000}s floor, skipping`,
+    );
+    return;
+  }
   const swarmRunID = state.swarmRunID;
   state.resweepInFlight = true;
+  state.lastSweepAtMs = Date.now();
   try {
     const beforeOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
@@ -429,6 +484,10 @@ export function startAutoTicker(
     resweepAttempted: false,
     periodicSweepMs,
     periodicSweepTimer,
+    // The initial planner sweep just ran before startAutoTicker was
+    // called, so seeding lastSweepAtMs to now prevents the eager-idle
+    // check from firing a redundant sweep in the first MIN_MS window.
+    lastSweepAtMs: Date.now(),
   });
 }
 
