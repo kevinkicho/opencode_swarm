@@ -24,6 +24,12 @@ export interface SwarmRunRequest {
   title?: string;             // session title seed; falls back to directive line 1
   teamSize?: number;          // aspirational — ignored for pattern='none'
   bounds?: SwarmRunBounds;    // costCap is enforced by the proxy gate (DESIGN.md §9); minutesCap still aspirational
+  // Blackboard-only. When > 0, the auto-ticker fires a fresh planner sweep
+  // every N minutes for the life of the run and disables its auto-idle
+  // stop. Intended for long-running (hours+) runs where new refactoring
+  // opportunities surface as the workers edit the codebase. Omit / set to 0
+  // for the default short-run "drain once, maybe re-sweep, stop" shape.
+  persistentSweepMinutes?: number;
 }
 
 export interface SwarmRunBounds {

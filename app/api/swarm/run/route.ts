@@ -144,6 +144,20 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.bounds = bounds;
   }
 
+  if (obj.persistentSweepMinutes !== undefined) {
+    if (
+      typeof obj.persistentSweepMinutes !== 'number' ||
+      !Number.isFinite(obj.persistentSweepMinutes) ||
+      obj.persistentSweepMinutes < 0
+    ) {
+      return 'persistentSweepMinutes must be a non-negative finite number';
+    }
+    if (req.pattern !== 'blackboard' && obj.persistentSweepMinutes > 0) {
+      return `persistentSweepMinutes only applies to pattern='blackboard' (got '${req.pattern}')`;
+    }
+    req.persistentSweepMinutes = obj.persistentSweepMinutes;
+  }
+
   return req;
 }
 
@@ -321,7 +335,11 @@ export async function POST(req: NextRequest): Promise<Response> {
         console.log(
           `[swarm/run] blackboard sweep for ${runID} produced ${result.items.length} todos — starting auto-ticker`,
         );
-        startAutoTicker(runID);
+        const periodicSweepMs =
+          parsed.persistentSweepMinutes && parsed.persistentSweepMinutes > 0
+            ? Math.round(parsed.persistentSweepMinutes * 60_000)
+            : 0;
+        startAutoTicker(runID, { periodicSweepMs });
       })
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);

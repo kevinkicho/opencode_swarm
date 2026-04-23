@@ -77,6 +77,15 @@ interface TickerState {
   // completes without discovering new work.
   resweepInFlight: boolean;
   resweepAttempted: boolean;
+  // Periodic re-sweep cadence for long-running runs. When > 0, fires a
+  // fresh planner sweep every N ms so an overnight run keeps producing
+  // work as the codebase evolves. When > 0, the auto-idle stop logic is
+  // *disabled* — the ticker only stops via explicit stopAutoTicker or
+  // process shutdown. A short (< periodicSweepMs) run that drains once
+  // is expected to look idle-but-alive until the human shuts it down.
+  // Default 0 preserves the original short-run single-sweep behavior.
+  periodicSweepMs: number;
+  periodicSweepTimer: NodeJS.Timeout | null;
 }
 
 type TickerMap = Map<string, TickerState>;
@@ -105,9 +114,11 @@ function tickers(): TickerMap {
         `[board/auto-ticker] ${signal}: stopping ${map.size} ticker(s) before exit`,
       );
       for (const state of map.values()) {
-        if (!state.stopped && state.timer) {
-          clearInterval(state.timer);
+        if (!state.stopped) {
+          if (state.timer) clearInterval(state.timer);
           state.timer = null;
+          if (state.periodicSweepTimer) clearInterval(state.periodicSweepTimer);
+          state.periodicSweepTimer = null;
           state.stopped = true;
           state.stoppedAtMs = Date.now();
           state.stopReason = 'manual';
@@ -172,8 +183,15 @@ async function tickSession(
     }
     // Auto-stop when every session is simultaneously idle-past-threshold.
     // A single active session (consecutiveIdle == 0) holds the run open.
+    //
+    // Skipped entirely when periodicSweepMs > 0: the run has opted into
+    // "keep going until told to stop," so steady-state idle between
+    // sweeps is a normal phase, not a shutdown signal. Without this
+    // skip, a long-running run would auto-stop on the first drain
+    // before the first periodic sweep ever fired.
     const slots = [...state.slots.values()];
     if (
+      state.periodicSweepMs === 0 &&
       slots.length > 0 &&
       slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP)
     ) {
@@ -265,8 +283,56 @@ async function attemptReSweep(state: TickerState): Promise<void> {
   }
 }
 
+// Long-running cadenced planner sweep. Unlike attemptReSweep (end-of-life
+// one-shot), this fires on a timer regardless of whether the board is
+// idle — the point is to periodically re-examine the repo as it evolves
+// under the workers' edits and seed fresh todos the original planner
+// pass couldn't see. Reuses `resweepInFlight` as a mutex with the
+// auto-idle one-shot so the two can't collide.
+async function runPeriodicSweep(state: TickerState): Promise<void> {
+  if (state.stopped) return;
+  if (state.resweepInFlight) return;
+  const swarmRunID = state.swarmRunID;
+  state.resweepInFlight = true;
+  try {
+    const beforeOpen = listBoardItems(swarmRunID).filter(
+      (i) => i.status === 'open',
+    ).length;
+    const result = await runPlannerSweep(swarmRunID);
+    const afterOpen = listBoardItems(swarmRunID).filter(
+      (i) => i.status === 'open',
+    ).length;
+    const newlyOpen = afterOpen - beforeOpen;
+    if (newlyOpen > 0) {
+      console.log(
+        `[board/auto-ticker] ${swarmRunID}: periodic sweep seeded ${newlyOpen} new open todo(s) — resetting idle counters`,
+      );
+      for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
+    } else {
+      console.log(
+        `[board/auto-ticker] ${swarmRunID}: periodic sweep produced no new work (planner returned ${result.items.length} total items)`,
+      );
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[board/auto-ticker] ${swarmRunID}: periodic sweep threw:`,
+      message,
+    );
+  } finally {
+    state.resweepInFlight = false;
+  }
+}
+
 export interface AutoTickerOpts {
   intervalMs?: number;
+  // When > 0, fires a fresh planner sweep every N ms for the life of the
+  // run. Also disables the auto-idle stop logic — the ticker keeps going
+  // until explicitly stopped. Intended for long-running (hours+) runs
+  // where new refactoring opportunities surface as the codebase evolves.
+  // Omit / set to 0 for the original "drain once, maybe re-sweep, stop"
+  // shape used by short smokes and the battle tests.
+  periodicSweepMs?: number;
 }
 
 // Start (or re-arm) the ticker for a run. Idempotent: if a ticker is
@@ -290,6 +356,7 @@ export function startAutoTicker(
   }
 
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
+  const periodicSweepMs = opts.periodicSweepMs ?? 0;
   const timer = setInterval(() => {
     void fanout(swarmRunID);
   }, intervalMs);
@@ -298,6 +365,23 @@ export function startAutoTicker(
   // block clean shutdown.
   if (typeof (timer as NodeJS.Timeout).unref === 'function') {
     (timer as NodeJS.Timeout).unref();
+  }
+
+  // Periodic planner re-sweep timer for long-running runs. Independent of
+  // the tick timer — cadence is measured in minutes/hours, not seconds.
+  let periodicSweepTimer: NodeJS.Timeout | null = null;
+  if (periodicSweepMs > 0) {
+    periodicSweepTimer = setInterval(() => {
+      const s = tickers().get(swarmRunID);
+      if (!s || s.stopped) return;
+      void runPeriodicSweep(s);
+    }, periodicSweepMs);
+    if (typeof (periodicSweepTimer as NodeJS.Timeout).unref === 'function') {
+      (periodicSweepTimer as NodeJS.Timeout).unref();
+    }
+    console.log(
+      `[board/auto-ticker] ${swarmRunID}: periodic sweep enabled at ${Math.round(periodicSweepMs / 60000)}-min cadence`,
+    );
   }
 
   // Preserve slot history across restart so the UI can show "last activity
@@ -328,6 +412,8 @@ export function startAutoTicker(
     slots,
     resweepInFlight: false,
     resweepAttempted: false,
+    periodicSweepMs,
+    periodicSweepTimer,
   });
 }
 
@@ -348,6 +434,8 @@ export function stopAutoTicker(
   s.stopReason = reason;
   if (s.timer) clearInterval(s.timer);
   s.timer = null;
+  if (s.periodicSweepTimer) clearInterval(s.periodicSweepTimer);
+  s.periodicSweepTimer = null;
 }
 
 // Shape handed to clients via /api/swarm/run/:id/ticker. Keep this in
