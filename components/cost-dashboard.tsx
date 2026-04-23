@@ -337,6 +337,19 @@ function TopExpensive({
                   <span className="font-mono text-[11px] text-fog-200 truncate flex-1 min-w-0">
                     {directiveTeaser(row.meta.directive, 56)}
                   </span>
+                  {/* Per-row bundle marker: a row with $0 cost but >0 tokens
+                      is almost certainly a Zen subscription bundle model
+                      (big-pickle), not actually free. Tag it so readers
+                      don't confuse the row with a genuinely-zero run.
+                      Mirrors the aggregate banner at line 139. */}
+                  {row.costTotal === 0 && row.tokensTotal > 0 && (
+                    <span
+                      className="font-mono text-[8.5px] uppercase tracking-widest2 text-mint/70 px-1 rounded-sm hairline shrink-0"
+                      title="bundle-priced model (big-pickle / zen subscription) — token cost covered by the subscription, not per-run"
+                    >
+                      bundle
+                    </span>
+                  )}
                   <span className="font-mono text-[10.5px] text-molten tabular-nums w-14 text-right shrink-0">
                     {formatMoney(row.costTotal)}
                   </span>
