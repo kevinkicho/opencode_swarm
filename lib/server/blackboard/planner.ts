@@ -22,6 +22,8 @@
 // Server-only. Not imported from client code.
 
 import { randomBytes } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 
 import { getRun } from '../swarm-registry';
 import {
@@ -77,30 +79,46 @@ function mintItemId(): string {
 // Prompt history:
 // 2026-04-22 (first):  "Use the todowrite tool" — left model free to explore.
 //   Went 30+ turns before calling todowrite on "audit for typos" and blew
-//   the sweep timeout. Second tightening below.
-// 2026-04-22 (second): "todowrite MUST be your FIRST tool call, no reads
-//   allowed." Fixed the blow-up but left the planner blind — for periodic
-//   re-sweeps the planner couldn't see what changed and just re-proposed
-//   stale directive-flavored todos.
-// 2026-04-22 (current): bounded exploration (up to 5 read-side calls) plus
-//   board-state context for re-sweeps. The 5-min deadline + abort-on-timeout
-//   from runPlannerSweep is the real runaway guard; the call-count cap here
-//   is advisory. Count raised from 5-8 to 10-15 so larger teams (6+ agents)
-//   don't idle between sweeps.
+//   the sweep timeout.
+// 2026-04-22 (second): "todowrite MUST be your FIRST tool call, no reads."
+//   Fixed the blow-up but left the planner blind to workspace state.
+// 2026-04-22 (third): bounded exploration (5 reads) + board-state context.
+//   Still biased "atomic / small / verifiable" which produced timid audit-
+//   flavored todos — verify X still works, add a test for Y — instead of
+//   engaging with the project's actual ambition.
+// 2026-04-23 (current): rewritten around "serve the mission." The README
+//   is the source of truth for what the project claims to be; unshipped
+//   claims are the highest-impact work. Mix of todo sizes is expected.
+//   Anti-patterns explicitly banned (passive verifications, timid wording).
+//   Exploration budget raised to 10 calls to let the planner understand
+//   coverage before scheduling.
 function buildPlannerPrompt(
   directive: string | undefined,
   boardContext?: PlannerBoardContext,
+  readme?: string | null,
 ): string {
   const base =
     directive?.trim() ||
-    'Survey the codebase and propose concrete next steps.';
+    'Survey the codebase and propose the highest-impact next slice of work.';
 
   const sections: string[] = [
-    'Blackboard planner sweep.',
+    'Blackboard planner sweep — mission-anchored work.',
     '',
-    `Directive: ${base}`,
+    '## Mission',
+    base,
     '',
   ];
+
+  if (readme) {
+    sections.push(
+      '## Project README — the source of truth for what this project claims to be',
+      '',
+      readme,
+      '',
+      '---',
+      '',
+    );
+  }
 
   if (boardContext) {
     const doneLines = boardContext.doneSummaries.length
@@ -110,9 +128,9 @@ function buildPlannerPrompt(
       ? boardContext.activeSummaries.map((s, i) => `  ${i + 1}. ${s}`).join('\n')
       : '  (none)';
     sections.push(
-      'This is a re-sweep. The board already has state:',
+      '## Prior work on this run',
       '',
-      'COMPLETED — do NOT re-propose these:',
+      'COMPLETED — do NOT re-propose:',
       doneLines,
       '',
       'OPEN / IN-PROGRESS — other agents are working on these, do NOT duplicate:',
@@ -122,29 +140,90 @@ function buildPlannerPrompt(
   }
 
   sections.push(
-    'Your task: call the todowrite tool with 10-15 atomic todos that are',
-    'NEW (not duplicates of the lists above, if any). Each todo is one',
-    'concrete change a single agent can claim and complete in 5-20 min of',
-    'focused work. Prefer small file-scoped edits over cross-cutting refactors.',
-    'Rewrite vague asks into specific, verifiable steps.',
+    '## Your job',
     '',
-    'Workspace exploration:',
-    '- You MAY run up to 5 grep / glob / read tool calls to scan the current',
-    '  workspace state before calling todowrite. Sample strategically — do',
-    '  not exhaustively read every file. This is especially useful for a',
-    '  re-sweep, where the codebase has evolved and new opportunities may',
-    '  have surfaced since the prior plan.',
-    '- todowrite must fire within your first 6 tool calls total. Do not',
-    '  explore indefinitely — the sweep aborts after 5 minutes.',
+    'You are scheduling the highest-impact next slice of work for a team of',
+    'agents who will claim and implement each todo. Goal: maximize the team\'s',
+    'progress toward the Mission — NOT maximize the number of todos.',
+    '',
+    'Ground yourself before planning:',
+    '- Re-read the Mission.',
+    '- Note which of the README\'s claims the code actually delivers vs. which',
+    '  are aspirational and unbuilt. Unshipped claims are usually the highest-',
+    '  impact work.',
+    '- Use up to 10 read / grep / glob tool calls to sample the codebase',
+    '  strategically — not exhaustively.',
+    '',
+    'Then call todowrite with 6-15 todos. Mix of sizes is expected:',
+    '- Small (5-15 min): a targeted fix or polish',
+    '- Medium (15-45 min): implement one endpoint, one panel, one integration',
+    '- Large (45-120 min): build a feature the README promises but the code',
+    '  lacks, wire up a new data source end-to-end, ship a new data pipeline',
+    '',
+    'Bias strongly toward BUILDING over VERIFYING. If the README promises',
+    'integrations with free APIs, public datasets, central-bank or government',
+    'data — and those aren\'t wired up yet — the correct todos are "wire up X"',
+    'and "implement Y", NOT "verify X still works".',
+    '',
+    'AVOID these anti-patterns:',
+    '- "Verify X still works" — skip passive verifications unless there is',
+    '  concrete evidence X is broken.',
+    '- "Add tests for existing X" — only if tests are genuinely missing AND',
+    '  the area is load-bearing. Agents add tests naturally as they build.',
+    '- "Polish X" / "clean up Y" with no specific deliverable.',
+    '- Timid wording ("consider possibly", "maybe add", "look into").',
+    '- Items indistinguishable from the COMPLETED list above.',
+    '',
+    'Each todo must be a decisive, verifiable act that advances the Mission.',
     '',
     'Rules:',
-    '- Do not edit files. Do not call task, bash, or any write-side tools.',
-    '- Other agents will claim each todo and do the full implementation.',
+    '- todowrite must fire within your first 12 tool calls total.',
+    '- Do not edit files yourself. Do not call task or bash.',
+    '- No subagent recursion after todowrite.',
+    '- The sweep aborts at 5 minutes — plan decisively, not exhaustively.',
     '',
     'Call todowrite now.',
   );
 
   return sections.join('\n');
+}
+
+// Convert a Windows-style absolute path (C:/foo/bar or C:\foo\bar) to the
+// matching WSL mount (/mnt/c/foo/bar) when the Next.js server runs under
+// WSL. opencode-side workspace strings are Windows-native because opencode
+// itself runs on Windows; this is the one place Node-side reads need to
+// go through the mount. No-op for non-Windows paths.
+function toNodeReadablePath(p: string): string {
+  const m = p.match(/^([A-Za-z]):[/\\](.*)$/);
+  if (!m) return p;
+  return `/mnt/${m[1].toLowerCase()}/${m[2].replace(/\\/g, '/')}`;
+}
+
+// Cap README at 32 KB. Most README.md files are 5-25 KB; the long tail is
+// rare. Truncation is explicit so the planner doesn't silently miss the
+// bottom half.
+const README_MAX_BYTES = 32 * 1024;
+
+async function readWorkspaceReadme(workspace: string): Promise<string | null> {
+  const root = toNodeReadablePath(workspace);
+  // Case-insensitive filesystems (Windows, macOS default) don't care, but
+  // WSL + ext4 does. Try the common casings.
+  const candidates = ['README.md', 'readme.md', 'README.MD', 'Readme.md'];
+  for (const name of candidates) {
+    try {
+      const content = await readFile(path.join(root, name), 'utf8');
+      if (content.length > README_MAX_BYTES) {
+        return (
+          content.slice(0, README_MAX_BYTES) +
+          '\n\n[… README truncated at 32 KB — rest omitted]'
+        );
+      }
+      return content;
+    } catch {
+      // Next candidate.
+    }
+  }
+  return null;
 }
 
 export interface PlannerBoardContext {
@@ -214,6 +293,11 @@ export async function runPlannerSweep(
     // planner prompt and raise todo novelty. Used by re-sweeps so the
     // model stops proposing duplicates of already-done work.
     includeBoardContext?: boolean;
+    // When true (default), read the workspace's README.md and embed it in
+    // the prompt so the planner has the project's claimed scope at hand
+    // without burning tool calls on a read. Set false for runs where the
+    // README is irrelevant or the workspace has no README.
+    includeReadme?: boolean;
   } = {},
 ): Promise<PlannerSweepResult> {
   const meta = await getRun(swarmRunID);
@@ -237,7 +321,13 @@ export async function runPlannerSweep(
   const boardContext = opts.includeBoardContext
     ? buildPlannerBoardContext(swarmRunID)
     : undefined;
-  const prompt = buildPlannerPrompt(meta.directive, boardContext);
+  // includeReadme defaults to true — project vision should anchor every
+  // sweep. The READ itself is cheap (~one filesystem call, single-digit
+  // ms) and the prompt-token cost is offset by saving the planner a
+  // mandatory tool call to read it.
+  const readme =
+    opts.includeReadme === false ? null : await readWorkspaceReadme(meta.workspace);
+  const prompt = buildPlannerPrompt(meta.directive, boardContext, readme);
   await postSessionMessageServer(sessionID, meta.workspace, prompt);
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
