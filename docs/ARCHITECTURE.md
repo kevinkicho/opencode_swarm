@@ -161,24 +161,97 @@ Ownership split:
 
 Invariants:
 
-- **Multi-session by pattern.** `pattern='none'` runs N=1; `council`,
-  `blackboard`, and `map-reduce` all spawn N sessions on create
-  (`sessionIDs[]` populated) and their coordinators run concurrently —
-  blackboard via per-session tick fan-out in
-  `lib/server/blackboard/auto-ticker.ts` (shipped 2026-04-22), map-reduce
-  via parallel fan-out with a blackboard-routed synthesis claim, council
-  via the workspace-scoped SSE multiplexer. Wire shapes have been plural
-  since v1.
-- **Preset dispatch ships for `none` / `council` / `blackboard` /
-  `map-reduce`.** Stigmergy is still unimplemented and will 501 if ever
-  exposed through the UI — it's a layer over blackboard, not a separate
-  dispatch path. See `SWARM_PATTERNS.md` §4.
+- **Multi-session by pattern.** `pattern='none'` runs N=1; everything else
+  spawns N sessions on create (`sessionIDs[]` populated). Each pattern's
+  background orchestrator lives in its own module under `lib/server/`
+  and fires fire-and-forget from the POST handler after `createRun`
+  returns — the HTTP response doesn't wait for orchestration.
+- **Dispatch catalog (shipped 2026-04-23).** 9 patterns ship: `none`,
+  `blackboard`, `council`, `map-reduce` (self-organizing), plus
+  `orchestrator-worker`, `role-differentiated`, `debate-judge`,
+  `critic-loop`, `deliberate-execute` (hierarchical — see §1.5.1).
+  Stigmergy is still unimplemented — it's a layer over blackboard, not
+  a separate dispatch path. Each pattern's POST body shape is in
+  `SwarmRunRequest`; see `SWARM_PATTERNS.md` for per-pattern invariants.
 - **L0 events.ndjson is the authoritative replay source**, not the live
   SSE stream. Future analytics / rollup workers read from disk; the live
   stream is a convenience for the browser.
 - **The multiplexer filters by `properties.sessionID`.** Events without a
   sessionID (global opencode events) are dropped. A future swarm-coordinator
   event type would opt back in here.
+- **The SSE proxy reshapes + coalesces.** `lib/server/sse-shaping.ts`
+  strips redundant `summary.diffs` patches from `message.updated` frames,
+  coalesces `message.part.updated` firehoses per part.id at 250 ms, and
+  dedupes historical replay. Shipped 2026-04-23 after a long run's
+  firehose choked browser tabs. Shaping runs AFTER `appendEvent` — L0
+  stores the shaped frames so replay size shrinks too.
+
+### 1.5.1 Hierarchical-pattern orchestrators
+
+Five patterns shipped 2026-04-23 after retiring the earlier "no role
+hierarchy" design stance (see DESIGN.md §1 history note). All five reuse
+the blackboard board store + auto-ticker where they need execution, but
+each wraps its own orchestration on top:
+
+| Pattern | Orchestrator module | Shape |
+|---|---|---|
+| `orchestrator-worker` | `lib/server/orchestrator-worker.ts` | session 0 plans + dispatches; workers claim off board. Picker excludes orchestrator via `excludeSessionIDs` option on `tickCoordinator`. |
+| `role-differentiated` | `lib/server/role-differentiated.ts` | N workers with pinned `agent={role}` identities. Roles bias self-selection (no hard routing at v1). `teamRoles[]` in request body or rotated defaults. |
+| `critic-loop` | `lib/server/critic-loop.ts` | Exactly 2 sessions. Worker drafts → critic reviews ("APPROVED:" / "REVISE:") → worker revises. Loop up to `criticMaxIterations`. |
+| `debate-judge` | `lib/server/debate-judge.ts` | N generators + 1 judge. Judge verdict: WINNER / MERGE / REVISE. Loops up to `debateMaxRounds`. |
+| `deliberate-execute` | `lib/server/deliberate-execute.ts` | Compositional: council rounds (via `runCouncilRounds`) → synthesis (extracts todos via `todowrite` on session 0) → blackboard execution on the same session pool. |
+
+### 1.5.2 Overnight-safety stack
+
+Shipped 2026-04-23 after an 8-hour run diagnosed three compounding
+failure modes. Everything below lives in `lib/server/blackboard/`:
+
+- **Zombie auto-abort in the session picker** (`coordinator.ts`,
+  `ZOMBIE_TURN_THRESHOLD_MS = 10 min`). opencode assistant turns can
+  hang silently (no `completed`, no `error`); the coordinator used to
+  skip those sessions forever as "busy," freezing dispatch. Now: if a
+  session's oldest in-flight turn crosses 10 min, the picker fires
+  `abortSessionServer` and treats the session as idle-for-dispatch.
+- **Turn timeout raised to 10 min** (`DEFAULT_TURN_TIMEOUT_MS`). Matches
+  the zombie threshold — substantive README-verification todos
+  legitimately run past 5 min, and the previous 5-min cap was
+  producing false `stale` transitions.
+- **Eager re-sweep on drain** (`auto-ticker.ts`,
+  `IDLE_TICKS_BEFORE_EAGER_SWEEP = 3`, `MIN_MS_BETWEEN_SWEEPS = 2 min`).
+  When every session has been idle 30 s AND ≥ 2 min have elapsed since
+  the last planner sweep, fires a fresh sweep immediately instead of
+  waiting for the periodic timer. Converts "drain, then 15 min dead"
+  into "drain, then 30-120 s gap, then new batch."
+- **Periodic planner sweep** (`auto-ticker.ts`, configurable via
+  `persistentSweepMinutes` in the request body). On when > 0; disables
+  auto-idle-stop so the run only stops via explicit `stopAutoTicker`
+  call, process shutdown, or `opencode-frozen` detection. Eager + periodic
+  together: eager almost always wins the race; periodic is the safety net.
+- **Opencode-frozen watchdog** (`auto-ticker.ts`,
+  `FROZEN_TOKENS_THRESHOLD_MS = 10 min`, `STARTUP_GRACE_MS = 15 min`).
+  Polls `deriveRunRow` every 60 s; stops the ticker with
+  `stopReason: 'opencode-frozen'` if tokens haven't advanced for 10 min
+  after once producing activity, or if tokens stayed 0 for 15 min from
+  the start. Surfaces in `components/board-rail.tsx`'s ticker footer
+  as `stopped · opencode-frozen` — distinct from `auto-idle` so the
+  user knows to restart opencode rather than the ticker.
+- **HMR-resilient module exports** (`lib/server/hmr-exports.ts`). Three
+  modules publish their exports to `Symbol.for()` slots on `globalThis`:
+  `coordinator.ts` (tickCoordinator, waitForSessionIdle), `planner.ts`
+  (runPlannerSweep), `auto-ticker.ts` (fanout, runPeriodicSweep,
+  checkLiveness). Consumers read via `liveExports(key, fallback)` at
+  call time — `setInterval` callbacks in `auto-ticker.ts` all go through
+  `liveAutoTicker()` / `liveCoordinator()` / `livePlanner()`. Means
+  edits to any of these three files take effect on the next tick
+  without needing a ticker restart. Fixes a multi-hour debug loop
+  from 2026-04-23 where HMR reloaded modules but `setInterval` closures
+  still referenced the old function bodies.
+- **Browser ChunkLoadError auto-reload** (`components/chunk-error-reload.tsx`
+  + `lib/lazy-with-retry.ts`). `dynamic()` loaders wrap through
+  `lazyWithRetry` (4 retries, ~15 s total budget). A window-level error
+  listener catches any chunk-load errors that escape the wrapper and
+  reloads the tab with a brief overlay. URL state (`?swarmRun=...`)
+  preserves context across the reload.
 
 ---
 
@@ -224,6 +297,32 @@ purpose) or its role is obvious from its name.
 | `live.ts` | Browser hooks (`useLiveSession`, `useLivePermissions`, `useSessionDiff`, `useLiveSessions`, `useOpencodeHealth`) + POST helpers (`createSessionBrowser`, `postSessionMessageBrowser`, `abortSessionBrowser`, `replyPermissionBrowser`). |
 | `transform.ts` | Pure projections from `OpencodeMessage[]` → our UI shapes. Zero hooks, zero fetches. |
 | `pricing.ts` | opencode zen per-1M-token price table + `priceFor` / `tokensForBudget` / `withPricing`. See `memory/reference_opencode_zen_pricing.md`. |
+
+### `lib/server/` (Node-only backend)
+
+Server-only modules. Not importable from client components — guards via the
+`'use client'` boundary. Each pattern orchestrator module is fire-and-
+forget from `app/api/swarm/run/route.ts`; they return Promise\<void> and
+the POST response doesn't wait on them.
+
+| File | Role |
+|---|---|
+| `swarm-registry.ts` | `createRun` / `getRun` / `listRuns` / `appendEvent` / `readEvents` / `deriveRunRow`. L0 events.ndjson is authoritative per §1.5 invariants. |
+| `opencode-server.ts` | Server-side opencode HTTP helpers: `createSessionServer`, `postSessionMessageServer`, `abortSessionServer`, `getSessionMessagesServer`. Mirror of the browser helpers in `lib/opencode/live.ts`. |
+| `sse-shaping.ts` | `reshapeForForward` + `PartCoalescer` + `dedupeReplay` (see §1.5 invariants). |
+| `hmr-exports.ts` | `publishExports` / `liveExports` helpers for the HMR-resilient globalThis-stash pattern (see §1.5.2). |
+| `council.ts` | `runCouncilRounds` — council auto-rounds (R2/R3 peer-revise after Round-1 directive broadcast). Fires from the POST handler when `pattern='council'`. |
+| `map-reduce.ts` | `runMapReduceSynthesis` + `buildScopedDirective` + `deriveSlices`. |
+| `orchestrator-worker.ts` | `runOrchestratorWorkerKickoff` — session 0 planner + worker-only dispatch. |
+| `role-differentiated.ts` | `runRoleDifferentiatedKickoff` + `resolveTeamRoles` — pinned `agent={role}` per session, architect seeds board on session 0. |
+| `critic-loop.ts` | `runCriticLoopKickoff` — 2-session worker/critic loop with APPROVED/REVISE verdict parsing. |
+| `debate-judge.ts` | `runDebateJudgeKickoff` — N generators + 1 judge, WINNER/MERGE/REVISE verdict parsing. |
+| `deliberate-execute.ts` | `runDeliberateExecuteKickoff` — composes council rounds + synthesis + blackboard execution. |
+| `blackboard/store.ts` | SQLite-backed board state. `insertBoardItem`, `listBoardItems`, `transitionStatus` (CAS-safe). |
+| `blackboard/coordinator.ts` | `tickCoordinator` (session picker + claim + work + commit), `waitForSessionIdle`, zombie auto-abort (§1.5.2). |
+| `blackboard/planner.ts` | `runPlannerSweep` — posts the planner prompt to session 0, extracts todowrite, seeds board. Prompt is mission-anchored with workspace README auto-embedded (see commit `a5b7c86`). Exports `latestTodosFrom`, `mintItemId`, `buildPlannerBoardContext` for reuse by other orchestrators. |
+| `blackboard/auto-ticker.ts` | Timer-based ticker with per-session fanout. Hosts periodic sweep, eager sweep, liveness watchdog (§1.5.2). `AutoTickerOpts.orchestratorSessionID` excludes a session from worker dispatch for hierarchical patterns. |
+| `blackboard/bus.ts` | Process-local event bus that `board/store` fires on insert/update/transition. Consumed by the board-events SSE route. |
 
 ### `components/` (presentation)
 
@@ -289,13 +388,48 @@ Surface contracts (one-liner each) are in `CLAUDE.md`'s "Surface contracts" tabl
 
 **Verify:** `priceFor('<test-model-id>')` returns the entry. No type-check signal — the ordering bug is behavioral.
 
-### 3.4 Promote a pattern preset from "soon" to "available"
+### 3.4 Add a new swarm pattern
 
-1. **`lib/swarm-patterns.ts`** — flip `available: false` → `true` for the preset.
-2. **`SWARM_PATTERNS.md`** — move the preset's status marker from `[ ]` to `[~]` or `[x]`. Update the §Roadmap table if the order shifts.
-3. **Backend work** — unless the preset genuinely runs on opencode-native (only `none` does today), also ship the coordinator pieces listed in SWARM_PATTERNS.md §"Backend gap".
+Template for pattern #10 onward. Use the orchestrator-worker /
+critic-loop / deliberate-execute files as references.
 
-**Verify:** tile becomes selectable in new-run-modal → step 03; launch-time still works (for `none` anyway).
+1. **`lib/swarm-types.ts`** — add the pattern value to `SwarmPattern`.
+2. **`lib/swarm-patterns.ts`** — add a `patternMeta` entry with a unique
+   `accent` (add to the accent union + the two accent-class records if
+   you need a new color).
+3. **`lib/swarm-run-types.ts`** — add any pattern-specific request body
+   fields to `SwarmRunRequest` and mirror them on `SwarmRunMeta` so
+   periodic re-entries can read them from disk.
+4. **`lib/server/swarm-registry.ts`** — copy the new request fields into
+   the meta at `createRun` time.
+5. **`lib/server/<pattern>.ts`** — new module with a `run<Pattern>Kickoff`
+   function. Follow the shape of existing kickoffs: `getRun` → validate
+   pattern + session count → post role-framed intros (with
+   `agent={role}` if hierarchical) → orchestrate via
+   `runCouncilRounds` / `runPlannerSweep` / custom waits → fire
+   auto-ticker if the pattern has a blackboard-execution phase.
+6. **`app/api/swarm/run/route.ts`** — add the pattern to
+   `SUPPORTED_PATTERNS`, `PATTERN_TEAM_SIZE`, `isSwarmPattern`, and the
+   `patternsWithCustomIntro` set (if the pattern posts its own intros
+   instead of the uniform directive broadcast). Add pattern-specific
+   validators for any new body fields. Add a `Step N` block that fires
+   the kickoff in `.catch(logAndExit)`.
+7. **`components/new-run-modal.tsx`** — add an `API_RECIPES` entry
+   with a working curl example so users see the POST body shape.
+8. **`lib/blackboard/live.ts`** — if the pattern pins roles, add a
+   `case` to `roleNamesFromMeta` so board chips show role labels.
+9. **`app/page.tsx`** — if the pattern uses the board, add it to
+   the `boardPatterns` set.
+10. **`SWARM_PATTERNS.md`** — add a §N.X section describing the shape,
+    status marker, opencode fit.
+
+**Verify:** `npx tsc --noEmit` clean; POST validator accepts the new
+pattern value via `scripts/_hierarchical_smoke.mjs` invocation.
+
+### 3.4a Promote an existing pattern's `available` flag
+
+1. **`lib/swarm-patterns.ts`** — flip `available: false` → `true`.
+2. **`SWARM_PATTERNS.md`** — move the status marker from `[ ]` to `[~]` or `[x]`.
 
 ### 3.5 Add a new routing-bound field
 
@@ -336,6 +470,14 @@ Symptoms first. Each row is the two or three files most likely at fault, plus th
 | New tile in new-run-modal not selectable | `lib/swarm-patterns.ts` | `available: false` gates the click handler. Flip to true only when a backend exists. |
 | Costs aggregate wrong after model switch | `lib/opencode/pricing.ts` `LOOKUP` order | Specific patterns must precede generic ones (e.g. `gpt-5-4-pro` before `gpt-5-4`). |
 | Composer sends to the wrong agent | `lib/opencode/live.ts:148` (`postSessionMessageBrowser`) | Is the `opts.agent` arg populated from the composer's target picker? See `memory/project_run_initiation.md`. |
+| Blackboard run stuck, sessions have in-flight turns 20+ min old | `lib/server/blackboard/coordinator.ts` zombie-abort (§1.5.2) | Probe `/session/{id}/message` per session; look for `info.time.completed == null` on assistant turns past `ZOMBIE_TURN_THRESHOLD_MS`. Coordinator picker should auto-abort at 10 min — if it's not firing, check HMR-resilient export registration (`liveCoordinator()` resolves to current code). |
+| Ticker footer says `stopped · opencode-frozen` | `lib/server/blackboard/auto-ticker.ts` liveness watchdog (§1.5.2) | Tokens haven't advanced for 10+ min. opencode's LLM pipeline is not generating — restart opencode on its own port (user's launcher), then `POST /api/swarm/run/:id/board/ticker {"action":"start","periodicSweepMinutes":N}` to resume. |
+| Ticker footer says `stopped · auto-idle` unexpectedly | `auto-ticker.ts` auto-idle logic | Auto-idle fires only when `periodicSweepMs === 0`. If you expected persistent mode, confirm the run was POSTed with `persistentSweepMinutes > 0`. |
+| Planner sweep throws "board already populated" | `lib/server/blackboard/planner.ts` line ~310 | Re-sweep paths must pass `overwrite: true` — see commit `5631557`. If re-sweep silently fails, the attempt is logged as `re-sweep threw: board already populated`. |
+| Code edit to `coordinator.ts` / `planner.ts` / `auto-ticker.ts` isn't taking effect | HMR stale-closure (§1.5.2) | Normally HMR-resilient via `liveExports`. If the effect STILL isn't propagating, confirm the module's `publishExports(KEY, …)` call fires on load (add a log; edit should reload module; log should print). Nuclear option: stop + start the ticker via the POST route. |
+| Browser tab blanks out with ChunkLoadError | `components/chunk-error-reload.tsx` | Auto-reload should fire within ~1 s. If it doesn't, the overlay is missing or the module failed to load — open devtools, clear `.next` cache, hard reload. |
+| Board chips all show "S ses" | `lib/blackboard/live.ts::deriveBoardAgents` | Pre-commit `f3c8112` bug. Verify the new sorted-numeric derivation is in place + `roleNames` arg is wired from the page. |
+| Hierarchical pattern POSTs accepted but nothing happens | `app/api/swarm/run/route.ts` Step 7-11 blocks | Check server logs for `[<pattern>] run <id>: kickoff aborted` — likely session count mismatch (critic-loop needs exactly 2; debate-judge needs at least 3). |
 
 ### 4.1 Provenance tips
 
