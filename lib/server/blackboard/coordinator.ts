@@ -33,6 +33,7 @@ import path from 'node:path';
 
 import { getRun } from '../swarm-registry';
 import {
+  abortSessionServer,
   getSessionMessagesServer,
   postSessionMessageServer,
 } from '../opencode-server';
@@ -43,6 +44,16 @@ import type { OpencodeMessage } from '@/lib/opencode/types';
 
 const POLL_INTERVAL_MS = 1000;
 const DEFAULT_TURN_TIMEOUT_MS = 5 * 60_000;
+
+// Zombie threshold for the session picker. opencode assistant turns can
+// hang with no completed AND no error (see
+// memory/reference_opencode_zombie_messages.md) — in-flight indefinitely,
+// silently blocking dispatch because the picker skips any session with an
+// active in-flight turn. After this many ms, the picker treats the turn
+// as stale: auto-aborts it and dispatches to the session anyway. Chosen
+// at 10 min because real turns on hefty directives can legitimately run
+// 5+ min; shorter than that would trip on slow legitimate work.
+const ZOMBIE_TURN_THRESHOLD_MS = 10 * 60_000;
 
 // How long the session must be silent (no new activity, all turns completed)
 // before we treat it as "done". opencode emits one assistant message per
@@ -204,6 +215,21 @@ function isAssistantInFlight(m: OpencodeMessage): boolean {
   );
 }
 
+// How long has the oldest in-flight assistant turn been running? Returns 0
+// when the session has no in-flight turns. Used by the session picker to
+// distinguish legitimate long-running work from zombies.
+function oldestInFlightAgeMs(messages: OpencodeMessage[]): number {
+  let oldest: number | null = null;
+  for (const m of messages) {
+    if (!isAssistantInFlight(m)) continue;
+    const created = m.info.time.created;
+    if (typeof created !== 'number') continue;
+    if (oldest === null || created < oldest) oldest = created;
+  }
+  if (oldest === null) return 0;
+  return Date.now() - oldest;
+}
+
 // Which files did the turn edit? `patch` parts carry `files: string[]`
 // (one part per turn that committed edits — see lib/opencode/types.ts). We
 // union across every patch part in the scoped messages, so a turn that
@@ -363,7 +389,29 @@ export async function tickCoordinator(
     if (busyOnBoard) continue;
     const messages = await getSessionMessagesServer(sessionID, meta.workspace);
     messagesByCandidate.set(sessionID, messages);
-    if (messages.some(isAssistantInFlight)) continue;
+    const inFlightAge = oldestInFlightAgeMs(messages);
+    if (inFlightAge > 0) {
+      if (inFlightAge < ZOMBIE_TURN_THRESHOLD_MS) {
+        // Real in-flight work — skip this session for now.
+        continue;
+      }
+      // Zombie: in-flight > threshold. Auto-abort and proceed to dispatch.
+      // See memory/reference_opencode_zombie_messages.md — opencode turns
+      // can hang without completed/error flags, silently blocking dispatch.
+      // Fire-and-forget abort so the picker doesn't stall on a slow abort;
+      // the next turn's post (postSessionMessageServer below) will wait for
+      // the server to accept it regardless.
+      console.log(
+        `[coordinator] session ${sessionID.slice(-8)}: zombie turn (${Math.round(inFlightAge / 60_000)}m in-flight) — auto-aborting and dispatching`,
+      );
+      abortSessionServer(sessionID, meta.workspace).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[coordinator] session ${sessionID.slice(-8)}: auto-abort failed:`,
+          message,
+        );
+      });
+    }
     if (!pickedSession) pickedSession = sessionID;
   }
 
