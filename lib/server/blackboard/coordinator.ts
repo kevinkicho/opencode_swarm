@@ -37,10 +37,35 @@ import {
   getSessionMessagesServer,
   postSessionMessageServer,
 } from '../opencode-server';
+import { publishExports } from '../hmr-exports';
 import { listBoardItems, transitionStatus } from './store';
 import { toFileHeat, type FileHeat } from '@/lib/opencode/transform';
 import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
+
+// Shared key for HMR-resilient consumer lookups (see lib/server/hmr-exports.ts).
+// Export so consumers can import it alongside the types.
+export const COORDINATOR_EXPORTS_KEY = Symbol.for(
+  'opencode_swarm.coordinator.exports',
+);
+export interface CoordinatorExports {
+  // Forward-declare typeof — actual definitions below; TS hoists function
+  // types so the declaration order works out.
+  tickCoordinator: (
+    swarmRunID: string,
+    opts?: { restrictToSessionID?: string },
+  ) => Promise<TickOutcome>;
+  waitForSessionIdle: (
+    sessionID: string,
+    workspace: string,
+    knownIDs: Set<string>,
+    deadline: number,
+  ) =>
+    Promise<
+      | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
+      | { ok: false; reason: 'timeout' | 'error' }
+    >;
+}
 
 const POLL_INTERVAL_MS = 1000;
 // Raised from 5 min to 10 min after the 2026-04-23 overnight run showed
@@ -587,4 +612,13 @@ export async function tickCoordinator(
 
   return { status: 'picked', sessionID, itemID: todo.id, editedPaths };
 }
-// hmr-reload-token: 2026-04-23T01:15:00
+
+// Publish to globalThis so HMR-replaced modules propagate to existing
+// consumers (auto-ticker's setInterval callbacks, map-reduce's
+// runMapReduceSynthesis, council's runCouncilRounds) without requiring
+// those consumers to restart. See lib/server/hmr-exports.ts for the
+// rationale and pattern.
+publishExports<CoordinatorExports>(COORDINATOR_EXPORTS_KEY, {
+  tickCoordinator,
+  waitForSessionIdle,
+});

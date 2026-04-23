@@ -39,9 +39,59 @@
 // Server-only. Not imported from client code.
 
 import { deriveRunRow, getRun } from '../swarm-registry';
-import { tickCoordinator, type TickOutcome } from './coordinator';
-import { runPlannerSweep } from './planner';
+import { liveExports, publishExports } from '../hmr-exports';
+import {
+  COORDINATOR_EXPORTS_KEY,
+  tickCoordinator,
+  waitForSessionIdle,
+  type CoordinatorExports,
+  type TickOutcome,
+} from './coordinator';
+import {
+  PLANNER_EXPORTS_KEY,
+  runPlannerSweep,
+  type PlannerExports,
+} from './planner';
 import { listBoardItems } from './store';
+
+// Live-export lookups for cross-module calls. Direct imports above are
+// the fallback when the producer module hasn't published yet (unusual
+// in practice — publish happens at module load). These closures read
+// globalThis at each call, so HMR-reloaded coordinator / planner code
+// takes effect on the next tick without needing a ticker restart.
+// See lib/server/hmr-exports.ts for the rationale.
+function liveCoordinator(): CoordinatorExports {
+  return liveExports<CoordinatorExports>(COORDINATOR_EXPORTS_KEY, {
+    tickCoordinator,
+    waitForSessionIdle,
+  });
+}
+function livePlanner(): PlannerExports {
+  return liveExports<PlannerExports>(PLANNER_EXPORTS_KEY, {
+    runPlannerSweep,
+  });
+}
+
+// Self-publish so this module's own setInterval callbacks resolve to
+// fresh code after an HMR reload. Callbacks captured at setInterval
+// time route through liveAutoTicker() which reads globalThis, so any
+// edit to fanout / runPeriodicSweep / checkLiveness propagates to the
+// existing ticker on its next tick.
+const AUTO_TICKER_EXPORTS_KEY = Symbol.for(
+  'opencode_swarm.auto_ticker.exports',
+);
+interface AutoTickerExports {
+  fanout: (swarmRunID: string) => Promise<void>;
+  runPeriodicSweep: (state: TickerState) => Promise<void>;
+  checkLiveness: (state: TickerState) => Promise<void>;
+}
+function liveAutoTicker(): AutoTickerExports {
+  return liveExports<AutoTickerExports>(AUTO_TICKER_EXPORTS_KEY, {
+    fanout,
+    runPeriodicSweep,
+    checkLiveness,
+  });
+}
 
 const DEFAULT_INTERVAL_MS = 10_000;
 const IDLE_TICKS_BEFORE_STOP = 6;
@@ -217,7 +267,7 @@ async function tickSession(
   if (slot.inFlight) return; // per-session re-entrancy guard
   slot.inFlight = true;
   try {
-    const outcome = await tickCoordinator(state.swarmRunID, {
+    const outcome = await liveCoordinator().tickCoordinator(state.swarmRunID, {
       restrictToSessionID: sessionID,
     });
     slot.lastOutcome = outcome;
@@ -249,7 +299,7 @@ async function tickSession(
       console.log(
         `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle ${IDLE_TICKS_BEFORE_EAGER_SWEEP}+ ticks and ≥${MIN_MS_BETWEEN_SWEEPS / 1000}s since last sweep — firing eager re-sweep`,
       );
-      void runPeriodicSweep(state);
+      void liveAutoTicker().runPeriodicSweep(state);
     }
 
     // Auto-stop when every session is simultaneously idle-past-threshold.
@@ -332,7 +382,7 @@ async function attemptReSweep(state: TickerState): Promise<void> {
     // point (the drained initial batch). includeBoardContext: true so
     // the planner sees what's already done/pending and proposes new work
     // instead of duplicates.
-    const result = await runPlannerSweep(swarmRunID, {
+    const result = await livePlanner().runPlannerSweep(swarmRunID, {
       overwrite: true,
       includeBoardContext: true,
     });
@@ -447,7 +497,7 @@ async function runPeriodicSweep(state: TickerState): Promise<void> {
     // guard. includeBoardContext: true feeds the planner the already-
     // done list so it stops re-proposing stale items — critical over an
     // 8h run where the same things would otherwise get suggested 24×.
-    const result = await runPlannerSweep(swarmRunID, {
+    const result = await livePlanner().runPlannerSweep(swarmRunID, {
       overwrite: true,
       includeBoardContext: true,
     });
@@ -509,8 +559,12 @@ export function startAutoTicker(
 
   const intervalMs = opts.intervalMs ?? DEFAULT_INTERVAL_MS;
   const periodicSweepMs = opts.periodicSweepMs ?? 0;
+  // All three setInterval callbacks route via liveAutoTicker() so HMR
+  // reloads of this module (new fanout / runPeriodicSweep / checkLiveness
+  // implementations) propagate to existing tickers without needing
+  // stopAutoTicker + startAutoTicker cycles. See hmr-exports.ts.
   const timer = setInterval(() => {
-    void fanout(swarmRunID);
+    void liveAutoTicker().fanout(swarmRunID);
   }, intervalMs);
   // Node-only: don't keep the event loop alive for a ticker. The Next.js
   // server process has its own reasons to stay up; a ticker shouldn't
@@ -526,7 +580,7 @@ export function startAutoTicker(
     periodicSweepTimer = setInterval(() => {
       const s = tickers().get(swarmRunID);
       if (!s || s.stopped) return;
-      void runPeriodicSweep(s);
+      void liveAutoTicker().runPeriodicSweep(s);
     }, periodicSweepMs);
     if (typeof (periodicSweepTimer as NodeJS.Timeout).unref === 'function') {
       (periodicSweepTimer as NodeJS.Timeout).unref();
@@ -541,7 +595,7 @@ export function startAutoTicker(
   const livenessTimer = setInterval(() => {
     const s = tickers().get(swarmRunID);
     if (!s || s.stopped) return;
-    void checkLiveness(s);
+    void liveAutoTicker().checkLiveness(s);
   }, LIVENESS_CHECK_INTERVAL_MS);
   if (typeof (livenessTimer as NodeJS.Timeout).unref === 'function') {
     (livenessTimer as NodeJS.Timeout).unref();
@@ -687,4 +741,12 @@ export function getTickerSnapshot(swarmRunID: string): TickerSnapshot | null {
   const s = tickers().get(swarmRunID);
   return s ? snapshot(s) : null;
 }
-// hmr-reload-token: 2026-04-23T01:15:00
+
+// Publish to globalThis so in-flight setInterval callbacks resolve to
+// the latest fanout / runPeriodicSweep / checkLiveness on their next
+// tick, even when HMR replaces this module mid-run.
+publishExports<AutoTickerExports>(AUTO_TICKER_EXPORTS_KEY, {
+  fanout,
+  runPeriodicSweep,
+  checkLiveness,
+});

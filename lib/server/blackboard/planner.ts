@@ -29,10 +29,25 @@ import {
   getSessionMessagesServer,
   postSessionMessageServer,
 } from '../opencode-server';
+import { publishExports } from '../hmr-exports';
 import { waitForSessionIdle } from './coordinator';
 import { insertBoardItem, listBoardItems } from './store';
 import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
+
+export const PLANNER_EXPORTS_KEY = Symbol.for(
+  'opencode_swarm.planner.exports',
+);
+export interface PlannerExports {
+  runPlannerSweep: (
+    swarmRunID: string,
+    opts?: {
+      timeoutMs?: number;
+      overwrite?: boolean;
+      includeBoardContext?: boolean;
+    },
+  ) => Promise<PlannerSweepResult>;
+}
 
 // Default timeout for a planner sweep. Raised from the original 90s after
 // 2026-04-22 incident: a real-repo sweep (kBioIntelBrowser04052026) spent
@@ -293,3 +308,9 @@ export async function runPlannerSweep(
   }
   return { items, sessionID, planMessageID: latest.messageId };
 }
+
+// HMR-resilient publish — see lib/server/hmr-exports.ts. auto-ticker's
+// attemptReSweep + runPeriodicSweep both read runPlannerSweep via this
+// slot so edits to the planner prompt / timeout / etc. take effect
+// without needing to restart the ticker.
+publishExports<PlannerExports>(PLANNER_EXPORTS_KEY, { runPlannerSweep });
