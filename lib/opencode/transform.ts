@@ -445,7 +445,11 @@ export function toRunMeta(
   for (const m of messages) {
     if (m.info.role !== 'assistant') continue;
     totalTokens += m.info.tokens?.total ?? 0;
-    totalCost += m.info.cost ?? 0;
+    // Use derivedCost so Zen bundle models (big-pickle) show a pricing-
+    // estimated dollar figure instead of $0.00. Aligns with the cost-
+    // dashboard's fallback path and makes the topbar honest about
+    // non-trivial bundle runs.
+    totalCost += derivedCost(m.info);
   }
 
   const startedMs = session?.time.created ?? messages[0]?.info.time.created ?? Date.now();
@@ -489,7 +493,6 @@ export function toRunMeta(
     totalTokens,
     totalCost,
     budgetCap: 5.0,
-    goTier: { window: '5h', used: 0, cap: 12.0 },
     cwd: session?.directory ?? '',
   };
 }

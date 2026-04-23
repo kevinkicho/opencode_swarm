@@ -174,7 +174,6 @@ export interface RunMeta {
   totalTokens: number;
   totalCost: number;
   budgetCap: number;
-  goTier: { window: '5h' | 'weekly' | 'monthly'; used: number; cap: number };
   cwd: string;
 }
 

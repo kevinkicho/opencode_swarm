@@ -61,12 +61,6 @@ export function ProviderStats({
   const totalTokens = onThisProvider.reduce((s, a) => s + a.tokensUsed, 0);
   const totalCost = onThisProvider.reduce((s, a) => s + a.costUsed, 0);
 
-  const isGo = provider === 'go';
-  const goPct = isGo
-    ? Math.min(100, Math.round((run.goTier.used / run.goTier.cap) * 100))
-    : 0;
-  const goBarColor = goPct > 80 ? 'bg-rust' : goPct > 60 ? 'bg-amber' : display.barFull;
-
   return (
     <div className="p-3 min-w-[280px] max-w-[320px] space-y-2.5">
       <div className="flex items-center gap-2">
@@ -89,30 +83,7 @@ export function ProviderStats({
         <Stat label="agents" value={String(onThisProvider.length)} />
       </div>
 
-      {isGo && (
-        <div className="hairline-t pt-2 space-y-1">
-          <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-widest2 text-fog-600">
-            <span>go tier</span>
-            <span className="text-fog-700 normal-case tracking-normal">
-              · {run.goTier.window} window
-            </span>
-          </div>
-          <div className="h-[3px] rounded-full bg-ink-800 overflow-hidden">
-            <div
-              className={clsx('h-full rounded-full', goBarColor)}
-              style={{ width: `${goPct}%` }}
-            />
-          </div>
-          <div className="flex items-center font-mono text-[10px] text-fog-600 tabular-nums">
-            <span>
-              ${run.goTier.used.toFixed(2)} / ${run.goTier.cap.toFixed(2)}
-            </span>
-            <span className="ml-auto text-fog-700">{100 - goPct}% remaining</span>
-          </div>
-        </div>
-      )}
-
-      {!isGo && provider === 'zen' && (
+      {provider === 'zen' && (
         <div className="hairline-t pt-2 space-y-1">
           <div className="font-mono text-[9px] uppercase tracking-widest2 text-fog-600">
             run budget

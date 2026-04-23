@@ -149,7 +149,6 @@ const EMPTY_VIEW: SwarmView = {
     totalTokens: 0,
     totalCost: 0,
     budgetCap: 5,
-    goTier: { window: '5h', used: 0, cap: 12 },
     cwd: '',
   },
   providerSummary: [],

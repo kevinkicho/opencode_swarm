@@ -9,7 +9,6 @@ import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
 import { SwarmRunsPicker } from './swarm-runs-picker';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
-import { StatsStream } from './ui/stats-stream';
 import { ProviderBadge } from './provider-badge';
 import { LiveSessionPicker } from './live-session-picker';
 import { STATUS_VISUAL } from './swarm-runs-picker';
@@ -45,7 +44,6 @@ export function SwarmTopbar({
   swarmRunStatus: SwarmRunStatus | null;
 }) {
   const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
-  const goTierPct = Math.min(100, Math.round((run.goTier.used / run.goTier.cap) * 100));
   const totalAgents = providers.reduce((s, p) => s + p.agents, 0);
 
   return (
@@ -99,21 +97,6 @@ export function SwarmTopbar({
             ['cap', `$${run.budgetCap.toFixed(2)}`],
             ['remaining', `$${(run.budgetCap - run.totalCost).toFixed(2)}`],
             ['tokens', compact(run.totalTokens)],
-          ]}
-        />
-
-        <BudgetChip
-          label={run.goTier.window}
-          used={run.goTier.used}
-          cap={run.goTier.cap}
-          pct={goTierPct}
-          accent="mint"
-          tooltipTitle="go 5h rolling limit"
-          tooltipBody={[
-            ['used', `$${run.goTier.used.toFixed(2)}`],
-            ['cap', `$${run.goTier.cap.toFixed(2)}`],
-            ['resets', 'in 3h 12m'],
-            ['weekly', '$2.41 / $30'],
           ]}
         />
 
@@ -436,9 +419,7 @@ function AbortChip({
 function BudgetChip({
   label,
   used,
-  cap,
   pct,
-  accent = 'molten',
   tooltipTitle,
   tooltipBody,
 }: {
@@ -446,12 +427,11 @@ function BudgetChip({
   used: number;
   cap: number;
   pct: number;
-  accent?: 'molten' | 'mint';
   tooltipTitle: string;
   tooltipBody: [string, string][];
 }) {
-  const barColor = pct > 80 ? 'bg-rust' : pct > 60 ? 'bg-amber' : accent === 'mint' ? 'bg-mint' : 'bg-molten';
-  const textColor = pct > 80 ? 'text-rust' : accent === 'mint' ? 'text-mint/90' : 'text-fog-100';
+  const barColor = pct > 80 ? 'bg-rust' : pct > 60 ? 'bg-amber' : 'bg-molten';
+  const textColor = pct > 80 ? 'text-rust' : 'text-fog-100';
 
   return (
     <Popover
@@ -472,7 +452,7 @@ function BudgetChip({
               {pct}% of cap
             </span>
           </div>
-          <div className="px-2.5 py-1.5 hairline-b space-y-1">
+          <div className="px-2.5 py-1.5 space-y-1">
             {tooltipBody.map(([k, v]) => (
               <div key={k} className="flex items-center justify-between gap-3">
                 <span className="font-mono text-[10px] uppercase tracking-wider text-fog-600">
@@ -482,16 +462,6 @@ function BudgetChip({
               </div>
             ))}
           </div>
-          <StatsStream
-            live
-            seed={{
-              label: `${tooltipTitle} stream`,
-              tokens: Math.round(used * 1200),
-              cost: used,
-              duration: 120,
-              status: 'running',
-            }}
-          />
         </div>
       )}
     >

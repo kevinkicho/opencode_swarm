@@ -29,6 +29,33 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — topbar de-mocking
+
+- **Bundle-cost fallback in the topbar's `$` chip.** `toRunMeta` in
+  `lib/opencode/transform.ts` now sums `derivedCost(m.info)` instead
+  of `m.info.cost ?? 0` — so Zen bundle runs (big-pickle, no per-
+  message cost reported) show a pricing-estimated dollar figure
+  instead of `$0.00`. `derivedCost` already existed in the same file
+  for per-message provider display; it just wasn't wired to the
+  run-level aggregate. Aligns the topbar with the cost-dashboard's
+  fallback logic.
+- **Removed the fake `goTier` "5h rolling" chip** (mint-green chip
+  next to `$`). All fields were hardcoded constants (`used: 0`,
+  `cap: 12`, `'resets in 3h 12m'`, `'weekly $2.41 / $30'`) — Zen
+  doesn't expose a per-account rolling-usage API we can read, and a
+  lying chip is worse than no chip. Dropped the `goTier` field from
+  `RunMeta` entirely (swarm-types, transform, EMPTY_VIEW) and the
+  matching reader blocks in `swarm-topbar.tsx` and
+  `provider-stats.tsx`. The only real per-run signal is the
+  retry-after header on 429s, which is an error-path signal not a
+  dashboard one.
+- **Removed the `StatsStream` popover body** from the BudgetChip.
+  Its `tokens: used * 1200` seed was another fake derivation;
+  removing it leaves the popover with just the real
+  `tooltipBody` rows (total spend, cap, remaining, tokens). The
+  `StatsStream` component itself survives — `agent-roster.tsx`
+  still uses it (a separate mock surface; out of scope today).
+
 ### 2026-04-23 — session cleanup on run end
 
 - **`stopAutoTicker` now fire-and-forget aborts every session on
