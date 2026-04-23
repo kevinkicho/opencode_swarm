@@ -16,6 +16,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import type { SwarmRunListRow, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { SwarmPattern } from '@/lib/swarm-types';
+import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { Popover } from './ui/popover';
 import { Tooltip } from './ui/tooltip';
 
@@ -454,7 +455,14 @@ function DayCellRun({ row }: { row: SwarmRunListRow }) {
           <span className={clsx('text-[10px] leading-none', STATUS_DOT_TONE[row.status])}>●</span>
           <span className="text-fog-500 tabular-nums">{fmtTime(row.meta.createdAt)}</span>
           <span className="text-fog-700">·</span>
-          <span className="text-fog-400 uppercase tracking-widest2 text-micro">{pattern}</span>
+          <span
+            className={clsx(
+              'uppercase tracking-widest2 text-micro',
+              patternAccentText[patternMeta[pattern].accent],
+            )}
+          >
+            {pattern}
+          </span>
           <span className="text-fog-700">·</span>
           <span className="text-fog-300 truncate flex-1">
             {row.meta.title ?? row.meta.swarmRunID.slice(-8)}

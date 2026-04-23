@@ -22,6 +22,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { Popover } from './ui/popover';
 import { useSwarmRuns } from '@/lib/opencode/live';
+import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import { IconSearch } from './icons';
 
@@ -186,9 +187,12 @@ export function SwarmRunsPicker({
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[108px] text-right shrink-0">
               when
             </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[56px] text-right shrink-0">
-              retro
-            </span>
+            {/* Retro column header intentionally blank — the chip
+                only appears on row hover, the header label was
+                noise in the static state. Empty spacer preserves
+                the grid alignment. */}
+            <span className="w-[56px] shrink-0" aria-hidden />
+            <span className="w-1 shrink-0" aria-hidden />
           </div>
           <ul className="max-h-[360px] overflow-y-auto divide-y divide-ink-800">
             {error && !loading && (
@@ -238,7 +242,7 @@ export function SwarmRunsPicker({
                     <span
                       className={clsx(
                         'font-mono text-[10px] uppercase tracking-widest2 w-[90px] shrink-0 truncate',
-                        meta.pattern === 'none' ? 'text-fog-600' : 'text-iris'
+                        patternAccentText[patternMeta[meta.pattern].accent],
                       )}
                     >
                       {meta.pattern}

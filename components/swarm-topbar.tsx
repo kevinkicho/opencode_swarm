@@ -8,6 +8,7 @@ import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
 import { SwarmRunsPicker } from './swarm-runs-picker';
+import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { StatsStream } from './ui/stats-stream';
 import { ProviderBadge } from './provider-badge';
 import { LiveSessionPicker } from './live-session-picker';
@@ -238,14 +239,24 @@ function RunAnchorChip({
             {meta.pattern === 'blackboard' ? (
               <a
                 href={`/board-preview?swarmRun=${meta.swarmRunID}`}
-                className="font-mono text-[11px] text-iris hover:text-iris/80 flex items-center gap-1 group w-fit"
+                className={clsx(
+                  'font-mono text-[11px] hover:opacity-80 flex items-center gap-1 group w-fit',
+                  patternAccentText[patternMeta[meta.pattern].accent],
+                )}
                 title="open board view"
               >
                 {meta.pattern}
                 <span className="text-fog-600 group-hover:text-fog-300 transition">→ board</span>
               </a>
             ) : (
-              <span className="font-mono text-[11px] text-iris">{meta.pattern}</span>
+              <span
+                className={clsx(
+                  'font-mono text-[11px]',
+                  patternAccentText[patternMeta[meta.pattern].accent],
+                )}
+              >
+                {meta.pattern}
+              </span>
             )}
             <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
               sessions

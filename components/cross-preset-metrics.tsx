@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useMemo } from 'react';
 import type { SwarmRunListRow, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { SwarmPattern } from '@/lib/swarm-types';
+import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 
 // Cross-preset metrics view. Aggregates every persisted swarm-run into
 // per-pattern stats — the surface the user can use to answer "is council
@@ -254,7 +255,14 @@ export function CrossPresetMetrics({
                         key={s.pattern}
                         className="hairline-t hover:bg-ink-900/40 transition"
                       >
-                        <td className="py-2 px-3 text-fog-100">{s.pattern}</td>
+                        <td
+                          className={clsx(
+                            'py-2 px-3',
+                            patternAccentText[patternMeta[s.pattern].accent],
+                          )}
+                        >
+                          {s.pattern}
+                        </td>
                         <td className="py-2 px-3 text-right tabular-nums text-fog-300">
                           {s.count}
                         </td>
