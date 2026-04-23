@@ -7,6 +7,7 @@ import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
+import { SwarmRunsPicker } from './swarm-runs-picker';
 import { StatsStream } from './ui/stats-stream';
 import { ProviderBadge } from './provider-badge';
 import { LiveSessionPicker } from './live-session-picker';
@@ -65,6 +66,20 @@ export function SwarmTopbar({
 
       <nav className="flex items-center gap-2 pl-4 text-[12.5px] min-w-0 flex-1">
         <LiveSessionPicker title={run.title} />
+        {/* Runs-navigation dropdown. Mirrors the sessions dropdown on
+            the left — users can now hop between runs without leaving
+            the topbar. Same component the bottom-bar uses; the click
+            opens its popover with every run's id/pattern/status. */}
+        <SwarmRunsPicker currentSwarmRunID={swarmRunMeta?.swarmRunID ?? null}>
+          <button
+            type="button"
+            className="flex items-center gap-1 h-6 px-1.5 rounded hover:bg-ink-800 transition text-fog-500 hover:text-fog-200"
+            aria-label="browse swarm runs"
+          >
+            <span className="font-mono text-[10px] uppercase tracking-widest2">runs</span>
+            <span className="font-mono text-[9px] text-fog-700">▾</span>
+          </button>
+        </SwarmRunsPicker>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} />}
         {liveSessionId && liveDirectory && run.status === 'active' && (
           <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
