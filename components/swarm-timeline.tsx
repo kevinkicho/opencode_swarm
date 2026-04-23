@@ -199,7 +199,7 @@ export function SwarmTimeline({
   }, [messages, totalHeight]);
 
   return (
-    <section className="relative flex flex-col min-w-0 min-h-0 bg-ink-800">
+    <section className="relative flex-1 flex flex-col min-w-0 min-h-0 bg-ink-800">
       <div className="relative hairline-b">
         <div className="h-10 px-4 flex items-center gap-2 bg-ink-800/80 backdrop-blur">
           <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
