@@ -29,6 +29,43 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — pattern benchmarking script
+
+- **`scripts/_pattern_benchmark.mjs`** — runs the coordinator-backed
+  blackboard-family patterns sequentially against the same workspace
+  + directive and reports per-pattern metrics: wall-clock, tokens,
+  cost, done/stale counts, critic/verifier rejections, git commits
+  landed. Produces a comparison table + JSON dump at the end.
+- **No workspace reset between runs** (respects
+  `feedback_workspace_accumulation.md`): each pattern builds on the
+  prior pattern's commits. Measures "which pattern produces the best
+  next increment at this maturity" not "best zero-state bootstrap."
+- **Default patterns:** blackboard, orchestrator-worker, role-
+  differentiated — the three coordinator-backed patterns. Council /
+  debate-judge / critic-loop excluded because their shape differs
+  (deliberation quality, not execution throughput) and wouldn't
+  compare fairly on commits-landed metrics. Easy override via
+  `--patterns <comma-list>`.
+- **Bounded per-run:** stops each pattern at `--max-done N` (default
+  6) OR `--max-minutes N` (default 15), whichever first. Prevents
+  runaway cost.
+- **Usage:**
+  ```
+  node scripts/_pattern_benchmark.mjs \
+    --workspace "C:/Users/kevin/Workspace/kyahoofinance032926" \
+    [--patterns blackboard,orchestrator-worker,role-differentiated] \
+    [--max-done 6] [--max-minutes 15] \
+    [--enable-critic-gate]
+  ```
+- **Not shipped but queued:** a fourth column for "tests green"
+  metric (would run `npm test` before/after each pattern and diff
+  the pass count). Requires the target repo has a working test
+  runner; `kyahoofinance032926` does but not every target will, so
+  detecting + skipping is follow-up work.
+- **Cost estimate for a full 3-pattern run:** ~$12 on Go (~40% of the
+  5h $30 budget). Takes ~45-60 min wall clock. Fire when you've got
+  time to let it run + budget to spare.
+
 ### 2026-04-23 — Playwright grounding (verifier gate, MVP)
 
 - **Opt-in via `enableVerifierGate: true` + `workspaceDevUrl`.** Run
