@@ -5,7 +5,8 @@ import type { BoardAgent, BoardItem } from './types';
 
 // Mirror of TickerSnapshot from lib/server/blackboard/auto-ticker.ts —
 // kept as a client-side duplicate so this module doesn't pull server-only
-// imports into the browser bundle.
+// imports into the browser bundle. Keep in sync when new fields land
+// on the server snapshot; out-of-sync means TS lets stale shapes through.
 export interface TickerSnapshot {
   swarmRunID: string;
   intervalMs: number;
@@ -21,6 +22,12 @@ export interface TickerSnapshot {
     | { status: 'skipped'; reason: string };
   lastRanAtMs?: number;
   startedAtMs: number;
+  // Ambition-ratchet state (server side: SWARM_PATTERNS.md "Tiered
+  // execution"). currentTier 1-indexed; tierExhausted means MAX_TIER was
+  // attempted and returned zero — next cascade will stop the ticker.
+  currentTier: number;
+  tierExhausted: boolean;
+  maxTier: number;
 }
 
 // Kept as three distinct arms (rather than a combined `active | stopped`)

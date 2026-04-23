@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { useState } from 'react';
 import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
+import type { TickerState } from '@/lib/blackboard/live';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
@@ -15,6 +16,14 @@ import { STATUS_VISUAL } from './swarm-runs-picker';
 import { abortSessionBrowser } from '@/lib/opencode/live';
 import { compact } from '@/lib/format';
 
+const TIER_LABELS: Record<number, string> = {
+  1: 'polish',
+  2: 'structural',
+  3: 'capabilities',
+  4: 'research',
+  5: 'vision',
+};
+
 export function SwarmTopbar({
   run,
   providers,
@@ -24,6 +33,7 @@ export function SwarmTopbar({
   liveDirectory,
   swarmRunMeta,
   swarmRunStatus,
+  tickerState,
 }: {
   run: RunMeta;
   providers: ProviderSummary[];
@@ -42,9 +52,18 @@ export function SwarmTopbar({
   // leading dot on the run-anchor chip so "is this run still going?" is
   // answerable in one glance without opening the picker.
   swarmRunStatus: SwarmRunStatus | null;
+  // Live ticker snapshot for the currently-anchored run. Feeds the
+  // ambition-ratchet tier chip. `state: 'none'` = no ticker exists (e.g.
+  // non-blackboard pattern, or ticker never started). Chip renders only
+  // when state is 'active' or 'stopped' so it's meaningful to display.
+  tickerState: TickerState;
 }) {
   const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
   const totalAgents = providers.reduce((s, p) => s + p.agents, 0);
+  // Show the tier chip only when the ticker has actually booted (active
+  // or stopped with known tier state). The 'none' arm lacks the tier
+  // fields by design — drawing 0/? would be worse than absence.
+  const tier = tickerState.state === 'none' ? null : tickerState;
 
   return (
     <header className="relative h-12 flex items-center hairline-b mica">
@@ -80,6 +99,7 @@ export function SwarmTopbar({
           </button>
         </SwarmRunsPicker>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} />}
+        {tier && <TierChip tier={tier.currentTier} maxTier={tier.maxTier} exhausted={tier.tierExhausted} />}
         {liveSessionId && liveDirectory && run.status === 'active' && (
           <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
         )}
@@ -480,5 +500,56 @@ function BudgetChip({
         </span>
       </button>
     </Popover>
+  );
+}
+
+// Ambition-ratchet tier indicator. Renders as a compact chip next to the
+// run-anchor chip. Reads currentTier / maxTier / tierExhausted off the
+// ticker snapshot — see SWARM_PATTERNS.md "Tiered execution". The chip
+// is decorative (no click handler); its job is "let the user see the
+// ratchet climb in real time without opening the ticker debug endpoint."
+function TierChip({
+  tier,
+  maxTier,
+  exhausted,
+}: {
+  tier: number;
+  maxTier: number;
+  exhausted: boolean;
+}) {
+  const label = TIER_LABELS[tier] ?? `tier ${tier}`;
+  // At max tier with `exhausted` set, the ratchet has declared "no more
+  // ambitious work" — treat as a subtle done-state rather than active.
+  // Otherwise iris for tier climbing (matches the pattern-accent palette),
+  // slightly dimmed if the ticker is stopped but not yet exhausted.
+  const tone = exhausted
+    ? 'text-fog-500'
+    : tier >= 4
+      ? 'text-iris'
+      : tier >= 2
+        ? 'text-iris/80'
+        : 'text-fog-400';
+  return (
+    <Tooltip
+      side="bottom"
+      content={
+        exhausted
+          ? `tier ${tier}/${maxTier} (${label}) — ratchet exhausted; run will stop on next cascade`
+          : `tier ${tier}/${maxTier} (${label}) — ambition ratchet; escalates on board drain`
+      }
+    >
+      <div className="flex items-center gap-1 h-6 px-1.5 rounded hairline cursor-help">
+        <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
+          tier
+        </span>
+        <span className={clsx('font-mono text-[10.5px] tabular-nums', tone)}>
+          {tier}/{maxTier}
+        </span>
+        <span className="font-mono text-[10px] text-fog-600">·</span>
+        <span className={clsx('font-mono text-[10px] lowercase', tone)}>
+          {label}
+        </span>
+      </div>
+    </Tooltip>
   );
 }

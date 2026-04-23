@@ -703,6 +703,7 @@ function PageBody({
         liveDirectory={liveDirectory}
         swarmRunMeta={swarmRunMeta}
         swarmRunStatus={swarmRunStatus}
+        tickerState={liveTicker.state}
       />
 
       <main
