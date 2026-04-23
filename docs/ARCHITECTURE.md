@@ -268,6 +268,8 @@ purpose) or its role is obvious from its name.
 | `layout.tsx` | Next.js app shell; global fonts, metadata, CSS entry. |
 | `globals.css` | Tailwind theme tokens, ink/fog/molten/mint/iris/amber palette, hairline utilities, `text-micro`. |
 | `api/opencode/[...path]/route.ts` | Server-side proxy to the opencode HTTP API. Rewrites origin and forwards auth. |
+| `api/swarm/run/[swarmRunID]/tokens/route.ts` | GET per-session + aggregate token/cost breakdown for one run. Uses `deriveRunTokens` from `swarm-registry.ts`; role-labels sessions via `roleNamesBySessionID` so hierarchical-pattern drill-downs name sessions by role. Added 2026-04-23 after the overnight deep-check had no HTTP way to answer "did we pass the token threshold?". |
+| `api/swarm/run/[swarmRunID]/board/retry-stale/route.ts` | POST bulk-reopens stale board items (clears `ownerAgentId` / `fileHashes` / `staleSinceSha` / retry-count note; transitions `stale → open`). Auto-restarts the ticker if the pattern is in `TICKER_PATTERNS` and ticker is stopped. The recovery path for rate-limit stranded runs documented in `memory/reference_opencode_freeze.md`. |
 | `debug/opencode/page.tsx` | Dev harness for probing opencode endpoints without touching the main UI. |
 
 ### `lib/` (domain + state)
@@ -307,7 +309,7 @@ the POST response doesn't wait on them.
 
 | File | Role |
 |---|---|
-| `swarm-registry.ts` | `createRun` / `getRun` / `listRuns` / `appendEvent` / `readEvents` / `deriveRunRow`. L0 events.ndjson is authoritative per §1.5 invariants. |
+| `swarm-registry.ts` | `createRun` / `getRun` / `listRuns` / `appendEvent` / `readEvents` / `deriveRunRow` / `deriveRunTokens`. L0 events.ndjson is authoritative per §1.5 invariants. `deriveRunTokens` is the per-session-grain companion to `deriveRunRow` — callers that need only the aggregate stay on `deriveRunRow` (it's on the 4 s poll hot path); drill-downs use `deriveRunTokens`. |
 | `opencode-server.ts` | Server-side opencode HTTP helpers: `createSessionServer`, `postSessionMessageServer`, `abortSessionServer`, `getSessionMessagesServer`. Mirror of the browser helpers in `lib/opencode/live.ts`. |
 | `sse-shaping.ts` | `reshapeForForward` + `PartCoalescer` + `dedupeReplay` (see §1.5 invariants). |
 | `hmr-exports.ts` | `publishExports` / `liveExports` helpers for the HMR-resilient globalThis-stash pattern (see §1.5.2). |
@@ -414,6 +416,11 @@ critic-loop / deliberate-execute files as references.
    instead of the uniform directive broadcast). Add pattern-specific
    validators for any new body fields. Add a `Step N` block that fires
    the kickoff in `.catch(logAndExit)`.
+   *If the pattern has a blackboard-execution phase (ticker-driven
+   worker dispatch), also add the pattern name to `TICKER_PATTERNS` in
+   `app/api/swarm/run/[swarmRunID]/board/retry-stale/route.ts` so the
+   auto-restart behavior extends to your pattern — otherwise retry-
+   stale will reopen items but leave the ticker dormant.*
 7. **`components/new-run-modal.tsx`** — add an `API_RECIPES` entry
    with a working curl example so users see the POST body shape.
 8. **`lib/blackboard/live.ts`** — if the pattern pins roles, add a
@@ -471,7 +478,9 @@ Symptoms first. Each row is the two or three files most likely at fault, plus th
 | Costs aggregate wrong after model switch | `lib/opencode/pricing.ts` `LOOKUP` order | Specific patterns must precede generic ones (e.g. `gpt-5-4-pro` before `gpt-5-4`). |
 | Composer sends to the wrong agent | `lib/opencode/live.ts:148` (`postSessionMessageBrowser`) | Is the `opts.agent` arg populated from the composer's target picker? See `memory/project_run_initiation.md`. |
 | Blackboard run stuck, sessions have in-flight turns 20+ min old | `lib/server/blackboard/coordinator.ts` zombie-abort (§1.5.2) | Probe `/session/{id}/message` per session; look for `info.time.completed == null` on assistant turns past `ZOMBIE_TURN_THRESHOLD_MS`. Coordinator picker should auto-abort at 10 min — if it's not firing, check HMR-resilient export registration (`liveCoordinator()` resolves to current code). |
-| Ticker footer says `stopped · opencode-frozen` | `lib/server/blackboard/auto-ticker.ts` liveness watchdog (§1.5.2) | Tokens haven't advanced for 10+ min. opencode's LLM pipeline is not generating — restart opencode on its own port (user's launcher), then `POST /api/swarm/run/:id/board/ticker {"action":"start","periodicSweepMinutes":N}` to resume. |
+| Ticker footer says `stopped · opencode-frozen` | `lib/server/blackboard/auto-ticker.ts` liveness watchdog (§1.5.2) | Tokens haven't advanced for 10+ min. **First check `memory/reference_opencode_freeze.md`** — 90 % of the time the cause is Zen free-tier 429 rate-limiting, not a dead opencode process. `grep 'statusCode":429' /mnt/c/Users/kevin/.opencode-ui-separate/opencode/log/<today>.log` is definitive. If 429s: wait out `retry-after`, then resume. If no 429s: restart opencode (user's launcher) and resume via `POST /api/swarm/run/:id/board/ticker {"action":"start","periodicSweepMinutes":N}`. |
+| Run ended with N `stale` items you want to retry | `app/api/swarm/run/[swarmRunID]/board/retry-stale/route.ts` | `POST /api/swarm/run/:id/board/retry-stale` with an empty body. Reopens every stale item in one call, auto-restarts the ticker if the pattern is ticker-driven and ticker is stopped. Returns `{ reopened, reopenedIds, failed, tickerRestarted }`. CAS losses (row flipped between SELECT and UPDATE) land in `failed` — bulk call still succeeds. |
+| Need per-session token counts / $ for a run | `app/api/swarm/run/[swarmRunID]/tokens/route.ts` | `GET /api/swarm/run/:id/tokens` returns `{ totals, sessions[] }`. Sessions carry `role` when the pattern pins roles. Cost is 0 for `big-pickle` bundle model by design — see "bundle-pricing banner" in STATUS.md. |
 | Ticker footer says `stopped · auto-idle` unexpectedly | `auto-ticker.ts` auto-idle logic | Auto-idle fires only when `periodicSweepMs === 0`. If you expected persistent mode, confirm the run was POSTed with `persistentSweepMinutes > 0`. |
 | Planner sweep throws "board already populated" | `lib/server/blackboard/planner.ts` line ~310 | Re-sweep paths must pass `overwrite: true` — see commit `5631557`. If re-sweep silently fails, the attempt is logged as `re-sweep threw: board already populated`. |
 | Code edit to `coordinator.ts` / `planner.ts` / `auto-ticker.ts` isn't taking effect | HMR stale-closure (§1.5.2) | Normally HMR-resilient via `liveExports`. If the effect STILL isn't propagating, confirm the module's `publishExports(KEY, …)` call fires on load (add a log; edit should reload module; log should print). Nuclear option: stop + start the ticker via the POST route. |

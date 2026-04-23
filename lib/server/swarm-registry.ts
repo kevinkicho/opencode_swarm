@@ -373,6 +373,89 @@ export async function deriveRunRow(
   return { status, lastActivityTs, costTotal, tokensTotal };
 }
 
+// Per-session token/cost rows + the aggregate, in one fan-out. Separate from
+// deriveRunRow because callers that want the granular breakdown (the /tokens
+// endpoint, cost-dashboard drill-down) shouldn't have to re-fetch per-session
+// data the aggregate already paid for.
+//
+// Keeps deriveRunRow unchanged — that one's on the hot path (list endpoint,
+// 4s poll) and shouldn't pay the extra allocation for callers that only want
+// the aggregate. Duplication is ~15 lines; composing via refactor would mean
+// touching the cache path for a 1-caller feature.
+export interface RunTokensBreakdown {
+  totals: {
+    tokens: number;
+    cost: number;
+    lastActivityTs: number | null;
+    status: SwarmRunStatus;
+  };
+  sessions: Array<{
+    sessionID: string;
+    tokens: number;
+    cost: number;
+    lastActivityTs: number | null;
+    status: SwarmRunStatus;
+  }>;
+}
+
+export async function deriveRunTokens(
+  meta: SwarmRunMeta,
+  signal?: AbortSignal,
+): Promise<RunTokensBreakdown> {
+  if (meta.sessionIDs.length === 0) {
+    return {
+      totals: { tokens: 0, cost: 0, lastActivityTs: null, status: 'unknown' },
+      sessions: [],
+    };
+  }
+
+  const settled = await Promise.allSettled(
+    meta.sessionIDs.map((sid) => deriveSessionRow(sid, meta.workspace, signal)),
+  );
+
+  const sessions: RunTokensBreakdown['sessions'] = [];
+  let costTotal = 0;
+  let tokensTotal = 0;
+  let lastActivityTs: number | null = null;
+  let statusRank = STATUS_PRIORITY.unknown;
+  let status: SwarmRunStatus = 'unknown';
+
+  meta.sessionIDs.forEach((sid, i) => {
+    const r = settled[i];
+    const row: DerivedRow =
+      r.status === 'fulfilled'
+        ? r.value
+        : { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+
+    sessions.push({
+      sessionID: sid,
+      tokens: row.tokensTotal,
+      cost: row.costTotal,
+      lastActivityTs: row.lastActivityTs,
+      status: row.status,
+    });
+
+    costTotal += row.costTotal;
+    tokensTotal += row.tokensTotal;
+    if (row.lastActivityTs !== null) {
+      lastActivityTs =
+        lastActivityTs === null
+          ? row.lastActivityTs
+          : Math.max(lastActivityTs, row.lastActivityTs);
+    }
+    const rank = STATUS_PRIORITY[row.status];
+    if (rank > statusRank) {
+      statusRank = rank;
+      status = row.status;
+    }
+  });
+
+  return {
+    totals: { tokens: tokensTotal, cost: costTotal, lastActivityTs, status },
+    sessions,
+  };
+}
+
 // ---- derived-row cache ----------------------------------------------------
 //
 // deriveRunRow() costs one opencode /message fetch per run. The list

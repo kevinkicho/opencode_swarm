@@ -29,6 +29,33 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — freeze-diagnosis follow-ups
+
+- **`GET /api/swarm/run/:id/tokens`** — per-session + aggregate
+  token/cost breakdown in one call. Motivated by the overnight-run
+  deep-check: confirming "did we pass 22.33M tokens?" previously meant
+  eyeballing the cost-dashboard UI or rewriting a per-session fan-out
+  script. Reuses `deriveSessionRow` via a new `deriveRunTokens` export
+  in `swarm-registry.ts`. Role-labeled (uses `roleNamesBySessionID`) so
+  hierarchical-pattern drill-downs name sessions by role.
+- **`POST /api/swarm/run/:id/board/retry-stale`** — bulk reopen of
+  stale board items. Needed after the overnight run stranded 6/53 items
+  at `stale` (all with `[final after 2 retries] turn timed out` notes
+  from the zombie-abort path — see `memory/reference_opencode_freeze.md`
+  for the underlying Zen rate-limit cause). Without this, a run with
+  quota-induced stale items stayed at its final completion % forever.
+  Clears `ownerAgentId`, `fileHashes`, `staleSinceSha`, and the retry-
+  count note so `RETRY_TAG_RE` matches cleanly on the next retry-cycle.
+  Auto-restarts the ticker for ticker-driven patterns (blackboard,
+  orchestrator-worker, role-differentiated, deliberate-execute) if it's
+  currently stopped — otherwise reopening items would be a no-op from
+  the user's perspective.
+- **Opencode-freeze diagnosis captured.** `memory/reference_opencode_freeze.md`
+  documents the HTTP 429 `FreeUsageLimitError` root cause (Zen free-
+  tier quota), the log-grep diagnosis path, why process restart doesn't
+  help (per-account quota), and the recovery workflow now that retry-
+  stale exists.
+
 ### 2026-04-23 — follow-up cleanup
 
 - **Roster role labels** propagate to the left-sidebar roster via the
@@ -143,11 +170,21 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Orchestration / runtime
 
-- **Opencode silent freeze is detectable but not auto-recoverable.** The
-  liveness watchdog stops the ticker with `stopped · opencode-frozen`
-  and logs a loud warning. Recovery requires a user-side opencode
-  process restart — the Next.js app has no control over opencode's
-  lifecycle. PowerShell launcher at `C:\Users\kevin\bin\restart-4097.ps1`.
+- **Opencode "silent freeze" is usually a Zen rate-limit, not an
+  opencode bug.** As of 2026-04-23 we've traced every observed freeze
+  to HTTP 429 `FreeUsageLimitError` from `opencode.ai/zen/v1/messages`.
+  The quota is per-Zen-account (not per-process), so
+  `restart-4097.ps1` is useless — it only helps when the actual
+  process state is wedged, which we've never actually seen.
+  Diagnosis and recovery path captured in
+  `memory/reference_opencode_freeze.md`. The liveness watchdog still
+  stops the ticker with `stopped · opencode-frozen` because from its
+  vantage point the symptoms are identical to a real process freeze;
+  distinguishing "quota burnt" from "process dead" would require a
+  new probe that inspects opencode's log for recent 429s (queued
+  below under "nice-to-have" as `zen-rate-limit` stop reason).
+  Retry-stale (shipped above) handles the per-item recovery once
+  quota has cleared.
 
 - **Zombie threshold is a global 10 min.** Per-pattern tuning would be
   better (a critic-loop turn is legitimately shorter than a blackboard
@@ -198,9 +235,13 @@ Todo count raised to 6-15 with mix of sizes.
   dirs). Not on a schedule yet — run manually when disk pressure
   matters.
 
-- **Battle test with the overnight-safety stack hasn't been re-run.** The
-  2026-04-23 overnight run died pre-stack; haven't validated the stack
-  end-to-end against a real 8 h run yet.
+- **Battle test with the overnight-safety stack is partially validated.**
+  The 2026-04-23 overnight run (`run_mob31bx6_jzdfs2`) reached
+  47/53 done (89 %) across 6 sessions before hitting Zen's free-tier
+  quota. Nine `[retry:N]` / `[final after 2 retries]` notes on the
+  board prove the zombie-abort path fired — the stack's headline claim
+  (sessions don't hang forever) is confirmed. What remains unvalidated:
+  an 8 h run that *doesn't* hit the quota cliff at ~35 min.
 
 - **Smoke runner hasn't been executed against real opencode.** Ships in
   `scripts/_hierarchical_smoke.mjs`; first run blocked on confirming
@@ -223,10 +264,21 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Nice-to-have (lower leverage, bigger effort)
 
+- **Distinguish `zen-rate-limit` from `opencode-frozen` in the
+  watchdog.** Both present as "no completed turns for 10 min." The
+  former is self-healing (wait out `retry-after`); the latter needs a
+  process restart. A probe that grep's
+  `/mnt/c/Users/kevin/.opencode-ui-separate/opencode/log/<today>.log`
+  for recent `statusCode":429` lines would let the footer read
+  `stopped · zen-rate-limit · retry 5h` instead of a generic
+  `opencode-frozen`. Implementation notes in
+  `memory/reference_opencode_freeze.md` bottom section.
+
 - **Auto-restart opencode on `opencode-frozen` detection.** Needs an
   external control plane (the Next.js app can't reach the PowerShell
   launcher). Could ship via a local HTTP endpoint the launcher exposes
-  + a client in the watchdog.
+  + a client in the watchdog. Lower priority now that rate-limiting
+  (not process wedging) is the real freeze cause.
 
 - **Per-pattern zombie / turn-timeout tuning.** Global 10-min for both
   is a compromise. Some patterns could use shorter (critic-loop turns
