@@ -14,6 +14,7 @@ import clsx from 'clsx';
 import { useMemo } from 'react';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import { deriveBoardAgents } from '@/lib/blackboard/live';
+import type { SwarmPattern } from '@/lib/swarm-types';
 import type {
   BoardAgent,
   BoardItem,
@@ -101,12 +102,18 @@ export function BoardFullView({
   live,
   ticker,
   roleNames,
+  pattern,
 }: {
   live: LiveBoard;
   ticker: LiveTicker;
   // Same optional role-map as BoardRail — populated from meta at the
   // page level for hierarchical patterns, omitted for self-organizing.
   roleNames?: ReadonlyMap<string, string>;
+  // Pattern context lets the empty-state message reflect the correct
+  // phase — especially for deliberate-execute, where "board empty"
+  // during deliberation isn't the same as "blackboard waiting for
+  // planner sweep." Omit for self-organizing board-pattern runs.
+  pattern?: SwarmPattern;
 }) {
   const items = live.items ?? [];
   const loading = live.items === null && !live.error;
@@ -135,10 +142,17 @@ export function BoardFullView({
     );
   }
   if (items.length === 0) {
+    // Pattern-aware empty-state copy. deliberate-execute runs start with
+    // a deliberation phase where the board is INTENTIONALLY empty; the
+    // blackboard-style "waiting for planner sweep" read would confuse.
+    const emptyMessage =
+      pattern === 'deliberate-execute'
+        ? 'deliberating — council is exchanging drafts before execution'
+        : 'board empty — waiting for planner sweep';
     return (
       <section className="flex-1 min-w-0 min-h-0 grid place-items-center bg-ink-900">
-        <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
-          board empty — waiting for planner sweep
+        <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700 text-center px-4">
+          {emptyMessage}
         </div>
       </section>
     );

@@ -130,6 +130,24 @@ export function CostDashboard({
           <TotalCell label="live now" value={String(derived.liveCount)} tone={derived.liveCount > 0 ? 'mint' : 'fog'} />
         </div>
 
+        {/* Bundle-model banner: if any row has tokens > 0 but $0, the
+            model is likely a Zen subscription bundle (big-pickle etc.)
+            where the per-token price is $0 and the real cost is
+            subscription-metered elsewhere. Without this note a pure-
+            bundle fleet reads as "$0.00 for 20M tokens — something
+            broken." Appears only when the signal is actually present. */}
+        {derived.costTotal === 0 && derived.tokensTotal > 0 && (
+          <div className="px-4 py-2 hairline-b flex items-center gap-2 bg-ink-900/40">
+            <span className="font-mono text-[10px] text-fog-500">🏷️</span>
+            <span className="font-mono text-[10.5px] text-fog-400 leading-snug">
+              zero <span className="text-fog-600">$ spent</span> is expected
+              for bundle-priced models (big-pickle / zen subscription) —
+              per-token price is zero; subscription cost is billed
+              separately by opencode.
+            </span>
+          </div>
+        )}
+
         <WeeklySparkline buckets={derived.weekly} maxCost={derived.weeklyMax} />
 
         <WorkspaceBreakdown rows={derived.byWorkspace} />

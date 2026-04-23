@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
-import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
+import type { Agent, AgentMessage, SwarmPattern, TodoItem } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import { PlanRail } from './plan-rail';
@@ -35,6 +35,7 @@ export function LeftTabs({
   live,
   ticker,
   boardRoleNames,
+  boardPattern,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -76,6 +77,10 @@ export function LeftTabs({
   // Pattern-aware ownerAgentId → role name map for BoardRail chip labels
   // on hierarchical patterns. Empty map → numeric fallback in chips.
   boardRoleNames?: ReadonlyMap<string, string>;
+  // Pattern of the current run, forwarded to BoardRail so the empty-
+  // state message can reflect the correct phase (deliberation vs.
+  // planner-sweep-pending).
+  boardPattern?: SwarmPattern;
 }) {
   const [localTab, setLocalTab] = useState<Tab>('plan');
   const tab = tabProp ?? localTab;
@@ -224,6 +229,7 @@ export function LeftTabs({
             ticker={ticker}
             embedded
             roleNames={boardRoleNames}
+            pattern={boardPattern}
           />
         )}
         {tab === 'heat' && (

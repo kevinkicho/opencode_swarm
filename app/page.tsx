@@ -717,6 +717,7 @@ function PageBody({
           live={liveBoard}
           ticker={liveTicker}
           boardRoleNames={boardRoleNames}
+          boardPattern={swarmRunMeta?.pattern}
         />
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 pl-3">
@@ -772,7 +773,7 @@ function PageBody({
               onJumpToTodo={jumpToTodo}
             />
           ) : runView === 'board' ? (
-            <BoardFullView live={liveBoard} ticker={liveTicker} roleNames={boardRoleNames} />
+            <BoardFullView live={liveBoard} ticker={liveTicker} roleNames={boardRoleNames} pattern={swarmRunMeta?.pattern} />
           ) : (
             <TurnCardsView
               cards={turnCards}

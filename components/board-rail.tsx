@@ -10,6 +10,7 @@ import {
   type TickerState,
 } from '@/lib/blackboard/live';
 import type { BoardAgent, BoardItem, BoardItemKind, BoardItemStatus } from '@/lib/blackboard/types';
+import type { SwarmPattern } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 
 // Inline board rail for the blackboard preset. Lives as a third tab in
@@ -82,6 +83,7 @@ export function BoardRail({
   ticker,
   embedded = false,
   roleNames,
+  pattern,
 }: {
   swarmRunID: string;
   // Live data passed in from a parent that owns the SSE subscription.
@@ -95,6 +97,9 @@ export function BoardRail({
   // level via roleNamesFromMeta). When provided, board chips show role
   // labels for hierarchical patterns; absent → numeric fallback.
   roleNames?: ReadonlyMap<string, string>;
+  // Pattern context — same purpose as BoardFullView.pattern: the empty-
+  // state message reflects the correct phase for deliberate-execute.
+  pattern?: SwarmPattern;
 }) {
   const items = live.items ?? [];
 
@@ -126,7 +131,9 @@ export function BoardRail({
       )}
       {!loading && !live.error && items.length === 0 && (
         <div className="px-3 py-2 font-mono text-[10px] text-fog-600 leading-snug">
-          board is empty — the planner sweep may still be running.
+          {pattern === 'deliberate-execute'
+            ? 'deliberating — council is exchanging drafts before execution.'
+            : 'board is empty — the planner sweep may still be running.'}
         </div>
       )}
       {/* All 6 sections always rendered (in-progress / claimed / open /

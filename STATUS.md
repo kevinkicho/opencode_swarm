@@ -40,6 +40,15 @@ enough that scanning it doesn't match the actual state.
   ≥ 64 KB (keeps everything else in place; replay readers accept the
   .gz variant). `--delete --days N` removes run dirs older than N
   days. Requires `--yes` to actually modify.
+- **Phase-aware empty-state** for the board views: deliberate-execute
+  runs during their deliberation phase now read "deliberating —
+  council is exchanging drafts before execution" instead of the
+  blackboard-flavored "waiting for planner sweep" message. Applied
+  to both the main-view `BoardFullView` and the sidebar `BoardRail`.
+- **Bundle-pricing banner** on cost-dashboard: when `$ spent` is $0
+  but `tokens` is > 0, a subtle note clarifies that the zero reading
+  is expected for Zen subscription bundle models (`big-pickle`),
+  not a broken aggregation.
 
 ### 2026-04-23 — hierarchical patterns + overnight safety
 
@@ -107,10 +116,10 @@ Todo count raised to 6-15 with mix of sizes.
 
 - **`costTotal` is always `0` for `big-pickle` (Zen bundle).** Working as
   intended — bundle models don't report per-token cost, and
-  `lib/opencode/pricing.ts` has hardcoded zeros. But the UI doesn't
-  signal "this is subscription-priced, not per-token" anywhere. A user
-  seeing `$0.00` on a run that generated 20 M tokens is confused without
-  context.
+  `lib/opencode/pricing.ts` has hardcoded zeros. Cost-dashboard now
+  shows a 🏷️ banner clarifying this when `$0 spent + tokens > 0` is
+  detected (shipped 2026-04-23). Per-row bundle chips in the expensive-
+  runs list still not done — banner covers the summary-level optics.
 
 ### Orchestration / runtime
 
@@ -142,13 +151,15 @@ Todo count raised to 6-15 with mix of sizes.
   2026-04-23 via `063d13c`. Coordinator now tags worker prompts with
   `agent={role}`, which flows through `info.agent` into the roster.
 
-- **No pattern-specific UI affordances.** Council has `ReconcileStrip`
-  for human-reconcile + manual R2. The four other hierarchical patterns
-  have nothing equivalent:
-  - No judge verdict strip (just the raw message)
-  - No critic APPROVED / REVISE chip on the timeline
-  - No "deliberation round 2 of 3" phase indicator for deliberate-execute
-  - No orchestrator "suggested actions" affordance
+- **Pattern-specific UI affordances — partial.** Council has
+  `ReconcileStrip` for human-reconcile + manual R2. Partial coverage
+  for the others:
+  - ✓ Phase-aware empty-state for deliberate-execute (2026-04-23) —
+    but only covers the pre-execution window; no round-N-of-M counter
+    while deliberation is in-flight
+  - Still missing: judge verdict strip for debate-judge
+  - Still missing: critic APPROVED/REVISE chip on the timeline
+  - Still missing: orchestrator "suggested actions" affordance
 
 - **Cross-run comparisons only exist in `demo-log/` markdown.** The
   `/projects` matrix route shows activity by repo × day, but there's no
@@ -183,15 +194,10 @@ Todo count raised to 6-15 with mix of sizes.
 ### Next-up (high leverage, < 1 day each)
 
 - **Pattern-specific UI strips** (~ 2-3 h each). Judge verdict strip for
-  `debate-judge`. Critic verdict chip for `critic-loop`. Phase indicator
-  for `deliberate-execute` ("deliberation · round 2 of 3" → "synthesis"
-  → "execution"). None blocking, all meaningfully improve observability.
-
-- **Bundle-model cost badge** (~ 45 min). `big-pickle` always shows
-  `costTotal: 0` because it's subscription-priced. The cost-dashboard
-  accumulates across runs to `$0.00` on pure big-pickle runs, which
-  reads as broken. Small "bundle" chip next to zero-cost rows + an
-  info banner on cost-dashboard header would fix the optics.
+  `debate-judge`. Critic verdict chip for `critic-loop`. Round-of-N
+  counter for deliberate-execute DURING deliberation (the empty-state
+  fix covers the "is this broken?" optics but not mid-round progress).
+  Still meaningfully improve observability.
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the picker does
