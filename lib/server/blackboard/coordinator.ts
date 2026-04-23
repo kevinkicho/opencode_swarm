@@ -43,7 +43,13 @@ import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
 const POLL_INTERVAL_MS = 1000;
-const DEFAULT_TURN_TIMEOUT_MS = 5 * 60_000;
+// Raised from 5 min to 10 min after the 2026-04-23 overnight run showed
+// substantive README-verification todos ("Verify CreditMarket EM bonds
+// spread data rendering") legitimately running past 5 min — not zombies,
+// just slow work involving multiple reads + a test file edit + a test
+// run. The zombie auto-abort in the picker already handles truly-stuck
+// sessions at 10 min, so the worker timeout matches that boundary.
+const DEFAULT_TURN_TIMEOUT_MS = 10 * 60_000;
 
 // Zombie threshold for the session picker. opencode assistant turns can
 // hang with no completed AND no error (see
