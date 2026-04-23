@@ -291,10 +291,10 @@ function BoardRailRow({
         {owner ? (
           <span
             className={clsx(
-              'shrink-0 w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none',
+              'shrink-0 w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none tabular-nums',
               ACCENT_BG[owner.accent]
             )}
-            title={owner.name}
+            title={`session ${owner.name} · ${owner.id}`}
           >
             {owner.glyph}
           </span>

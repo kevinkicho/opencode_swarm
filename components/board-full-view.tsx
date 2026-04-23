@@ -255,10 +255,10 @@ function BoardCard({
       </div>
       <div className="flex items-center gap-2 mt-1 font-mono text-[9.5px] uppercase tracking-widest2 text-fog-700">
         {owner && (
-          <Tooltip content={owner.name} side="top">
+          <Tooltip content={`session ${owner.name} · ${owner.id}`} side="top">
             <span
               className={clsx(
-                'px-1 h-4 inline-flex items-center rounded-sm border cursor-default',
+                'px-1 h-4 inline-flex items-center rounded-sm border cursor-default tabular-nums',
                 accentClass[owner.accent],
               )}
             >

@@ -343,13 +343,11 @@ function BoardCard({
           {owner ? (
             <span
               className={clsx(
-                'h-4 px-1.5 rounded font-mono text-[9px] uppercase tracking-widest2 flex items-center gap-1',
+                'h-4 px-1.5 rounded font-mono text-[10px] tabular-nums flex items-center',
                 ACCENT_BG[owner.accent]
               )}
+              title={`session ${owner.name} · ${owner.id}`}
             >
-              <span className="font-display italic text-[10px] leading-none normal-case">
-                {owner.glyph}
-              </span>
               {owner.name}
             </span>
           ) : (

@@ -217,22 +217,27 @@ export function useLiveTicker(swarmRunID: string | null): LiveTicker {
 }
 
 export function deriveBoardAgents(items: BoardItem[]): BoardAgent[] {
-  const seen = new Set<string>();
+  // Collect unique owner IDs from items, then sort lexicographically so the
+  // numeric mapping is deterministic across polls and page reloads (arrival
+  // order of items can shift; sorted IDs don't). Session IDs all start with
+  // `ses_` so the old `shortName = bare.split('_')[0]` derivation was
+  // producing "ses" for every agent — every board chip looked identical.
+  // Numeric labels (1..N) give each session a distinct one-character badge.
+  const unique = new Set<string>();
+  for (const it of items) if (it.ownerAgentId) unique.add(it.ownerAgentId);
+  const sortedIds = [...unique].sort();
+
   const out: BoardAgent[] = [];
-  for (const it of items) {
-    const id = it.ownerAgentId;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const bare = id.startsWith('ag_') ? id.slice(3) : id;
-    const shortName = bare.split('_')[0] || bare;
+  sortedIds.forEach((id, i) => {
+    const num = String(i + 1);
     let h = 0;
-    for (let i = 0; i < id.length; i += 1) h = (h * 31 + id.charCodeAt(i)) | 0;
+    for (let j = 0; j < id.length; j += 1) h = (h * 31 + id.charCodeAt(j)) | 0;
     out.push({
       id,
-      name: shortName,
+      name: num,
       accent: DERIVED_ACCENTS[Math.abs(h) % DERIVED_ACCENTS.length],
-      glyph: (shortName[0] ?? '?').toUpperCase(),
+      glyph: num,
     });
-  }
+  });
   return out;
 }
