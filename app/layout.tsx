@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { ChunkErrorReload } from '@/components/chunk-error-reload';
 
 // Dev-phase note (2026-04-22): swapped from `next/font/google` to CSS-native
 // font stacks because WSL blocks fetching fonts.gstatic.com during Next's
@@ -25,7 +26,10 @@ const SYSTEM_FONT_VARS = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" style={SYSTEM_FONT_VARS}>
-      <body className="font-sans">{children}</body>
+      <body className="font-sans">
+        <ChunkErrorReload />
+        {children}
+      </body>
     </html>
   );
 }
