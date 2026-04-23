@@ -47,6 +47,10 @@ export async function GET(
 
 interface PostBody {
   action?: unknown;
+  // Only used for action='start'. When > 0, the ticker runs in
+  // long-running mode (periodic + eager re-sweep, no auto-idle stop).
+  // Omit for the default short-run behavior.
+  periodicSweepMinutes?: unknown;
 }
 
 export async function POST(
@@ -73,7 +77,17 @@ export async function POST(
   }
 
   if (body.action === 'start') {
-    startAutoTicker(params.swarmRunID);
+    // Parse optional periodicSweepMinutes → ms. Guard non-negative finite;
+    // anything else falls back to 0 (default short-run shape).
+    let periodicSweepMs = 0;
+    if (
+      typeof body.periodicSweepMinutes === 'number' &&
+      Number.isFinite(body.periodicSweepMinutes) &&
+      body.periodicSweepMinutes > 0
+    ) {
+      periodicSweepMs = Math.round(body.periodicSweepMinutes * 60_000);
+    }
+    startAutoTicker(params.swarmRunID, { periodicSweepMs });
   } else if (body.action === 'stop') {
     stopAutoTicker(params.swarmRunID, 'manual');
   } else {
