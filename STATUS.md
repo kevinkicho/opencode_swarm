@@ -29,6 +29,18 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — follow-up cleanup
+
+- **Roster role labels** propagate to the left-sidebar roster via the
+  coordinator (`063d13c`). Worker sessions now carry `info.agent={role}`
+  on their assistant turns, so hierarchical runs show "orchestrator" /
+  "judge" / "critic" / named roles in the roster, not default "build."
+- **`scripts/prune_demo_log.mjs`** — dry-run-by-default pruner for the
+  accreted demo-log directory. `--compress` gzips events.ndjson files
+  ≥ 64 KB (keeps everything else in place; replay readers accept the
+  .gz variant). `--delete --days N` removes run dirs older than N
+  days. Requires `--yes` to actually modify.
+
 ### 2026-04-23 — hierarchical patterns + overnight safety
 
 **Patterns.** Retired the "no role hierarchy" stance
@@ -126,12 +138,9 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### UI
 
-- **Roster doesn't label session 0 for hierarchical patterns.** Board
-  chips show "orchestrator" / "judge" / "worker-1" / etc. as of
-  2026-04-23, but the left-sidebar roster (`agent-roster.tsx`) still
-  shows session 0 identically to workers. Fixing this needs
-  `roleNamesFromMeta` piped into the roster the way it's piped into
-  board-rail / board-full-view / board-preview.
+- ~~Roster doesn't label session 0 for hierarchical patterns~~ — shipped
+  2026-04-23 via `063d13c`. Coordinator now tags worker prompts with
+  `agent={role}`, which flows through `info.agent` into the roster.
 
 - **No pattern-specific UI affordances.** Council has `ReconcileStrip`
   for human-reconcile + manual R2. The four other hierarchical patterns
@@ -153,9 +162,11 @@ Todo count raised to 6-15 with mix of sizes.
   `scripts/dev.mjs` has WATCHPACK_POLLING tuned for WSL but not
   auto-restart on server-module edits.
 
-- **Demo-log directory grows unbounded.** `.gitignored` so it doesn't
-  inflate the repo, but each battle run leaves tens of MB on disk. No
-  pruning job.
+- **Demo-log directory grows unbounded** — partially addressed. Ships
+  `scripts/prune_demo_log.mjs` (dry-run by default; `--compress` gzips
+  > 64 KB events.ndjson files, `--delete --days N` removes old run
+  dirs). Not on a schedule yet — run manually when disk pressure
+  matters.
 
 - **Battle test with the overnight-safety stack hasn't been re-run.** The
   2026-04-23 overnight run died pre-stack; haven't validated the stack
@@ -171,14 +182,16 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Next-up (high leverage, < 1 day each)
 
-- **Roster role labels** (~ 30 min). Pipe `roleNamesFromMeta` into the
-  left-sidebar roster so session 0 shows its role name for hierarchical
-  patterns. Mirrors the board-chip work shipped 2026-04-23.
-
 - **Pattern-specific UI strips** (~ 2-3 h each). Judge verdict strip for
   `debate-judge`. Critic verdict chip for `critic-loop`. Phase indicator
   for `deliberate-execute` ("deliberation · round 2 of 3" → "synthesis"
   → "execution"). None blocking, all meaningfully improve observability.
+
+- **Bundle-model cost badge** (~ 45 min). `big-pickle` always shows
+  `costTotal: 0` because it's subscription-priced. The cost-dashboard
+  accumulates across runs to `$0.00` on pure big-pickle runs, which
+  reads as broken. Small "bundle" chip next to zero-cost rows + an
+  info banner on cost-dashboard header would fix the optics.
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the picker does
