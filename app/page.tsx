@@ -82,6 +82,7 @@ import { ReconcileStrip } from '@/components/reconcile-strip';
 import { SynthesisStrip } from '@/components/synthesis-strip';
 import { JudgeVerdictStrip } from '@/components/judge-verdict-strip';
 import { CriticVerdictStrip } from '@/components/critic-verdict-strip';
+import { OrchestratorActionsStrip } from '@/components/orchestrator-actions-strip';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
@@ -896,6 +897,36 @@ function PageBody({
         messages={messages}
         meta={swarmRunMeta}
         onFocus={focusMessage}
+      />
+
+      <OrchestratorActionsStrip
+        agents={agents}
+        messages={messages}
+        meta={swarmRunMeta}
+        onAction={async (actionID, prompt) => {
+          if (!swarmRunMeta) return;
+          const orchestratorSID = swarmRunMeta.sessionIDs[0];
+          if (!orchestratorSID) return;
+          try {
+            await postSessionMessageBrowser(
+              orchestratorSID,
+              swarmRunMeta.workspace,
+              prompt,
+              { agent: 'orchestrator' },
+            );
+          } catch (err) {
+            if (err instanceof CostCapError) {
+              setCostCapBlock({
+                swarmRunID: err.swarmRunID,
+                costTotal: err.costTotal,
+                costCap: err.costCap,
+                message: err.message,
+              });
+              return;
+            }
+            console.error(`[orchestrator-action/${actionID}] post failed`, err);
+          }
+        }}
       />
 
       {costCapBlock && (

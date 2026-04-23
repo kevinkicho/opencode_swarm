@@ -56,6 +56,11 @@ enough that scanning it doesn't match the actual state.
 - **CriticVerdictStrip** for `critic-loop` runs. Parses the critic
   session for `APPROVED:` / `REVISE:` + shows the worker's iteration
   counter ("round N of M"). Click jumps to the verdict message.
+- **OrchestratorActionsStrip** for `orchestrator-worker` runs. Three
+  canned-prompt buttons (status report · re-strategize · focus check)
+  that post to session 0 with `agent='orchestrator'`. Visible only
+  after the orchestrator has produced its first completed text turn
+  so nudges don't race the initial planner sweep.
 
 ### 2026-04-23 — hierarchical patterns + overnight safety
 
@@ -158,18 +163,15 @@ Todo count raised to 6-15 with mix of sizes.
   2026-04-23 via `063d13c`. Coordinator now tags worker prompts with
   `agent={role}`, which flows through `info.agent` into the roster.
 
-- **Pattern-specific UI affordances — mostly there.** Council has
-  `ReconcileStrip` for human-reconcile + manual R2. Coverage added
+- **Pattern-specific UI affordances — most shipped.** Coverage as of
   2026-04-23:
-  - ✓ Phase-aware empty-state for deliberate-execute — covers the
-    pre-execution window; no round-N-of-M counter while deliberation
-    is in-flight
-  - ✓ JudgeVerdictStrip for debate-judge — parses WINNER/MERGE/REVISE
-  - ✓ CriticVerdictStrip for critic-loop — APPROVED/REVISE + iteration
+  - ✓ Council: ReconcileStrip (human-reconcile + manual R2)
+  - ✓ Phase-aware empty-state for deliberate-execute
+  - ✓ JudgeVerdictStrip for debate-judge
+  - ✓ CriticVerdictStrip for critic-loop
+  - ✓ OrchestratorActionsStrip for orchestrator-worker
   - Still missing: round-of-M counter for deliberate-execute DURING
     deliberation (phase state not persisted)
-  - Still missing: orchestrator "suggested actions" affordance
-    (re-strategize / escalate / status-report nudges)
 
 - **Cross-run comparisons only exist in `demo-log/` markdown.** The
   `/projects` matrix route shows activity by repo × day, but there's no
@@ -203,13 +205,10 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Next-up (high leverage, < 1 day each)
 
-- **Remaining pattern-specific UI** (~ 2-3 h each):
+- **Remaining pattern-specific UI** (~ 2-3 h):
   - Round-of-N counter for deliberate-execute DURING deliberation
     (needs phase state persisted server-side or inferred from
     message counts)
-  - Orchestrator "suggested actions" affordance (`re-strategize` /
-    `escalate` / `status-report` buttons posting canned prompts to
-    session 0)
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the picker does
