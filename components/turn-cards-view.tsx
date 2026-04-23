@@ -86,16 +86,33 @@ function fmtDuration(startMs: number, endMs?: number): string | null {
 const COLUMN_WIDTH = 340;
 const COLUMN_HEADER_HEIGHT = 32;
 
+// Strip the run's workspace prefix from a filepath so card rows lead
+// with `src/...` instead of `C:/Users/.../reponame/src/...`. Same
+// behavior as heat-rail's stripWorkspace — kept inline here to avoid
+// a one-function shared module until a third caller appears.
+function stripWorkspace(path: string, workspace: string): string {
+  const np = path.replace(/\\/g, '/').replace(/\/+$/, '');
+  const nw = workspace.replace(/\\/g, '/').replace(/\/+$/, '');
+  if (nw && np.startsWith(nw + '/')) return np.slice(nw.length + 1);
+  if (nw && np === nw) return '';
+  return np;
+}
+
 export function TurnCardsView({
   cards,
   agents,
   agentOrder,
+  workspace,
   focusedId,
   onFocus,
 }: {
   cards: TurnCard[];
   agents: Agent[];
   agentOrder: string[];
+  // Workspace root — used to strip the common prefix from displayed
+  // file paths inside cards, same as the heat rail. Cards not in a
+  // run (empty string) show full paths.
+  workspace: string;
   focusedId: string | null;
   onFocus: (id: string) => void;
 }) {
@@ -162,6 +179,7 @@ export function TurnCardsView({
                 key={col.agent.id}
                 agent={col.agent}
                 cards={col.cards}
+                workspace={workspace}
                 focusedId={focusedId}
                 onFocus={onFocus}
               />
@@ -170,6 +188,7 @@ export function TurnCardsView({
               <AgentColumn
                 agent={null}
                 cards={otherCards}
+                workspace={workspace}
                 focusedId={focusedId}
                 onFocus={onFocus}
               />
@@ -185,11 +204,13 @@ export function TurnCardsView({
 function AgentColumn({
   agent,
   cards,
+  workspace,
   focusedId,
   onFocus,
 }: {
   agent: Agent | null;
   cards: TurnCard[];
+  workspace: string;
   focusedId: string | null;
   onFocus: (id: string) => void;
 }) {
@@ -229,6 +250,7 @@ function AgentColumn({
               card={c}
               accent={accent}
               agentName={name}
+              workspace={workspace}
               focused={focusedId === c.id}
               onFocus={onFocus}
             />
@@ -247,12 +269,14 @@ const CARD_COLLAPSED_HEIGHT = 180;
 function TurnCardRow({
   card,
   accent,
+  workspace,
   focused,
   onFocus,
 }: {
   card: TurnCard;
   accent: Agent['accent'];
   agentName: string;
+  workspace: string;
   focused: boolean;
   onFocus: (id: string) => void;
 }) {
@@ -388,24 +412,27 @@ function TurnCardRow({
               className="list-none space-y-[1px]"
               style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)' }}
             >
-              {(expanded ? card.filesTouched : card.filesTouched.slice(0, 3)).map((f) => (
-                <li key={f} className="min-w-0">
-                  <Tooltip
-                    content={
-                      <div className="font-mono text-[10.5px] text-fog-500 max-w-[420px] break-all">
-                        {f}
-                      </div>
-                    }
-                    side="right"
-                  >
-                    <span
-                      className="truncate-left font-mono text-[10.5px] text-fog-400 cursor-default min-w-0 w-full"
+              {(expanded ? card.filesTouched : card.filesTouched.slice(0, 3)).map((f) => {
+                const rel = stripWorkspace(f, workspace);
+                return (
+                  <li key={f} className="min-w-0">
+                    <Tooltip
+                      content={
+                        <div className="font-mono text-[10.5px] text-fog-500 max-w-[420px] break-all">
+                          {f}
+                        </div>
+                      }
+                      side="right"
                     >
-                      <bdi dir="ltr">{f}</bdi>
-                    </span>
-                  </Tooltip>
-                </li>
-              ))}
+                      <span
+                        className="truncate-left font-mono text-[10.5px] text-fog-400 cursor-default min-w-0 w-full"
+                      >
+                        <bdi dir="ltr">{rel || f}</bdi>
+                      </span>
+                    </Tooltip>
+                  </li>
+                );
+              })}
               {!expanded && card.filesTouched.length > 3 && (
                 <li className="font-mono text-micro text-fog-600">
                   +{card.filesTouched.length - 3} more

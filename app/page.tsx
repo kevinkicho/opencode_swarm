@@ -677,6 +677,7 @@ function PageBody({
               cards={turnCards}
               agents={agents}
               agentOrder={agentOrder}
+              workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
               focusedId={focusedMsgId}
               onFocus={focusMessage}
             />

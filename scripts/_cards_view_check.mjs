@@ -68,6 +68,29 @@ const colCount = await page.locator('section.flex-1 > div > div').count();
 const cardCount = await page.locator('section.flex-1 ul > li').count();
 console.log(`\ntotals: ${colCount} columns / ${cardCount} cards`);
 
+// Expand one card that's known to have files touched. Find cards that
+// report "wrote N files" in their inner text, click the first one,
+// then dump its file list so we can verify stripping.
+const cardsWithFiles = await page
+  .locator('section.flex-1 ul > li')
+  .evaluateAll((els) =>
+    els
+      .map((el, i) => ({ i, hasWrote: el.innerText.includes('wrote') }))
+      .filter((x) => x.hasWrote)
+      .slice(0, 1),
+  );
+if (cardsWithFiles.length > 0) {
+  await page.locator('section.flex-1 ul > li').nth(cardsWithFiles[0].i).click();
+  await page.waitForTimeout(500);
+  const fileLines = await page
+    .locator('section.flex-1 ul > li')
+    .nth(cardsWithFiles[0].i)
+    .locator('.truncate-left')
+    .evaluateAll((els) => els.map((el) => el.textContent?.trim()));
+  console.log('\nexpanded card file list:');
+  for (const f of fileLines.slice(0, 5)) console.log(' ', f);
+}
+
 await page.screenshot({ path: '/tmp/cards-view.png', fullPage: false });
-console.log('screenshot: /tmp/cards-view.png');
+console.log('\nscreenshot: /tmp/cards-view.png');
 await browser.close();
