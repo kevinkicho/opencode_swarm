@@ -165,34 +165,41 @@ export function SwarmRunsPicker({
               </button>
             )}
           </div>
-          <div className="px-3 h-5 hairline-b flex items-center gap-3 bg-ink-900/40">
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[52px] shrink-0">
-              status
-            </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[90px] shrink-0">
-              pat
-            </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[124px] shrink-0">
-              id
-            </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 flex-1 min-w-0">
-              directive
-            </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[28px] text-right shrink-0">
-              sess
-            </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[64px] shrink-0">
-              caps
-            </span>
-            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[108px] text-right shrink-0">
-              when
-            </span>
-            {/* Retro column header intentionally blank — the chip
-                only appears on row hover, the header label was
-                noise in the static state. Empty spacer preserves
-                the grid alignment. */}
-            <span className="w-[56px] shrink-0" aria-hidden />
-            <span className="w-1 shrink-0" aria-hidden />
+          {/* Mirror the LI body structure exactly: inner flex row with the
+              same px-3 + gap-3 as the Link, plus a sibling retro spacer
+              matching the 56 px retro-div and LI's pr-1. Earlier the
+              header flex had two extra children (retro + w-1) inside the
+              gap sequence, adding 24 px of gaps not present in the body
+              row — SESS / CAPS / WHEN drifted right of their value cells.
+              Keeping the two shells isomorphic is the only reliable fix. */}
+          <div className="flex items-center h-5 hairline-b bg-ink-900/40 pr-1">
+            <div className="flex-1 min-w-0 px-3 h-full flex items-center gap-3">
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[52px] shrink-0">
+                status
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[90px] shrink-0">
+                pat
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[124px] shrink-0">
+                id
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 flex-1 min-w-0">
+                directive
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[28px] text-right shrink-0">
+                sess
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[64px] shrink-0">
+                caps
+              </span>
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[108px] text-right shrink-0">
+                when
+              </span>
+            </div>
+            {/* Retro column header intentionally blank — the chip only
+                appears on row hover. Empty spacer preserves alignment with
+                the body's retro-div which has matching w-[56px]. */}
+            <div className="w-[56px] shrink-0" aria-hidden />
           </div>
           <ul className="max-h-[360px] overflow-y-auto divide-y divide-ink-800">
             {error && !loading && (

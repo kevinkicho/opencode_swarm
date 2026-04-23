@@ -12,47 +12,65 @@ import { TurnCardsView } from '@/components/turn-cards-view';
 import { BoardFullView } from '@/components/board-full-view';
 import { Inspector } from '@/components/inspector';
 import { useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
+import { lazyWithRetry } from '@/lib/lazy-with-retry';
 // Modals and drawers below are gated by `open={...}` state that defaults to
 // closed — they cost 0 visual rent until the user opens them. Lazy-loading
 // via next/dynamic keeps them out of the initial JS bundle, which matters
 // because page.tsx is the largest client chunk in the app (~6 MB in dev).
 // ssr:false is safe: each component is already client-only code rendered
 // inside a client page, and nothing on the closed state needs pre-render.
+// Each loader is wrapped in lazyWithRetry so a transient ChunkLoadError
+// (webpack hash rotating mid-HMR, or SSE-saturated dev server dropping a
+// chunk request) retries twice before surfacing — covers the common case
+// without masking real import failures.
 const CommandPalette = dynamic(
-  () => import('@/components/command-palette').then((m) => m.CommandPalette),
+  lazyWithRetry(() =>
+    import('@/components/command-palette').then((m) => m.CommandPalette),
+  ),
   { ssr: false },
 );
 const RoutingModal = dynamic(
-  () => import('@/components/routing-modal').then((m) => m.RoutingModal),
+  lazyWithRetry(() =>
+    import('@/components/routing-modal').then((m) => m.RoutingModal),
+  ),
   { ssr: false },
 );
 const LiveCommitHistory = dynamic(
-  () =>
+  lazyWithRetry(() =>
     import('@/components/live-commit-history').then((m) => m.LiveCommitHistory),
+  ),
   { ssr: false },
 );
 const SpawnAgentModal = dynamic(
-  () =>
+  lazyWithRetry(() =>
     import('@/components/spawn-agent-modal').then((m) => m.SpawnAgentModal),
+  ),
   { ssr: false },
 );
 const GlossaryModal = dynamic(
-  () => import('@/components/glossary-modal').then((m) => m.GlossaryModal),
+  lazyWithRetry(() =>
+    import('@/components/glossary-modal').then((m) => m.GlossaryModal),
+  ),
   { ssr: false },
 );
 const NewRunModal = dynamic(
-  () => import('@/components/new-run-modal').then((m) => m.NewRunModal),
+  lazyWithRetry(() =>
+    import('@/components/new-run-modal').then((m) => m.NewRunModal),
+  ),
   { ssr: false },
 );
 const RunProvenanceDrawer = dynamic(
-  () =>
+  lazyWithRetry(() =>
     import('@/components/run-provenance-drawer').then(
       (m) => m.RunProvenanceDrawer,
     ),
+  ),
   { ssr: false },
 );
 const CostDashboard = dynamic(
-  () => import('@/components/cost-dashboard').then((m) => m.CostDashboard),
+  lazyWithRetry(() =>
+    import('@/components/cost-dashboard').then((m) => m.CostDashboard),
+  ),
   { ssr: false },
 );
 import type { PaletteAction } from '@/components/command-palette';
