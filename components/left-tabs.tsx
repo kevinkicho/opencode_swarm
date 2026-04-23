@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
-import { useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
+import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
@@ -31,6 +31,8 @@ export function LeftTabs({
   onTabChange,
   focusTodoId,
   boardSwarmRunID,
+  live,
+  ticker,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -50,6 +52,11 @@ export function LeftTabs({
   // HeatRail embedded body.
   onSelectFileHeat: (heat: FileHeat) => void;
   onSpawn: () => void;
+  // Board SSE state hoisted to the page so the main-view "board" toggle
+  // can share the same subscription. Null/inactive when the run isn't
+  // blackboard.
+  live: LiveBoard;
+  ticker: LiveTicker;
   // Controlled tab state is optional — the component falls back to its own
   // local state. Lifting is needed only for cross-component jumps (e.g. a
   // task card in the timeline that wants to reveal the plan tab).
@@ -85,17 +92,8 @@ export function LeftTabs({
     (a) => a.status === 'working' || a.status === 'thinking'
   ).length;
 
-  // Keep the SSE subscriptions alive regardless of which tab is active.
-  // Previously useLiveBoard / useLiveTicker lived inside BoardRail, so
-  // every tab switch unmounted the component → closed the EventSource
-  // → new connection + snapshot re-fetch on re-mount, visible as a
-  // ~300ms gap before items painted. Hoisting the hooks here means
-  // the connection stays open for the lifetime of the left rail, and
-  // BoardRail reads from passed-in live data. When boardSwarmRunID is
-  // null (non-blackboard run) both hooks short-circuit to empty state
-  // and don't open a connection, so the cost for other patterns is 0.
-  const live = useLiveBoard(boardSwarmRunID ?? null);
-  const ticker = useLiveTicker(boardSwarmRunID ?? null);
+  // Board SSE hooks now live at PageBody so the main-view "board"
+  // toggle can share the same subscription. Props above.
 
   return (
     // overflow-hidden moved OFF this section: it was clipping the inset

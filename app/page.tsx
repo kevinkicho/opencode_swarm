@@ -9,7 +9,9 @@ import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
 import { TurnCardsView } from '@/components/turn-cards-view';
+import { BoardFullView } from '@/components/board-full-view';
 import { Inspector } from '@/components/inspector';
+import { useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
 // Modals and drawers below are gated by `open={...}` state that defaults to
 // closed — they cost 0 visual rent until the user opens them. Lazy-loading
 // via next/dynamic keeps them out of the initial JS bundle, which matters
@@ -400,12 +402,23 @@ function PageBody({
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
   const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board' | 'heat'>('plan');
+
+  // Board SSE subscription lives at the page level so both the left-rail
+  // "board" tab and the main-view "board" toggle read from the same
+  // EventSource. Null when the run isn't blackboard — hooks short-circuit
+  // to empty state without opening a connection.
+  const boardSwarmRunID =
+    swarmRunMeta?.pattern === 'blackboard' ? swarmRunMeta.swarmRunID : null;
+  const liveBoard = useLiveBoard(boardSwarmRunID);
+  const liveTicker = useLiveTicker(boardSwarmRunID);
   const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
   // Main-panel view toggle. Timeline = cross-lane event flow (default);
-  // cards = per-turn conversation cards. The cards view is a complement —
-  // it collapses tool calls into chip rows but loses the wire/A2A topology
-  // the timeline exists to show. See DESIGN.md §2.
-  const [runView, setRunView] = useState<'timeline' | 'cards'>('timeline');
+  // cards = per-turn conversation cards; board = full-width blackboard
+  // kanban (only for blackboard runs — hidden otherwise). The cards
+  // view is a complement to the timeline — it collapses tool calls into
+  // chip rows but loses the wire/A2A topology the timeline exists to
+  // show. See DESIGN.md §2.
+  const [runView, setRunView] = useState<'timeline' | 'cards' | 'board'>('timeline');
 
   const jumpToTodo = useCallback((todoId: string) => {
     setLeftTab('plan');
@@ -643,34 +656,48 @@ function PageBody({
           tab={leftTab}
           onTabChange={setLeftTab}
           focusTodoId={focusTodoId}
-          boardSwarmRunID={
-            swarmRunMeta?.pattern === 'blackboard' ? swarmRunMeta.swarmRunID : null
-          }
+          boardSwarmRunID={boardSwarmRunID}
+          live={liveBoard}
+          ticker={liveTicker}
         />
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 pl-3">
           <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">view</span>
             <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
-              {(['timeline', 'cards'] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => setRunView(v)}
-                  className={clsx(
-                    'h-5 px-2 rounded-sm transition-colors cursor-pointer',
-                    runView === v
-                      ? 'bg-molten/15 text-molten'
-                      : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
-                  )}
-                >
-                  {v}
-                </button>
-              ))}
+              {(
+                [
+                  { key: 'timeline', enabled: true },
+                  { key: 'cards', enabled: true },
+                  // `board` only rendered for blackboard runs — LiveBoard
+                  // would be empty otherwise.
+                  { key: 'board', enabled: !!boardSwarmRunID },
+                ] as const
+              )
+                .filter((v) => v.enabled)
+                .map((v) => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    onClick={() => setRunView(v.key)}
+                    className={clsx(
+                      'h-5 px-2 rounded-sm transition-colors cursor-pointer',
+                      runView === v.key
+                        ? 'bg-molten/15 text-molten'
+                        : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
+                    )}
+                  >
+                    {v.key}
+                  </button>
+                ))}
             </div>
             <div className="flex-1" />
             <span className="font-mono text-micro tabular-nums text-fog-700">
-              {runView === 'timeline' ? `${messages.length} events` : `${turnCards.length} turns`}
+              {runView === 'timeline'
+                ? `${messages.length} events`
+                : runView === 'cards'
+                  ? `${turnCards.length} turns`
+                  : `${liveBoard.items?.length ?? 0} items`}
             </span>
           </div>
           {runView === 'timeline' ? (
@@ -686,6 +713,8 @@ function PageBody({
               todos={runPlan}
               onJumpToTodo={jumpToTodo}
             />
+          ) : runView === 'board' ? (
+            <BoardFullView live={liveBoard} ticker={liveTicker} />
           ) : (
             <TurnCardsView
               cards={turnCards}
