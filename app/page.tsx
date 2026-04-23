@@ -12,6 +12,7 @@ import { TurnCardsView } from '@/components/turn-cards-view';
 import { BoardFullView } from '@/components/board-full-view';
 import { Inspector } from '@/components/inspector';
 import { roleNamesFromMeta, useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
+import { deliberationRoundInfo } from '@/lib/deliberate-progress';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 // Modals and drawers below are gated by `open={...}` state that defaults to
 // closed — they cost 0 visual rent until the user opens them. Lazy-loading
@@ -546,6 +547,16 @@ function PageBody({
     });
   }, [agentsIn, bounds.costCap]);
 
+  // Deliberation round inference for deliberate-execute runs. Null for
+  // other patterns — the board empty-state falls back to the
+  // blackboard-flavored "waiting for planner sweep" copy. Depends on
+  // `agents` (budget-overlaid) and `messages`, so it sits after the
+  // agents memo.
+  const deliberationProgress = useMemo(
+    () => deliberationRoundInfo(swarmRunMeta, agents, messages),
+    [swarmRunMeta, agents, messages],
+  );
+
   // Fetch the diff whenever a live session exists so per-file +/- stats
   // can render in the cards view's file list. The history drawer also
   // reads from the same `liveDiffs` signal so nothing downstream
@@ -721,6 +732,7 @@ function PageBody({
           ticker={liveTicker}
           boardRoleNames={boardRoleNames}
           boardPattern={swarmRunMeta?.pattern}
+          deliberationProgress={deliberationProgress}
         />
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 pl-3">
@@ -776,7 +788,7 @@ function PageBody({
               onJumpToTodo={jumpToTodo}
             />
           ) : runView === 'board' ? (
-            <BoardFullView live={liveBoard} ticker={liveTicker} roleNames={boardRoleNames} pattern={swarmRunMeta?.pattern} />
+            <BoardFullView live={liveBoard} ticker={liveTicker} roleNames={boardRoleNames} pattern={swarmRunMeta?.pattern} deliberationProgress={deliberationProgress} />
           ) : (
             <TurnCardsView
               cards={turnCards}

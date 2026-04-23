@@ -61,6 +61,14 @@ enough that scanning it doesn't match the actual state.
   that post to session 0 with `agent='orchestrator'`. Visible only
   after the orchestrator has produced its first completed text turn
   so nudges don't race the initial planner sweep.
+- **Deliberation round counter** for `deliberate-execute` runs. The
+  board empty-state now reads `deliberating — …` + `round N of M`
+  below, plus a subtle `· synthesizing` suffix once the last round
+  has landed. Inference-based (client-side `deliberationRoundInfo`
+  counts completed text turns per session, takes max across them),
+  no server persistence. `DEFAULT_DELIBERATION_ROUNDS = 3` duplicated
+  on the client side as `lib/deliberate-progress.ts` export —
+  keep in sync with `lib/server/deliberate-execute.ts`.
 
 ### 2026-04-23 — hierarchical patterns + overnight safety
 
@@ -163,15 +171,14 @@ Todo count raised to 6-15 with mix of sizes.
   2026-04-23 via `063d13c`. Coordinator now tags worker prompts with
   `agent={role}`, which flows through `info.agent` into the roster.
 
-- **Pattern-specific UI affordances — most shipped.** Coverage as of
+- **Pattern-specific UI affordances — shipped.** Coverage as of
   2026-04-23:
   - ✓ Council: ReconcileStrip (human-reconcile + manual R2)
-  - ✓ Phase-aware empty-state for deliberate-execute
-  - ✓ JudgeVerdictStrip for debate-judge
-  - ✓ CriticVerdictStrip for critic-loop
-  - ✓ OrchestratorActionsStrip for orchestrator-worker
-  - Still missing: round-of-M counter for deliberate-execute DURING
-    deliberation (phase state not persisted)
+  - ✓ Deliberate-execute: phase-aware empty-state + round-of-M counter
+  - ✓ Debate-judge: JudgeVerdictStrip (WINNER/MERGE/REVISE)
+  - ✓ Critic-loop: CriticVerdictStrip (APPROVED/REVISE + round N/M)
+  - ✓ Orchestrator-worker: OrchestratorActionsStrip (status / re-
+    strategize / focus check)
 
 - **Cross-run comparisons only exist in `demo-log/` markdown.** The
   `/projects` matrix route shows activity by repo × day, but there's no
@@ -205,10 +212,8 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Next-up (high leverage, < 1 day each)
 
-- **Remaining pattern-specific UI** (~ 2-3 h):
-  - Round-of-N counter for deliberate-execute DURING deliberation
-    (needs phase state persisted server-side or inferred from
-    message counts)
+<!-- Remaining pattern-UI items shipped 2026-04-23; see "Shipped" section. -->
+
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the picker does

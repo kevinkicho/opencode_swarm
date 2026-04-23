@@ -11,6 +11,7 @@ import {
 } from '@/lib/blackboard/live';
 import type { BoardAgent, BoardItem, BoardItemKind, BoardItemStatus } from '@/lib/blackboard/types';
 import type { SwarmPattern } from '@/lib/swarm-types';
+import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import { Tooltip } from './ui/tooltip';
 
 // Inline board rail for the blackboard preset. Lives as a third tab in
@@ -84,6 +85,7 @@ export function BoardRail({
   embedded = false,
   roleNames,
   pattern,
+  deliberationProgress,
 }: {
   swarmRunID: string;
   // Live data passed in from a parent that owns the SSE subscription.
@@ -100,6 +102,9 @@ export function BoardRail({
   // Pattern context — same purpose as BoardFullView.pattern: the empty-
   // state message reflects the correct phase for deliberate-execute.
   pattern?: SwarmPattern;
+  // Deliberation round inference for deliberate-execute runs —
+  // rendered inline in the empty-state. Null for other patterns.
+  deliberationProgress?: DeliberationProgress | null;
 }) {
   const items = live.items ?? [];
 
@@ -130,10 +135,21 @@ export function BoardRail({
         <div className="px-3 py-2 font-mono text-[10px] text-fog-600">loading…</div>
       )}
       {!loading && !live.error && items.length === 0 && (
-        <div className="px-3 py-2 font-mono text-[10px] text-fog-600 leading-snug">
-          {pattern === 'deliberate-execute'
-            ? 'deliberating — council is exchanging drafts before execution.'
-            : 'board is empty — the planner sweep may still be running.'}
+        <div className="px-3 py-2 font-mono text-[10px] text-fog-600 leading-snug flex flex-col gap-1">
+          <span>
+            {pattern === 'deliberate-execute'
+              ? 'deliberating — council is exchanging drafts before execution.'
+              : 'board is empty — the planner sweep may still be running.'}
+          </span>
+          {pattern === 'deliberate-execute' && deliberationProgress && (
+            <span className="tabular-nums text-fog-500">
+              round {Math.max(deliberationProgress.round, 1)} of{' '}
+              {deliberationProgress.maxRounds}
+              {deliberationProgress.round >= deliberationProgress.maxRounds && (
+                <span className="ml-1.5 text-mint/80">· synthesizing</span>
+              )}
+            </span>
+          )}
         </div>
       )}
       {/* All 6 sections always rendered (in-progress / claimed / open /

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type { Agent, AgentMessage, SwarmPattern, TodoItem } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
+import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
@@ -36,6 +37,7 @@ export function LeftTabs({
   ticker,
   boardRoleNames,
   boardPattern,
+  deliberationProgress,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -81,6 +83,9 @@ export function LeftTabs({
   // state message can reflect the correct phase (deliberation vs.
   // planner-sweep-pending).
   boardPattern?: SwarmPattern;
+  // Deliberation round inference for deliberate-execute runs. Shown as
+  // "round N of M" in the empty-state when present. Null otherwise.
+  deliberationProgress?: DeliberationProgress | null;
 }) {
   const [localTab, setLocalTab] = useState<Tab>('plan');
   const tab = tabProp ?? localTab;
@@ -230,6 +235,7 @@ export function LeftTabs({
             embedded
             roleNames={boardRoleNames}
             pattern={boardPattern}
+            deliberationProgress={deliberationProgress}
           />
         )}
         {tab === 'heat' && (
