@@ -7,15 +7,16 @@ WORKSPACE="C:/Users/kevin/Workspace/kyahoofinance032926"
 TARGET="/mnt/c/Users/kevin/Workspace/kyahoofinance032926"
 SRC="https://github.com/kevinkicho/kyahoofinance032926"
 DIRECTIVE='Review this codebase. Identify and implement up to 3 improvements you consider high-impact. Make the edits directly on disk. Reply with a brief summary of what you changed and why.'
-LOG_BASE="/mnt/c/Users/kevin/Desktop/opencode_enhanced_ui/demo-log/battle-2026-04-22-b"
+LOG_BASE="${LOG_BASE:-/mnt/c/Users/kevin/Desktop/opencode_enhanced_ui/demo-log/battle-2026-04-22-b}"
 # Per-pattern monitor window. Council is Round-1-only by design (see
 # SWARM_PATTERNS.md §4 "Expected liveness") — sessions go idle within ~1
 # min, so 10 min is pure waste. Blackboard and map-reduce actually use
-# their budget. Override per-pattern via window_for().
-WINDOW_COUNCIL=240
-WINDOW_BLACKBOARD=600
-WINDOW_MAPREDUCE=600
-SETTLE_SEC=60
+# their budget. Override per-pattern via env vars for fairness-testing
+# apples-to-apples runs.
+WINDOW_COUNCIL="${WINDOW_COUNCIL:-240}"
+WINDOW_BLACKBOARD="${WINDOW_BLACKBOARD:-600}"
+WINDOW_MAPREDUCE="${WINDOW_MAPREDUCE:-600}"
+SETTLE_SEC="${SETTLE_SEC:-60}"
 
 window_for() {
   case "$1" in

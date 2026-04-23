@@ -27,6 +27,7 @@ import { createSessionServer, postSessionMessageServer } from '@/lib/server/open
 import { createRun, deriveRunRowCached, listRuns } from '@/lib/server/swarm-registry';
 import { runPlannerSweep } from '@/lib/server/blackboard/planner';
 import { startAutoTicker } from '@/lib/server/blackboard/auto-ticker';
+import { runCouncilRounds } from '@/lib/server/council';
 import {
   buildScopedDirective,
   deriveSlices,
@@ -343,6 +344,21 @@ export async function POST(req: NextRequest): Promise<Response> {
     runMapReduceSynthesis(runID).catch((err) => {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`[swarm/run] map-reduce synthesis for ${runID} failed:`, message);
+    });
+  }
+
+  // Step 6 (council only): kick off auto-rounds. Waits for every session to
+  // idle at the end of Round 1, harvests each member's latest draft, fans
+  // out a Round-2 prompt with peer drafts embedded. Repeats for up to
+  // DEFAULT_MAX_ROUNDS total rounds. Runs fully in the background — the
+  // ReconcileStrip manual "↻ round 2" button still works and can fire
+  // additional rounds on top if a human wants more deliberation than the
+  // auto-cadence provides.
+  if (parsed.pattern === 'council') {
+    const runID = meta.swarmRunID;
+    runCouncilRounds(runID).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[swarm/run] council auto-rounds for ${runID} failed:`, message);
     });
   }
 

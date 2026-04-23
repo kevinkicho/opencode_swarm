@@ -20,8 +20,8 @@ function isChunkLoadError(err: unknown): boolean {
 
 export function lazyWithRetry<T>(
   importFn: () => Promise<T>,
-  retries = 2,
-  baseDelayMs = 400,
+  retries = 4,
+  baseDelayMs = 500,
 ): () => Promise<T> {
   return async () => {
     let lastErr: unknown;
@@ -32,10 +32,13 @@ export function lazyWithRetry<T>(
         lastErr = err;
         if (!isChunkLoadError(err)) throw err;
         if (attempt === retries) break;
-        // Exponential-ish backoff: 400ms, 800ms. Total worst case ~1.2s
-        // before the error reaches the boundary — faster than a user's
-        // instinct to hard-reload.
-        await new Promise((r) => setTimeout(r, baseDelayMs * Math.pow(2, attempt)));
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        // Loud enough to notice when the dev server is chunk-starved,
+        // quiet enough not to spam in normal runs (each retry is rare).
+        console.info(
+          `[lazy-with-retry] ChunkLoadError on attempt ${attempt + 1}/${retries + 1}, retrying in ${delay}ms`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
     throw lastErr;

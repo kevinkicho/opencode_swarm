@@ -237,19 +237,29 @@ unified output.
 > cleanly on the first failure).
 
 Round 1: N agents answer the seed independently with no shared
-transcript. Round 2: drafts are revealed, agents revise or vote. The
-value is in Round 1's forced independence.
+transcript. Round 2+: drafts are revealed, agents revise, converge, or
+flag hard disagreements.
 
-**Expected liveness.** Council runs go **idle within ~1 minute** of Round 1
-firing — each session replies once to the seed directive and stops. This is
-not a stall: it's the end of Round 1. Round 2 is user-initiated via the
-`ReconcileStrip`'s `↻ round 2` action. If a directive needs sustained,
-decomposed work (e.g. "implement 3 improvements"), council is the wrong
-shape — its strength is divergent one-shot drafts, not persistent editing.
-Use **Blackboard** for decompose-and-iterate. This is a deliberate seam,
-not a gap: "humans set bounds + observe, agents self-select" (see
-`memory/feedback_no_role_hierarchy.md`) rules out auto-reprompt cadences
-that would otherwise fill the silence.
+**Auto-rounds (shipped 2026-04-22).** Council now runs Rounds 2 and 3
+automatically via `lib/server/council.ts::runCouncilRounds`, kicked off
+as a background task from `POST /api/swarm/run` when `pattern='council'`.
+On every round boundary the orchestrator waits for every session to hit
+idle, harvests each member's latest assistant text as that member's
+draft, then fans a Round-(N+1) prompt embedding every draft to every
+session. Round 2 uses the same wording as the existing `ReconcileStrip`
+manual action (so an agent can't tell whether the round was human- or
+auto-triggered); Round 3 explicitly asks for convergence or flagged
+disagreements. Default `maxRounds = 3` — configurable later via request
+body / bounds. The `ReconcileStrip` manual `↻ round 2` button is still
+wired and can fire additional rounds on top if a human wants more
+deliberation than the auto-cadence provides.
+
+**Why this isn't a supervisor.** A phase transition in the protocol is
+not a pinned role. Every council member does the same thing every round
+(read peers, respond); no agent watches or redirects another. This
+matches map-reduce's auto-synthesis phase, which shipped earlier and
+sets the same precedent. What we still reject: agent-managing-agent
+shapes (see `Orchestrator–worker hierarchy` in the rejected list).
 
 **Reframe for this project.** The reconcile step is **not a judge
 role**. V1 options, none of which pin a role:
