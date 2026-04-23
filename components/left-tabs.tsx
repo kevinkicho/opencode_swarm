@@ -248,32 +248,40 @@ function TabButton({
   count: string;
   tooltip?: React.ReactNode;
 }) {
+  // Label-only button; count rendered as a corner badge overlapping
+  // the top-right edge. Wrapper carries `relative` so the badge can
+  // position against it, and stays inline-flex so siblings align on
+  // the tab row.
   const btn = (
-    <button
-      type="button"
-      onClick={onClick}
-      className={clsx(
-        // Fixed width per tab so the four labels (plan/roster/board/heat)
-        // align as a grid regardless of count length. Counts are hidden
-        // visually on overflow — tooltip carries the full picture.
-        'w-[68px] h-6 rounded flex items-center justify-center gap-1 transition font-mono text-micro uppercase tracking-widest2 cursor-pointer shrink-0',
-        active
-          ? 'bg-ink-800 text-fog-100'
-          : 'text-fog-600 hover:text-fog-200 hover:bg-ink-800/50'
-      )}
-    >
-      <span>{label}</span>
+    <span className="relative inline-flex shrink-0">
+      <button
+        type="button"
+        onClick={onClick}
+        className={clsx(
+          'w-[68px] h-6 rounded flex items-center justify-center transition font-mono text-micro uppercase tracking-widest2 cursor-pointer',
+          active
+            ? 'bg-ink-800 text-fog-100'
+            : 'text-fog-600 hover:text-fog-200 hover:bg-ink-800/50',
+        )}
+      >
+        <span>{label}</span>
+      </button>
       {count && (
         <span
           className={clsx(
-            'tabular-nums normal-case text-[9px]',
-            active ? 'text-fog-400' : 'text-fog-700'
+            // Overlap the button's top-right edge. Small rounded pill
+            // with mono tabular-nums so digits align across tabs.
+            'absolute -top-1 -right-1 px-1 h-3.5 min-w-[14px] rounded-full border bg-ink-900',
+            'flex items-center justify-center font-mono text-[9px] tabular-nums leading-none normal-case pointer-events-none select-none',
+            active
+              ? 'border-molten/40 text-molten'
+              : 'border-fog-700 text-fog-400',
           )}
         >
           {count}
         </span>
       )}
-    </button>
+    </span>
   );
   if (!tooltip) return btn;
   return (
