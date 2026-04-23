@@ -29,6 +29,30 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — anti-busywork critic gate
+
+- **`enableCriticGate: true` run option** spawns one extra opencode
+  session at run creation (the "critic"), held outside the worker pool.
+  Coordinator calls `reviewWorkerDiff` between "turn completed" and
+  `to: 'done'` transition. Critic reads the todo + edited paths + the
+  worker's text summary, replies with `VERDICT: SUBSTANTIVE` or
+  `VERDICT: BUSYWORK` on one line. Busywork → item transitions to
+  `stale` with `[critic-rejected]` note (retry-stale can revive it).
+- **Fail-open by design.** Timeout (60 s), unparseable reply, HTTP
+  failure, missing critic session → log and fall through to the normal
+  `done` transition. A critic malfunction never blocks a commit.
+- **Per-run mutex serializes reviews** since opencode rejects concurrent
+  prompts on the same session. In-memory map keyed by `swarmRunID`.
+- **Opt-in, blackboard-family only.** Other patterns (council, map-
+  reduce, debate-judge, critic-loop) have their own orchestrators that
+  bypass the coordinator's commit path, so the flag has no effect
+  there — validator rejects to surface the mismatch instead of
+  silently ignoring. Applies to `blackboard`, `orchestrator-worker`,
+  `role-differentiated`, `deliberate-execute`.
+- **Companion to the ambition ratchet** shipped earlier today. Rationale
+  in `memory/project_ambition_ratchet.md`; design in `SWARM_PATTERNS.md`
+  "Tiered execution" → "Companion layers" → anti-busywork critic.
+
 ### 2026-04-23 — ambition ratchet (tier escalation)
 
 - **Auto-idle stop → tier escalation.** `auto-ticker.ts` now tries a
@@ -293,16 +317,6 @@ Todo count raised to 6-15 with mix of sizes.
 ### Next-up (high leverage, < 1 day each)
 
 <!-- Remaining pattern-UI items shipped 2026-04-23; see "Shipped" section. -->
-
-- **Anti-busywork critic on the commit path** (ambition-ratchet
-  companion layer #1). Before the board accepts a worker's diff, a
-  second agent prompt receives the diff + the todo's criterion +
-  "SUBSTANTIVE or busywork?" Rejected diffs transition the item to
-  stale instead of done so the retry / re-plan path runs. One extra
-  prompt per commit catches most test-pyramid / deck-chair-rearrange
-  garbage at higher tiers. Gate to `currentTier >= 2` — overhead
-  isn't worth it for polish-tier work. Design in
-  `SWARM_PATTERNS.md` "Tiered execution" + `memory/project_ambition_ratchet.md`.
 
 - **Playwright grounding tool for the planner** (ambition-ratchet
   companion layer #2). We already have `scripts/_ui_audit.mjs` and

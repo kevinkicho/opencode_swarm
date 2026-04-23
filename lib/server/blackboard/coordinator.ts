@@ -39,6 +39,7 @@ import {
 } from '../opencode-server';
 import { publishExports } from '../hmr-exports';
 import { roleNamesBySessionID } from '@/lib/blackboard/roles';
+import { reviewWorkerDiff } from './critic';
 import { listBoardItems, transitionStatus } from './store';
 import { toFileHeat, type FileHeat } from '@/lib/opencode/transform';
 import type { BoardItem } from '@/lib/blackboard/types';
@@ -287,6 +288,28 @@ function extractEditedPaths(
     }
   }
   return [...paths];
+}
+
+// Concatenate the text-part content of new assistant messages in the
+// scope. Used by the critic gate to show the reviewer what the worker
+// "said" about the turn (argument, claim, summary). Keeps only the last
+// assistant message's text — that's usually the closing summary; prior
+// steps are tool calls + reasoning we don't need to show the critic.
+function extractWorkerAssistantText(
+  messages: OpencodeMessage[],
+  scopeMessageIDs: Set<string>,
+): string {
+  let last = '';
+  for (const m of messages) {
+    if (!scopeMessageIDs.has(m.info.id)) continue;
+    if (m.info.role !== 'assistant') continue;
+    const text = m.parts
+      .flatMap((p) => (p.type === 'text' ? [p.text] : []))
+      .join('')
+      .trim();
+    if (text) last = text;
+  }
+  return last;
 }
 
 // opencode reports absolute paths in `patch.files` (e.g. on Windows,
@@ -611,6 +634,56 @@ export async function tickCoordinator(
     } catch {
       // Edited then deleted, or path outside workspace (resolve() out-of-tree).
       // Skip — commit-time drift isn't what we're modeling here anyway.
+    }
+  }
+
+  // Anti-busywork critic gate (opt-in via meta.enableCriticGate). Runs
+  // between "turn completed" and "mark done" so a busywork verdict keeps
+  // the item reclaim-able via retry-stale instead of shipping a green
+  // checkmark for garbage work. Fail-open: any critic malfunction (spawn
+  // failed at run creation, timeout, unparseable reply) falls through to
+  // the normal done transition. See lib/server/blackboard/critic.ts.
+  if (meta.enableCriticGate && meta.criticSessionID) {
+    const workerText = extractWorkerAssistantText(
+      waited.messages,
+      waited.newIDs,
+    );
+    const review = await reviewWorkerDiff({
+      swarmRunID,
+      criticSessionID: meta.criticSessionID,
+      workspace: meta.workspace,
+      directive: meta.directive,
+      todo,
+      editedPaths,
+      workerAssistantText: workerText,
+    });
+    if (review.verdict === 'busywork') {
+      const rejected = transitionStatus(swarmRunID, todo.id, {
+        from: 'in-progress',
+        to: 'stale',
+        note: `[critic-rejected] ${review.reason}`.slice(0, 200),
+      });
+      // If the CAS lost (someone else moved it), just fall through to the
+      // normal done-transition attempt below — no bulk rollback paths to
+      // coordinate. This matches how the rest of the coordinator handles
+      // mid-flight state changes.
+      if (rejected.ok) {
+        return {
+          status: 'stale',
+          sessionID,
+          itemID: todo.id,
+          reason: `critic-rejected: ${review.reason}`,
+        };
+      }
+    }
+    // 'substantive' or 'unclear' → fall through to the done transition.
+    // 'unclear' is fail-open by design: critic malfunctions shouldn't
+    // block progress. The rawReply (if any) is logged for post-hoc
+    // review via the worker's session + this log line.
+    if (review.verdict === 'unclear') {
+      console.log(
+        `[coordinator] ${swarmRunID}/${todo.id}: critic returned 'unclear' (${review.reason}) — failing open`,
+      );
     }
   }
 

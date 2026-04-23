@@ -262,6 +262,27 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.debateMaxRounds = obj.debateMaxRounds;
   }
 
+  if (obj.enableCriticGate !== undefined) {
+    if (typeof obj.enableCriticGate !== 'boolean') {
+      return 'enableCriticGate must be boolean';
+    }
+    // Only patterns that route commits through the blackboard coordinator
+    // can use this gate — other patterns (council, map-reduce, debate-
+    // judge, critic-loop) have their own orchestrators that bypass the
+    // coordinator's done-transition path. Silent-ignore for those would
+    // mislead the user; reject at the API instead.
+    if (
+      obj.enableCriticGate === true &&
+      req.pattern !== 'blackboard' &&
+      req.pattern !== 'orchestrator-worker' &&
+      req.pattern !== 'role-differentiated' &&
+      req.pattern !== 'deliberate-execute'
+    ) {
+      return `enableCriticGate only applies to blackboard-family patterns (got '${req.pattern}')`;
+    }
+    req.enableCriticGate = obj.enableCriticGate;
+  }
+
   return req;
 }
 
@@ -407,6 +428,29 @@ export async function POST(req: NextRequest): Promise<Response> {
     });
   }
 
+  // Step 2.5 (opt-in): spawn a dedicated critic session for the anti-
+  // busywork gate. Lives outside the worker pool — NOT in sessionIDs —
+  // so the coordinator doesn't tick it. If the spawn fails we swallow
+  // the error and continue without a gate rather than fail the whole
+  // run; the behavior degrades to "same as if the flag was off," which
+  // is a safer failure mode than blocking run creation on an opt-in
+  // feature. See lib/server/blackboard/critic.ts for the review path.
+  let criticSessionID: string | undefined;
+  if (parsed.enableCriticGate) {
+    try {
+      const critic = await createSessionServer(
+        parsed.workspace,
+        seedTitle ? `${seedTitle} · critic` : undefined,
+      );
+      criticSessionID = critic.id;
+    } catch (err) {
+      console.warn(
+        '[swarm/run] critic session spawn failed — run continues without critic gate:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   // Step 3: persist meta.json with every survivor. If this fails we've
   // already created opencode sessions — accept the orphans rather than
   // introduce rollback. The user can see them in opencode's own UI; our
@@ -415,7 +459,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   const sessionIDs = sessions.map((s) => s.id);
   let meta;
   try {
-    meta = await createRun(parsed, sessionIDs);
+    meta = await createRun(parsed, sessionIDs, { criticSessionID });
   } catch (err) {
     return Response.json(
       {

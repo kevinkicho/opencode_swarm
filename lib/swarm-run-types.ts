@@ -43,6 +43,15 @@ export interface SwarmRunRequest {
   // judge → possible revision prompts to losers) before the judge's
   // verdict is final. Default 2.
   debateMaxRounds?: number;
+  // Anti-busywork critic gate (companion layer to the ambition ratchet).
+  // When true, the run creates one extra opencode session at launch
+  // (the "critic") and the coordinator reviews every committed diff
+  // against it before marking the item done. Busywork verdicts bounce
+  // the item back to stale with a `[critic-rejected]` note. Default
+  // false — opt-in until behavior is validated on real runs.
+  // Only applies to blackboard-family patterns (the other patterns
+  // don't route commits through the board coordinator).
+  enableCriticGate?: boolean;
 }
 
 export interface SwarmRunBounds {
@@ -70,6 +79,13 @@ export interface SwarmRunMeta {
   teamRoles?: string[];
   criticMaxIterations?: number;
   debateMaxRounds?: number;
+  enableCriticGate?: boolean;
+  // The ID of the run's dedicated critic opencode session (spawned once
+  // at createRun when enableCriticGate is true). NOT included in
+  // sessionIDs — this session is outside the worker pool and shouldn't
+  // be ticked by the coordinator. Absent when enableCriticGate is false
+  // or the critic spawn failed (run continues without the gate).
+  criticSessionID?: string;
 }
 
 // --- response shape ---------------------------------------------------------

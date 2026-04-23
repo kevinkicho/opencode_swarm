@@ -395,20 +395,32 @@ the planner frames its next batch; tier escalation varies *what
 class of work* is admissible. Rotation alone would still let the
 swarm keep producing tier-1 fillers; escalation refuses to.
 
-**Companion layers (not in the MVP, but designed alongside it).**
+**Companion layers.**
 
-- **Anti-busywork critic.** A second agent reviews each worker's
-  diff against the todo's criterion before the commit is accepted.
-  Rejected diffs send the todo back to `stale` without consuming a
-  commit slot. One extra prompt per commit catches the bulk of
-  test-pyramid / deck-chair-rearrange output. Gate to the tier-
-  climb path only — overhead isn't worth it for straightforward
-  tier-1 work.
+- **Anti-busywork critic** — *shipped 2026-04-23*. Opt-in via
+  `enableCriticGate: true` on the run request. A dedicated critic
+  opencode session (spawned once at run creation, outside the worker
+  pool) reviews each worker's turn before the board item transitions
+  to `done`. Verdict shape is `VERDICT: SUBSTANTIVE` or
+  `VERDICT: BUSYWORK` with a one-line reason; busywork verdicts bounce
+  the item to `stale` with a `[critic-rejected] {reason}` note so
+  retry-stale can revive it. The critic is called on **every** commit
+  when enabled — not gated to tier ≥2. Fail-open on critic timeout /
+  parse failure / HTTP error so a critic malfunction can't block
+  legitimate progress. Per-run mutex serializes reviews (opencode
+  rejects concurrent prompts on the same session). Code lives in
+  `lib/server/blackboard/critic.ts`; coordinator insertion between
+  "turn completed" and `to: 'done'` at
+  `lib/server/blackboard/coordinator.ts`. Does NOT apply to non-
+  blackboard-family patterns (council, map-reduce, debate-judge,
+  critic-loop) whose orchestrators bypass the coordinator's commit
+  path — validator rejects `enableCriticGate: true` for those.
 - **Outside-world grounding.** Wire Playwright browser-automation
   (already scripted for UI audits) as a tool the planner and a
   dedicated "verifier" session can call. For tiers ≥3, todos that
   claim user-observable outcomes (feature shipped, flow works) get
-  gated on a Playwright run that actually exercises the claim.
+  gated on a Playwright run that actually exercises the claim. Not
+  yet shipped.
 
 **Origin.** Designed 2026-04-23 from a cross-app conversation with
 an ollama-swarm instance as a second-opinion planner. The user's
