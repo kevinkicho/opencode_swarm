@@ -37,6 +37,109 @@ function generateRunId(): string {
   return `swarm-${id}`;
 }
 
+// Curl-recipe reference shown in a collapsible block at the bottom of
+// the modal. Docs-as-copy: each entry is a working example of POST
+// /api/swarm/run for that pattern. Kept alongside the modal rather
+// than in SWARM_PATTERNS.md because discoverability matters here —
+// users see the tile grid and immediately ask "what does the API
+// body look like?".
+//
+// Keep in sync with lib/server/<pattern>.ts and the route validator.
+// If you add a new pattern, add a recipe here.
+const API_RECIPES: ReadonlyArray<{
+  pattern: SwarmPattern;
+  hint: string;
+  body: string;
+}> = [
+  {
+    pattern: 'blackboard',
+    hint: 'coordinator-dispatched todos on a shared board',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "blackboard",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Review and improve this codebase",
+  "teamSize": 3,
+  "persistentSweepMinutes": 20
+}'`,
+  },
+  {
+    pattern: 'orchestrator-worker',
+    hint: 'one orchestrator plans + re-strategizes, n workers execute',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "orchestrator-worker",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Achieve everything README claims",
+  "teamSize": 4,
+  "persistentSweepMinutes": 20
+}'`,
+  },
+  {
+    pattern: 'role-differentiated',
+    hint: 'pinned specialties: architect, tester, security, …',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "role-differentiated",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Build feature X end-to-end",
+  "teamSize": 4,
+  "teamRoles": ["architect","builder","tester","security"],
+  "persistentSweepMinutes": 20
+}'`,
+  },
+  {
+    pattern: 'critic-loop',
+    hint: 'worker drafts → critic reviews → loop to APPROVED',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "critic-loop",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Write a design doc for the new pricing surface",
+  "teamSize": 2,
+  "criticMaxIterations": 3
+}'`,
+  },
+  {
+    pattern: 'debate-judge',
+    hint: 'n generators propose, one judge picks or merges',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "debate-judge",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Choose an approach for the auth rewrite",
+  "teamSize": 4,
+  "debateMaxRounds": 2
+}'`,
+  },
+  {
+    pattern: 'council',
+    hint: 'n divergent drafts, auto round-2/3 exchange',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "council",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Propose three approaches to X",
+  "teamSize": 3
+}'`,
+  },
+  {
+    pattern: 'map-reduce',
+    hint: 'split workspace into slices, synthesize at the end',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "map-reduce",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Audit the codebase, per slice",
+  "teamSize": 3
+}'`,
+  },
+  {
+    pattern: 'deliberate-execute',
+    hint: 'council rounds → synthesize → blackboard execution',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "deliberate-execute",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Ship a major refactor of X",
+  "teamSize": 3,
+  "persistentSweepMinutes": 20
+}'`,
+  },
+];
+
 interface Inferred {
   focus: string[];
   hotspots: string[];
@@ -72,7 +175,21 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const [startMode, setStartMode] = useState<StartMode>('dry-run');
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState<string | null>(null);
+  const [recipesOpen, setRecipesOpen] = useState(false);
+  const [copiedPattern, setCopiedPattern] = useState<SwarmPattern | null>(null);
   const router = useRouter();
+
+  const copyRecipe = async (p: SwarmPattern, body: string) => {
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopiedPattern(p);
+      // Revert "copied ✓" chip after a beat.
+      setTimeout(() => setCopiedPattern((cur) => (cur === p ? null : cur)), 1200);
+    } catch {
+      // Clipboard blocked (e.g. non-secure context) — no-op; user can still
+      // drag-select. Prototype doesn't warrant a fallback prompt.
+    }
+  };
 
   const totalAgents = useMemo(
     () => Object.values(teamCounts).reduce((a, n) => a + n, 0),
@@ -713,6 +830,76 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
             </div>
           </div>
         </aside>
+      </div>
+
+      {/* Collapsible curl-recipe reference for API users. Default closed
+          so it doesn't compete with the form; one-click expand shows
+          every pattern's POST body with copy affordances. */}
+      <div className="mt-4 rounded-md hairline bg-ink-900/30 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setRecipesOpen((v) => !v)}
+          className="w-full h-7 px-3 flex items-center gap-2 text-left hover:bg-ink-900/60 transition"
+          aria-expanded={recipesOpen}
+        >
+          <span
+            className={clsx(
+              'font-mono text-[10px] leading-none text-fog-500 transition-transform',
+              recipesOpen && 'rotate-90',
+            )}
+            aria-hidden
+          >
+            ▸
+          </span>
+          <span className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
+            api recipes
+          </span>
+          <span className="font-mono text-[10px] text-fog-700 ml-auto">
+            {recipesOpen
+              ? 'click any pattern to copy its curl body'
+              : `${API_RECIPES.length} patterns · click to expand`}
+          </span>
+        </button>
+        {recipesOpen && (
+          <div className="hairline-t divide-y divide-ink-800">
+            {API_RECIPES.map((recipe) => {
+              const meta = patternMeta[recipe.pattern];
+              const isCopied = copiedPattern === recipe.pattern;
+              return (
+                <div key={recipe.pattern} className="px-3 py-2">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span
+                      className={clsx(
+                        'font-mono text-[10px] uppercase tracking-widest2 shrink-0',
+                        patternAccentText[meta.accent],
+                      )}
+                    >
+                      {recipe.pattern}
+                    </span>
+                    <span className="font-mono text-[10px] text-fog-600 truncate">
+                      — {recipe.hint}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => copyRecipe(recipe.pattern, recipe.body)}
+                      className={clsx(
+                        'ml-auto h-5 px-1.5 rounded font-mono text-[9px] uppercase tracking-widest2 border transition shrink-0',
+                        isCopied
+                          ? 'bg-mint/15 text-mint border-mint/30'
+                          : 'bg-ink-900 text-fog-500 border-ink-700 hover:text-fog-200 hover:border-ink-500',
+                      )}
+                    >
+                      {isCopied ? 'copied ✓' : 'copy'}
+                    </button>
+                  </div>
+                  <pre className="font-mono text-[10.5px] text-fog-300 leading-snug whitespace-pre-wrap break-all bg-ink-900/60 rounded px-2 py-1.5 border border-ink-800">
+                    {recipe.body}
+                  </pre>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div className="mt-4 pt-3 hairline-t flex items-center gap-2">
