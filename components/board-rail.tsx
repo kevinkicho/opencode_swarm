@@ -81,6 +81,7 @@ export function BoardRail({
   live,
   ticker,
   embedded = false,
+  roleNames,
 }: {
   swarmRunID: string;
   // Live data passed in from a parent that owns the SSE subscription.
@@ -90,10 +91,14 @@ export function BoardRail({
   live: LiveBoard;
   ticker: LiveTicker;
   embedded?: boolean;
+  // Optional ownerAgentId → role-name map (built from meta at the page
+  // level via roleNamesFromMeta). When provided, board chips show role
+  // labels for hierarchical patterns; absent → numeric fallback.
+  roleNames?: ReadonlyMap<string, string>;
 }) {
   const items = live.items ?? [];
 
-  const agents = useMemo(() => deriveBoardAgents(items), [items]);
+  const agents = useMemo(() => deriveBoardAgents(items, roleNames), [items, roleNames]);
   const agentById = useMemo(() => {
     const m = new Map<string, BoardAgent>();
     agents.forEach((a) => m.set(a.id, a));

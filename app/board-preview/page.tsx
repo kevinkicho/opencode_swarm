@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import { Suspense, useMemo } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
   MOCK_AGENTS,
@@ -14,7 +14,8 @@ import type {
   BoardItemKind,
   BoardItemStatus,
 } from '@/lib/blackboard/types';
-import { deriveBoardAgents, useLiveBoard } from '@/lib/blackboard/live';
+import { deriveBoardAgents, roleNamesFromMeta, useLiveBoard } from '@/lib/blackboard/live';
+import type { SwarmRunMeta } from '@/lib/swarm-run-types';
 
 // Board view for the blackboard preset. Runs in two modes:
 //   - /board-preview                  → mock data (design-time showcase, kept so
@@ -93,11 +94,33 @@ function BoardPreviewInner() {
   const swarmRunID = params.get('swarmRun');
   const live = useLiveBoard(swarmRunID);
 
+  // One-shot meta fetch for role-name labels on hierarchical patterns.
+  // deriveBoardAgents falls back to numeric labels when meta is missing,
+  // so a failed fetch / mock mode still renders correctly.
+  const [meta, setMeta] = useState<SwarmRunMeta | null>(null);
+  useEffect(() => {
+    if (!swarmRunID) return;
+    let cancelled = false;
+    fetch(`/api/swarm/run/${swarmRunID}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.meta) setMeta(data.meta as SwarmRunMeta);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [swarmRunID]);
+
   const isLive = Boolean(swarmRunID);
   // In live mode we wait for the first fetch to land before rendering cards,
   // so a blank run doesn't flash the mock fallback.
   const items: BoardItem[] = isLive ? live.items ?? [] : MOCK_BOARD;
-  const agents: BoardAgent[] = isLive ? deriveBoardAgents(items) : MOCK_AGENTS;
+  const roleNames = useMemo(() => roleNamesFromMeta(meta), [meta]);
+  const agents: BoardAgent[] = isLive
+    ? deriveBoardAgents(items, roleNames)
+    : MOCK_AGENTS;
 
   const agentMap = useMemo(() => {
     const m = new Map<string, BoardAgent>();

@@ -11,7 +11,7 @@ import { SwarmTimeline } from '@/components/swarm-timeline';
 import { TurnCardsView } from '@/components/turn-cards-view';
 import { BoardFullView } from '@/components/board-full-view';
 import { Inspector } from '@/components/inspector';
-import { useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
+import { roleNamesFromMeta, useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 // Modals and drawers below are gated by `open={...}` state that defaults to
 // closed — they cost 0 visual rent until the user opens them. Lazy-loading
@@ -423,12 +423,34 @@ function PageBody({
 
   // Board SSE subscription lives at the page level so both the left-rail
   // "board" tab and the main-view "board" toggle read from the same
-  // EventSource. Null when the run isn't blackboard — hooks short-circuit
-  // to empty state without opening a connection.
+  // EventSource. Null when the run's pattern doesn't drive the board —
+  // hooks short-circuit to empty state without opening a connection.
+  // Patterns that populate the board: blackboard (obviously), plus the
+  // hierarchical patterns that seed a board via a planner/synthesis
+  // phase — orchestrator-worker, role-differentiated, deliberate-execute.
+  const boardPatterns: ReadonlySet<string> = useMemo(
+    () =>
+      new Set<string>([
+        'blackboard',
+        'orchestrator-worker',
+        'role-differentiated',
+        'deliberate-execute',
+      ]),
+    [],
+  );
   const boardSwarmRunID =
-    swarmRunMeta?.pattern === 'blackboard' ? swarmRunMeta.swarmRunID : null;
+    swarmRunMeta?.pattern && boardPatterns.has(swarmRunMeta.pattern)
+      ? swarmRunMeta.swarmRunID
+      : null;
   const liveBoard = useLiveBoard(boardSwarmRunID);
   const liveTicker = useLiveTicker(boardSwarmRunID);
+  // Pattern-aware role labels for board chips. Empty map on self-
+  // organizing patterns (blackboard, council, map-reduce) — chips fall
+  // back to numeric 1..N. Built once per meta change.
+  const boardRoleNames = useMemo(
+    () => roleNamesFromMeta(swarmRunMeta),
+    [swarmRunMeta],
+  );
   const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
   // Main-panel view toggle. Timeline = cross-lane event flow (default);
   // cards = per-turn conversation cards; board = full-width blackboard
@@ -694,6 +716,7 @@ function PageBody({
           boardSwarmRunID={boardSwarmRunID}
           live={liveBoard}
           ticker={liveTicker}
+          boardRoleNames={boardRoleNames}
         />
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 pl-3">
@@ -749,7 +772,7 @@ function PageBody({
               onJumpToTodo={jumpToTodo}
             />
           ) : runView === 'board' ? (
-            <BoardFullView live={liveBoard} ticker={liveTicker} />
+            <BoardFullView live={liveBoard} ticker={liveTicker} roleNames={boardRoleNames} />
           ) : (
             <TurnCardsView
               cards={turnCards}

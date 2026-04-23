@@ -216,13 +216,23 @@ export function useLiveTicker(swarmRunID: string | null): LiveTicker {
   };
 }
 
-export function deriveBoardAgents(items: BoardItem[]): BoardAgent[] {
+export function deriveBoardAgents(
+  items: BoardItem[],
+  // Optional mapping from ownerAgentId → role name. When provided, agents
+  // with a matching owner ID use the role name (truncated for chip fit)
+  // instead of the default numeric label. Builds role visibility on
+  // hierarchical patterns (orchestrator-worker, role-differentiated,
+  // debate-judge, critic-loop) without changing the fallback behavior
+  // for self-organizing runs.
+  roleNames?: ReadonlyMap<string, string>,
+): BoardAgent[] {
   // Collect unique owner IDs from items, then sort lexicographically so the
   // numeric mapping is deterministic across polls and page reloads (arrival
   // order of items can shift; sorted IDs don't). Session IDs all start with
   // `ses_` so the old `shortName = bare.split('_')[0]` derivation was
   // producing "ses" for every agent — every board chip looked identical.
-  // Numeric labels (1..N) give each session a distinct one-character badge.
+  // Numeric labels (1..N) give each session a distinct one-character badge;
+  // a role-name override (when provided) wins when present.
   const unique = new Set<string>();
   for (const it of items) if (it.ownerAgentId) unique.add(it.ownerAgentId);
   const sortedIds = [...unique].sort();
@@ -230,14 +240,72 @@ export function deriveBoardAgents(items: BoardItem[]): BoardAgent[] {
   const out: BoardAgent[] = [];
   sortedIds.forEach((id, i) => {
     const num = String(i + 1);
+    const role = roleNames?.get(id);
+    // Chip-fit: role badges can grow long ("architect" → fine at 9px,
+    // "generator-2" → fine, but 20-char custom roles would spill). Cap
+    // the display at 12 chars via truncation; full role still on the
+    // tooltip via the id → full meta chain.
+    const name = role ? (role.length > 12 ? role.slice(0, 11) + '…' : role) : num;
+    const glyph = role ? role.charAt(0).toUpperCase() : num;
     let h = 0;
     for (let j = 0; j < id.length; j += 1) h = (h * 31 + id.charCodeAt(j)) | 0;
     out.push({
       id,
-      name: num,
+      name,
       accent: DERIVED_ACCENTS[Math.abs(h) % DERIVED_ACCENTS.length],
-      glyph: num,
+      glyph,
     });
   });
+  return out;
+}
+
+// Pattern-aware mapping from ownerAgentId → pinned role name, using only
+// the run's meta. Hierarchical patterns pin roles by session position
+// (orchestrator-worker: session 0 = orchestrator; role-differentiated:
+// session N = teamRoles[N]; etc.). Self-organizing patterns return an
+// empty map — every session stays an equal worker. The coordinator's
+// ownerIdForSession convention is `ag_ses_<last8>` so we pre-compute that.
+export function roleNamesFromMeta(
+  meta:
+    | {
+        pattern: string;
+        sessionIDs: readonly string[];
+        teamRoles?: readonly string[];
+      }
+    | null
+    | undefined,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  if (!meta) return out;
+  const ownerIdFor = (sid: string) => `ag_ses_${sid.slice(-8)}`;
+  switch (meta.pattern) {
+    case 'orchestrator-worker': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(ownerIdFor(sid), i === 0 ? 'orchestrator' : `worker-${i}`);
+      });
+      break;
+    }
+    case 'role-differentiated': {
+      meta.sessionIDs.forEach((sid, i) => {
+        const role = meta.teamRoles?.[i];
+        if (role) out.set(ownerIdFor(sid), role);
+      });
+      break;
+    }
+    case 'debate-judge': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(ownerIdFor(sid), i === 0 ? 'judge' : `generator-${i}`);
+      });
+      break;
+    }
+    case 'critic-loop': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(ownerIdFor(sid), i === 0 ? 'worker' : 'critic');
+      });
+      break;
+    }
+    // council, map-reduce, blackboard, deliberate-execute, none: no pinned
+    // roles at the pattern level — every session is a peer. Returns empty.
+  }
   return out;
 }

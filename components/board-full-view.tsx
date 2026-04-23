@@ -100,13 +100,17 @@ function fmtAge(ms: number, now: number): string {
 export function BoardFullView({
   live,
   ticker,
+  roleNames,
 }: {
   live: LiveBoard;
   ticker: LiveTicker;
+  // Same optional role-map as BoardRail — populated from meta at the
+  // page level for hierarchical patterns, omitted for self-organizing.
+  roleNames?: ReadonlyMap<string, string>;
 }) {
   const items = live.items ?? [];
   const loading = live.items === null && !live.error;
-  const agents = useMemo(() => deriveBoardAgents(items), [items]);
+  const agents = useMemo(() => deriveBoardAgents(items, roleNames), [items, roleNames]);
   const agentMap = useMemo(() => {
     const m = new Map<string, BoardAgent>();
     for (const a of agents) m.set(a.id, a);

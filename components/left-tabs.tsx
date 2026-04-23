@@ -34,6 +34,7 @@ export function LeftTabs({
   boardSwarmRunID,
   live,
   ticker,
+  boardRoleNames,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -69,8 +70,12 @@ export function LeftTabs({
   focusTodoId?: string | null;
   // When set, the third "board" tab is rendered and the inline BoardRail
   // polls /api/swarm/run/:id/board. Null/undefined hides the tab entirely.
-  // Only blackboard runs should pass a value here.
+  // Set for any pattern that populates the board (blackboard plus the
+  // hierarchical patterns with board-execution phases).
   boardSwarmRunID?: string | null;
+  // Pattern-aware ownerAgentId → role name map for BoardRail chip labels
+  // on hierarchical patterns. Empty map → numeric fallback in chips.
+  boardRoleNames?: ReadonlyMap<string, string>;
 }) {
   const [localTab, setLocalTab] = useState<Tab>('plan');
   const tab = tabProp ?? localTab;
@@ -218,6 +223,7 @@ export function LeftTabs({
             live={live}
             ticker={ticker}
             embedded
+            roleNames={boardRoleNames}
           />
         )}
         {tab === 'heat' && (
