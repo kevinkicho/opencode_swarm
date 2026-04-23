@@ -272,11 +272,17 @@ export function SwarmRunsPicker({
                     </span>
                   </Link>
                   {retroEligible && (
+                    // Absolute-positioned retro action. The WHEN column
+                    // sits directly beneath this button, so we give the
+                    // retro chip a solid backdrop (bg-ink-800) that
+                    // visually replaces the timestamp on hover instead
+                    // of overlapping it. Vertically centered so the
+                    // chip sits cleanly within the 28px row.
                     <Link
                       href={`/retro/${meta.swarmRunID}`}
                       onClick={() => close()}
                       title="open retro for this run"
-                      className="absolute right-1 top-1 h-5 px-1.5 rounded font-mono text-[9px] uppercase tracking-widest2 text-fog-600 hover:text-molten hover:bg-molten/10 transition opacity-0 group-hover:opacity-100 flex items-center"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-5 px-2 rounded font-mono text-[9px] uppercase tracking-widest2 text-fog-400 bg-ink-800 border border-fog-700 hover:text-molten hover:bg-molten/10 hover:border-molten/30 transition-opacity opacity-0 group-hover:opacity-100 flex items-center"
                     >
                       retro
                     </Link>
