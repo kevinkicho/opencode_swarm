@@ -516,18 +516,34 @@ function PageBody({
     () => (rawDiffs ? parseSessionDiffs(rawDiffs) : null),
     [rawDiffs]
   );
-  // Per-file add/delete stats for the cards view's file list. Built
-  // from liveDiffs if present; empty map otherwise. Multi-session runs
-  // only cover the primary session's diff today — a future pass can
-  // aggregate across every sessionID in meta.
+  // Per-file add/delete stats for the cards view's file list and the
+  // heat rail's +/- columns. Built from liveDiffs if present; empty
+  // map otherwise.
+  //
+  // Key shape: we populate BOTH the relative path (as liveDiffs has
+  // it) and the workspace-prefixed absolute path, because different
+  // surfaces carry paths in different shapes — heat.path is absolute
+  // (came from opencode patch.files) while filesTouched in cards
+  // view is also absolute. Lookups by either form resolve.
+  //
+  // Multi-session caveat: only the primary session's diff is fetched
+  // today, so stats for files edited exclusively by non-primary
+  // sessions stay undefined (render as `—`). A future pass can
+  // aggregate diffs across every sessionID in meta.sessionIDs.
   const diffStatsByPath = useMemo(() => {
     const m = new Map<string, { added: number; deleted: number }>();
     if (!liveDiffs) return m;
+    const ws = (swarmRunMeta?.workspace ?? liveDirectory ?? '')
+      .replace(/\\/g, '/')
+      .replace(/\/+$/, '');
     for (const d of liveDiffs) {
-      m.set(d.file, { added: d.additions ?? 0, deleted: d.deletions ?? 0 });
+      const stats = { added: d.additions ?? 0, deleted: d.deletions ?? 0 };
+      const rel = d.file.replace(/\\/g, '/').replace(/^\/+/, '');
+      m.set(rel, stats);
+      if (ws) m.set(`${ws}/${rel}`, stats);
     }
     return m;
-  }, [liveDiffs]);
+  }, [liveDiffs, swarmRunMeta?.workspace, liveDirectory]);
 
   const focusMessage = useCallback((id: string) => {
     setFocusedMsgId((prev) => {
