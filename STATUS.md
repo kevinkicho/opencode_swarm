@@ -29,6 +29,28 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — ambition ratchet (tier escalation)
+
+- **Auto-idle stop → tier escalation.** `auto-ticker.ts` now tries a
+  planner escalation sweep before stopping. Each escalation asks the
+  planner for work at the next tier (`currentTier + 1`); if it seeds
+  items, the run continues at the new tier. If every tier up to
+  `MAX_TIER = 5` produces zero, `tierExhausted` goes true and the
+  next cascade stops the ticker for real. Direct answer to the
+  "sudden ending" + "keep getting more ambitious" asks — runs don't
+  end at board-drain, they climb. See `SWARM_PATTERNS.md` "Tiered
+  execution (ambition ratchet)" for the full contract and
+  `memory/project_ambition_ratchet.md` for the cross-app decision
+  context (ollama-swarm second-opinion converged on this design).
+- **Tier ladder prompt.** `buildPlannerPrompt` accepts an optional
+  `escalationTier`; when set, prepends a tier-N preamble + ladder
+  (Polish → Structural → Capabilities → Research → Vision) and
+  instructs the planner to either emit ≥ tier-N work or return empty
+  (ending the run honestly rather than faking ambition).
+- **TickerSnapshot now carries `currentTier`, `tierExhausted`,
+  `maxTier`.** Consumable via `GET /api/swarm/run/:id/board/ticker`
+  for debug / future UI surface.
+
 ### 2026-04-23 — freeze-diagnosis follow-ups
 
 - **`GET /api/swarm/run/:id/tokens`** — per-session + aggregate
@@ -197,6 +219,23 @@ Todo count raised to 6-15 with mix of sizes.
   a dev-server restart or ticker stop+start to take effect for in-flight
   runs. Low priority — those modules change rarely.
 
+- **Ambition-ratchet tier state is in-memory only.** `TickerState.currentTier`
+  resets to 1 when the ticker restarts (HMR, crash, opencode freeze
+  requiring restart). If a run had reached tier 3, a restart takes it
+  back to tier 1 and the next escalation climbs from there. Practical
+  impact is modest — tier 1→3 takes one cascade each with a drained
+  board — but if we see runs losing tier progress often, persist on
+  `SwarmRunMeta` via a new `updateRun` helper.
+
+- **Periodic-mode sweeps don't participate in tier escalation.** Runs
+  launched with `persistentSweepMinutes > 0` skip the auto-idle stop
+  entirely, which means they also skip `attemptTierEscalation`. Their
+  periodic sweeps stay at `currentTier = 1` forever. Fine for MVP —
+  the overnight-run flow uses the default (non-persistent) mode which
+  does escalate. Tying periodic sweeps to tier escalation is a future
+  layer (probably "tier up after N drained cycles" rather than
+  "tier up on every sweep").
+
 - **Stale session state across opencode restarts is manual cleanup.**
   An in-flight run whose opencode process died will have stuck sessions
   from its view; we don't reconcile. User workflow: stop the ticker,
@@ -255,6 +294,29 @@ Todo count raised to 6-15 with mix of sizes.
 
 <!-- Remaining pattern-UI items shipped 2026-04-23; see "Shipped" section. -->
 
+- **Anti-busywork critic on the commit path** (ambition-ratchet
+  companion layer #1). Before the board accepts a worker's diff, a
+  second agent prompt receives the diff + the todo's criterion +
+  "SUBSTANTIVE or busywork?" Rejected diffs transition the item to
+  stale instead of done so the retry / re-plan path runs. One extra
+  prompt per commit catches most test-pyramid / deck-chair-rearrange
+  garbage at higher tiers. Gate to `currentTier >= 2` — overhead
+  isn't worth it for polish-tier work. Design in
+  `SWARM_PATTERNS.md` "Tiered execution" + `memory/project_ambition_ratchet.md`.
+
+- **Playwright grounding tool for the planner** (ambition-ratchet
+  companion layer #2). We already have `scripts/_ui_audit.mjs` and
+  `scripts/_run_view_audit.mjs` driving headless Chromium. Wire a
+  similar capability as a tool exposed to the planner session so it
+  can actually verify README claims end-to-end before emitting
+  tier-3+ todos. Closes the "agents wrote code but is the product
+  better?" gap — external ground truth beats internal self-assessment.
+
+- **Tier indicator in the ticker chip / run header.** The snapshot
+  already carries `currentTier` / `tierExhausted` / `maxTier`; one
+  small badge in `components/swarm-topbar.tsx` shows "tier 3/5 —
+  capabilities" so the user can see the ratchet climbing in real
+  time. ~30 min.
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the picker does

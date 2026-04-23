@@ -355,6 +355,72 @@ straight blackboard.
 
 ---
 
+## Meta-pattern: Tiered execution (ambition ratchet)
+
+Composes with any pattern that has an idle-stop (blackboard,
+orchestrator-worker, role-differentiated, deliberate-execute's
+execution phase). Addresses two failure modes observed in long
+autonomous runs:
+
+- **Sudden ending** — the run terminates cleanly when the board
+  drains, even though there's obviously more ambitious work the
+  project could benefit from. The swarm has no mechanism to *raise
+  its own bar*.
+- **Busywork drift** — absent a ceiling on ambition, late-run
+  agents fall into the test-pyramid / doc-polish rut because
+  those are the easiest tier-1 work items to propose.
+
+**Mechanism.** When a ticker-driven pattern would auto-stop (all
+sessions idle past `IDLE_TICKS_BEFORE_STOP` with empty board),
+instead fire an **escalation sweep** that prompts the planner with
+the tier ladder and the current tier's completed work. The planner
+must emit todos strictly above the current tier, or an empty
+todowrite confirming no ambitious work remains.
+
+**Tier ladder.**
+
+| Tier | Name          | Shape of work                                                                     |
+|------|---------------|-----------------------------------------------------------------------------------|
+| 1    | Polish        | small fixes, test gaps, doc corrections, tightening existing functionality        |
+| 2    | Structural    | refactors for maintainability, architecture improvements, complexity reduction    |
+| 3    | Capabilities  | new features that extend the product's core value                                 |
+| 4    | Research      | experimental directions, architectural shifts, external integrations              |
+| 5    | Vision        | challenge assumptions, propose wholly new directions                              |
+
+Cap: `MAX_TIER = 5`. Past that, the run genuinely stops — nothing
+above Vision is coherent for an autonomous coder to attempt.
+
+**Why this beats rotating prompts.** Prompt rotation varies *how*
+the planner frames its next batch; tier escalation varies *what
+class of work* is admissible. Rotation alone would still let the
+swarm keep producing tier-1 fillers; escalation refuses to.
+
+**Companion layers (not in the MVP, but designed alongside it).**
+
+- **Anti-busywork critic.** A second agent reviews each worker's
+  diff against the todo's criterion before the commit is accepted.
+  Rejected diffs send the todo back to `stale` without consuming a
+  commit slot. One extra prompt per commit catches the bulk of
+  test-pyramid / deck-chair-rearrange output. Gate to the tier-
+  climb path only — overhead isn't worth it for straightforward
+  tier-1 work.
+- **Outside-world grounding.** Wire Playwright browser-automation
+  (already scripted for UI audits) as a tool the planner and a
+  dedicated "verifier" session can call. For tiers ≥3, todos that
+  claim user-observable outcomes (feature shipped, flow works) get
+  gated on a Playwright run that actually exercises the claim.
+
+**Origin.** Designed 2026-04-23 from a cross-app conversation with
+an ollama-swarm instance as a second-opinion planner. The user's
+ask: "make the swarm keep working, constantly revising its goals
+to become more ambitious." Tier escalation is the direct answer;
+the anti-busywork critic and Playwright grounding are the two
+layers that protect the ratchet from producing garbage at higher
+tiers. See `memory/project_ambition_ratchet.md` for the decision
+context.
+
+---
+
 ## Historical note: patterns once explicitly rejected
 
 Up through 2026-04-22, the four hierarchical patterns above (orchestrator-

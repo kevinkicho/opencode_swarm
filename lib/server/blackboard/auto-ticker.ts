@@ -48,8 +48,10 @@ import {
   type TickOutcome,
 } from './coordinator';
 import {
+  MAX_TIER,
   PLANNER_EXPORTS_KEY,
   runPlannerSweep,
+  TIER_LADDER,
   type PlannerExports,
 } from './planner';
 import { listBoardItems } from './store';
@@ -151,15 +153,19 @@ interface TickerState {
   // aren't added mid-run in today's model. Empty until first fanout populates.
   sessionIDs: string[];
   slots: Map<string, PerSessionSlot>;
-  // Re-sweep bookkeeping. Before auto-idling we give the planner ONE
-  // more chance to emit follow-up todos — e.g. the first batch's work
-  // surfaced new refactoring opportunities. `resweepInFlight` guards
-  // against re-entrant re-sweep calls from concurrent session ticks
-  // all hitting the auto-idle threshold at once; `resweepAttempted`
-  // keeps us from re-sweeping forever if the second batch also
-  // completes without discovering new work.
+  // Re-sweep bookkeeping / ambition ratchet state. When every session hits
+  // the idle threshold we don't just stop — we try a tier-escalation
+  // planner sweep first. `resweepInFlight` guards against re-entrant
+  // planner calls from concurrent session ticks all hitting idle at once
+  // (also used as the mutex by runPeriodicSweep so the two can't stack).
+  // `currentTier` tracks where the ambition ratchet is — starts at 1
+  // (the initial sweep's tier); each auto-idle escalation tries tier+1.
+  // `tierExhausted` goes true when an escalation at MAX_TIER produced
+  // zero items — then the next idle cascade actually stops. See
+  // SWARM_PATTERNS.md "Tiered execution" for the full semantics.
   resweepInFlight: boolean;
-  resweepAttempted: boolean;
+  currentTier: number;
+  tierExhausted: boolean;
   // Periodic re-sweep cadence for long-running runs. When > 0, fires a
   // fresh planner sweep every N ms so an overnight run keeps producing
   // work as the codebase evolves. When > 0, the auto-idle stop logic is
@@ -322,26 +328,23 @@ async function tickSession(
       slots.length > 0 &&
       slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP)
     ) {
-      // Before stopping, give the planner one more chance to emit new
-      // todos based on current repo state. A typical smoke: the first
-      // batch of 8 todos drains, idle ticks accumulate, we'd normally
-      // stop — but the work may have surfaced refactoring opportunities
-      // the planner now sees. If the re-sweep produces open items, the
-      // idle counters reset and the ticker keeps going. If not, stop.
-      if (!state.resweepAttempted && !state.resweepInFlight) {
-        state.resweepInFlight = true;
+      // Ambition ratchet (see SWARM_PATTERNS.md "Tiered execution"). Before
+      // stopping, try a tier-N+1 planner escalation. If it seeds items, the
+      // ticker keeps going at the new tier. If every tier up to MAX_TIER
+      // has been tried and produced zero, `tierExhausted` goes true and we
+      // stop for real on the next cascade.
+      if (state.tierExhausted) {
         console.log(
-          `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle — triggering one re-sweep before stopping`,
-        );
-        // Fire-and-forget so this tick doesn't block. The background
-        // re-sweep reads board state and either seeds new todos or
-        // confirms the run is genuinely complete.
-        void attemptReSweep(state);
-      } else if (state.resweepAttempted) {
-        console.log(
-          `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle post-resweep — stopping`,
+          `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle post-max-tier — stopping`,
         );
         stopAutoTicker(state.swarmRunID, 'auto-idle');
+      } else if (!state.resweepInFlight) {
+        state.resweepInFlight = true;
+        // Fire-and-forget so this tick doesn't block. Escalation either
+        // seeds tier-N+1 todos (reset idle counters + bump tier) or
+        // produces zero (bump tier; next cascade tries the next tier,
+        // unless we've hit MAX_TIER in which case tierExhausted goes true).
+        void attemptTierEscalation(state);
       }
     }
   } catch (err) {
@@ -378,24 +381,49 @@ async function fanout(swarmRunID: string): Promise<void> {
   }
 }
 
-// Run planner sweep once. If it seeds new open items, reset every
-// slot's idle counter so the next tick picks them up. If not, mark
-// resweepAttempted so the next auto-idle cascade stops for real.
-async function attemptReSweep(state: TickerState): Promise<void> {
+// Tier-escalating planner sweep (ambition ratchet). On auto-idle the
+// ticker asks the planner for work at the next tier of ambition rather
+// than stopping. If the escalation seeds items → reset idle counters +
+// record the new tier. If it produces zero → bump tier anyway so the
+// next cascade tries the tier above; at MAX_TIER, flip `tierExhausted`
+// so the next cascade stops for real. See SWARM_PATTERNS.md "Tiered
+// execution" for the full contract; memory/project_ambition_ratchet.md
+// for the design decision context.
+async function attemptTierEscalation(state: TickerState): Promise<void> {
   const swarmRunID = state.swarmRunID;
   state.lastSweepAtMs = Date.now();
+  const nextTier = state.currentTier + 1;
+  const tierLabel =
+    TIER_LADDER.find((t) => t.tier === nextTier)?.name ?? `Tier ${nextTier}`;
   try {
+    if (nextTier > MAX_TIER) {
+      // We've already topped out. Mark exhausted so the next cascade
+      // triggers the actual stop. (Reached here only if currentTier ===
+      // MAX_TIER and a prior escalation at MAX_TIER seeded items, so
+      // we kept running — now the board drained again and there's
+      // nowhere to escalate to.)
+      console.log(
+        `[board/auto-ticker] ${swarmRunID}: already at MAX_TIER=${MAX_TIER}, nothing to escalate to`,
+      );
+      state.tierExhausted = true;
+      return;
+    }
+    console.log(
+      `[board/auto-ticker] ${swarmRunID}: attempting tier escalation ${state.currentTier} → ${nextTier} (${tierLabel})`,
+    );
     const beforeOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
     ).length;
     // overwrite: true so the "board already populated" guard in the
     // planner doesn't throw — the board intentionally has items at this
     // point (the drained initial batch). includeBoardContext: true so
-    // the planner sees what's already done/pending and proposes new work
-    // instead of duplicates.
+    // the planner sees what's already done/pending and proposes new
+    // work instead of duplicates. escalationTier routes to the tier-
+    // aware prompt variant.
     const result = await livePlanner().runPlannerSweep(swarmRunID, {
       overwrite: true,
       includeBoardContext: true,
+      escalationTier: nextTier,
     });
     const afterOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
@@ -403,22 +431,32 @@ async function attemptReSweep(state: TickerState): Promise<void> {
     const newlyOpen = afterOpen - beforeOpen;
     if (newlyOpen > 0) {
       console.log(
-        `[board/auto-ticker] ${swarmRunID}: re-sweep seeded ${newlyOpen} new open todo(s) — resetting idle counters`,
+        `[board/auto-ticker] ${swarmRunID}: tier-${nextTier} escalation seeded ${newlyOpen} new todo(s) — resetting idle counters`,
       );
+      state.currentTier = nextTier;
       for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
     } else {
+      // This tier had nothing to propose. Bump current tier so the next
+      // cascade attempts the tier above. If we just attempted MAX_TIER
+      // and got nothing, there's nowhere higher — mark exhausted.
       console.log(
-        `[board/auto-ticker] ${swarmRunID}: re-sweep produced no new work (planner returned ${result.items.length} total items)`,
+        `[board/auto-ticker] ${swarmRunID}: tier-${nextTier} escalation produced no work (planner returned ${result.items.length} item(s) total)`,
       );
+      state.currentTier = nextTier;
+      if (nextTier >= MAX_TIER) {
+        state.tierExhausted = true;
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(
-      `[board/auto-ticker] ${swarmRunID}: re-sweep threw:`,
+      `[board/auto-ticker] ${swarmRunID}: tier-${nextTier} escalation threw:`,
       message,
     );
+    // Don't bump tier on exception — a transient opencode / network error
+    // shouldn't burn a tier. The idle cascade will retry on the next
+    // tick-cycle subject to MIN_MS_BETWEEN_SWEEPS throttling.
   } finally {
-    state.resweepAttempted = true;
     state.resweepInFlight = false;
   }
 }
@@ -478,12 +516,15 @@ async function checkLiveness(state: TickerState): Promise<void> {
   }
 }
 
-// Long-running cadenced planner sweep. Unlike attemptReSweep (end-of-life
-// one-shot), this fires on a timer regardless of whether the board is
-// idle — the point is to periodically re-examine the repo as it evolves
-// under the workers' edits and seed fresh todos the original planner
-// pass couldn't see. Reuses `resweepInFlight` as a mutex with the
-// auto-idle one-shot so the two can't collide.
+// Long-running cadenced planner sweep. Unlike attemptTierEscalation
+// (auto-idle path that bumps tier per attempt), this fires on a timer
+// regardless of whether the board is idle — the point is to periodically
+// re-examine the repo as it evolves under the workers' edits and seed
+// fresh todos the original planner pass couldn't see. Reuses
+// `resweepInFlight` as a mutex with the escalation path so the two
+// can't collide. Periodic sweeps do NOT bump tier today — they stay
+// at whatever `currentTier` the run has reached via escalation. Tying
+// periodic-mode to tier escalation is a future layer.
 async function runPeriodicSweep(state: TickerState): Promise<void> {
   if (state.stopped) return;
   if (state.resweepInFlight) return;
@@ -647,7 +688,8 @@ export function startAutoTicker(
     sessionIDs,
     slots,
     resweepInFlight: false,
-    resweepAttempted: false,
+    currentTier: 1,
+    tierExhausted: false,
     periodicSweepMs,
     periodicSweepTimer,
     orchestratorSessionID,
@@ -704,6 +746,13 @@ export interface TickerSnapshot {
   lastOutcome?: TickOutcome;
   lastRanAtMs?: number;
   startedAtMs: number;
+  // Ambition-ratchet state (see SWARM_PATTERNS.md "Tiered execution").
+  // currentTier is 1-indexed and starts at 1; auto-idle cascades try
+  // tier+1 via attemptTierEscalation. tierExhausted means MAX_TIER was
+  // tried and produced zero items — next cascade will stop the ticker.
+  currentTier: number;
+  tierExhausted: boolean;
+  maxTier: number;
 }
 
 function snapshot(s: TickerState): TickerSnapshot {
@@ -745,6 +794,9 @@ function snapshot(s: TickerState): TickerSnapshot {
     lastOutcome,
     lastRanAtMs,
     startedAtMs: s.startedAtMs,
+    currentTier: s.currentTier ?? 1,
+    tierExhausted: s.tierExhausted ?? false,
+    maxTier: MAX_TIER,
   };
 }
 

@@ -47,6 +47,7 @@ export interface PlannerExports {
       timeoutMs?: number;
       overwrite?: boolean;
       includeBoardContext?: boolean;
+      escalationTier?: number;
     },
   ) => Promise<PlannerSweepResult>;
 }
@@ -94,10 +95,31 @@ export function mintItemId(): string {
 //   Anti-patterns explicitly banned (passive verifications, timid wording).
 //   Exploration budget raised to 10 calls to let the planner understand
 //   coverage before scheduling.
+// Tier ladder for the ambition ratchet (see SWARM_PATTERNS.md "Tiered
+// execution"). Used by buildPlannerPrompt when `escalationTier` is set —
+// the auto-ticker bumps tier on each idle-stop attempt and calls the
+// planner with the new tier, asking for work strictly above the prior
+// tier's class. The order is load-bearing — planners that jump tiers
+// without earning them tend to hallucinate ambition. MAX_TIER is the
+// safety valve; runs do eventually stop past tier 5.
+export const MAX_TIER = 5;
+export const TIER_LADDER: ReadonlyArray<{ tier: number; name: string; shape: string }> = [
+  { tier: 1, name: 'Polish', shape: 'small fixes, test gaps, doc corrections, tightening existing functionality' },
+  { tier: 2, name: 'Structural', shape: 'refactors for maintainability, architecture improvements, complexity reduction' },
+  { tier: 3, name: 'Capabilities', shape: "new features that extend the product's core value" },
+  { tier: 4, name: 'Research', shape: 'experimental directions, architectural shifts, external integrations' },
+  { tier: 5, name: 'Vision', shape: 'challenge assumptions, propose wholly new directions' },
+];
+
+function tierName(tier: number): string {
+  return TIER_LADDER.find((t) => t.tier === tier)?.name ?? `Tier ${tier}`;
+}
+
 function buildPlannerPrompt(
   directive: string | undefined,
   boardContext?: PlannerBoardContext,
   readme?: string | null,
+  escalationTier?: number,
 ): string {
   const base =
     directive?.trim() ||
@@ -137,6 +159,31 @@ function buildPlannerPrompt(
       '',
       'OPEN / IN-PROGRESS — other agents are working on these, do NOT duplicate:',
       activeLines,
+      '',
+    );
+  }
+
+  if (escalationTier && escalationTier >= 1) {
+    const name = tierName(escalationTier);
+    const ladderLines = TIER_LADDER.map(
+      (t) => `  Tier ${t.tier} (${t.name}): ${t.shape}`,
+    ).join('\n');
+    sections.push(
+      '## Ambition ratchet — tier escalation',
+      '',
+      `This sweep is an ESCALATION. Prior tiers of work have drained from the`,
+      `board; the team is ready for more ambitious work. You are entering`,
+      `**Tier ${escalationTier} (${name})**.`,
+      '',
+      'Tier ladder:',
+      ladderLines,
+      '',
+      `Your todos MUST target Tier ${escalationTier} ambition or higher. Do NOT`,
+      `propose work at tiers below ${escalationTier} even if gaps remain there —`,
+      `the team has moved past those. If you genuinely believe no Tier`,
+      `${escalationTier}+ work is warranted for this project, call todowrite`,
+      `with an empty array and include a one-line note in your reasoning`,
+      `explaining why the run should end here.`,
       '',
     );
   }
@@ -302,6 +349,12 @@ export async function runPlannerSweep(
     // without burning tool calls on a read. Set false for runs where the
     // README is irrelevant or the workspace has no README.
     includeReadme?: boolean;
+    // When set, the prompt includes a tier-escalation preamble instructing
+    // the planner to emit work at this tier or higher. See MAX_TIER and
+    // TIER_LADDER above, and SWARM_PATTERNS.md "Tiered execution". The
+    // auto-ticker's idle-stop path sets this; normal first-sweeps leave it
+    // undefined so the planner isn't pressured to invent ambition.
+    escalationTier?: number;
   } = {},
 ): Promise<PlannerSweepResult> {
   const meta = await getRun(swarmRunID);
@@ -331,7 +384,12 @@ export async function runPlannerSweep(
   // mandatory tool call to read it.
   const readme =
     opts.includeReadme === false ? null : await readWorkspaceReadme(meta.workspace);
-  const prompt = buildPlannerPrompt(meta.directive, boardContext, readme);
+  const prompt = buildPlannerPrompt(
+    meta.directive,
+    boardContext,
+    readme,
+    opts.escalationTier,
+  );
   await postSessionMessageServer(sessionID, meta.workspace, prompt);
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
