@@ -33,6 +33,12 @@ import type { NextRequest } from 'next/server';
 
 import { opencodeFetch } from '@/lib/opencode/client';
 import { appendEvent, getRun, readEvents } from '@/lib/server/swarm-registry';
+import {
+  PART_COALESCE_MS,
+  PartCoalescer,
+  dedupeReplay,
+  reshapeForForward,
+} from '@/lib/server/sse-shaping';
 import type { SwarmRunEvent } from '@/lib/swarm-run-types';
 
 export const dynamic = 'force-dynamic';
@@ -128,18 +134,26 @@ export async function GET(
       // useful for rehydrating a provenance panel on reload without re-
       // fetching session history.
       //
-      // `replayCutoffTs` captures the ts of the last replayed event so the
-      // in-process `appendEvent` below doesn't double-write events that
-      // another concurrent multiplexer may have already committed. At v1
-      // with one multiplexer per connection this is a best-effort guard,
-      // not a hard dedupe — see comment on appendEvent below.
+      // Replay is buffered-then-deduped: message.updated / message.part.updated
+      // frames collapse to latest-per-id so the browser reconstructs the
+      // same current state without getting blasted with every intermediate
+      // token-delta snapshot. Other event types pass through verbatim in
+      // arrival order. Each surviving frame is also reshaped to drop the
+      // redundant summary.diffs patch content before emit.
       emitControl('swarm.run.replay.start');
       let replayCount = 0;
       try {
+        const buffer: SwarmRunEvent[] = [];
         for await (const ev of readEvents(meta.swarmRunID)) {
           if (upstreamAbort.signal.aborted) break;
+          buffer.push(ev);
+        }
+        const deduped = dedupeReplay(buffer);
+        for (const ev of deduped) {
+          if (upstreamAbort.signal.aborted) break;
+          const shaped = reshapeForForward(ev);
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ ...ev, replay: true })}\n\n`)
+            encoder.encode(`data: ${JSON.stringify({ ...shaped, replay: true })}\n\n`)
           );
           replayCount += 1;
         }
@@ -150,6 +164,18 @@ export async function GET(
         );
       }
       emitControl('swarm.run.replay.end', { count: replayCount });
+
+      // Per-connection coalescer for the live segment. Tool/reasoning parts
+      // update on every token delta with a full-state snapshot — bursting
+      // those through to the browser at wire speed chokes the tab's
+      // setEvents([...prev, row]) append loop. The coalescer emits the first
+      // update-per-part instantly, then caps sustained bursts at
+      // 1 emit / PART_COALESCE_MS per part.id. Non-part events forward
+      // immediately. Flushed on stream close so no final in-flight state
+      // is ever dropped.
+      const coalescer = new PartCoalescer(PART_COALESCE_MS, (ev) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+      });
 
       try {
         for await (const ev of readOpencodeEvents(workspace, upstreamAbort.signal)) {
@@ -170,6 +196,11 @@ export async function GET(
             properties: ev.properties,
           };
 
+          // Reshape once — the L0 log and the forward path both benefit
+          // from dropping the summary.diffs patch redundancy. The patch
+          // content is still persisted via session.diff events elsewhere.
+          const shaped = reshapeForForward(tagged);
+
           // Persist to L0 before forwarding so any crash between append and
           // emit still leaves a recoverable trace. Failures here shouldn't
           // kill the stream — log and continue; the browser copy is the
@@ -181,14 +212,18 @@ export async function GET(
           // a shared-upstream multiplexer — deferred until multi-tab usage
           // actually bites. Single-tab + refresh is not affected because
           // connections don't overlap in time.
-          appendEvent(meta.swarmRunID, tagged).catch((err) => {
+          appendEvent(meta.swarmRunID, shaped).catch((err) => {
             console.warn(
               '[swarm/run/events] L0 append failed:',
               (err as Error).message
             );
           });
 
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(tagged)}\n\n`));
+          // Coalescer handles tool/reasoning part updates; everything else
+          // forwards directly.
+          if (!coalescer.accept(shaped)) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(shaped)}\n\n`));
+          }
         }
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
@@ -199,6 +234,7 @@ export async function GET(
           );
         }
       } finally {
+        coalescer.flushAll();
         try { controller.close(); } catch {}
       }
     },

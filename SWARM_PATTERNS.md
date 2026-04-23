@@ -240,6 +240,17 @@ Round 1: N agents answer the seed independently with no shared
 transcript. Round 2: drafts are revealed, agents revise or vote. The
 value is in Round 1's forced independence.
 
+**Expected liveness.** Council runs go **idle within ~1 minute** of Round 1
+firing — each session replies once to the seed directive and stops. This is
+not a stall: it's the end of Round 1. Round 2 is user-initiated via the
+`ReconcileStrip`'s `↻ round 2` action. If a directive needs sustained,
+decomposed work (e.g. "implement 3 improvements"), council is the wrong
+shape — its strength is divergent one-shot drafts, not persistent editing.
+Use **Blackboard** for decompose-and-iterate. This is a deliberate seam,
+not a gap: "humans set bounds + observe, agents self-select" (see
+`memory/feedback_no_role_hierarchy.md`) rules out auto-reprompt cadences
+that would otherwise fill the silence.
+
 **Reframe for this project.** The reconcile step is **not a judge
 role**. V1 options, none of which pin a role:
 - Majority vote over token-level or AST-level diff
