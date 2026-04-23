@@ -8,7 +8,7 @@ import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
-import { HeatRail } from './heat-rail';
+import { HeatRail, type DiffStatsByPath } from './heat-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 
@@ -19,6 +19,7 @@ export function LeftTabs({
   agents,
   messages,
   heat,
+  diffStatsByPath,
   workspace,
   selectedAgentId,
   onSelectAgent,
@@ -40,6 +41,9 @@ export function LeftTabs({
   // Per-file edit counts aggregated from patch parts — stigmergy v0.
   // Empty array hides the heat tab entirely.
   heat: FileHeat[];
+  // Per-file add/delete line counts from the session's diff. Shared
+  // with the cards view — populated from liveDiffs at the page level.
+  diffStatsByPath: DiffStatsByPath;
   // Run's workspace root. HeatRail strips this prefix from displayed
   // paths so rows don't all lead with the same repo-root string.
   workspace: string;
@@ -221,6 +225,7 @@ export function LeftTabs({
             heat={heat}
             agents={agents}
             workspace={workspace}
+            diffStatsByPath={diffStatsByPath}
             onSelect={onSelectFileHeat}
             embedded
           />

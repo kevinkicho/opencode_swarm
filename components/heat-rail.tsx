@@ -60,10 +60,13 @@ function fmtAgo(ms: number): string {
   return `${Math.round(diff / 86_400_000)}d`;
 }
 
+export type DiffStatsByPath = Map<string, { added: number; deleted: number }>;
+
 export function HeatRail({
   heat,
   agents,
   workspace,
+  diffStatsByPath,
   onSelect,
   embedded = false,
 }: {
@@ -73,6 +76,9 @@ export function HeatRail({
   // paths so rows are dense + readable. Passing empty string falls
   // back to showing full paths.
   workspace: string;
+  // Per-file add/delete line counts, sourced from the session's diff
+  // at the page level. Empty map renders — / — placeholders.
+  diffStatsByPath: DiffStatsByPath;
   // Row clicked — parent opens the file inspector with this heat
   // record. Optional so the component still works in read-only
   // contexts (e.g. a future retro view).
@@ -101,6 +107,7 @@ export function HeatRail({
             workspace={workspace}
             maxCount={maxCount}
             agentBySession={agentBySession}
+            diffStats={diffStatsByPath.get(h.path)}
             onSelect={onSelect}
           />
         ))
@@ -130,12 +137,14 @@ function HeatRow({
   workspace,
   maxCount,
   agentBySession,
+  diffStats,
   onSelect,
 }: {
   heat: FileHeat;
   workspace: string;
   maxCount: number;
   agentBySession: Map<string, Agent>;
+  diffStats?: { added: number; deleted: number };
   onSelect?: (heat: FileHeat) => void;
 }) {
   const displayPath = stripWorkspace(heat.path, workspace);
@@ -185,7 +194,11 @@ function HeatRow({
         )}
         style={{
           display: 'grid',
-          gridTemplateColumns: '22px minmax(0, 1fr) 60px 28px',
+          // Grid columns: intensity | path (flex, right-aligned) |
+          // +added | -deleted. Agent-toucher info + last-touched time
+          // moved into the path's tooltip — the stats columns carry
+          // the numbers the user actually wants to scan.
+          gridTemplateColumns: '22px minmax(0, 1fr) 32px 32px',
           alignItems: 'center',
           columnGap: '8px',
         }}
@@ -209,12 +222,40 @@ function HeatRow({
         {/* Path — right-aligned so basenames end at a consistent vertical
             axis; `.truncate-left` pushes overflow (long ancestor dirs)
             off the LEFT side with an ellipsis, so the filename always
-            stays visible. `<bdi dir="ltr">` keeps the LTR content
-            readable inside the rtl container. */}
+            stays visible. Tooltip carries the absolute path + list of
+            sessions that touched it + last-touched time, so all three
+            secondary facts remain one hover away. */}
         <Tooltip
           content={
-            <div className="font-mono text-[10.5px] text-fog-500 max-w-[420px] break-all">
-              {heat.path}
+            <div className="space-y-1 max-w-[420px]">
+              <div className="font-mono text-[10.5px] text-fog-200 break-all">
+                {heat.path}
+              </div>
+              <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 flex items-center gap-2">
+                <span className="tabular-nums">{fmtAgo(heat.lastTouchedMs)}</span>
+                <span className="text-fog-700">·</span>
+                <span className="tabular-nums">
+                  {new Date(heat.lastTouchedMs).toLocaleTimeString()}
+                </span>
+              </div>
+              {touchers.length > 0 && (
+                <div className="flex items-center gap-1 pt-0.5">
+                  <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
+                    touched by
+                  </span>
+                  {touchers.map((a) => (
+                    <span
+                      key={a.id}
+                      className={clsx(
+                        'inline-flex items-center h-4 px-1 rounded-sm font-mono text-[9px] leading-none',
+                        accentBadge[a.accent],
+                      )}
+                    >
+                      {a.name}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           }
           side="right"
@@ -227,37 +268,27 @@ function HeatRow({
           </span>
         </Tooltip>
 
-        {/* Agent badges — fixed 60px column so columns stay aligned
-            regardless of per-row badge count. Show up to 3, then +N. */}
-        <div className="flex items-center gap-0.5 justify-end min-w-0 overflow-hidden">
-          {touchers.slice(0, 3).map((a) => (
-            <Tooltip key={a.id} content={a.name} side="top">
-              <span
-                className={clsx(
-                  'shrink-0 w-3 h-3 rounded-sm font-mono text-[8.5px] leading-none grid place-items-center cursor-default',
-                  accentBadge[a.accent],
-                )}
-              >
-                {a.glyph}
-              </span>
-            </Tooltip>
-          ))}
-          {touchers.length > 3 && (
-            <span className="shrink-0 font-mono text-[9px] text-fog-600 pl-0.5 tabular-nums">
-              +{touchers.length - 3}
-            </span>
+        {/* +added line count. Mint when > 0, dim "—" when not yet known
+            (diff hasn't loaded for this file path). Tabular-nums keeps
+            digits aligned across rows. */}
+        <span
+          className={clsx(
+            'font-mono text-[10.5px] tabular-nums text-right',
+            diffStats && diffStats.added > 0 ? 'text-mint' : 'text-fog-700',
           )}
-        </div>
-
-        {/* Last-touched relative time. */}
-        <Tooltip
-          content={new Date(heat.lastTouchedMs).toISOString()}
-          side="left"
         >
-          <span className="font-mono text-[9px] text-fog-600 tabular-nums cursor-default text-right">
-            {fmtAgo(heat.lastTouchedMs)}
-          </span>
-        </Tooltip>
+          {diffStats ? `+${diffStats.added}` : '—'}
+        </span>
+
+        {/* -deleted line count. Rust when > 0, dim otherwise. */}
+        <span
+          className={clsx(
+            'font-mono text-[10.5px] tabular-nums text-right',
+            diffStats && diffStats.deleted > 0 ? 'text-rust' : 'text-fog-700',
+          )}
+        >
+          {diffStats ? `-${diffStats.deleted}` : '—'}
+        </span>
       </div>
     </li>
   );

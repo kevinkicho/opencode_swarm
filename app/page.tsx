@@ -645,6 +645,7 @@ function PageBody({
           agents={agents}
           messages={messages}
           heat={fileHeat}
+          diffStatsByPath={diffStatsByPath}
           workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
           selectedAgentId={selectedAgentId}
           onSelectAgent={rosterSelect}
