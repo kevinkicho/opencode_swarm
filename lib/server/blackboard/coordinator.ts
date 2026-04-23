@@ -38,6 +38,7 @@ import {
   postSessionMessageServer,
 } from '../opencode-server';
 import { publishExports } from '../hmr-exports';
+import { roleNamesBySessionID } from '@/lib/blackboard/roles';
 import { listBoardItems, transitionStatus } from './store';
 import { toFileHeat, type FileHeat } from '@/lib/opencode/transform';
 import type { BoardItem } from '@/lib/blackboard/types';
@@ -554,8 +555,18 @@ export async function tickCoordinator(
   const knownIDs = new Set(before.map((m) => m.info.id));
 
   const prompt = buildWorkPrompt(todo);
+  // Pattern-aware role tagging on the worker's prompt. When the run has
+  // pinned roles (orchestrator-worker, role-differentiated, debate-judge,
+  // critic-loop), the worker's assistant turn carries info.agent={role}
+  // so the roster + board chips show the role label rather than the
+  // default "build" opencode seeds on session create. Self-organizing
+  // patterns get an empty map → default agent name.
+  const roleBySID = roleNamesBySessionID(meta);
+  const role = roleBySID.get(sessionID);
   try {
-    await postSessionMessageServer(sessionID, meta.workspace, prompt);
+    await postSessionMessageServer(sessionID, meta.workspace, prompt, {
+      agent: role,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const outcome = retryOrStale(swarmRunID, todo, `prompt-send failed: ${message.slice(0, 160)}`);

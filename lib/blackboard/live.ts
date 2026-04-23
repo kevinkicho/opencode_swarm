@@ -259,53 +259,8 @@ export function deriveBoardAgents(
   return out;
 }
 
-// Pattern-aware mapping from ownerAgentId → pinned role name, using only
-// the run's meta. Hierarchical patterns pin roles by session position
-// (orchestrator-worker: session 0 = orchestrator; role-differentiated:
-// session N = teamRoles[N]; etc.). Self-organizing patterns return an
-// empty map — every session stays an equal worker. The coordinator's
-// ownerIdForSession convention is `ag_ses_<last8>` so we pre-compute that.
-export function roleNamesFromMeta(
-  meta:
-    | {
-        pattern: string;
-        sessionIDs: readonly string[];
-        teamRoles?: readonly string[];
-      }
-    | null
-    | undefined,
-): Map<string, string> {
-  const out = new Map<string, string>();
-  if (!meta) return out;
-  const ownerIdFor = (sid: string) => `ag_ses_${sid.slice(-8)}`;
-  switch (meta.pattern) {
-    case 'orchestrator-worker': {
-      meta.sessionIDs.forEach((sid, i) => {
-        out.set(ownerIdFor(sid), i === 0 ? 'orchestrator' : `worker-${i}`);
-      });
-      break;
-    }
-    case 'role-differentiated': {
-      meta.sessionIDs.forEach((sid, i) => {
-        const role = meta.teamRoles?.[i];
-        if (role) out.set(ownerIdFor(sid), role);
-      });
-      break;
-    }
-    case 'debate-judge': {
-      meta.sessionIDs.forEach((sid, i) => {
-        out.set(ownerIdFor(sid), i === 0 ? 'judge' : `generator-${i}`);
-      });
-      break;
-    }
-    case 'critic-loop': {
-      meta.sessionIDs.forEach((sid, i) => {
-        out.set(ownerIdFor(sid), i === 0 ? 'worker' : 'critic');
-      });
-      break;
-    }
-    // council, map-reduce, blackboard, deliberate-execute, none: no pinned
-    // roles at the pattern level — every session is a peer. Returns empty.
-  }
-  return out;
-}
+// Re-exported from lib/blackboard/roles.ts so existing callers that
+// import from live.ts don't need to update their import paths. The
+// shared helper lives in roles.ts because it's both client- and
+// server-needed — this file carries 'use client'.
+export { roleNamesFromMeta } from './roles';
