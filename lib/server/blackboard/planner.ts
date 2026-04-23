@@ -72,7 +72,9 @@ export interface PlannerSweepResult {
 // Mint matches the format used by POST /board (t_ + 8 hex chars). Collision
 // probability is ~10^-10 per run — adequate for prototype scale, matched
 // against a (run_id, id) UNIQUE constraint in SQL so conflicts surface.
-function mintItemId(): string {
+// Exported so other pattern orchestrators (deliberate-execute) can mint
+// consistent IDs when seeding the board from their own synthesis paths.
+export function mintItemId(): string {
   return 't_' + randomBytes(4).toString('hex');
 }
 
@@ -258,8 +260,10 @@ interface RawTodo {
 // Last todowrite among the given message IDs wins. Mirrors
 // transform.ts::toRunPlan's "latest call replaces the list" contract, but
 // scoped to just the sweep's new messages so a pre-existing todowrite from
-// an earlier turn doesn't leak into the board.
-function latestTodosFrom(
+// an earlier turn doesn't leak into the board. Exported for reuse by
+// other pattern orchestrators that need to extract todowrite-seeded
+// work from an arbitrary session turn (e.g. deliberate-execute synthesis).
+export function latestTodosFrom(
   messages: OpencodeMessage[],
   scopeMessageIDs: Set<string>,
 ): { todos: RawTodo[]; messageId: string } | null {

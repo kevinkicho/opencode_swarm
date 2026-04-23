@@ -35,6 +35,9 @@ import {
 } from '@/lib/server/map-reduce';
 import { runOrchestratorWorkerKickoff } from '@/lib/server/orchestrator-worker';
 import { runRoleDifferentiatedKickoff } from '@/lib/server/role-differentiated';
+import { runCriticLoopKickoff } from '@/lib/server/critic-loop';
+import { runDebateJudgeKickoff } from '@/lib/server/debate-judge';
+import { runDeliberateExecuteKickoff } from '@/lib/server/deliberate-execute';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -208,9 +211,10 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
       req.pattern !== 'blackboard' &&
       req.pattern !== 'orchestrator-worker' &&
       req.pattern !== 'role-differentiated' &&
+      req.pattern !== 'deliberate-execute' &&
       obj.persistentSweepMinutes > 0
     ) {
-      return `persistentSweepMinutes only applies to blackboard / orchestrator-worker / role-differentiated (got '${req.pattern}')`;
+      return `persistentSweepMinutes only applies to patterns with blackboard-style execution (got '${req.pattern}')`;
     }
     req.persistentSweepMinutes = obj.persistentSweepMinutes;
   }
@@ -527,6 +531,55 @@ export async function POST(req: NextRequest): Promise<Response> {
       const message = err instanceof Error ? err.message : String(err);
       console.warn(
         `[swarm/run] role-differentiated kickoff for ${runID} failed:`,
+        message,
+      );
+    });
+  }
+
+  // Step 9 (critic-loop only): prime the critic with its contract, kick
+  // the worker into producing a draft, loop review-revise until the
+  // critic approves or the max-iterations cap fires.
+  if (parsed.pattern === 'critic-loop') {
+    const runID = meta.swarmRunID;
+    runCriticLoopKickoff(runID, {
+      maxIterations: parsed.criticMaxIterations,
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[swarm/run] critic-loop kickoff for ${runID} failed:`,
+        message,
+      );
+    });
+  }
+
+  // Step 10 (debate-judge only): prime judge + generators, run up to
+  // debateMaxRounds rounds of generators-propose / judge-evaluate,
+  // terminating on WINNER / MERGE verdict or round cap.
+  if (parsed.pattern === 'debate-judge') {
+    const runID = meta.swarmRunID;
+    runDebateJudgeKickoff(runID, {
+      maxRounds: parsed.debateMaxRounds,
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[swarm/run] debate-judge kickoff for ${runID} failed:`,
+        message,
+      );
+    });
+  }
+
+  // Step 11 (deliberate-execute only): compositional pattern. Runs
+  // council-style deliberation rounds, synthesizes the converged drafts
+  // into concrete todos, then kicks into blackboard-style execution on
+  // the same session pool.
+  if (parsed.pattern === 'deliberate-execute') {
+    const runID = meta.swarmRunID;
+    runDeliberateExecuteKickoff(runID, {
+      persistentSweepMinutes: parsed.persistentSweepMinutes,
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[swarm/run] deliberate-execute kickoff for ${runID} failed:`,
         message,
       );
     });
