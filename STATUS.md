@@ -49,6 +49,13 @@ enough that scanning it doesn't match the actual state.
   but `tokens` is > 0, a subtle note clarifies that the zero reading
   is expected for Zen subscription bundle models (`big-pickle`),
   not a broken aggregation.
+- **JudgeVerdictStrip** for `debate-judge` runs. Parses the judge
+  session's latest text reply for `WINNER:` / `MERGE:` / `REVISE:`;
+  renders a colored strip above the composer (mint / iris / amber).
+  Click jumps timeline to the verdict message.
+- **CriticVerdictStrip** for `critic-loop` runs. Parses the critic
+  session for `APPROVED:` / `REVISE:` + shows the worker's iteration
+  counter ("round N of M"). Click jumps to the verdict message.
 
 ### 2026-04-23 — hierarchical patterns + overnight safety
 
@@ -151,15 +158,18 @@ Todo count raised to 6-15 with mix of sizes.
   2026-04-23 via `063d13c`. Coordinator now tags worker prompts with
   `agent={role}`, which flows through `info.agent` into the roster.
 
-- **Pattern-specific UI affordances — partial.** Council has
-  `ReconcileStrip` for human-reconcile + manual R2. Partial coverage
-  for the others:
-  - ✓ Phase-aware empty-state for deliberate-execute (2026-04-23) —
-    but only covers the pre-execution window; no round-N-of-M counter
-    while deliberation is in-flight
-  - Still missing: judge verdict strip for debate-judge
-  - Still missing: critic APPROVED/REVISE chip on the timeline
+- **Pattern-specific UI affordances — mostly there.** Council has
+  `ReconcileStrip` for human-reconcile + manual R2. Coverage added
+  2026-04-23:
+  - ✓ Phase-aware empty-state for deliberate-execute — covers the
+    pre-execution window; no round-N-of-M counter while deliberation
+    is in-flight
+  - ✓ JudgeVerdictStrip for debate-judge — parses WINNER/MERGE/REVISE
+  - ✓ CriticVerdictStrip for critic-loop — APPROVED/REVISE + iteration
+  - Still missing: round-of-M counter for deliberate-execute DURING
+    deliberation (phase state not persisted)
   - Still missing: orchestrator "suggested actions" affordance
+    (re-strategize / escalate / status-report nudges)
 
 - **Cross-run comparisons only exist in `demo-log/` markdown.** The
   `/projects` matrix route shows activity by repo × day, but there's no
@@ -193,11 +203,13 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Next-up (high leverage, < 1 day each)
 
-- **Pattern-specific UI strips** (~ 2-3 h each). Judge verdict strip for
-  `debate-judge`. Critic verdict chip for `critic-loop`. Round-of-N
-  counter for deliberate-execute DURING deliberation (the empty-state
-  fix covers the "is this broken?" optics but not mid-round progress).
-  Still meaningfully improve observability.
+- **Remaining pattern-specific UI** (~ 2-3 h each):
+  - Round-of-N counter for deliberate-execute DURING deliberation
+    (needs phase state persisted server-side or inferred from
+    message counts)
+  - Orchestrator "suggested actions" affordance (`re-strategize` /
+    `escalate` / `status-report` buttons posting canned prompts to
+    session 0)
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the picker does

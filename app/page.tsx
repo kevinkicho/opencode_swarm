@@ -80,6 +80,8 @@ import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
 import { ReconcileStrip } from '@/components/reconcile-strip';
 import { SynthesisStrip } from '@/components/synthesis-strip';
+import { JudgeVerdictStrip } from '@/components/judge-verdict-strip';
+import { CriticVerdictStrip } from '@/components/critic-verdict-strip';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
@@ -880,6 +882,20 @@ function PageBody({
         sessionCount={swarmRunMeta?.sessionIDs.length ?? 0}
         onFocus={focusMessage}
         focusedMsgId={focusedMsgId}
+      />
+
+      <JudgeVerdictStrip
+        agents={agents}
+        messages={messages}
+        meta={swarmRunMeta}
+        onFocus={focusMessage}
+      />
+
+      <CriticVerdictStrip
+        agents={agents}
+        messages={messages}
+        meta={swarmRunMeta}
+        onFocus={focusMessage}
       />
 
       {costCapBlock && (
