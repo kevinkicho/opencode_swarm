@@ -5,8 +5,7 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import {
   deriveBoardAgents,
-  useLiveBoard,
-  useLiveTicker,
+  type LiveBoard,
   type LiveTicker,
   type TickerState,
 } from '@/lib/blackboard/live';
@@ -79,13 +78,19 @@ const SECTIONS: Section[] = [
 
 export function BoardRail({
   swarmRunID,
+  live,
+  ticker,
   embedded = false,
 }: {
   swarmRunID: string;
+  // Live data passed in from a parent that owns the SSE subscription.
+  // Keeping the hooks above this component means the connection stays
+  // open when the board tab isn't active — no re-handshake lag when
+  // the user toggles tabs.
+  live: LiveBoard;
+  ticker: LiveTicker;
   embedded?: boolean;
 }) {
-  const live = useLiveBoard(swarmRunID);
-  const ticker = useLiveTicker(swarmRunID);
   const items = live.items ?? [];
 
   const agents = useMemo(() => deriveBoardAgents(items), [items]);

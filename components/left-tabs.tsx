@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
+import { useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
@@ -83,6 +84,18 @@ export function LeftTabs({
   const agentsActive = agents.filter(
     (a) => a.status === 'working' || a.status === 'thinking'
   ).length;
+
+  // Keep the SSE subscriptions alive regardless of which tab is active.
+  // Previously useLiveBoard / useLiveTicker lived inside BoardRail, so
+  // every tab switch unmounted the component → closed the EventSource
+  // → new connection + snapshot re-fetch on re-mount, visible as a
+  // ~300ms gap before items painted. Hoisting the hooks here means
+  // the connection stays open for the lifetime of the left rail, and
+  // BoardRail reads from passed-in live data. When boardSwarmRunID is
+  // null (non-blackboard run) both hooks short-circuit to empty state
+  // and don't open a connection, so the cost for other patterns is 0.
+  const live = useLiveBoard(boardSwarmRunID ?? null);
+  const ticker = useLiveTicker(boardSwarmRunID ?? null);
 
   return (
     // overflow-hidden moved OFF this section: it was clipping the inset
@@ -198,7 +211,12 @@ export function LeftTabs({
           />
         )}
         {tab === 'board' && boardSwarmRunID && (
-          <BoardRail swarmRunID={boardSwarmRunID} embedded />
+          <BoardRail
+            swarmRunID={boardSwarmRunID}
+            live={live}
+            ticker={ticker}
+            embedded
+          />
         )}
         {tab === 'heat' && (
           <HeatRail
