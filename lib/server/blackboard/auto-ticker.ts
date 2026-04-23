@@ -40,6 +40,8 @@
 
 import { getRun } from '../swarm-registry';
 import { tickCoordinator, type TickOutcome } from './coordinator';
+import { runPlannerSweep } from './planner';
+import { listBoardItems } from './store';
 
 const DEFAULT_INTERVAL_MS = 10_000;
 const IDLE_TICKS_BEFORE_STOP = 6;
@@ -66,6 +68,15 @@ interface TickerState {
   // aren't added mid-run in today's model. Empty until first fanout populates.
   sessionIDs: string[];
   slots: Map<string, PerSessionSlot>;
+  // Re-sweep bookkeeping. Before auto-idling we give the planner ONE
+  // more chance to emit follow-up todos — e.g. the first batch's work
+  // surfaced new refactoring opportunities. `resweepInFlight` guards
+  // against re-entrant re-sweep calls from concurrent session ticks
+  // all hitting the auto-idle threshold at once; `resweepAttempted`
+  // keeps us from re-sweeping forever if the second batch also
+  // completes without discovering new work.
+  resweepInFlight: boolean;
+  resweepAttempted: boolean;
 }
 
 type TickerMap = Map<string, TickerState>;
@@ -137,10 +148,27 @@ async function tickSession(
       slots.length > 0 &&
       slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP)
     ) {
-      console.log(
-        `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle for ${IDLE_TICKS_BEFORE_STOP} ticks — stopping`,
-      );
-      stopAutoTicker(state.swarmRunID, 'auto-idle');
+      // Before stopping, give the planner one more chance to emit new
+      // todos based on current repo state. A typical smoke: the first
+      // batch of 8 todos drains, idle ticks accumulate, we'd normally
+      // stop — but the work may have surfaced refactoring opportunities
+      // the planner now sees. If the re-sweep produces open items, the
+      // idle counters reset and the ticker keeps going. If not, stop.
+      if (!state.resweepAttempted && !state.resweepInFlight) {
+        state.resweepInFlight = true;
+        console.log(
+          `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle — triggering one re-sweep before stopping`,
+        );
+        // Fire-and-forget so this tick doesn't block. The background
+        // re-sweep reads board state and either seeds new todos or
+        // confirms the run is genuinely complete.
+        void attemptReSweep(state);
+      } else if (state.resweepAttempted) {
+        console.log(
+          `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle post-resweep — stopping`,
+        );
+        stopAutoTicker(state.swarmRunID, 'auto-idle');
+      }
     }
   } catch (err) {
     // tickCoordinator's declared return type is TickOutcome (it wraps its
@@ -169,6 +197,42 @@ async function fanout(swarmRunID: string): Promise<void> {
   // guard, so slow sessions don't block fast ones.
   for (const sessionID of s.sessionIDs) {
     void tickSession(s, sessionID);
+  }
+}
+
+// Run planner sweep once. If it seeds new open items, reset every
+// slot's idle counter so the next tick picks them up. If not, mark
+// resweepAttempted so the next auto-idle cascade stops for real.
+async function attemptReSweep(state: TickerState): Promise<void> {
+  const swarmRunID = state.swarmRunID;
+  try {
+    const beforeOpen = listBoardItems(swarmRunID).filter(
+      (i) => i.status === 'open',
+    ).length;
+    const result = await runPlannerSweep(swarmRunID);
+    const afterOpen = listBoardItems(swarmRunID).filter(
+      (i) => i.status === 'open',
+    ).length;
+    const newlyOpen = afterOpen - beforeOpen;
+    if (newlyOpen > 0) {
+      console.log(
+        `[board/auto-ticker] ${swarmRunID}: re-sweep seeded ${newlyOpen} new open todo(s) — resetting idle counters`,
+      );
+      for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
+    } else {
+      console.log(
+        `[board/auto-ticker] ${swarmRunID}: re-sweep produced no new work (planner returned ${result.items.length} total items)`,
+      );
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[board/auto-ticker] ${swarmRunID}: re-sweep threw:`,
+      message,
+    );
+  } finally {
+    state.resweepAttempted = true;
+    state.resweepInFlight = false;
   }
 }
 
@@ -233,6 +297,8 @@ export function startAutoTicker(
     startedAtMs: Date.now(),
     sessionIDs,
     slots,
+    resweepInFlight: false,
+    resweepAttempted: false,
   });
 }
 

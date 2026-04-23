@@ -83,6 +83,78 @@ async function sha7(absPath: string): Promise<string> {
   return createHash('sha1').update(buf).digest('hex').slice(0, 7);
 }
 
+// Stale-retry budget. When a worker times out or errors on a todo,
+// instead of terminating the todo as `stale` forever, requeue it as
+// `open` so another tick can pick it up. The retry count is stored in
+// the todo's note — after MAX_STALE_RETRIES, the item stays stale.
+//
+// Why: a single transient failure (slow tool call, temporarily-offline
+// upstream, hit a 5-min deadline mid-work) shouldn't drop the todo from
+// the swarm's work queue. The user was explicit about wanting stale
+// items to not "die silently."
+const MAX_STALE_RETRIES = 2;
+const RETRY_TAG_RE = /^\[retry:(\d+)\]\s*/;
+
+function currentRetryCount(note: string | null | undefined): number {
+  if (!note) return 0;
+  const m = RETRY_TAG_RE.exec(note);
+  return m ? Number(m[1]) : 0;
+}
+
+// Transition an in-progress item into either `open` (retry) or `stale`
+// (final) based on accumulated retry count in the note field. Preserves
+// the failure reason in the note so inspector / rail views still show
+// why the previous attempt failed.
+function retryOrStale(
+  swarmRunID: string,
+  item: BoardItem,
+  reason: string,
+): 'retry' | 'stale' {
+  const retries = currentRetryCount(item.note);
+  if (retries < MAX_STALE_RETRIES) {
+    const nextNote = `[retry:${retries + 1}] ${reason}`.slice(0, 200);
+    transitionStatus(swarmRunID, item.id, {
+      from: 'in-progress',
+      to: 'open',
+      ownerAgentId: null,
+      fileHashes: null,
+      note: nextNote,
+    });
+    return 'retry';
+  }
+  transitionStatus(swarmRunID, item.id, {
+    from: 'in-progress',
+    to: 'stale',
+    note: `[final after ${retries} retries] ${reason}`.slice(0, 200),
+  });
+  return 'stale';
+}
+
+// File-path-ish tokens inside a todo's content. Used to detect overlap
+// with an in-progress item's content so two sessions don't trample each
+// other's files. Matches: dir-ish (src/foo/bar), file-ish with common
+// extensions, and bare basenames ≥4 chars with an extension. Tokens
+// under 4 chars are skipped — "ts" / "js" would be noise.
+const PATH_TOKEN_RE = /[a-zA-Z_][\w.-]*(?:\/[\w.-]+)+\/?|\b\w{4,}\.(?:ts|tsx|js|jsx|py|go|rs|md|css|html|json|yaml|yml|toml)\b/g;
+
+function extractPathTokens(content: string): Set<string> {
+  const out = new Set<string>();
+  const matches = content.match(PATH_TOKEN_RE) ?? [];
+  for (const m of matches) out.add(m.replace(/\\/g, '/').replace(/\/$/, ''));
+  return out;
+}
+
+function pathOverlaps(a: Set<string>, b: Set<string>): boolean {
+  for (const x of a) {
+    for (const y of b) {
+      if (x === y) return true;
+      if (x.startsWith(y + '/')) return true; // y is ancestor of x
+      if (y.startsWith(x + '/')) return true; // x is ancestor of y
+    }
+  }
+  return false;
+}
+
 // Stigmergy v1 — pheromone-weighted pick. Score a todo by summing the
 // edit counts of heat entries whose path or containing dir or basename
 // appears in the todo's content. Three match tiers:
@@ -316,7 +388,33 @@ export async function tickCoordinator(
     if (a.score !== b.score) return a.score - b.score;
     return a.todo.createdAtMs - b.todo.createdAtMs;
   });
-  const todo = scored[0].todo;
+
+  // Overlap avoidance: prefer todos whose parsed file/dir tokens
+  // don't collide with any currently in-progress item's tokens. If
+  // every candidate overlaps, fall back to the heat-weighted top
+  // (can't deadlock — something has to move). Only kicks in when
+  // at least one candidate is non-overlapping, so runs with
+  // abstract todos (no paths in content) still pick normally.
+  const inProgressTokens = all
+    .filter((i) => i.status === 'in-progress' || i.status === 'claimed')
+    .map((i) => extractPathTokens(i.content));
+  const nonOverlap = scored.filter((s) => {
+    if (inProgressTokens.length === 0) return true;
+    const tokens = extractPathTokens(s.todo.content);
+    if (tokens.size === 0) return true; // abstract todo — no overlap to measure
+    return !inProgressTokens.some((other) => pathOverlaps(tokens, other));
+  });
+  const finalQueue = nonOverlap.length > 0 ? nonOverlap : scored;
+  if (nonOverlap.length === 0 && inProgressTokens.length > 0 && scored.length > 0) {
+    console.log(
+      `[coordinator] all open todos overlap in-progress work — picking heat-top anyway`,
+    );
+  } else if (nonOverlap.length < scored.length) {
+    console.log(
+      `[coordinator] skipped ${scored.length - nonOverlap.length} todo(s) to avoid in-progress overlap`,
+    );
+  }
+  const todo = finalQueue[0].todo;
   if (heatWeightedPick && scored[0].score !== scored[scored.length - 1].score) {
     // Log only when heat actually changed the order — diagnostic signal
     // that stigmergy fired. Quiet otherwise to avoid log spam on runs
@@ -371,12 +469,8 @@ export async function tickCoordinator(
     await postSessionMessageServer(sessionID, meta.workspace, prompt);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    transitionStatus(swarmRunID, todo.id, {
-      from: 'in-progress',
-      to: 'stale',
-      note: `prompt-send failed: ${message.slice(0, 160)}`,
-    });
-    return { status: 'stale', sessionID, itemID: todo.id, reason: message };
+    const outcome = retryOrStale(swarmRunID, todo, `prompt-send failed: ${message.slice(0, 160)}`);
+    return { status: 'stale', sessionID, itemID: todo.id, reason: `${outcome}: ${message}` };
   }
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
@@ -390,12 +484,8 @@ export async function tickCoordinator(
 
   if (!waited.ok) {
     const reason = waited.reason === 'timeout' ? 'turn timed out' : 'turn errored';
-    transitionStatus(swarmRunID, todo.id, {
-      from: 'in-progress',
-      to: 'stale',
-      note: reason,
-    });
-    return { status: 'stale', sessionID, itemID: todo.id, reason };
+    const outcome = retryOrStale(swarmRunID, todo, reason);
+    return { status: 'stale', sessionID, itemID: todo.id, reason: `${outcome}: ${reason}` };
   }
 
   const rawEditedPaths = extractEditedPaths(waited.messages, waited.newIDs);
