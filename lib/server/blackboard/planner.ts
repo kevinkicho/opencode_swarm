@@ -59,38 +59,100 @@ function mintItemId(): string {
   return 't_' + randomBytes(4).toString('hex');
 }
 
-// Prompt rewrite 2026-04-22: the original version said "Use the todowrite
-// tool to output your list" but left the model free to grep/glob/read first.
-// On a directive like "audit for typos" a well-behaved model interprets
-// "audit" as "verify before claiming" — it explored the repo for 30+ turns
-// before calling todowrite, which blew the sweep timeout. The rewrite forces
-// todowrite as the very first tool call and explicitly names the read-side
-// tools (grep, glob, read) as forbidden for this turn. Exploration is the
-// claim-executor's job, not the planner's.
-function buildPlannerPrompt(directive: string | undefined): string {
+// Prompt history:
+// 2026-04-22 (first):  "Use the todowrite tool" — left model free to explore.
+//   Went 30+ turns before calling todowrite on "audit for typos" and blew
+//   the sweep timeout. Second tightening below.
+// 2026-04-22 (second): "todowrite MUST be your FIRST tool call, no reads
+//   allowed." Fixed the blow-up but left the planner blind — for periodic
+//   re-sweeps the planner couldn't see what changed and just re-proposed
+//   stale directive-flavored todos.
+// 2026-04-22 (current): bounded exploration (up to 5 read-side calls) plus
+//   board-state context for re-sweeps. The 5-min deadline + abort-on-timeout
+//   from runPlannerSweep is the real runaway guard; the call-count cap here
+//   is advisory. Count raised from 5-8 to 10-15 so larger teams (6+ agents)
+//   don't idle between sweeps.
+function buildPlannerPrompt(
+  directive: string | undefined,
+  boardContext?: PlannerBoardContext,
+): string {
   const base =
     directive?.trim() ||
     'Survey the codebase and propose concrete next steps.';
-  return [
+
+  const sections: string[] = [
     'Blackboard planner sweep.',
     '',
     `Directive: ${base}`,
     '',
-    'Your task: call the todowrite tool ONCE, immediately, with 5-8 atomic',
-    'todos for the directive above. Each todo is one concrete change a',
-    'single agent can claim and complete without blocking others. Prefer',
-    'small file-scoped edits over cross-cutting refactors. Rewrite vague',
-    'asks into specific, verifiable steps.',
+  ];
+
+  if (boardContext) {
+    const doneLines = boardContext.doneSummaries.length
+      ? boardContext.doneSummaries.map((s, i) => `  ${i + 1}. ${s}`).join('\n')
+      : '  (none)';
+    const activeLines = boardContext.activeSummaries.length
+      ? boardContext.activeSummaries.map((s, i) => `  ${i + 1}. ${s}`).join('\n')
+      : '  (none)';
+    sections.push(
+      'This is a re-sweep. The board already has state:',
+      '',
+      'COMPLETED — do NOT re-propose these:',
+      doneLines,
+      '',
+      'OPEN / IN-PROGRESS — other agents are working on these, do NOT duplicate:',
+      activeLines,
+      '',
+    );
+  }
+
+  sections.push(
+    'Your task: call the todowrite tool with 10-15 atomic todos that are',
+    'NEW (not duplicates of the lists above, if any). Each todo is one',
+    'concrete change a single agent can claim and complete in 5-20 min of',
+    'focused work. Prefer small file-scoped edits over cross-cutting refactors.',
+    'Rewrite vague asks into specific, verifiable steps.',
+    '',
+    'Workspace exploration:',
+    '- You MAY run up to 5 grep / glob / read tool calls to scan the current',
+    '  workspace state before calling todowrite. Sample strategically — do',
+    '  not exhaustively read every file. This is especially useful for a',
+    '  re-sweep, where the codebase has evolved and new opportunities may',
+    '  have surfaced since the prior plan.',
+    '- todowrite must fire within your first 6 tool calls total. Do not',
+    '  explore indefinitely — the sweep aborts after 5 minutes.',
     '',
     'Rules:',
-    '- todowrite must be your FIRST tool call. Do not grep, glob, read, or',
-    '  bash before it. Do not explore the repo to verify the directive.',
-    '- Do not edit files. Do not call task or bash.',
-    '- You are planning only. Other agents will claim each todo and do the',
-    '  exploration + implementation.',
+    '- Do not edit files. Do not call task, bash, or any write-side tools.',
+    '- Other agents will claim each todo and do the full implementation.',
     '',
     'Call todowrite now.',
-  ].join('\n');
+  );
+
+  return sections.join('\n');
+}
+
+export interface PlannerBoardContext {
+  doneSummaries: string[];
+  activeSummaries: string[];
+}
+
+// Build compact board context for a re-sweep prompt. Caps at 50 per
+// bucket and truncates individual summaries at 120 chars to keep the
+// prompt from ballooning over a long-running run.
+export function buildPlannerBoardContext(swarmRunID: string): PlannerBoardContext {
+  const all = listBoardItems(swarmRunID);
+  const truncate = (s: string) =>
+    s.length > 120 ? s.slice(0, 117).trimEnd() + '…' : s;
+  const done = all
+    .filter((i) => i.status === 'done')
+    .slice(-50)
+    .map((i) => truncate(i.content));
+  const active = all
+    .filter((i) => i.status === 'open' || i.status === 'claimed' || i.status === 'in-progress')
+    .slice(-50)
+    .map((i) => truncate(i.content));
+  return { doneSummaries: done, activeSummaries: active };
 }
 
 interface RawTodo {
@@ -130,7 +192,14 @@ function latestTodosFrom(
 
 export async function runPlannerSweep(
   swarmRunID: string,
-  opts: { timeoutMs?: number; overwrite?: boolean } = {},
+  opts: {
+    timeoutMs?: number;
+    overwrite?: boolean;
+    // When true, prepend the current board's done/open summaries to the
+    // planner prompt and raise todo novelty. Used by re-sweeps so the
+    // model stops proposing duplicates of already-done work.
+    includeBoardContext?: boolean;
+  } = {},
 ): Promise<PlannerSweepResult> {
   const meta = await getRun(swarmRunID);
   if (!meta) throw new Error(`run not found: ${swarmRunID}`);
@@ -150,7 +219,10 @@ export async function runPlannerSweep(
   const before = await getSessionMessagesServer(sessionID, meta.workspace);
   const knownIDs = new Set(before.map((m) => m.info.id));
 
-  const prompt = buildPlannerPrompt(meta.directive);
+  const boardContext = opts.includeBoardContext
+    ? buildPlannerBoardContext(swarmRunID)
+    : undefined;
+  const prompt = buildPlannerPrompt(meta.directive, boardContext);
   await postSessionMessageServer(sessionID, meta.workspace, prompt);
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;

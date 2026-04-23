@@ -256,7 +256,15 @@ async function attemptReSweep(state: TickerState): Promise<void> {
     const beforeOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
     ).length;
-    const result = await runPlannerSweep(swarmRunID);
+    // overwrite: true so the "board already populated" guard in the
+    // planner doesn't throw — the board intentionally has items at this
+    // point (the drained initial batch). includeBoardContext: true so
+    // the planner sees what's already done/pending and proposes new work
+    // instead of duplicates.
+    const result = await runPlannerSweep(swarmRunID, {
+      overwrite: true,
+      includeBoardContext: true,
+    });
     const afterOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
     ).length;
@@ -298,7 +306,14 @@ async function runPeriodicSweep(state: TickerState): Promise<void> {
     const beforeOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
     ).length;
-    const result = await runPlannerSweep(swarmRunID);
+    // overwrite: true bypasses the "board already populated" planner
+    // guard. includeBoardContext: true feeds the planner the already-
+    // done list so it stops re-proposing stale items — critical over an
+    // 8h run where the same things would otherwise get suggested 24×.
+    const result = await runPlannerSweep(swarmRunID, {
+      overwrite: true,
+      includeBoardContext: true,
+    });
     const afterOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
     ).length;
