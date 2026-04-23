@@ -397,9 +397,9 @@ function ObservationTooltip() {
         <div className="font-mono text-[10.5px] text-fog-400 leading-snug">
           no{' '}
           <span className="text-fog-700 line-through">
-            roles, derived shapes, if role=X then provider=Y
+            if role=X then provider=Y
           </span>
-          . any label applied to behavior — prescribed or inferred — reproduces the supervisor-worker dialectic the swarm refuses. agents route themselves; humans observe and bound.
+          . roles exist on hierarchical patterns (orchestrator-worker, debate+judge, critic loops) where they scope <em>what</em> an agent does — but bounds (cost, time, workspace) still drive <em>which</em> model runs. system-minted "shape" readouts derived from behavior are still off-limits.
         </div>
       </div>
 

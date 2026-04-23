@@ -99,15 +99,17 @@ The composer is a single-line dispatch field with a target picker. We rejected:
 
 ---
 
-## Not a role-assigning system
+## Not a "one-size-fits-all roles" system
 
-Agents have **no `role` field** and no system-minted "shape" readout. We rejected both:
-- ❌ Prescribed roles — `orchestrator` / `architect` / `coder` / `reviewer` pinned at spawn and routed on
-- ❌ Inferred shapes — system-derived labels like "planner-shaped" / "implementer-shaped" / "coordinator-shaped" computed from observed behavior
+Roles are **pattern-scoped, not universal**. Self-organizing runs (blackboard, council, stigmergy) have no pinned roles — agents self-select what to work on. Hierarchical runs (orchestrator-worker, role differentiation, debate+judge, critic loops) have explicit roles (`orchestrator`, `worker`, `judge`, `critic`, etc.) because those patterns need them to function. The human picks the pattern that fits the work; the pattern decides whether roles apply.
 
-Identity is **a name + an optional self-authored focus line**. That's it. Any role interpretation happens in the human observer's head, not in data. The earlier prototype had `AgentRole`; it's been removed. The earlier DESIGN.md sketched a "derived shapes" observation readout; that's been removed too.
+We still reject:
+- ❌ **System-minted "shape" readouts** — inferred labels like "planner-shaped" / "implementer-shaped" computed from observed behavior, applied without pattern context. If a pattern says an agent has a role, the role is declared; nothing is ever derived post-hoc by the system and surfaced as if it were real.
+- ❌ **Role as a routing proxy** — `if role=X → provider=Y`. Role scopes *what* an agent does within its pattern; bounds (cost, time, workspace) still drive *which model* gets used.
 
-**Why:** role labels — *prescribed or inferred* — reproduce the supervisor-worker dialectic the swarm refuses. Pinning roles forecloses emergent collaboration; inferring them projects structure onto freeform behavior and makes it look like the system is in charge of who does what. See `DESIGN.md` §1 and §9. The `observation` eyebrow tooltip in the routing modal is the in-product reminder.
+Identity base: **name + optional self-authored focus line**, with an optional **role** added by hierarchical patterns. On self-organizing runs, roles stay empty. The `observation` eyebrow tooltip in the routing modal explains the difference in-product.
+
+*History note (2026-04-23):* this section previously rejected roles in all forms on a "no supervisor-worker dialectic" principle. Reversed after extended runs demonstrated that hierarchical patterns produce stronger work for mission-shaped tasks. See DESIGN.md §1 and `memory/feedback_no_role_hierarchy.md`.
 
 ---
 

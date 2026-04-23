@@ -275,41 +275,95 @@ the human.
 
 ---
 
-## Patterns explicitly rejected
+## Hierarchical patterns
 
-These are role-pinning shapes. See `WHAT_THIS_PROJECT_IS_NOT.md` "Not a
-role-assigning system" and DESIGN.md §1 / §9 before attempting any.
+> **Status 2026-04-23.** The prior stance — "these are role-pinning shapes
+> and therefore rejected" — was superseded at the user's direction. All
+> four patterns below are legitimate design choices for runs whose work
+> benefits from explicit role structure. See DESIGN.md §1 "On roles" and
+> `memory/feedback_no_role_hierarchy.md` for the rationale. Implementation
+> status ranges from `[ ]` designed-but-not-built through `[~]` partial to
+> `[x]` shipped.
 
-### Role differentiation `[✗]`
+### 5. Orchestrator–worker `[~]` — pilot for the hierarchical branch
 
-Prescribed system prompts per agent — architect / tester /
-security-reviewer / … pinned at spawn. This is the exact
-"orchestrator / architect / coder / reviewer" prescription the project
-rejects. If you want diversity of perspective, use **Council #4** —
-independent drafts without role pinning beat role-prescribed drafts
-empirically, and leave the project stance intact.
+One "orchestrator" session plans + dispatches; N worker sessions claim
+and implement. Shares the blackboard's board-store + ticker machinery;
+the only structural difference is a pinned planner role (session 0) and
+a worker-only dispatch picker (sessions 1..N). The human can message
+the orchestrator directly to re-strategize mid-run — workers don't
+receive direct prompts.
 
-### Orchestrator–worker hierarchy `[✗]`
+Why this shape: long-running missions with a clear "mind-vs-hands" split
+benefit from a single reasoning surface owning the strategic layer while
+workers focus on focused execution. The 2026-04-23 overnight run
+diagnosed this gap — the blackboard's autonomous planner-sweep pass
+produced competent-but-unambitious todos because nobody owned the
+mission the way a persistent orchestrator would.
 
-One "lead" agent plans and dispatches to workers. User framed as
-"reproduction of master-slave dialectic" (see
-`memory/feedback_no_role_hierarchy.md`). The related inferred-shape
-variant ("planner-shaped" readouts) was also removed from an earlier
-DESIGN.md draft. If you want *parallelism with one planner*, use
-**Map-reduce #3** — the planner is a phase, not a pinned agent.
+**opencode fit.** N+1 sessions under one run. Session 0 seeded with an
+orchestrator prompt that explains its authority + the worker roster.
+Workers dispatched via the same board-claim mechanics as blackboard.
 
-### Debate + judge `[✗]`
+### 6. Role differentiation `[ ]`
 
-Two agents argue opposite positions, a judge scores. The judge is a
-pinned evaluator role. Use **Council #4** with human reconcile via the
-permission strip if you need a binary decision surface.
+Prescribed system prompts per agent — architect, tester,
+security-reviewer, ux, data-modeler, etc. Each worker session carries a
+pinned role that shapes its self-introduction and biases what kinds of
+todos it prefers to claim. Board items can optionally be tagged with
+preferred roles (`role: 'tester'`) so the picker routes accordingly.
 
-### Critic / evaluator / Reflexion loops `[✗]`
+Good fit when the work has clear sub-disciplines (frontend/backend,
+code/docs/tests). Less useful on uniformly-shaped work where every
+agent needs the same toolset.
 
-Worker → critic → worker revise. The critic is a pinned reviewer role.
-The same feedback loop runs without pinning inside **Blackboard #1**:
-any idle agent can claim a `review` todo posted by the worker — the
-reviewer emerges from who's free, not from a role slot.
+### 7. Debate + judge `[ ]`
+
+Two or more generator sessions produce competing answers; one judge
+session evaluates and selects / merges / rejects. Extends the Council
+pattern by adding a decision surface instead of leaving reconcile to
+the human. Useful for binary or scored decisions where the quality
+signal is legible (choosing between two refactor approaches, picking
+an API shape).
+
+The judge role MUST be visible — users need to know which session is
+arbitrating. Consider surfacing the judge's rationale as a `reconcile`
+item on the board so the decision audit-trails.
+
+### 8. Critic / Reflexion loops `[ ]`
+
+Worker produces a draft → pinned critic reviews → worker revises. N
+iterations. The critic is stable across the run (same session each
+time) so its feedback accrues context — it's not just a one-shot review.
+
+Trade-off: can loop indefinitely if the critic's bar is unclear.
+Always set a max-iterations cap (e.g. 3) and a "ship current draft"
+fallback. Best on outputs where quality is non-binary — essays,
+architectural decisions, UX copy — and a human wouldn't obviously spot
+the right answer on first pass.
+
+### 9. Deliberate → Execute `[ ]` (compositional)
+
+Council phase 1 for divergent drafts → council phase 2 for convergence
+→ automatic handoff to a blackboard phase for execution. The
+handoff extracts concrete work items from the converged drafts and
+seeds a blackboard board; workers then drain them.
+
+Good fit for "think deeply, then build" missions where the initial
+framing matters more than implementation speed. Higher token cost than
+straight blackboard.
+
+---
+
+## Historical note: patterns once explicitly rejected
+
+Up through 2026-04-22, the four hierarchical patterns above (orchestrator-
+worker, role differentiation, debate+judge, critic loops) were listed
+here as `[✗]` with rationale tied to the "no supervisor-worker dialectic"
+stance. The stance was reversed 2026-04-23; the patterns moved up into
+the main catalog. If you find a reference to the rejected list in older
+docs or code comments, it's stale — the stance no longer forbids these
+shapes.
 
 ---
 

@@ -5,7 +5,7 @@ Briefing for Claude Code (and any agent that respects this convention) opening t
 ## Read these first
 1. **`DESIGN.md`** — vision, mental model, opencode SDK vocabulary, data contracts, backend wiring plan, decisions already made. Do not write code without reading it.
 2. **`WHAT_THIS_PROJECT_IS_NOT.md`** — design choices we explicitly rejected. Read before "fixing" something that looks missing — it may be missing on purpose.
-3. **`SWARM_PATTERNS.md`** — orchestration pattern catalog (blackboard, map-reduce, council, stigmergy) and the rejected list (role differentiation, orchestrator-worker, debate/judge, critic loops). Read before building multi-session coordination or preset picker UI.
+3. **`SWARM_PATTERNS.md`** — orchestration pattern catalog. Both self-organizing patterns (blackboard, map-reduce, council, stigmergy) and hierarchical patterns (orchestrator-worker, role differentiation, debate+judge, critic loops) are legitimate — picked per run based on the work's shape, not a project-level ideology. The earlier "rejected list" was retired 2026-04-23. Read before building multi-session coordination or preset picker UI.
 4. **`docs/ARCHITECTURE.md`** — runtime data-flow, component role map, extension recipes, debugging playbook. Start here when debugging or extending — the operational companion to DESIGN.md's static contracts.
 5. **`docs/opencode-vocabulary.md`** — canonical opencode SDK part / tool / event names. Use these instead of inventing new terms.
 
