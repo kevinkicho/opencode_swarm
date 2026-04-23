@@ -79,6 +79,12 @@ export interface ModelRef {
 
 export interface Agent {
   id: string;
+  // Opencode sessionID that owns this agent, set by toAgents for live
+  // data. Undefined in mock fixtures. Lookups that need to go from a
+  // sessionID (heat rail, turn cards) to its agent should use this —
+  // agent.id itself is derived (ag_<name>_<last8>) and isn't the
+  // sessionID.
+  sessionID?: string;
   name: string;
   model: ModelRef;
   status: AgentStatus;

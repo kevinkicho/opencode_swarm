@@ -79,7 +79,12 @@ export function HeatRail({
   onSelect?: (heat: FileHeat) => void;
   embedded?: boolean;
 }) {
-  const agentById = new Map(agents.map((a) => [a.id, a]));
+  // Heat entries carry raw opencode sessionIDs; agents are keyed by a
+  // derived `ag_<name>_<last8>` id. Build a reverse map via agent.sessionID
+  // so per-file toucher badges resolve correctly. Fallback to empty map
+  // if an agent doesn't carry sessionID (mock fixtures).
+  const agentBySession = new Map<string, Agent>();
+  for (const a of agents) if (a.sessionID) agentBySession.set(a.sessionID, a);
   const maxCount = Math.max(1, ...heat.map((h) => h.editCount));
 
   const body = (
@@ -95,7 +100,7 @@ export function HeatRail({
             heat={h}
             workspace={workspace}
             maxCount={maxCount}
-            agentById={agentById}
+            agentBySession={agentBySession}
             onSelect={onSelect}
           />
         ))
@@ -124,13 +129,13 @@ function HeatRow({
   heat,
   workspace,
   maxCount,
-  agentById,
+  agentBySession,
   onSelect,
 }: {
   heat: FileHeat;
   workspace: string;
   maxCount: number;
-  agentById: Map<string, Agent>;
+  agentBySession: Map<string, Agent>;
   onSelect?: (heat: FileHeat) => void;
 }) {
   const displayPath = stripWorkspace(heat.path, workspace);
@@ -149,7 +154,7 @@ function HeatRow({
           : 'bg-fog-700';
 
   const touchers = heat.sessionIDs
-    .map((sid) => agentById.get(sid))
+    .map((sid) => agentBySession.get(sid))
     .filter((a): a is Agent => a !== undefined);
 
   return (

@@ -47,7 +47,11 @@ export function Inspector({
       ) : selectedAgent ? (
         <AgentInspector agent={selectedAgent} messages={messages} onFocus={onFocus} />
       ) : selectedFileHeat ? (
-        <FileHeatInspector heat={selectedFileHeat} workspace={workspace} agents={agentMap} />
+        <FileHeatInspector
+          heat={selectedFileHeat}
+          workspace={workspace}
+          agents={agents}
+        />
       ) : (
         <EmptyState />
       )}
@@ -730,8 +734,11 @@ function FileHeatInspector({
 }: {
   heat: FileHeat;
   workspace: string;
-  agents: Map<string, Agent>;
+  agents: Agent[];
 }) {
+  // Reverse sessionID → agent map (see heat-rail for the same pattern).
+  const agentBySession = new Map<string, Agent>();
+  for (const a of agents) if (a.sessionID) agentBySession.set(a.sessionID, a);
   const np = heat.path.replace(/\\/g, '/').replace(/\/+$/, '');
   const nw = workspace.replace(/\\/g, '/').replace(/\/+$/, '');
   const relPath = nw && np.startsWith(nw + '/') ? np.slice(nw.length + 1) : np;
@@ -740,7 +747,7 @@ function FileHeatInspector({
   const base = lastSlash >= 0 ? relPath.slice(lastSlash + 1) : relPath;
 
   const touchers = heat.sessionIDs
-    .map((sid) => agents.get(sid))
+    .map((sid) => agentBySession.get(sid))
     .filter((a): a is Agent => !!a);
 
   const lastTouchedAgo = (() => {

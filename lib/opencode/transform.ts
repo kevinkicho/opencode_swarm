@@ -204,6 +204,7 @@ export function toAgents(messages: OpencodeMessage[]): {
       const price = priceFor(m.info.modelID);
       byId.set(id, {
         id,
+        sessionID: m.info.sessionID,
         name: m.info.agent ?? 'assistant',
         model: {
           id: m.info.modelID ?? 'unknown',
