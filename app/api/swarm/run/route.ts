@@ -258,6 +258,21 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.teamRoles = (obj.teamRoles as string[]).map((r) => r.trim());
   }
 
+  if (obj.teamModels !== undefined) {
+    if (
+      !Array.isArray(obj.teamModels) ||
+      obj.teamModels.some((m) => typeof m !== 'string' || !m.trim())
+    ) {
+      return 'teamModels must be an array of non-empty model-ID strings';
+    }
+    // Length check happens after teamSize is resolved below — we push
+    // it to a post-parse check there because teamSize defaults depend
+    // on the pattern. Any-pattern-allowed: the `agent` override path
+    // (role-differentiated) still wins at dispatch time if set, so
+    // teamModels is additive.
+    req.teamModels = (obj.teamModels as string[]).map((m) => m.trim());
+  }
+
   if (obj.criticMaxIterations !== undefined) {
     if (
       typeof obj.criticMaxIterations !== 'number' ||
@@ -421,6 +436,20 @@ export async function POST(req: NextRequest): Promise<Response> {
   // we spawn — meta.teamSize isn't persisted separately because
   // meta.sessionIDs.length carries the truth.
   const teamSize = parsed.teamSize ?? PATTERN_TEAM_SIZE[parsed.pattern].defaultSize;
+
+  // Post-resolve length check for teamModels — teamSize defaults are
+  // pattern-specific, so the validator couldn't enforce length until
+  // now. Empty-or-unset means "no pinning"; a mismatched non-empty
+  // array is a caller bug.
+  if (parsed.teamModels && parsed.teamModels.length !== teamSize) {
+    return Response.json(
+      {
+        error: `teamModels length ${parsed.teamModels.length} does not match resolved teamSize ${teamSize} for pattern '${parsed.pattern}'`,
+      },
+      { status: 400 },
+    );
+  }
+
   const seedTitle = parsed.title ?? parsed.directive?.split('\n', 1)[0]?.trim();
 
   // Step 1: mint N opencode sessions in parallel. Promise.allSettled rather
@@ -519,9 +548,15 @@ export async function POST(req: NextRequest): Promise<Response> {
     } else {
       directives = sessions.map(() => directive);
     }
+    // Team-model pinning for the first directive. The `sessions[i].idx`
+    // indexes into the ORIGINAL teamModels array (pre-survivor-filter)
+    // — reindex here so session `s` gets its originally-picked model
+    // even after partial spawn failures. Undefined → opencode default.
     const postResults = await Promise.allSettled(
       sessions.map((s, i) =>
-        postSessionMessageServer(s.id, parsed.workspace, directives[i])
+        postSessionMessageServer(s.id, parsed.workspace, directives[i], {
+          model: parsed.teamModels?.[s.idx],
+        })
       )
     );
     postResults.forEach((r, i) => {
@@ -583,12 +618,24 @@ export async function POST(req: NextRequest): Promise<Response> {
   // own ledger just won't know about them. Acceptable for a single-user
   // prototype.
   const sessionIDs = sessions.map((s) => s.id);
+
+  // Survivor remap: teamModels[i] is index-aligned to the original
+  // spawn slot i, but partial spawn failures mean sessions[] may have
+  // fewer entries than the original array. Reindex to the surviving
+  // slots so meta.teamModels[j] corresponds to meta.sessionIDs[j]. If
+  // every session survived, `sessions[j].idx === j` and this is a
+  // no-op copy.
+  const teamModelsSurvivors = parsed.teamModels
+    ? sessions.map((s) => parsed.teamModels![s.idx])
+    : undefined;
+
   let meta;
   try {
     meta = await createRun(parsed, sessionIDs, {
       criticSessionID,
       verifierSessionID,
       startTier,
+      teamModels: teamModelsSurvivors,
     });
   } catch (err) {
     return Response.json(

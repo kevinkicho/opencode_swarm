@@ -119,6 +119,10 @@ export async function createRun(
     // run at the inherited tier (vs the default tier 1 start). Ignored
     // when continuationOf is unset.
     startTier?: number;
+    // Survivor-remapped teamModels, index-aligned to sessionIDs. Caller
+    // handles the remap from req.teamModels's original-slot order into
+    // surviving-session order.
+    teamModels?: string[];
   } = {},
 ): Promise<SwarmRunMeta> {
   const swarmRunID = mintSwarmRunID();
@@ -150,6 +154,10 @@ export async function createRun(
     // prior run.
     continuationOf: req.continuationOf,
     currentTier: extras.startTier && extras.startTier > 1 ? extras.startTier : undefined,
+    // Per-session model pinning (survivor-remapped upstream). Absent
+    // when the caller didn't pass a team — opencode picks the default
+    // agent's model per session.
+    teamModels: extras.teamModels,
   };
   await fs.mkdir(runDir(swarmRunID), { recursive: true });
   await fs.writeFile(metaPath(swarmRunID), JSON.stringify(meta, null, 2), 'utf8');

@@ -646,9 +646,20 @@ export async function tickCoordinator(
   // patterns get an empty map → default agent name.
   const roleBySID = roleNamesBySessionID(meta);
   const role = roleBySID.get(sessionID);
+  // Team-model pinning: when the new-run-modal team picker produced a
+  // per-session model list, look up this session's pinned model by
+  // index and pass it through. opencode's prompt endpoint accepts
+  // `model` as a direct model ID (e.g. "ollama/glm-5.1:cloud"); the
+  // agent field (from role tagging above) wins when both are set,
+  // which is the intended precedence for role-differentiated runs.
+  // See SwarmRunRequest.teamModels for the contract.
+  const sessionIdx = meta.sessionIDs.indexOf(sessionID);
+  const pinnedModel =
+    sessionIdx >= 0 ? meta.teamModels?.[sessionIdx] : undefined;
   try {
     await postSessionMessageServer(sessionID, meta.workspace, prompt, {
       agent: role,
+      model: pinnedModel,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

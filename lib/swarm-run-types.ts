@@ -67,6 +67,25 @@ export interface SwarmRunRequest {
   // server — we don't manage its lifecycle. Required when
   // enableVerifierGate is true; ignored otherwise.
   workspaceDevUrl?: string;
+  // Per-session model pinning. One model ID per session in
+  // new-run-modal picker order; length must equal the resolved
+  // teamSize. When set, each session's dispatch opcodes carry the
+  // corresponding model — the coordinator / non-ticker orchestrators
+  // pass it as `model` on opencode's prompt endpoint, so a team of
+  // ["ollama/glm-5.1:cloud", "opencode/claude-sonnet-4-6"] actually
+  // dispatches session 0 to ollama-glm and session 1 to zen-sonnet.
+  //
+  // When unset → current behavior: opencode picks each session's
+  // model from its default agent config (opencode.json). Partial
+  // spawn failures remap the array to surviving slots before persist
+  // — see app/api/swarm/run/route.ts.
+  //
+  // Model IDs follow the catalog shape (`opencode/<model>` for zen,
+  // `ollama/<model>:cloud` for ollama; go-tier uses `opencode/<model>`
+  // + an opencode.json agent configured to route it there). IDs not
+  // in the catalog are passed through verbatim — opencode is
+  // authoritative for "does this model exist?"
+  teamModels?: string[];
   // Run-chaining pointer. When set, the new run inherits from a prior
   // run:
   //   - workspace (must match if req.workspace is also set, else
@@ -133,6 +152,10 @@ export interface SwarmRunMeta {
   // Lineage pointer for run chaining. Absent for standalone runs. See
   // SwarmRunRequest.continuationOf for semantics.
   continuationOf?: string;
+  // Per-session model pinning. Index-aligned with sessionIDs after
+  // partial-spawn-survivor remapping (see route.ts createRun call).
+  // Absent → no pinning, opencode picks each session's model.
+  teamModels?: string[];
 }
 
 // --- response shape ---------------------------------------------------------

@@ -513,15 +513,25 @@ export async function runPlannerSweep(
     effectiveEscalationTier,
     teamRolesForPrompt,
   );
-  // Route the planner prompt through opencode's `plan` agent so users
-  // can pin a smarter/more-expensive model for the planner via
-  // opencode.json's `agent.plan.model` override, while leaving worker
-  // turns on whatever default model is cheap. Before this, the planner
-  // defaulted to the `build` agent (same model as workers), which
-  // wasted reasoning quality on simple worker tasks or overpaid on
-  // planning. See feedback_zen_model_preference.md.
+  // Planner dispatch. Two channels, one wins:
+  //   1. Team-model pinning (meta.teamModels[0]): when the new-run-
+  //      modal picker supplied a specific model for session 0, honor
+  //      it. This is explicit user intent for "this run runs on
+  //      <model>" — overrides the default plan-agent override so a
+  //      user can force the planner onto ollama even when their
+  //      opencode.json has a 'plan' agent pointing at a zen model.
+  //   2. Default: route through opencode's `plan` agent-config so
+  //      users can pin a smarter/more-expensive model for the planner
+  //      via opencode.json's `agent.plan.model`, while leaving worker
+  //      turns on whatever default model is cheap. Before this, the
+  //      planner defaulted to the `build` agent (same model as
+  //      workers), which wasted reasoning quality on simple worker
+  //      tasks or overpaid on planning. See
+  //      feedback_zen_model_preference.md.
+  const pinnedModel = meta.teamModels?.[0];
   await postSessionMessageServer(sessionID, meta.workspace, prompt, {
-    agent: 'plan',
+    agent: pinnedModel ? undefined : 'plan',
+    model: pinnedModel,
   });
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;

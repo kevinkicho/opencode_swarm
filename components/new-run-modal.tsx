@@ -242,6 +242,20 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     if (prompt) body.directive = prompt;
     if (title) body.title = title;
     if (totalAgents > 0) body.teamSize = totalAgents;
+    // Flatten teamCounts into a per-session model list. Order matters:
+    // catalog order is stable (see zen-catalog.ts), so iterating via
+    // zenModels preserves a deterministic slot assignment. Each count
+    // N emits N copies of the model ID. Empty totalAgents = undefined
+    // teamModels = opencode picks each session's model from its
+    // default agent config.
+    if (totalAgents > 0) {
+      const teamModels: string[] = [];
+      for (const model of zenModels) {
+        const count = teamCounts[model.id] ?? 0;
+        for (let i = 0; i < count; i += 1) teamModels.push(model.id);
+      }
+      body.teamModels = teamModels;
+    }
     if (!unbounded) body.bounds = { costCap, minutesCap };
     try {
       const res = await fetch('/api/swarm/run', {

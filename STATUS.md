@@ -28,6 +28,44 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-24 — team-picker → dispatch wiring
+
+Made the team picker actually pin per-session models. Prior state: the
+new-run-modal picker set `teamSize` but the selected models were
+cosmetic — opencode used its default agent per session. Now every
+session index carries its own `model` through the dispatch path.
+
+- **`SwarmRunRequest.teamModels?: string[]`** — per-session model list,
+  length === resolved teamSize. Validator enforces length; unset keeps
+  current default-agent behavior.
+- **`SwarmRunMeta.teamModels?: string[]`** — persisted survivor-remap.
+  Partial spawn failures reindex to surviving slots before persist, so
+  `meta.teamModels[j]` is always the model for `meta.sessionIDs[j]`.
+- **`postSessionMessageServer({ model? })`** — gains a `model` opt
+  passed as `body.model` on opencode's `/prompt_async`. When agent
+  AND model are both set, opencode's agent-config takes precedence.
+- **Blackboard fully wired:** `coordinator.ts::tickCoordinator` looks
+  up `meta.teamModels[sessionIDs.indexOf(sessionID)]` on every worker
+  dispatch. `planner.ts::runPlannerSweep` passes `meta.teamModels[0]`
+  on the planner prompt; pinned model overrides the default
+  `agent: 'plan'` override so "this run runs on ollama" actually
+  sticks through the planner too.
+- **Route directive broadcast wired:** the broadcast-directive path
+  in `app/api/swarm/run/route.ts` (council / map-reduce /
+  deliberate-execute) carries `teamModels[s.idx]` into each
+  session's first directive.
+- **new-run-modal flattens teamCounts → teamModels** via deterministic
+  catalog-order iteration — counts expand to per-slot model IDs.
+- **Known limitation (follow-up).** Non-ticker orchestrators' follow-up
+  rounds don't yet consume `meta.teamModels`: council Rounds 2/3,
+  critic-loop iterations, debate rounds, orchestrator-worker intros,
+  role-differentiated post-intro dispatch. Each is a mechanical one-
+  line addition (`model: meta.teamModels?.[i]` on the
+  `postSessionMessageServer` call). Tracked; not blocking blackboard
+  testing.
+- **Smoke test:** `scripts/_team_models_smoke.mjs` — 11 assertions
+  over the flatten logic + survivor remap + catalog roundtrip. Green.
+
 ### 2026-04-24 — ollama tier (three-tier reversal)
 
 Stance reversal. `zen + go only` → `zen + go + ollama`. Motivated by

@@ -122,17 +122,27 @@ export async function abortSessionServer(
 // `agent` is the opencode agent-config name (e.g. "build", "plan"). When set,
 // opencode routes this prompt to that agent-config within the session. Omit
 // to broadcast to the session's lead agent.
+//
+// `model` is a direct model ID (e.g. "opencode/claude-sonnet-4-6" or
+// "ollama/glm-5.1:cloud"). When set AND agent is unset, opencode runs the
+// turn against that model instead of the session's default. When BOTH are
+// set, opencode's agent-config takes precedence — the named agent's
+// configured model overrides the direct model hint. Used by the team-
+// picker wiring to pin a session to a specific provider/model across its
+// whole lifetime (the coordinator threads the same `model` through every
+// worker dispatch for the session).
 export async function postSessionMessageServer(
   sessionId: string,
   directory: string,
   text: string,
-  opts: { agent?: string } = {}
+  opts: { agent?: string; model?: string } = {}
 ): Promise<void> {
   const qs = new URLSearchParams({ directory }).toString();
   const body: Record<string, unknown> = {
     parts: [{ type: 'text', text }],
   };
   if (opts.agent) body.agent = opts.agent;
+  if (opts.model) body.model = opts.model;
   const res = await opencodeFetch(
     `/session/${encodeURIComponent(sessionId)}/prompt_async?${qs}`,
     {
