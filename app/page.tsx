@@ -11,7 +11,6 @@ import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
 import { TurnCardsView } from '@/components/turn-cards-view';
 import { BoardFullView } from '@/components/board-full-view';
-import { Inspector } from '@/components/inspector';
 import { roleNamesFromMeta, useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
 import { deliberationRoundInfo } from '@/lib/deliberate-progress';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
@@ -72,6 +71,15 @@ const RunProvenanceDrawer = dynamic(
 const CostDashboard = dynamic(
   lazyWithRetry(() =>
     import('@/components/cost-dashboard').then((m) => m.CostDashboard),
+  ),
+  { ssr: false },
+);
+// Inspector is gated by drawerOpen state which defaults to closed. At 17 kB
+// in the client bundle it's worth keeping out of the initial load — the
+// drawer's 220ms open animation masks the dynamic import's fetch latency.
+const Inspector = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/inspector').then((m) => m.Inspector),
   ),
   { ssr: false },
 );

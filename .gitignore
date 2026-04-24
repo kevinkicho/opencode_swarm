@@ -16,3 +16,4 @@ tmp/
 # launch payloads are too large / ephemeral to version.
 demo-log/
 .perf/
+C:\\Users\\kevin\\AppData\\Local\\lighthouse.*

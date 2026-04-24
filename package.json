@@ -12,7 +12,8 @@
     "perf:lighthouse": "node scripts/perf-lighthouse.mjs",
     "perf:lighthouse:dev": "node scripts/perf-lighthouse.mjs dev",
     "perf:lighthouse:prod": "node scripts/perf-lighthouse.mjs prod",
-    "perf:bundle": "node scripts/perf-bundle.mjs"
+    "perf:bundle": "node scripts/perf-bundle.mjs",
+    "prod": "next build && next start"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
