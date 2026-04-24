@@ -142,7 +142,26 @@ export async function postSessionMessageServer(
     parts: [{ type: 'text', text }],
   };
   if (opts.agent) body.agent = opts.agent;
-  if (opts.model) body.model = opts.model;
+  if (opts.model) {
+    // Opencode's /prompt expects `model` as an object
+    // `{ providerID, modelID }`, not a bare string. Parse the canonical
+    // `<provider>/<model>` shape used throughout our catalog (e.g.
+    // `ollama/glm-5.1:cloud`, `opencode-go/glm-5.1`). First `/` is the
+    // provider-model separator; model ID can contain further slashes
+    // (`:cloud` suffixes are safe — they're inside the modelID segment).
+    const slash = opts.model.indexOf('/');
+    if (slash > 0) {
+      body.model = {
+        providerID: opts.model.slice(0, slash),
+        modelID: opts.model.slice(slash + 1),
+      };
+    } else {
+      // No slash — fall back to opencode's default provider with the
+      // raw string as modelID. Lets callers pass a bare opencode slug
+      // like `glm-5.1` and have opencode resolve its default provider.
+      body.model = { providerID: 'opencode', modelID: opts.model };
+    }
+  }
   const res = await opencodeFetch(
     `/session/${encodeURIComponent(sessionId)}/prompt_async?${qs}`,
     {
