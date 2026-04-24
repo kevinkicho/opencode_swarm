@@ -14,6 +14,7 @@
     "perf:lighthouse:prod": "node scripts/perf-lighthouse.mjs prod",
     "perf:bundle": "node scripts/perf-bundle.mjs",
     "perf:tabs": "node scripts/perf-tab-switch.mjs",
+    "perf:cold": "node scripts/perf-cold-load.mjs",
     "prod": "next build && next start"
   },
   "dependencies": {
