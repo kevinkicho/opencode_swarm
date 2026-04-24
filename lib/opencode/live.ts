@@ -821,11 +821,22 @@ export function useLiveSwarmRunMessages(
     let cancelled = false;
     const controller = new AbortController();
     let es: EventSource | null = null;
-    // Coalesce per-slot refetches — SSE can burst many part.updated events
-    // during a single assistant turn, and we only want one in-flight GET per
-    // slot at a time. A second refetch arrives = drop it; the first one will
-    // pick up the newer state on its next pass.
-    const pendingRefetches = new Set<string>();
+    // Coalesce per-slot refetches. SSE can burst many part.updated events
+    // during a single assistant turn — with 6 workers active each emitting
+    // events every ~100ms, naive per-event refetch triggers near-constant
+    // full-history fetches that dominate hydration time.
+    //
+    // Strategy: cooldown-with-trailing. After a refetch completes, open a
+    // COOLDOWN_MS window. Any event during cooldown doesn't fire a new
+    // refetch immediately; it sets the "dirty" flag for that session. When
+    // the cooldown elapses, if dirty, fire exactly one trailing refetch.
+    // Keeps the latency bounded (~COOLDOWN_MS + network) while cutting
+    // server fan-in by ~10x on busy runs.
+    const inFlight = new Set<string>();
+    const cooldownUntil = new Map<string, number>();
+    const dirty = new Set<string>();
+    const trailingTimers = new Map<string, ReturnType<typeof setTimeout>>();
+    const COOLDOWN_MS = 2000;
 
     async function hydrate() {
       try {
@@ -862,10 +873,10 @@ export function useLiveSwarmRunMessages(
       }
     }
 
-    async function refetchOne(sessionID: string) {
-      if (!sessionSet.has(sessionID)) return;
-      if (pendingRefetches.has(sessionID)) return;
-      pendingRefetches.add(sessionID);
+    async function doFetch(sessionID: string): Promise<void> {
+      if (cancelled) return;
+      if (inFlight.has(sessionID)) return;
+      inFlight.add(sessionID);
       try {
         const messages = await getSessionMessagesBrowser(sessionID);
         if (cancelled) return;
@@ -882,8 +893,35 @@ export function useLiveSwarmRunMessages(
         if ((err as Error).name === 'AbortError') return;
         setError((err as Error).message);
       } finally {
-        pendingRefetches.delete(sessionID);
+        inFlight.delete(sessionID);
+        cooldownUntil.set(sessionID, Date.now() + COOLDOWN_MS);
       }
+    }
+
+    // Called from SSE + fallback poll. Throttles: if within cooldown
+    // window OR a fetch is in flight, sets dirty flag + arms a trailing
+    // timer. Otherwise fetches immediately.
+    function refetchOne(sessionID: string) {
+      if (!sessionSet.has(sessionID) || cancelled) return;
+      const cooldownExpiry = cooldownUntil.get(sessionID) ?? 0;
+      const remaining = cooldownExpiry - Date.now();
+      if (inFlight.has(sessionID) || remaining > 0) {
+        dirty.add(sessionID);
+        if (!trailingTimers.has(sessionID)) {
+          const delay = Math.max(remaining, 50);
+          trailingTimers.set(
+            sessionID,
+            setTimeout(() => {
+              trailingTimers.delete(sessionID);
+              if (!dirty.has(sessionID) || cancelled) return;
+              dirty.delete(sessionID);
+              refetchOne(sessionID);
+            }, delay),
+          );
+        }
+        return;
+      }
+      void doFetch(sessionID);
     }
 
     setLoading(true);
@@ -914,6 +952,8 @@ export function useLiveSwarmRunMessages(
       controller.abort();
       if (es) es.close();
       clearInterval(pollId);
+      for (const t of trailingTimers.values()) clearTimeout(t);
+      trailingTimers.clear();
     };
     // The individual fields are stable-by-construction for a given meta.json;
     // splitting the dep array keeps React from tearing the effect down on
