@@ -680,13 +680,17 @@ function PageBody({
     ? messages.find((m) => m.id === focusedMsgId)?.title
     : selectedAgentId
       ? agents.find((a) => a.id === selectedAgentId)?.name
-      : undefined;
+      : selectedFileHeat
+        ? selectedFileHeat.path.split(/[\\/]/).pop() || selectedFileHeat.path
+        : undefined;
 
   const drawerEyebrow = focusedMsgId
     ? 'message inspector'
     : selectedAgentId
       ? 'agent inspector'
-      : undefined;
+      : selectedFileHeat
+        ? 'file heat'
+        : undefined;
 
   return (
     <PlaybackProvider runDuration={runDuration}>
@@ -1003,6 +1007,7 @@ function PageBody({
         eyebrow={drawerEyebrow}
         title={drawerTitle}
         width={380}
+        dismissOnClickOutside
       >
         <Inspector
           agents={agents}
