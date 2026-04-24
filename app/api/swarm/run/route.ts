@@ -45,6 +45,10 @@ import type {
 } from '@/lib/swarm-run-types';
 import type { SwarmPattern } from '@/lib/swarm-types';
 import { patternDefaults } from '@/lib/swarm-patterns';
+import {
+  collectOllamaModels,
+  prewarmModels,
+} from '@/lib/server/blackboard/model-prewarm';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -550,6 +554,20 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   const seedTitle = parsed.title ?? parsed.directive?.split('\n', 1)[0]?.trim();
 
+  // Step 0 (2026-04-24): pre-warm every ollama model this run will use.
+  // Cloud-hosted ollama models can take 60 s+ for first-token on a cold
+  // endpoint; opencode's /prompt client times out before that lands,
+  // which hung every nemotron-pinned session in the previous multi-
+  // pattern test. Firing a trivial /api/generate per unique model
+  // collapses follow-up latency to ~1 s. Runs in parallel with session
+  // creation so we don't pay for warmup time serially. See
+  // lib/server/blackboard/model-prewarm.ts.
+  //
+  // Fire-and-forget from the HTTP response's POV (we don't block the
+  // response on it), but we DO await the warmPromise before posting
+  // directive/intro prompts below so nemotron is ready when we need it.
+  const warmPromise = prewarmModels(collectOllamaModels(parsed));
+
   // Step 1: mint N opencode sessions in parallel. Promise.allSettled rather
   // than Promise.all so a partial failure (e.g. 2 of 3 spawn, one hits a
   // transient opencode hiccup) still produces a viable run with the
@@ -601,6 +619,18 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 502 }
     );
   }
+
+  // Wait for the pre-warm to settle before any prompt dispatch. By now
+  // session creation (~1-2 s) has run in parallel with warmup, so the
+  // remaining wait is usually seconds. On the first cold run for a
+  // nemotron-heavy pattern, this can be up to 60 s — still faster than
+  // a hung session that never responds.
+  await warmPromise.catch((err) => {
+    console.warn(
+      '[swarm/run] model pre-warm threw (continuing without warm):',
+      err instanceof Error ? err.message : String(err),
+    );
+  });
 
   // Step 2: post the directive to every surviving session in parallel.
   // Per-session failures log and continue — the session exists, the
