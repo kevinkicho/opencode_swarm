@@ -581,6 +581,23 @@ One day, large ship run. Grouped by theme.
   serves all pre-compiled chunks in <1s. Documented for future-me
   who'll wonder why dev feels slow.
 
+- **30-minute project review checklist** (`docs/REVIEW_CHECKLIST.md`)
+  — structured walkthrough of every major surface in 7 phases. Run
+  this whenever bugs feel like they're piling up; capture findings
+  as new entries here. First run not yet completed.
+
+- **Dev wrapper task dies, next-server orphans (recurring).** The
+  `npm run dev` wrapper script's task in our shell tracker exits
+  with SIGTERM (exit 143) periodically — cause unknown, not us
+  killing it directly. The next-server child PID survives and keeps
+  serving fine, but the task system shows nothing in the sidebar so
+  user doesn't realize the dev server is still up. Observed three
+  times 2026-04-24. Fix candidates: (a) make scripts/dev.mjs detach
+  next-server cleanly so the wrapper exit is expected, (b) make the
+  wrapper more resilient to whatever is sending SIGTERM, (c) detect
+  the orphan + adopt it instead of starting a duplicate. ~1-2 h to
+  diagnose then fix.
+
 - **Auto-ticker startup-cleanup aborts sessions in still-active
   runs.** On dev restart, `lib/server/blackboard/auto-ticker.ts`
   startup hook scans all runs younger than 48h and aborts every
