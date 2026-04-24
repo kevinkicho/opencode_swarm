@@ -176,8 +176,10 @@ export function SwarmTimeline({
   const totalWidth = TIMELINE_GUTTER_WIDTH + agentOrder.length * LANE_WIDTH;
 
   // Stick-to-bottom: on a fresh session (first message id changes) always
-  // land at the latest; on new messages within a session follow only if the
-  // user was within ~140px of the bottom so manual scroll-ups aren't yanked.
+  // land at the latest; on new messages within a session follow only if
+  // the user was effectively AT the bottom (tight threshold so a manual
+  // scroll-up reliably disengages auto-follow). 48 px tolerance covers
+  // rounding + the floating "latest" button that anchors to bottom-3.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el || messages.length === 0) return;
@@ -185,7 +187,15 @@ export function SwarmTimeline({
     const lastId = messages[messages.length - 1].id;
 
     if (firstId !== firstIdRef.current) {
+      // Two-phase snap: scrollTop=scrollHeight first (synchronous, before
+      // paint), then rAF a second pass so any content the React commit is
+      // still settling (sticky headers, lazy rows) can't leave us a few
+      // px short of truly-bottom. Needed for large runs where the first
+      // layout pass underreports scrollHeight.
       el.scrollTop = el.scrollHeight;
+      requestAnimationFrame(() => {
+        if (scrollRef.current === el) el.scrollTop = el.scrollHeight;
+      });
       firstIdRef.current = firstId;
       lastIdRef.current = lastId;
       return;
@@ -193,7 +203,10 @@ export function SwarmTimeline({
 
     if (lastId !== lastIdRef.current) {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (distance < 140) el.scrollTop = el.scrollHeight;
+      // Follow only when actually at bottom (within the floating-button
+      // clearance). Anything looser yanks the view when the user is
+      // mid-read 200 px up.
+      if (distance < 48) el.scrollTop = el.scrollHeight;
       lastIdRef.current = lastId;
     }
   }, [messages, totalHeight]);
@@ -295,7 +308,16 @@ export function SwarmTimeline({
       >
         <div
           className="relative"
-          style={{ width: Math.max(totalWidth, 800), minHeight: totalHeight + HEADER_HEIGHT }}
+          // 56 px bottom padding reserves clearance below the last row
+          // so the floating "latest" button (absolute, bottom-3, ~24 px
+          // tall) doesn't overlay the tail of the timeline when scrolled
+          // to bottom. Before this pad, "scroll to latest" landed with
+          // the final message visually behind the chip.
+          style={{
+            width: Math.max(totalWidth, 800),
+            minHeight: totalHeight + HEADER_HEIGHT + 56,
+            paddingBottom: 56,
+          }}
           onClick={(e) => {
             if (e.target === e.currentTarget) onClearFocus();
           }}
