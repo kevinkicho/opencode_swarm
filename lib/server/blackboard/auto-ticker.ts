@@ -61,7 +61,8 @@ import {
   TIER_LADDER,
   type PlannerExports,
 } from './planner';
-import { listBoardItems } from './store';
+import { listBoardItems, transitionStatus } from './store';
+import { auditCriteria } from './auditor';
 
 // Live-export lookups for cross-module calls. Direct imports above are
 // the fallback when the producer module hasn't published yet (unusual
@@ -185,6 +186,16 @@ interface TickerState {
   resweepInFlight: boolean;
   currentTier: number;
   tierExhausted: boolean;
+  // Audit cadence state (Stage 2 declared-roles). Counts successful
+  // 'picked' outcomes (todo committed to done) since the last audit;
+  // when it hits state.auditEveryNCommits, maybeRunAudit fires a
+  // batch audit pass across pending criteria and resets. auditInFlight
+  // guards against re-entrant audit calls (the per-run mutex in
+  // auditor.ts would serialize them anyway, but this avoids queueing
+  // redundant audits while one is already running).
+  commitsSinceLastAudit: number;
+  auditInFlight: boolean;
+  auditEveryNCommits: number;
   // Count of back-to-back periodic sweeps that produced zero new work
   // AND found the board devoid of active (open/claimed/in-progress)
   // items. Incremented in runPeriodicSweep; resets when a sweep seeds
@@ -453,6 +464,19 @@ async function tickSession(
     } else {
       slot.consecutiveIdle = 0;
     }
+
+    // Stage 2 audit-cadence trigger. 'picked' = a worker successfully
+    // committed a todo to done, which is what "a commit" means for our
+    // purposes. Increment the counter and fire an audit asynchronously
+    // when we cross the cadence threshold. maybeRunAudit gates on
+    // whether the run actually has an auditor configured, so runs
+    // without the gate pay only this one counter increment.
+    if (outcome.status === 'picked') {
+      state.commitsSinceLastAudit += 1;
+      if (state.commitsSinceLastAudit >= state.auditEveryNCommits) {
+        void maybeRunAudit(state, 'cadence');
+      }
+    }
     const slots = [...state.slots.values()];
 
     // Eager re-sweep (long-running mode only). When every session has
@@ -574,6 +598,13 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
     console.log(
       `[board/auto-ticker] ${swarmRunID}: attempting tier escalation ${state.currentTier} → ${nextTier} (${tierLabel})`,
     );
+    // Stage 2 audit: run a pre-escalation audit so the next sweep's
+    // prompt context carries fresh verdicts (criteriaSummaries surface
+    // MET / UNMET / WONT_DO tags). Await it — the verdicts are an
+    // input to the tier-N+1 planner prompt; firing asynchronously
+    // would let the sweep run without them.
+    await maybeRunAudit(state, 'tier-escalation');
+
     const beforeOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
     ).length;
@@ -633,6 +664,133 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
     // tick-cycle subject to MIN_MS_BETWEEN_SWEEPS throttling.
   } finally {
     state.resweepInFlight = false;
+  }
+}
+
+// Audit trigger — Stage 2 declared-roles contract gate.
+//
+// Invoked from three places in the ticker's lifecycle:
+//   - 'cadence'          : after every Nth 'picked' outcome (default N=5)
+//   - 'tier-escalation'  : before the planner re-sweeps at tier+1 so the
+//                          new sweep sees fresh verdicts in its prompt
+//   - 'run-end'          : before stopAutoTicker so the archived run has
+//                          a final verdict on every pending criterion
+//
+// Fail-open on every path: a missing auditor session, a read error, or
+// an in-flight re-entrancy → log and skip. Resets the cadence counter
+// even when the audit is skipped for re-entrancy so the counter doesn't
+// permanently leak past K.
+//
+// Verdict → status mapping:
+//   MET      → done     (criterion satisfied; sticky unless re-audited)
+//   UNMET    → blocked  (not yet; may flip to done on a later audit)
+//   WONT_DO  → stale    (criterion misguided or out of scope now)
+//   unclear  → (no transition; leave open/blocked as-is for next pass)
+async function maybeRunAudit(
+  state: TickerState,
+  reason: 'cadence' | 'tier-escalation' | 'run-end',
+): Promise<void> {
+  if (state.stopped && reason !== 'run-end') return;
+  if (state.auditInFlight) {
+    if (reason === 'cadence') state.commitsSinceLastAudit = 0;
+    return;
+  }
+
+  const { swarmRunID } = state;
+  const meta = await getRun(swarmRunID).catch(() => null);
+  if (!meta) return;
+  if (!meta.enableAuditorGate || !meta.auditorSessionID) return;
+
+  // Lazily sync the cadence setting from meta. A user-supplied
+  // auditEveryNCommits lands on the TickerState here (rather than at
+  // startAutoTicker) so HMR-reloads pick up meta changes without a
+  // restart.
+  if (typeof meta.auditEveryNCommits === 'number' && meta.auditEveryNCommits > 0) {
+    state.auditEveryNCommits = meta.auditEveryNCommits;
+  }
+
+  const items = listBoardItems(swarmRunID);
+  const pending = items.filter(
+    (i) =>
+      i.kind === 'criterion' &&
+      (i.status === 'open' || i.status === 'blocked'),
+  );
+
+  // Cadence skip without an audit still resets the counter so the next
+  // commit doesn't immediately re-trigger. Other reasons (tier-escalation,
+  // run-end) are single-shot and don't gate on the counter.
+  if (pending.length === 0) {
+    if (reason === 'cadence') state.commitsSinceLastAudit = 0;
+    console.log(
+      `[board/auto-ticker] ${swarmRunID}: audit (${reason}) skipped — no pending criteria`,
+    );
+    return;
+  }
+
+  state.auditInFlight = true;
+  try {
+    const doneSummaries = items
+      .filter((i) => i.status === 'done' && i.kind !== 'criterion')
+      .slice(-30)
+      .map((i) => i.content);
+    console.log(
+      `[board/auto-ticker] ${swarmRunID}: audit (${reason}) — judging ${pending.length} pending criteria`,
+    );
+    const result = await auditCriteria({
+      swarmRunID,
+      auditorSessionID: meta.auditorSessionID,
+      workspace: meta.workspace,
+      directive: meta.directive,
+      criteria: pending,
+      recentDoneSummaries: doneSummaries,
+      currentTier: state.currentTier,
+    });
+
+    let metCount = 0;
+    let unmetCount = 0;
+    let wontDoCount = 0;
+    let unclearCount = 0;
+    for (const v of result.verdicts) {
+      if (v.verdict === 'unclear') {
+        unclearCount += 1;
+        continue;
+      }
+      const toStatus =
+        v.verdict === 'met'
+          ? ('done' as const)
+          : v.verdict === 'unmet'
+            ? ('blocked' as const)
+            : ('stale' as const);
+      // Allow transition from either 'open' or 'blocked' — criteria
+      // can oscillate: a prior UNMET (blocked) can later become MET
+      // if subsequent work satisfies it.
+      const note = `[audit:${reason}] ${v.reason}`.slice(0, 200);
+      const t = transitionStatus(swarmRunID, v.criterionID, {
+        from: ['open', 'blocked'],
+        to: toStatus,
+        note,
+        setCompletedAt: toStatus === 'done',
+      });
+      if (t.ok) {
+        if (v.verdict === 'met') metCount += 1;
+        else if (v.verdict === 'unmet') unmetCount += 1;
+        else wontDoCount += 1;
+      }
+      // CAS loss is acceptable — a concurrent audit or manual
+      // transition moved the criterion; this run's verdict for it is
+      // stale and we drop it.
+    }
+    console.log(
+      `[board/auto-ticker] ${swarmRunID}: audit (${reason}) done — met=${metCount} unmet=${unmetCount} wont-do=${wontDoCount} unclear=${unclearCount}`,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[board/auto-ticker] ${swarmRunID}: audit (${reason}) threw: ${message}`,
+    );
+  } finally {
+    state.auditInFlight = false;
+    if (reason === 'cadence') state.commitsSinceLastAudit = 0;
   }
 }
 
@@ -933,6 +1091,13 @@ export function startAutoTicker(
     currentTier: 1,
     tierExhausted: false,
     consecutiveDrainedSweeps: 0,
+    commitsSinceLastAudit: 0,
+    auditInFlight: false,
+    // Cadence default: 5 commits between audits. Can be overridden
+    // per-run via SwarmRunRequest.auditEveryNCommits; the meta read
+    // happens lazily in maybeRunAudit so a run without an auditor
+    // doesn't pay the getRun() cost.
+    auditEveryNCommits: 5,
     periodicSweepMs,
     periodicSweepTimer,
     orchestratorSessionID,
@@ -960,6 +1125,19 @@ export function stopAutoTicker(
 ): void {
   const s = tickers().get(swarmRunID);
   if (!s || s.stopped) return;
+
+  // Stage 2 audit: final contract verdict before teardown, so the
+  // archived run's board has a clean MET / UNMET / WONT_DO state on
+  // every criterion. Fire-and-forget — stop is synchronous and we
+  // don't want a slow auditor call to delay the abort cascade. The
+  // auditor's per-run mutex will serialize against any in-flight
+  // audit; criteria the audit doesn't finish in time stay open for
+  // when the run is resumed or archived as-is.
+  //
+  // Guarded by s.stopped=false check below to avoid firing on a
+  // redundant stopAutoTicker call for an already-stopped run.
+  void maybeRunAudit(s, 'run-end');
+
   s.stopped = true;
   s.stoppedAtMs = Date.now();
   s.stopReason = reason;
