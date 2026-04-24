@@ -5,6 +5,7 @@ import type { Agent, AgentMessage } from '@/lib/swarm-types';
 import { partMeta, partHex, toolMeta } from '@/lib/part-taxonomy';
 import { Tooltip } from './ui/tooltip';
 import { compact } from '@/lib/format';
+import { MarkdownBody } from './ui/markdown-body';
 
 const partDescription: Record<string, string> = {
   text: 'model text output or human prompt',
@@ -125,9 +126,7 @@ export function EventInfo({
           <div className="font-mono text-[9px] uppercase tracking-widest2 text-fog-600 mb-1">
             body
           </div>
-          <div className="text-[11.5px] text-fog-200 leading-snug whitespace-pre-wrap">
-            {msg.body}
-          </div>
+          <MarkdownBody text={msg.body} tone="fog-200" />
         </div>
       )}
 

@@ -11,6 +11,7 @@ import { Tooltip } from './ui/tooltip';
 import { compact } from '@/lib/format';
 import { partMeta, partHex, toolMeta, hueClass } from '@/lib/part-taxonomy';
 import { modelCatalog } from '@/lib/model-catalog';
+import { MarkdownBody } from './ui/markdown-body';
 
 export function Inspector({
   agents,
@@ -128,7 +129,9 @@ function MessageInspector({
         </div>
         <h3 className="text-[14px] text-fog-100 leading-snug">{msg.title}</h3>
         {msg.body && (
-          <p className="mt-2 text-[12.5px] text-fog-300 leading-relaxed">{msg.body}</p>
+          <div className="mt-2">
+            <MarkdownBody text={msg.body} tone="fog-300" />
+          </div>
         )}
         <div className="mt-2 font-mono text-micro text-fog-600">{partInfo.blurb}</div>
       </div>
