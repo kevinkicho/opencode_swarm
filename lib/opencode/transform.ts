@@ -34,14 +34,20 @@ const KNOWN_PARTS: PartType[] = [
 ];
 
 // Opencode's providerID is per-message and reflects the routing gateway, not
-// the model vendor. Per CLAUDE.md the UI's provider universe is `zen` + `go`
-// only — BYOK-shaped providerIDs (anthropic, openai, gemini, …) still route
-// through opencode here and are bucketed as `zen`. `go` requires a positive
-// bundle/subscription signal because zen vs go is often an account-level
-// distinction opencode doesn't echo per-message.
+// the model vendor. Three tiers the UI distinguishes:
+//   ollama — providerID mentions 'ollama' (routed through the ollama provider
+//            block the user configured in opencode.json)
+//   go     — providerID carries a bundle/subscription signal ('-go', 'bundle',
+//            'subscription')
+//   zen    — everything else (including BYOK-shaped providerIDs like
+//            'anthropic' / 'openai' / 'gemini', which still route through
+//            opencode and are bucketed as zen for billing-model purposes)
+// History: the zen+go-only stance was load-bearing through 2026-04-23;
+// reversed 2026-04-24 — see DESIGN.md §9 history note.
 function providerOf(providerID?: string): Provider {
   if (!providerID) return 'zen';
   const p = providerID.toLowerCase();
+  if (p.includes('ollama')) return 'ollama';
   if (p.includes('-go') || p.includes('bundle') || p.includes('subscription')) return 'go';
   return 'zen';
 }
@@ -70,6 +76,11 @@ function familyOf(modelID?: string): Agent['model']['family'] {
   if (m.includes('qwen')) return 'qwen';
   if (m.includes('kimi')) return 'kimi';
   if (m.includes('glm')) return 'glm';
+  if (m.includes('nemotron')) return 'nemotron';
+  if (m.includes('gemma')) return 'gemma';
+  if (m.includes('mistral')) return 'mistral';
+  if (m.includes('minimax')) return 'minimax';
+  if (m.includes('mimo')) return 'mimo';
   return 'claude';
 }
 

@@ -7,7 +7,7 @@ import { Tooltip } from './ui/tooltip';
 import { defaultBounds, useRoutingBounds } from '@/lib/routing-bounds-context';
 
 interface DispatchSlice {
-  provider: 'zen' | 'go';
+  provider: 'zen' | 'go' | 'ollama';
   model: string;
   calls: number;
   cost: number;
@@ -15,22 +15,29 @@ interface DispatchSlice {
 }
 
 const initialDispatch: DispatchSlice[] = [
-  { provider: 'zen', model: 'opus-4.7', calls: 6, cost: 1.42, share: 0.34 },
-  { provider: 'zen', model: 'sonnet-4.6', calls: 11, cost: 0.89, share: 0.22 },
-  { provider: 'zen', model: 'haiku-4.5', calls: 18, cost: 0.24, share: 0.06 },
-  { provider: 'go', model: 'glm-5.1', calls: 14, cost: 0.52, share: 0.13 },
-  { provider: 'go', model: 'qwen3.6', calls: 22, cost: 0.31, share: 0.08 },
-  { provider: 'go', model: 'kimi k2.5', calls: 31, cost: 0.68, share: 0.17 },
+  { provider: 'zen', model: 'opus-4.7', calls: 6, cost: 1.42, share: 0.30 },
+  { provider: 'zen', model: 'sonnet-4.6', calls: 11, cost: 0.89, share: 0.18 },
+  { provider: 'zen', model: 'haiku-4.5', calls: 18, cost: 0.24, share: 0.05 },
+  { provider: 'go', model: 'glm-5.1', calls: 14, cost: 0.52, share: 0.11 },
+  { provider: 'go', model: 'qwen3.6', calls: 22, cost: 0.31, share: 0.06 },
+  { provider: 'go', model: 'kimi k2.5', calls: 31, cost: 0.68, share: 0.14 },
+  // Ollama messages carry 0 per-token cost (subscription-bundled) —
+  // share is imputed from call count, not dollars. Shown alongside
+  // zen/go so the user sees the three-way volume split.
+  { provider: 'ollama', model: 'glm-5.1 (ollama)', calls: 9, cost: 0, share: 0.10 },
+  { provider: 'ollama', model: 'nemotron-3-super (ollama)', calls: 5, cost: 0, share: 0.06 },
 ];
 
-const accentStripe: Record<'molten' | 'mint', string> = {
+const accentStripe: Record<'molten' | 'mint' | 'iris', string> = {
   molten: 'bg-molten',
   mint: 'bg-mint',
+  iris: 'bg-iris',
 };
 
-const providerFill: Record<'zen' | 'go', string> = {
+const providerFill: Record<'zen' | 'go' | 'ollama', string> = {
   zen: 'bg-molten',
   go: 'bg-mint',
+  ollama: 'bg-iris',
 };
 
 export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -44,6 +51,7 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
   const [minutesCap, setMinutesCap] = useState(bounds.minutesCap);
   const [zenCeiling, setZenCeiling] = useState(bounds.zenCeiling);
   const [goCeiling, setGoCeiling] = useState(bounds.goCeiling);
+  const [ollamaCeiling, setOllamaCeiling] = useState(bounds.ollamaCeiling);
 
   const wasOpenRef = useRef(open);
   useEffect(() => {
@@ -53,6 +61,7 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
       setMinutesCap(bounds.minutesCap);
       setZenCeiling(bounds.zenCeiling);
       setGoCeiling(bounds.goCeiling);
+      setOllamaCeiling(bounds.ollamaCeiling);
     }
     wasOpenRef.current = open;
   }, [open, bounds]);
@@ -62,10 +71,11 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
     tokenCap !== bounds.tokenCap ||
     minutesCap !== bounds.minutesCap ||
     zenCeiling !== bounds.zenCeiling ||
-    goCeiling !== bounds.goCeiling;
+    goCeiling !== bounds.goCeiling ||
+    ollamaCeiling !== bounds.ollamaCeiling;
 
   const handleSave = () => {
-    save({ costCap, tokenCap, minutesCap, zenCeiling, goCeiling });
+    save({ costCap, tokenCap, minutesCap, zenCeiling, goCeiling, ollamaCeiling });
     onClose();
   };
 
@@ -76,6 +86,7 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
     setMinutesCap(defaultBounds.minutesCap);
     setZenCeiling(defaultBounds.zenCeiling);
     setGoCeiling(defaultBounds.goCeiling);
+    setOllamaCeiling(defaultBounds.ollamaCeiling);
   };
 
   const dispatch = initialDispatch;
@@ -207,6 +218,13 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
             onChange={setGoCeiling}
             accent="mint"
           />
+          <CeilingRow
+            label="ollama"
+            hint="subscription tier"
+            value={ollamaCeiling}
+            onChange={setOllamaCeiling}
+            accent="iris"
+          />
         </div>
 
         <div className="flex items-center gap-2">
@@ -328,8 +346,10 @@ function CeilingRow({
   hint: string;
   value: number;
   onChange: (v: number) => void;
-  accent: 'molten' | 'mint';
+  accent: 'molten' | 'mint' | 'iris';
 }) {
+  const accentClass =
+    accent === 'molten' ? 'accent-molten' : accent === 'mint' ? 'accent-mint' : 'accent-iris';
   return (
     <div className="grid grid-cols-[70px_1fr_140px] items-center gap-2">
       <div className="flex items-center gap-2">
@@ -343,10 +363,7 @@ function CeilingRow({
         max={100}
         step={5}
         onChange={(e) => onChange(Number(e.target.value))}
-        className={clsx(
-          'cursor-pointer',
-          accent === 'molten' ? 'accent-molten' : 'accent-mint'
-        )}
+        className={clsx('cursor-pointer', accentClass)}
         aria-label={`${label} ceiling`}
       />
       <div className="flex items-center gap-2 justify-end">

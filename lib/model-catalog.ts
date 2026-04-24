@@ -75,4 +75,51 @@ export const modelCatalog: ModelRef[] = [
     family: 'claude',
     pricing: { input: 5, output: 25 },
   },
+  // Ollama tier (ollama.com subscription — ollama max plan). All models
+  // carry pricing: { 0, 0 } because billing is monthly-flat, not per-
+  // token; the cost derivations treat 0 as "bundled" so provider stats
+  // show the split by message volume, not dollars. Added 2026-04-24
+  // alongside the three-tier stance reversal. User must configure
+  // opencode.json to route the `ollama/` model IDs to an ollama provider
+  // endpoint — see docs/ARCHITECTURE.md.
+  {
+    id: 'ollama/nemotron-3-super:cloud',
+    label: 'nemotron-3-super',
+    provider: 'ollama',
+    family: 'nemotron',
+    pricing: { input: 0, output: 0 },
+    limitTag: 'ollama max',
+  },
+  {
+    id: 'ollama/gemma4:31b-cloud',
+    label: 'gemma4:31b',
+    provider: 'ollama',
+    family: 'gemma',
+    pricing: { input: 0, output: 0 },
+    limitTag: 'ollama max',
+  },
+  {
+    id: 'ollama/kimi-k2.6:cloud',
+    label: 'kimi-k2.6',
+    provider: 'ollama',
+    family: 'kimi',
+    pricing: { input: 0, output: 0 },
+    limitTag: 'ollama max',
+  },
+  {
+    id: 'ollama/glm-5.1:cloud',
+    label: 'glm-5.1',
+    provider: 'ollama',
+    family: 'glm',
+    pricing: { input: 0, output: 0 },
+    limitTag: 'ollama max',
+  },
+  {
+    id: 'ollama/mistral-large-3:675b-cloud',
+    label: 'mistral-large-3:675b',
+    provider: 'ollama',
+    family: 'mistral',
+    pricing: { input: 0, output: 0 },
+    limitTag: 'ollama max',
+  },
 ];

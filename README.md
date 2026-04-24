@@ -28,8 +28,10 @@ Next.js 14 (App Router) · TypeScript strict · Tailwind · framer-motion · cmd
 
 - `OPENCODE_URL` — base URL of your opencode instance. Default `http://localhost:4096`; this repo currently targets `http://172.24.32.1:4097` (WSL → Windows host bridge, see `scripts/dev.mjs`). The `:4097` port is deliberate — `:4096` is reserved for the sibling ollama-swarm app.
 - `OPENCODE_BASIC_USER` / `OPENCODE_BASIC_PASS` — HTTP Basic auth, if your opencode enforces it. Server-side only; never prefix with `NEXT_PUBLIC_`. Leave empty when auth is off.
-- Optional: `OPENCODE_SWARM_ROOT` (runs dir override), `OPENCODE_LOG_DIR` (opencode's own log path — powers the Zen-429 vs. frozen distinction in the liveness watchdog), `DEMO_LOG_AUTO_DELETE` / `DEMO_LOG_RETENTION_DAYS` (event-log pruning).
+- Optional: `OPENCODE_SWARM_ROOT` (runs dir override), `OPENCODE_LOG_DIR` (opencode's own log path — powers the Zen-429 vs. frozen distinction in the liveness watchdog), `DEMO_LOG_AUTO_DELETE` / `DEMO_LOG_RETENTION_DAYS` (event-log pruning), `OPENCODE_RESTART_CMD` (optional shell command the frozen watchdog runs to restart opencode).
 - See `.env.example` for the full schema with comments.
+
+**To use the `ollama` provider tier:** configure your `opencode.json` (or equivalent opencode config) with a provider block that routes the `ollama/*:cloud` model IDs to ollama's cloud API. Requires an ollama account with a max plan subscription. The [`ollama_swarm`](https://github.com/kevinkicho/ollama_swarm) sibling project is a working example of ollama integration at the raw-swarm level if you want a reference for the provider block shape. Without this opencode.json configuration, `ollama/*` model selections in new-run-modal will fail to dispatch — opencode needs to know how to reach the ollama API.
 
 Node + npm — any version that runs Next.js 14. SQLite is bundled via `better-sqlite3`; no separate DB to install.
 
@@ -69,7 +71,7 @@ In-app, the **glossary modal** (footer link) covers actor/transcript vocabulary 
 - **Roles are pattern-scoped, not universal.** Self-organizing patterns (blackboard, council, stigmergy) have no pinned roles — agents self-select work within run bounds. Hierarchical patterns (orchestrator-worker, role differentiation, debate+judge, critic-loop, deliberate-execute) CAN pin roles when the pattern needs them, and those roles are visible in the UI. Routing stays bounds-driven either way; `if role=X → provider=Y` remains off-limits. See `DESIGN.md` §1 "On roles" for the 2026-04-23 stance reversal behind this.
 - **Declarative and imperative separated.** The routing modal sets policy (saves apply to the next dispatch); the spawn modal and palette trigger actions. Never both in one panel.
 - **Dense-factory aesthetic.** Monospace, tabular-nums, hairline borders, h-5/h-6 rows, `text-micro` uppercase labels. Not a ChatGPT/Perplexity/Claude.ai clone.
-- **Provider universe is `zen` + `go` only.** No BYOK UI, no local-model picker.
+- **Three provider tiers: `zen` + `go` + `ollama`.** All three route through opencode (you configure `opencode.json` for the ollama provider). No BYOK UI, no local-model picker as a selection affordance — the tiers exist because each has a different billing/limit shape: zen is pay-per-token marketplace, go is opencode subscription bundle, ollama is ollama.com max subscription. The stance was "`zen` + `go` only" through 2026-04-23; reversed 2026-04-24 after the ollama-max cost shape proved strictly better for sustained runs.
 
 ## Contributing
 

@@ -20,17 +20,21 @@ The UI is **timeline-centric, not scrollback-centric**. We rejected the chat-pan
 
 ---
 
-## Not a multi-provider configuration tool
+## Not a BYOK / local-model selection tool — but now a three-tier configuration tool
 
-The provider universe is **`zen` (pay-per-token marketplace) and `go` (subscription bundle) only** — for *selection* surfaces. We removed, from the selection surfaces:
-- BYOK (bring your own key) provider tier in new-run-modal, spawn-agent-modal, routing-modal
-- Local-model selection in the spawn modal
-- A "model source" dropdown
-- Per-agent provider override outside the routing policy
+**History.** Through 2026-04-23, this section asserted "**`zen` + `go` only**" and listed BYOK / local-model selection as explicitly removed. That stance was reversed 2026-04-24: the user added `ollama` as a third tier after both opencode-go (usage-ceiling-bound) and opencode-zen (pay-per-token) proved less economical than ollama-max's monthly-flat subscription for sustained multi-hour runs. The reversal is analogous to the 2026-04-23 role-hierarchy reversal — a stance change motivated by observed production cost, not a drift.
 
-**Why:** the user explicitly assumes "all users are on opencode zen/go." BYOK and local models are valid in opencode itself but are out of scope as a selection affordance here. Adding them back to selection surfaces would re-introduce the routing complexity we deliberately collapsed.
+**Current three-tier scope.** Provider universe is `zen` + `go` + `ollama`. All three route through opencode (user configures `opencode.json` with provider blocks for each tier they intend to use). The new-run-modal, spawn-agent-modal, and routing-modal expose all three as selectable; the routing-modal's ceilings cover all three independently.
 
-**Scope clarification (2026-04-23).** "No BYOK UI" covers the *selection* surfaces (places the user picks a provider: new-run-modal, spawn-agent-modal, routing-modal). The **inspector** (`components/inspector.tsx`) is a read-only drill-down; its `ModelPicker` renders a `byok` group header when the active opencode instance's model catalog happens to include BYOK-tagged models. That's informational display of what opencode sees, not a selection path — the inspector cannot route future dispatch to a BYOK model. If you want to hide even the read-only mention, filter BYOK out of the model catalog upstream; don't remove the group header.
+**Still removed, on purpose:**
+- **BYOK as a selection affordance.** The `byok` value remains in the `Provider` union for backwards compatibility with old meta.json and for the read-only inspector display below; it is not an option in the creation surfaces.
+- **Local-model selection in the spawn modal.** Models come from the catalog (`lib/model-catalog.ts` + `lib/zen-catalog.ts`); there is no free-form model-path field.
+- **A "model source" dropdown.** Tier determines routing — zen, go, ollama. Users don't configure the source URL; opencode does.
+- **Per-agent provider override outside the routing policy.** Ceilings + caps are run-wide; the coordinator picks within them.
+
+**Why the stance change didn't collapse into multi-provider chaos.** The three tiers are distinguished by **billing model shape**, not by model vendor or source URL. Users don't compare "anthropic vs openai vs google" here — opencode handles that inside `zen`. What users now compare is *how they pay* — per-token (zen), opencode bundle (go), ollama bundle (ollama). Three is the small, well-defined set the tool was always meant to be opinionated about.
+
+**Inspector BYOK display (unchanged).** The **inspector** (`components/inspector.tsx`) is a read-only drill-down; its `ModelPicker` renders a `byok` group header when the active opencode instance's model catalog happens to include BYOK-tagged models. That's informational display of what opencode sees, not a selection path — the inspector cannot route future dispatch to a BYOK model.
 
 ---
 

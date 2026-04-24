@@ -8,6 +8,7 @@ import { ProviderStats } from './provider-stats';
 const providerStyle: Record<Provider, string> = {
   zen: 'bg-molten/10 text-molten border-molten/25',
   go: 'bg-mint/10 text-mint border-mint/25',
+  ollama: 'bg-iris/10 text-iris border-iris/25',
   byok: 'bg-ink-700 text-fog-300 border-ink-500',
 };
 

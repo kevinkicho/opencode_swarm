@@ -22,7 +22,7 @@ Briefing for Claude Code (and any agent that respects this convention) opening t
 
 ## Never
 - Mix **declarative and imperative** in the same panel. A modal is either a rules editor (`save` / `reset`) or an action trigger (`spawn` / `send` / `run`). Never both. See `DESIGN.md` §12.
-- Add **BYOK / local-model** UI. Provider universe is `zen` + `go` only.
+- Add **BYOK / local-model** UI as a selection affordance. Provider universe is `zen` + `go` + `ollama` — all three route through opencode (user configures opencode.json for ollama). History: "zen + go only" was the stance through 2026-04-23; reversed 2026-04-24 after the ollama-max subscription shape proved more economical than opencode-go ceilings + opencode-zen PPT. See DESIGN.md §9.
 - Replace canonical opencode names with custom vocabulary "for clarity."
 - Default to generic AI design vocabulary (Inter, Roboto, purple gradients on white). The aesthetic is a deliberate point of view.
 

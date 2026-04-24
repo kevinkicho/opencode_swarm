@@ -1,7 +1,20 @@
 // canonical vocabulary from opencode SDK
 // see docs/opencode-vocabulary.md for authoritative source
 
-export type Provider = 'zen' | 'go' | 'byok';
+// Three provider tiers, all routed through opencode:
+//   zen    — opencode's pay-per-token marketplace (Claude, GPT, Gemini, …)
+//   go     — opencode subscription bundle (qwen/kimi/glm/minimax under one ceiling)
+//   ollama — ollama.com subscription (ollama max plan: nemotron, gemma, kimi,
+//            glm, mistral — all `:cloud` variants). User configures opencode
+//            for ollama via opencode.json; the app surfaces it as a selectable
+//            tier so cost/session distribution shows the three-way split.
+// `byok` remains in the union for backwards compatibility with old meta.json
+// entries + the read-only inspector's model catalog display (opencode may
+// expose BYOK-configured models). Not selectable from creation surfaces.
+// History: zen+go-only was the load-bearing stance through 2026-04-23;
+// reversed 2026-04-24 after opencode-go ceilings + opencode-zen PPT both
+// proved less economical than the ollama-max subscription shape.
+export type Provider = 'zen' | 'go' | 'ollama' | 'byok';
 
 // Run-wide orchestration shape. `none` is opencode native (one session,
 // task-tool for sub-agents). Others are coordinator-above-opencode presets
@@ -81,7 +94,7 @@ export interface ModelRef {
   id: string;
   label: string;
   provider: Provider;
-  family: 'claude' | 'gpt' | 'gemini' | 'qwen' | 'kimi' | 'glm' | 'mimo' | 'minimax' | 'nemotron';
+  family: 'claude' | 'gpt' | 'gemini' | 'qwen' | 'kimi' | 'glm' | 'mimo' | 'minimax' | 'nemotron' | 'gemma' | 'mistral';
   pricing?: { input: number; output: number };
   limitTag?: string;
 }

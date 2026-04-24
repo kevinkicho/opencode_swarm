@@ -11,12 +11,19 @@ import {
 
 // Run-level bounds the routing modal saves. Declarative — these are caps, not
 // assignments. Dispatch logic reads them; human edits them via the modal.
+//
+// Ceilings are per-tier cost fractions (0-100). `ollamaCeiling` added
+// 2026-04-24 with the three-tier reversal; default 100 because ollama is
+// subscription-billed so runaway-on-premium — the reason ceilings exist
+// — doesn't apply. The slider is still surfaced so users can force a
+// run away from ollama if they want zen/go behavior for comparison.
 export interface RoutingBounds {
   costCap: number;
   tokenCap: number;
   minutesCap: number;
   zenCeiling: number;
   goCeiling: number;
+  ollamaCeiling: number;
 }
 
 export const defaultBounds: RoutingBounds = {
@@ -25,6 +32,7 @@ export const defaultBounds: RoutingBounds = {
   minutesCap: 15,
   zenCeiling: 60,
   goCeiling: 100,
+  ollamaCeiling: 100,
 };
 
 interface Ctx {

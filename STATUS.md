@@ -28,6 +28,40 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-24 — ollama tier (three-tier reversal)
+
+Stance reversal. `zen + go only` → `zen + go + ollama`. Motivated by
+cost: opencode-go usage ceilings cap below sustained runs' needs, and
+opencode-zen pay-per-token is affordable but not subscription-cheap;
+ollama-max's monthly-flat shape is strictly better for hours-long
+autonomous runs.
+
+- **`Provider` union extended** to include `'ollama'`. `providerOf()`
+  in `lib/opencode/transform.ts` buckets any `providerID` containing
+  `ollama` into the new tier.
+- **5 ollama-max models in catalog** (`lib/model-catalog.ts` +
+  `lib/zen-catalog.ts`): `nemotron-3-super:cloud`, `gemma4:31b-cloud`,
+  `kimi-k2.6:cloud`, `glm-5.1:cloud`, `mistral-large-3:675b-cloud`.
+  All with pricing 0 (subscription-billed) and `limitTag: 'ollama max'`.
+- **Pricing lookup precedence.** Ollama pattern (`/ollama[/_-]/`) lands
+  first in `LOOKUP` so `ollama/kimi-k2.6:cloud` doesn't accidentally
+  hit the zen `kimi-k2-6` row and get charged per-token.
+- **UI surfaces extended:** `ProviderBadge`, `ProviderStats`,
+  `RoutingModal` (ollama ceiling slider + dispatch-stack row),
+  `RoutingBounds` (new `ollamaCeiling` field, defaults to 100 because
+  subscription = no runaway). The new-run-modal + spawn-agent-modal
+  pickers list the 5 ollama models via `zenModels[]` with
+  `family: 'ollama'` (overloaded family marker).
+- **Docs cascade:** DESIGN.md §4 + §9 rewritten with history note,
+  CLAUDE.md "Never" updated, WHAT_THIS_PROJECT_IS_NOT.md's
+  "multi-provider" section rewritten around the three-tier scope,
+  README's design-stance bullet + Prerequisites updated,
+  docs/ARCHITECTURE.md gains §1.5.0 Provider tiers block.
+- **Prerequisite:** user must configure opencode's `opencode.json`
+  with a provider block routing `ollama/*:cloud` IDs to ollama. The
+  `github.com/kevinkicho/ollama_swarm` sibling repo is the reference
+  implementation for the ollama provider shape.
+
 ### 2026-04-23 — ambition-ratchet stack + Go routing + validation
 
 One day, large ship run. Grouped by theme.

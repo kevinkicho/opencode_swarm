@@ -23,6 +23,13 @@ const providerDisplay: Record<
     accent: 'text-mint',
     barFull: 'bg-mint/70',
   },
+  ollama: {
+    name: 'ollama max',
+    hint: 'ollama.com subscription bundle — :cloud variants, flat monthly cost',
+    dot: 'bg-iris',
+    accent: 'text-iris',
+    barFull: 'bg-iris/70',
+  },
   byok: {
     name: 'bring your own key',
     hint: 'direct provider api keys, no opencode routing',

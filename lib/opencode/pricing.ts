@@ -58,11 +58,22 @@ const PRICES: Record<string, ZenPrice> = {
   'minimax-m2-5-free':{input: 0,   output: 0,   cached: 0 },
   'nemotron-free':   { input: 0,   output: 0,   cached: 0 },
   'big-pickle':      { input: 0,   output: 0,   cached: 0 },
+  // Ollama bundle (ollama.com max monthly plan). Subscription-billed,
+  // so per-token cost resolves to 0 and callers that sum tokens×price
+  // see ollama as a bundled line in the cost-dashboard — same shape
+  // as opencode-go runs. Added 2026-04-24 with the three-tier
+  // stance reversal; see DESIGN.md §9.
+  'ollama-bundle':   { input: 0,   output: 0,   cached: 0 },
 };
 
 // Order matters: more specific patterns first (e.g. `-pro` before the generic
 // model match). First regex wins. Patterns run against the lowercased modelID.
+//
+// Ollama is matched FIRST so an `ollama/kimi-k2.6:cloud` doesn't accidentally
+// hit the zen `kimi-k2-6` row and get charged per-token — ollama is a flat
+// subscription, and the catch-all 'ollama-bundle' row returns 0.
 const LOOKUP: ReadonlyArray<readonly [RegExp, keyof typeof PRICES]> = [
+  [/(^|[/_-])ollama([/_-]|$)/, 'ollama-bundle'],
   [/claude[-_/]?opus[-_/]?4[-_/.]?7/, 'claude-opus-4-7'],
   [/claude[-_/]?opus[-_/]?4[-_/.]?6/, 'claude-opus-4-6'],
   [/claude[-_/]?opus[-_/]?4[-_/.]?5/, 'claude-opus-4-5'],

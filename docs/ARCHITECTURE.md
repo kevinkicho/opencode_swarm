@@ -186,6 +186,37 @@ Invariants:
   firehose choked browser tabs. Shaping runs AFTER `appendEvent` — L0
   stores the shaped frames so replay size shrinks too.
 
+### 1.5.0 Provider tiers (zen / go / ollama)
+
+Three billing-model tiers the app distinguishes, all of them routed
+through opencode. The Next.js layer does not talk to any model provider
+directly — it only inspects `info.providerID` on opencode messages to
+bucket them for the UI's provider-stats + ceiling math.
+
+| Tier | Routing signal | Cost shape |
+|---|---|---|
+| `zen` | default; `providerID` doesn't match a more-specific rule | per-token (opencode zen marketplace) |
+| `go` | `providerID` contains `-go` / `bundle` / `subscription` | subscription bundle (opencode go) |
+| `ollama` | `providerID` contains `ollama` | monthly-flat (ollama.com max plan) |
+
+Transform logic: `providerOf()` in `lib/opencode/transform.ts`. Pricing
+lookup: `priceFor()` in `lib/opencode/pricing.ts` — ollama hits the
+`ollama-bundle` entry (all zeros) ahead of any other pattern so an
+`ollama/kimi-k2.6:cloud` doesn't accidentally match the zen `kimi-k2-6`
+row and get charged per-token.
+
+**Ollama prerequisite.** The ollama tier requires the user to configure
+opencode (`opencode.json` or equivalent) with a provider block that
+routes the `ollama/*:cloud` model IDs. Without this, `ollama/...`
+selections in new-run-modal will fail to dispatch — opencode doesn't
+know how to reach ollama. The `ollama_swarm` sibling repo at
+`github.com/kevinkicho/ollama_swarm` has a working provider-block
+reference.
+
+**History.** The zen + go only stance was retired 2026-04-24 — see
+DESIGN.md §9 for the decision and WHAT_THIS_PROJECT_IS_NOT.md for the
+scope clarification.
+
 ### 1.5.1 Hierarchical-pattern orchestrators
 
 Five patterns shipped 2026-04-23 after retiring the earlier "no role
