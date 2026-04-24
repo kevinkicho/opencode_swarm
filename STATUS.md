@@ -548,6 +548,25 @@ One day, large ship run. Grouped by theme.
 
 ### Next-up (high leverage, < 1 day each)
 
+- **Postmortem F1–F9 from `docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md`.**
+  Nine fixes declared, all `PROPOSED`. F1 (dispatch watchdog) + F2 (opencode log
+  tail into dev console) are P0 and unblock everything else — ~3–4 h each.
+  F3 (opencode debug logging via launcher edit) is ~5 min. Each fix has a
+  validation probe documented in the postmortem's §3; update the ledger
+  table in the postmortem as fixes ship + get verified against real runs.
+
+- **Per-pattern observability tabs from `docs/PATTERN_DESIGN/`.**
+  Nine pattern design contracts written (blackboard, orchestrator-worker,
+  role-differentiated, map-reduce, council, critic-loop, debate-judge,
+  deliberate-execute, stigmergy). Each proposes a pattern-specific tab or
+  overlay spec + backend improvements (I<n>) with a ledger. Priority tiers:
+  (T1) `iterations` for critic-loop + `debate` for debate-judge — verdicts
+  already parseable, pure view work; (T2) `strategy` for orchestrator-worker
+  + `roles` for role-differentiated — hierarchical patterns flying blind
+  today; (T3) mechanics gaps (I<n> items) that close loop / cap /
+  decay issues across patterns. Blackboard's `contracts` tab is the one
+  the user explicitly called out — UI ~3 h, all data already in the store.
+
 - **Heat tab: file-tree toggle (VSCode-style).** Button in the heat-rail
   header flips between the current heat-list view and a tree view of
   the workspace files. Files in the tree show heat chips (edit counts)
@@ -556,6 +575,49 @@ One day, large ship run. Grouped by theme.
   A from the 2026-04-24 design exchange. Needs `GET /api/swarm/run/:id/tree`
   (or a workspace-scoped variant) for the filesystem enumeration,
   gitignore-aware, short cache. ~2-3 h scope.
+
+- **Run-health surfacing (2026-04-24 audit).** User correctly flagged
+  that our app masks the signals opencode already emits. Concrete
+  gaps, all observed on run_mod5dy6n_utsb32 (orch-worker, 0 tokens
+  after 14m) and run_mob31bx6_jzdfs2 (blackboard, 21h idle at 22.33M):
+  1. **`tokens` endpoint per-session `status: 'live'` is fooled by
+     user-post timestamps.** lastActivityTs is set when we POST the
+     prompt, so a silent-assistant session reads as "live" indefinitely.
+     Fix: separate `lastUserPostTs` / `lastAssistantActivityTs`, and
+     have status derive from the latter.
+  2. **`board/ticker` returns `{state:'none'}` once evicted from the
+     in-memory map.** stopReason (opencode-frozen / zen-rate-limit /
+     manual / hard-cap) is lost. Fix: persist the final snapshot in
+     SQLite when `stopAutoTicker` fires so GET can reconstruct
+     "stopped, reason=X, at=Y" after dev-restart.
+  3. **`item.note` renders only in a hover tooltip at 10px italic.**
+     6 retry-maxed items on the blackboard run were invisible in the
+     scannable list. Fix: when any open item has a `[retry:N]` note,
+     surface a chip in the list row itself (amber); add a run-level
+     count ("6 items retry-maxed") to the topbar.
+  4. **No "assistant silent since dispatch" signal anywhere.** A session
+     whose only message is a user prompt with no assistant response is
+     indistinguishable from a healthy one pre-generation. Fix: compute
+     `hasAssistantResponse` per session from message parts, and a
+     run-level "0 assistant activity after T min" banner.
+  5. **Retry-exhausted → ticker stalls without re-kick.** When all
+     open items hit `[retry:2]` and retryOrStale marks them stale,
+     the ratchet never re-sweeps at a higher tier because the
+     work-available check sees them as 'open' pending final stale
+     transition. Audit coordinator.ts:192 + auto-ticker tier
+     escalation for this race.
+  ~4-6 h total scope; surfaces #1 + #3 are smallest wins.
+
+- **Nemotron-through-opencode unblock (orch-worker + friends).**
+  Pragmatic swap: `NEMOTRON` → `GEMMA` in `lib/swarm-patterns.ts`
+  `patternDefaults` for orchestrator-worker / role-differentiated /
+  map-reduce / council / debate-judge / deliberate-execute. Direct
+  ollama API works for nemotron (0.5–3s on both `/api/generate` and
+  `/v1/chat/completions`), but opencode's wrapper consistently yields
+  0-assistant-response for 14+ min (observed on run_mod5dy6n_utsb32).
+  Root cause still unknown — the above run-health surfacing work
+  might expose it. Until then, gemma fills the same role seat.
+  ~10 min code + relaunch.
 
 ### Designed but deprioritized
 

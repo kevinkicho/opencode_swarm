@@ -14,6 +14,8 @@ Briefing for Claude Code (and any agent that respects this convention) opening t
 ## Check when orienting — not durable, not design
 
 - **`STATUS.md`** — time-scoped snapshot: what shipped recently, what has known rough edges, what's queued. Check when asking "where are we right now?" — NOT when asking "how does X work?" (use the 5 docs above for that). Maintenance: append-only during work; rewrite every couple months.
+- **`docs/POSTMORTEMS/`** — forensic reports on run failures. Each postmortem declares fixes + validation procedures; the ledger tracks which fixes shipped and which were verified against which subsequent run. Use as regression probes when babysitting a new run. See `docs/POSTMORTEMS/README.md` for the contract.
+- **`docs/PATTERN_DESIGN/`** — per-pattern design contracts: canonical mechanics, signals emitted, proposed observability surface (tab spec), mechanics gaps, ledger. One file per pattern (9 total + README). Use when designing a pattern-specific view, proposing a backend improvement, or verifying a UI change hit the spec. See `docs/PATTERN_DESIGN/README.md` for the contract.
 
 ## Always
 - Run `npx tsc --noEmit` after edits. The repo is TypeScript strict; type-clean is the bar.
