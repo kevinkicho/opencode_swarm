@@ -1106,9 +1106,18 @@ function PatternCard({
       >
         {meta.label}
       </div>
-      <div className="font-mono text-[10px] text-fog-600 leading-snug">
+      <div className="font-mono text-[10px] text-fog-500 leading-snug">
         {meta.tagline}
       </div>
+      <div className="font-mono text-[9.5px] text-fog-700 leading-snug mt-1 tabular-nums">
+        {meta.shape}
+      </div>
+      {active && (
+        <div className="font-mono text-[9.5px] text-fog-600 leading-snug mt-1">
+          <span className="text-fog-700">fit: </span>
+          {meta.fit}
+        </div>
+      )}
       {disabled && (
         <span className="absolute top-1.5 right-1.5 font-mono text-[8.5px] uppercase tracking-widest2 text-fog-700 border border-ink-700 rounded-[3px] px-1 h-3.5 inline-flex items-center bg-ink-900">
           soon

@@ -67,6 +67,20 @@ export interface SwarmRunRequest {
   // server — we don't manage its lifecycle. Required when
   // enableVerifierGate is true; ignored otherwise.
   workspaceDevUrl?: string;
+  // Run-chaining pointer. When set, the new run inherits from a prior
+  // run:
+  //   - workspace (must match if req.workspace is also set, else
+  //     auto-inherits when req.workspace is omitted — silent-fork
+  //     prevention keeps commits landing on the intended checkout)
+  //   - source (provenance continuity)
+  //   - starting tier for the ambition ratchet (prior run's currentTier
+  //     carries into the new run's first planner sweep — no "reset to
+  //     tier 1" after a pattern switch or a rate-limit bounce)
+  // Pattern / directive / teamSize / bounds / team roles are NOT
+  // inherited — those are deliberate per-run choices. Unlocks the
+  // "unleash a swarm on this repo for a week, bouncing through
+  // different patterns as needed" usage pattern.
+  continuationOf?: string;
 }
 
 export interface SwarmRunBounds {
@@ -112,7 +126,13 @@ export interface SwarmRunMeta {
   // after each successful tier bump (via updateRunMeta) so a ticker
   // restart mid-run doesn't drop the ratchet back to tier 1. Absent
   // until the first escalation succeeds; interpreted as tier 1 then.
+  // Also seeded at createRun when continuationOf is set — the new run
+  // inherits the prior run's currentTier so the first planner sweep
+  // targets the right ambition layer.
   currentTier?: number;
+  // Lineage pointer for run chaining. Absent for standalone runs. See
+  // SwarmRunRequest.continuationOf for semantics.
+  continuationOf?: string;
 }
 
 // --- response shape ---------------------------------------------------------

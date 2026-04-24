@@ -64,4 +64,13 @@ export interface BoardItem {
   // ("the dashboard renders X", "clicking Y opens Z"). Planner sets
   // this on its todowrite emission for items that fit.
   requiresVerification?: boolean;
+  // Soft role affinity for hierarchical-pattern runs. When set and the
+  // run uses role-differentiated (or similar role-pinning shape), the
+  // coordinator picker biases toward claiming this item with a session
+  // whose pinned role matches. Non-matching sessions can still claim —
+  // this is exploration bias, not hard routing. Planner sets it via a
+  // `[role:<name>]` content prefix on todowrite; see
+  // lib/server/blackboard/planner.ts::stripRoleTag. Left undefined on
+  // self-organizing runs (blackboard, council, stigmergy).
+  preferredRole?: string;
 }

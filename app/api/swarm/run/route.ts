@@ -24,7 +24,7 @@
 import type { NextRequest } from 'next/server';
 
 import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
-import { createRun, deriveRunRowCached, listRuns } from '@/lib/server/swarm-registry';
+import { createRun, deriveRunRowCached, getRun, listRuns } from '@/lib/server/swarm-registry';
 import { runPlannerSweep } from '@/lib/server/blackboard/planner';
 import { startAutoTicker } from '@/lib/server/blackboard/auto-ticker';
 import { runCouncilRounds } from '@/lib/server/council';
@@ -145,14 +145,40 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
   const obj = raw as Record<string, unknown>;
 
   if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker, role-differentiated, debate-judge, critic-loop, deliberate-execute';
-  if (typeof obj.workspace !== 'string' || !obj.workspace.trim()) {
-    return 'workspace (absolute path) is required';
+
+  // continuationOf: validate type explicitly so a bogus value (number,
+  // array, etc.) rejects rather than silently degrading to a fresh run.
+  if (obj.continuationOf !== undefined) {
+    if (typeof obj.continuationOf !== 'string' || !obj.continuationOf.trim()) {
+      return 'continuationOf, when provided, must be a non-empty swarmRunID string';
+    }
+  }
+  // workspace is normally required, but when continuationOf is set we
+  // allow it to be absent — resolveContinuation() fills it from the
+  // prior run's meta. Still validated as a non-empty string when present.
+  const hasContinuation =
+    typeof obj.continuationOf === 'string' && obj.continuationOf.trim().length > 0;
+  if (!hasContinuation) {
+    if (typeof obj.workspace !== 'string' || !obj.workspace.trim()) {
+      return 'workspace (absolute path) is required';
+    }
+  } else if (
+    obj.workspace !== undefined &&
+    (typeof obj.workspace !== 'string' || !obj.workspace.trim())
+  ) {
+    return 'workspace, when provided, must be a non-empty string';
   }
 
   const req: SwarmRunRequest = {
     pattern: obj.pattern,
-    workspace: obj.workspace,
+    // Placeholder when continuation inheritance will fill workspace.
+    // resolveContinuation() below will replace this before createRun.
+    workspace: typeof obj.workspace === 'string' ? obj.workspace : '',
   };
+
+  if (hasContinuation) {
+    req.continuationOf = (obj.continuationOf as string).trim();
+  }
 
   if (obj.source !== undefined) {
     if (typeof obj.source !== 'string') return 'source must be a string';
@@ -323,6 +349,41 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
   return req;
 }
 
+// Continuation inheritance: when req.continuationOf is set, look up the
+// prior run and fill in fields the new run should inherit (workspace,
+// source). Also returns the ambition-ratchet tier to start at — the new
+// run's first planner sweep picks up where the prior run left off, so a
+// pattern switch mid-project doesn't reset ambition to tier 1.
+//
+// Rejections return a 400-ready error string. Success mutates `req` in
+// place (fills workspace + source when they were blank) and returns the
+// starting tier (≥ 1).
+async function resolveContinuation(
+  req: SwarmRunRequest,
+): Promise<number | string> {
+  if (!req.continuationOf) return 1;
+  const prior = await getRun(req.continuationOf);
+  if (!prior) {
+    return `continuationOf: run '${req.continuationOf}' not found`;
+  }
+  if (!req.workspace) {
+    req.workspace = prior.workspace;
+  } else if (req.workspace !== prior.workspace) {
+    return `continuationOf: workspace '${req.workspace}' does not match prior run's workspace '${prior.workspace}' — refusing silent fork`;
+  }
+  if (!req.source && prior.source) {
+    req.source = prior.source;
+  }
+  // Tier clamp: prior.currentTier may have been set by a future
+  // version with a different max. Clamp into [1, MAX_TIER_FLOOR=5]
+  // here rather than letting a bogus value propagate into the planner
+  // prompt. If the prior run exhausted tier 5 (tierExhausted), the new
+  // run resumes at tier 5 — the planner will decide if there's still
+  // tier-5 work to do.
+  const priorTier = prior.currentTier ?? 1;
+  return Math.max(1, Math.min(5, priorTier));
+}
+
 export async function POST(req: NextRequest): Promise<Response> {
   let body: unknown;
   try {
@@ -345,6 +406,14 @@ export async function POST(req: NextRequest): Promise<Response> {
       { status: 501 }
     );
   }
+
+  // Resolve continuationOf inheritance before any session spawn so a
+  // missing prior run fails fast without burning opencode resources.
+  const continuation = await resolveContinuation(parsed);
+  if (typeof continuation === 'string') {
+    return Response.json({ error: continuation }, { status: 400 });
+  }
+  const startTier = continuation;
 
   // Resolve effective teamSize. The body is authoritative when present (it
   // was range-validated in parseRequest); otherwise fall back to the
@@ -516,7 +585,11 @@ export async function POST(req: NextRequest): Promise<Response> {
   const sessionIDs = sessions.map((s) => s.id);
   let meta;
   try {
-    meta = await createRun(parsed, sessionIDs, { criticSessionID, verifierSessionID });
+    meta = await createRun(parsed, sessionIDs, {
+      criticSessionID,
+      verifierSessionID,
+      startTier,
+    });
   } catch (err) {
     return Response.json(
       {

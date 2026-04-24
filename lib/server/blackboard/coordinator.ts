@@ -523,14 +523,32 @@ export async function tickCoordinator(
   // v0 (observation-only) it was computed client-side; at v1 we also
   // need it server-side here. We already fetched the busy-check
   // messages above, so the only incremental cost is the merge.
+  //
+  // Role affinity (primary sort) runs above heat: if the picked
+  // session has a pinned role (role-differentiated pattern) and an
+  // item carries a matching preferredRole, the match gets -1 (highest
+  // priority). A mismatch gets +1 (de-prioritized but still claimable
+  // — soft bias, not hard routing). Neutral items (either side
+  // unset) get 0 so the heat bias still decides order among them.
   const allMessages = [...messagesByCandidate.values()].flat();
   const heat = toFileHeat(allMessages);
   const heatWeightedPick = heat.length > 0;
-  const scored = openTodos.map((t) => ({
-    todo: t,
-    score: heatWeightedPick ? scoreTodoByHeat(t.content, heat) : 0,
-  }));
+  const sessionRole = pickedSession
+    ? roleNamesBySessionID(meta).get(pickedSession)
+    : undefined;
+  const scored = openTodos.map((t) => {
+    let roleAffinity = 0;
+    if (sessionRole && t.preferredRole) {
+      roleAffinity = t.preferredRole === sessionRole ? -1 : 1;
+    }
+    return {
+      todo: t,
+      roleAffinity,
+      score: heatWeightedPick ? scoreTodoByHeat(t.content, heat) : 0,
+    };
+  });
   scored.sort((a, b) => {
+    if (a.roleAffinity !== b.roleAffinity) return a.roleAffinity - b.roleAffinity;
     if (a.score !== b.score) return a.score - b.score;
     return a.todo.createdAtMs - b.todo.createdAtMs;
   });
@@ -567,6 +585,15 @@ export async function tickCoordinator(
     // where every todo maps to the same bucket of files.
     console.log(
       `[coordinator] heat-weighted pick: "${todo.content.slice(0, 50)}..." (score=${scored[0].score}, max=${scored[scored.length - 1].score})`,
+    );
+  }
+  if (sessionRole && todo.preferredRole && todo.preferredRole === sessionRole) {
+    // Role match diagnostic — only when the matched item wasn't the
+    // natural first pick anyway (heat + age alone). Quiet signal that
+    // role routing actually did work, useful on role-differentiated
+    // runs where we want to verify the bias fires.
+    console.log(
+      `[coordinator] role-match pick: role=${sessionRole} claimed "${todo.content.slice(0, 50)}..."`,
     );
   }
 
@@ -640,6 +667,24 @@ export async function tickCoordinator(
 
   if (!waited.ok) {
     const reason = waited.reason === 'timeout' ? 'turn timed out' : 'turn errored';
+    // On timeout, abort the opencode turn eagerly. Without this the turn
+    // keeps consuming tokens in the background for up to
+    // ZOMBIE_TURN_THRESHOLD_MS (10 min) before the picker catches it on
+    // its next pass. 'errored' skips the abort — opencode already surfaced
+    // a terminal signal, so there's nothing in flight to cancel. Same
+    // fire-and-forget pattern as the zombie-picker abort above.
+    if (waited.reason === 'timeout') {
+      console.log(
+        `[coordinator] session ${sessionID.slice(-8)}: worker timeout after ${Math.round(timeoutMs / 60_000)}m on ${todo.id} — aborting turn`,
+      );
+      abortSessionServer(sessionID, meta.workspace).catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[coordinator] session ${sessionID.slice(-8)}: timeout-abort failed:`,
+          message,
+        );
+      });
+    }
     const outcome = retryOrStale(swarmRunID, todo, reason);
     return { status: 'stale', sessionID, itemID: todo.id, reason: `${outcome}: ${reason}` };
   }

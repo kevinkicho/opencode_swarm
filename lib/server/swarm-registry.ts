@@ -111,7 +111,15 @@ function mintSwarmRunID(): string {
 export async function createRun(
   req: SwarmRunRequest,
   sessionIDs: string[],
-  extras: { criticSessionID?: string; verifierSessionID?: string } = {},
+  extras: {
+    criticSessionID?: string;
+    verifierSessionID?: string;
+    // When req.continuationOf is set, the caller resolves the prior run's
+    // currentTier and passes it here so meta.currentTier seeds the new
+    // run at the inherited tier (vs the default tier 1 start). Ignored
+    // when continuationOf is unset.
+    startTier?: number;
+  } = {},
 ): Promise<SwarmRunMeta> {
   const swarmRunID = mintSwarmRunID();
   const meta: SwarmRunMeta = {
@@ -136,6 +144,12 @@ export async function createRun(
     enableVerifierGate: req.enableVerifierGate ? true : undefined,
     workspaceDevUrl: req.workspaceDevUrl,
     verifierSessionID: extras.verifierSessionID,
+    // Run-chaining lineage + inherited tier. currentTier stays absent
+    // (interpreted as tier 1) for standalone runs; only written here
+    // when the caller explicitly resolves a > 1 starting tier from a
+    // prior run.
+    continuationOf: req.continuationOf,
+    currentTier: extras.startTier && extras.startTier > 1 ? extras.startTier : undefined,
   };
   await fs.mkdir(runDir(swarmRunID), { recursive: true });
   await fs.writeFile(metaPath(swarmRunID), JSON.stringify(meta, null, 2), 'utf8');

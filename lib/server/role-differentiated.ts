@@ -17,7 +17,7 @@
 import { postSessionMessageServer } from './opencode-server';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { runPlannerSweep } from './blackboard/planner';
-import { getRun } from './swarm-registry';
+import { getRun, updateRunMeta } from './swarm-registry';
 
 // Default roles in a small-team balance. Order matters — the first
 // `teamSize` entries are used when teamRoles isn't provided.
@@ -115,6 +115,21 @@ export async function runRoleDifferentiatedKickoff(
   if (meta.sessionIDs.length < 2) return;
 
   const roles = resolveTeamRoles(meta.sessionIDs.length, meta.teamRoles);
+
+  // Persist resolved roles to meta so every downstream consumer
+  // (roleNamesBySessionID, board chip labels, planner prompt role-tag
+  // awareness, coordinator picker bias) sees the authoritative list —
+  // not just the optional user-supplied one. Fire-and-forget: a failed
+  // write doesn't stall the kickoff; next meta read may miss the roles
+  // but the session intros still go out.
+  if (!meta.teamRoles || meta.teamRoles.length !== roles.length) {
+    updateRunMeta(swarmRunID, { teamRoles: roles }).catch((err) => {
+      console.warn(
+        `[role-differentiated] run ${swarmRunID}: teamRoles persist failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+  }
 
   // Post role-framed intros to every session in parallel. Each intro sets
   // agent={role} so the opencode session carries the role label on all

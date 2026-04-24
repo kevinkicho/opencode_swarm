@@ -120,6 +120,7 @@ function buildPlannerPrompt(
   boardContext?: PlannerBoardContext,
   readme?: string | null,
   escalationTier?: number,
+  teamRoles?: readonly string[],
 ): string {
   const base =
     directive?.trim() ||
@@ -236,6 +237,21 @@ function buildPlannerPrompt(
     'carry the prefix. The prefix opts the todo into a browser-automated',
     "check after the critic gate approves; overflagging just slows the",
     'swarm, so be selective.',
+    ...(teamRoles && teamRoles.length > 0
+      ? [
+          '',
+          '**Routing todos to role-differentiated workers.** This run has',
+          `specialized workers with pinned roles: ${teamRoles.join(', ')}.`,
+          'When a todo fits one role obviously better than the others,',
+          'prefix it with `[role:<name>]` (combine with `[verify]` if both',
+          'apply; `[verify] [role:tester] …` is fine). Example:',
+          '`[role:tester] Add unit tests for the heatmap merge reducer`.',
+          'Items without a role prefix are claimed by any available',
+          'worker, which is the right default — reserve the prefix for',
+          'work that would be meaningfully lower-quality outside that',
+          'role. Unknown role names are treated as no-prefix.',
+        ]
+      : []),
     '',
     'Rules:',
     '- todowrite must fire within your first 12 tool calls total.',
@@ -320,6 +336,10 @@ interface RawTodo {
   // that merits Playwright verification after commit. See
   // buildPlannerPrompt + the insert path in runPlannerSweep.
   requiresVerification?: boolean;
+  // Computed by latestTodosFrom from a leading `[role:<name>]`
+  // prefix. Normalized role name (kebab, lowercase, ≤ 24 chars).
+  // Undefined when no prefix or on self-organizing runs.
+  preferredRole?: string;
 }
 
 // Strips the `[verify]` opt-in prefix from a todo's content and
@@ -338,6 +358,33 @@ function stripVerifyTag(content: string): {
   return {
     content: content.slice(m[0].length).trim(),
     requiresVerification: true,
+  };
+}
+
+// Strips the `[role:<name>]` opt-in prefix from a todo's content and
+// returns the resolved preferredRole. Same wire-protocol rationale as
+// stripVerifyTag — overload the content field since todowrite has no
+// side channel. Role names are normalized to the same shape as
+// role-differentiated.ts::normalizeRoleName (lowercase kebab, alnum +
+// hyphen only, ≤ 24 chars) so a typo like `[role: Tester ]` still
+// matches `tester` downstream. Applies idempotently after
+// stripVerifyTag so `[verify] [role:tester] ...` composes.
+const ROLE_TAG_RE = /^\s*\[role:\s*([a-z0-9][a-z0-9\s\-_]{0,31})\s*\]\s*/i;
+function stripRoleTag(content: string): {
+  content: string;
+  preferredRole: string | undefined;
+} {
+  const m = ROLE_TAG_RE.exec(content);
+  if (!m) return { content, preferredRole: undefined };
+  const raw = m[1].toLowerCase();
+  const normalized = raw
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24);
+  if (!normalized) return { content: content.slice(m[0].length).trim(), preferredRole: undefined };
+  return {
+    content: content.slice(m[0].length).trim(),
+    preferredRole: normalized,
   };
 }
 
@@ -368,8 +415,18 @@ export function latestTodosFrom(
             (t as RawTodo).content.trim().length > 0,
         )
         .map((t) => {
-          const { content, requiresVerification } = stripVerifyTag(t.content);
-          return { ...t, content, requiresVerification };
+          // Strip in composition order: verify first, then role. Supports
+          // `[verify] [role:tester] content` and `[role:tester] content`
+          // equally; mixed order like `[role:tester] [verify] …` is
+          // tolerated because stripRoleTag re-strips leading whitespace.
+          const afterVerify = stripVerifyTag(t.content);
+          const afterRole = stripRoleTag(afterVerify.content);
+          return {
+            ...t,
+            content: afterRole.content,
+            requiresVerification: afterVerify.requiresVerification,
+            preferredRole: afterRole.preferredRole,
+          };
         });
       if (todos.length > 0) latest = { todos, messageId: m.info.id };
     }
@@ -426,11 +483,30 @@ export async function runPlannerSweep(
   // mandatory tool call to read it.
   const readme =
     opts.includeReadme === false ? null : await readWorkspaceReadme(meta.workspace);
+  // Role-differentiated runs get `[role:<name>]` prefix instructions
+  // so the planner can route todos to specialized workers. Other
+  // patterns (self-organizing or role-implicit) get the plain prompt.
+  // meta.teamRoles is persisted by role-differentiated.ts kickoff so
+  // it's populated even if the user didn't supply an explicit list.
+  const teamRolesForPrompt =
+    meta.pattern === 'role-differentiated' && meta.teamRoles && meta.teamRoles.length > 0
+      ? meta.teamRoles
+      : undefined;
+
+  // Tier resolution: explicit opt wins (auto-ticker's tier-escalation
+  // path passes the bumped value); fall back to meta.currentTier so a
+  // run started via `continuationOf` targets the inherited tier on its
+  // first sweep without requiring every caller to thread the value.
+  // Undefined → plain first-sweep prompt.
+  const effectiveEscalationTier =
+    opts.escalationTier ?? (meta.currentTier && meta.currentTier > 1 ? meta.currentTier : undefined);
+
   const prompt = buildPlannerPrompt(
     meta.directive,
     boardContext,
     readme,
-    opts.escalationTier,
+    effectiveEscalationTier,
+    teamRolesForPrompt,
   );
   // Route the planner prompt through opencode's `plan` agent so users
   // can pin a smarter/more-expensive model for the planner via
@@ -505,6 +581,7 @@ export async function runPlannerSweep(
       content,
       status: 'open',
       requiresVerification: raw.requiresVerification === true,
+      preferredRole: raw.preferredRole,
       createdAtMs: baseMs + offset,
     });
     offset += 1;

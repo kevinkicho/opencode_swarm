@@ -82,6 +82,12 @@ function migrate(db: DB): void {
        ADD COLUMN requires_verification INTEGER NOT NULL DEFAULT 0`,
     );
   }
+  if (!have.has('preferred_role')) {
+    db.exec(
+      `ALTER TABLE board_items
+       ADD COLUMN preferred_role TEXT`,
+    );
+  }
 }
 
 function resolveSchema(): string {

@@ -140,6 +140,46 @@ One day, large ship run. Grouped by theme.
   15 min for deliberate-execute (synthesis phase legitimately takes
   longer). Easy to tune further as real-run data accumulates.
 
+- **Per-pattern turn-timeout.** Same treatment as the zombie
+  threshold but on the `waitForSessionIdle` deadline: `TURN_TIMEOUTS_MS`
+  map + `turnTimeoutFor(pattern)` helper. `deliberate-execute` gets
+  15 min; the rest default to 10 min. Matches the zombie boundary so
+  the picker doesn't clip legitimately long turns.
+
+- **Per-todo `preferredRole` soft routing for role-differentiated.**
+  Board items gained an optional `preferredRole` field (DB migration
+  `preferred_role TEXT` column). Planner parses a `[role:<name>]`
+  prefix on todowrite content (symmetric to the `[verify]` prefix)
+  and sets the field. Coordinator picker adds role affinity as a
+  primary sort key: matching session×item pairs win over heat/age,
+  neutrals (no role or no preferredRole) stay in the existing sort,
+  mismatches are de-prioritized but still claimable — soft bias, not
+  hard routing. Role-differentiated kickoff now persists resolved
+  `teamRoles` to meta so `roleNamesBySessionID` sees them even when
+  the request omitted them. Planner prompt extended with role-tag
+  instructions when `meta.pattern === 'role-differentiated'`.
+
+- **Run chaining / continuity (`continuationOf`).** New optional
+  field on `SwarmRunRequest` + `SwarmRunMeta`. When set, the new run
+  inherits the prior run's workspace + source + `currentTier`, so
+  commits keep landing on the same checkout and the ambition ratchet
+  resumes at the prior tier instead of resetting to 1. Validation
+  rejects a workspace mismatch (silent-fork prevention). Directive,
+  pattern, teamSize, bounds, and roles stay per-run. Unlocks the
+  "unleash a swarm on this repo for a week, bouncing through patterns
+  as needed" usage. `runPlannerSweep` now reads `meta.currentTier` as
+  a fallback when `opts.escalationTier` is unset, so continuation
+  runs get tier-appropriate planning on their first sweep without
+  touching every kickoff call site.
+
+- **Auto-abort on worker-timeout.** When `tickCoordinator`'s
+  `waitForSessionIdle` returns `{ ok: false, reason: 'timeout' }`, the
+  coordinator now calls `abortSessionServer` immediately instead of
+  leaving the turn in flight for the zombie-picker to catch ≥ 10 min
+  later. `'errored'` path skips the abort — opencode already produced
+  a terminal signal. Fire-and-forget, same pattern as the zombie
+  auto-abort. Saves up to 10 min of dead token consumption per
+  timeout.
 
 - **Auto-abort on every stop path** — `stopAutoTicker` aborts all
   session turns (workers + critic + verifier) on auto-idle,
@@ -270,42 +310,20 @@ One day, large ship run. Grouped by theme.
 
 ## Queued — designed but not started
 
-### Next-up (high leverage, < 1 day each)
-
-- **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
-  Today roles bias self-selection via the intro prompt; the coordinator
-  picker doesn't route by role. Add an optional `preferredRole` field
-  on board items + a picker bias.
-
-- **Run chaining / continuity.** New `continuationOf?: string` field on
-  `SwarmRunRequest` — a new run inherits prior workspace + prior tier +
-  prior escalation history. Unlocks the "unleash a swarm on this repo
-  for a week" usage pattern.
-
 ### Nice-to-have (lower leverage, bigger effort)
 
 - **Auto-restart opencode on `opencode-frozen`.** Needs external
   control plane (app can't reach the PowerShell launcher). Lower
   priority now that most freezes are rate-limit, not process wedge.
 
-- **Per-pattern turn-timeout tuning.** Zombie thresholds are now
-  per-pattern (shipped); per-turn timeout in `waitForSessionIdle`
-  is still a single `DEFAULT_TURN_TIMEOUT_MS`. Could apply the same
-  pattern-map treatment if real-run observation shows certain
-  patterns routinely timing out legitimately.
-
 - **Cross-run comparison surface** — `/projects/<repo>/runs` multi-run
-  diff viewer pulling from `demo-log/`.
+  diff viewer pulling from `demo-log/`. Partially unblocked by
+  continuationOf — the lineage pointer gives a natural join key.
 
 ### Designed but deprioritized
 
 - **Route C "writers-room"** (memory/project_a2a_routes.md). Deferred
   with B/D; Route A covers current needs.
-
-- **Preset picker UX** — richer tile previews in new-run modal.
-
-- **Auto-abort opencode turn inside worker-timeout path.** Zombie
-  auto-abort catches it 10 min later anyway.
 
 ---
 

@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS board_items (
   -- "Tiered execution" companion layer #2.
   requires_verification INTEGER NOT NULL DEFAULT 0,
 
+  -- Soft role affinity for hierarchical-pattern runs. Set by the
+  -- planner when it tags a todo with a [role:<name>] prefix. NULL
+  -- on self-organizing runs. The coordinator picker biases toward
+  -- role-matching session×item pairs but still allows any session
+  -- to claim — see SWARM_PATTERNS.md §6.
+  preferred_role TEXT,
+
   PRIMARY KEY (swarm_run_id, id)
 );
 

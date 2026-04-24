@@ -32,6 +32,7 @@ interface BoardRow {
   created_ms: number;
   completed_ms: number | null;
   requires_verification: number;
+  preferred_role: string | null;
 }
 
 function hydrate(row: BoardRow): BoardItem {
@@ -47,6 +48,7 @@ function hydrate(row: BoardRow): BoardItem {
   if (row.stale_since_sha) item.staleSinceSha = row.stale_since_sha;
   if (row.completed_ms != null) item.completedAtMs = row.completed_ms;
   if (row.requires_verification) item.requiresVerification = true;
+  if (row.preferred_role) item.preferredRole = row.preferred_role;
   if (row.file_hashes_json) {
     try {
       const parsed = JSON.parse(row.file_hashes_json) as BoardItem['fileHashes'];
@@ -111,8 +113,8 @@ export function insertBoardItem(
       `INSERT INTO board_items
        (id, swarm_run_id, kind, status, content, owner_agent_id, note,
         file_hashes_json, stale_since_sha, created_ms, completed_ms,
-        requires_verification)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+        requires_verification, preferred_role)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
     )
     .run(
       input.id,
@@ -126,6 +128,7 @@ export function insertBoardItem(
       createdAtMs,
       completedAtMs,
       input.requiresVerification ? 1 : 0,
+      input.preferredRole ?? null,
     );
   const item = getBoardItem(swarmRunID, input.id);
   if (!item) {

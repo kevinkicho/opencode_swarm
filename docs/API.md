@@ -79,8 +79,16 @@ Create a new multi-session run.
   enableCriticGate?: boolean;      // opt-in anti-busywork gate (any pattern)
   enableVerifierGate?: boolean;    // opt-in Playwright verifier (any pattern)
   workspaceDevUrl?: string;        // required when enableVerifierGate=true
+  continuationOf?: string;         // prior swarmRunID — inherits workspace + source + currentTier
 }
 ```
+
+**Continuation semantics.** When `continuationOf` is set:
+- `workspace` may be omitted — inherited from the prior run's meta
+- If `workspace` is set, it must match the prior run's workspace (400 otherwise — prevents silent forks)
+- `source` is inherited when unset
+- `meta.currentTier` is seeded from the prior run's current tier, so the first planner sweep targets the inherited ambition layer instead of resetting to tier 1
+- `pattern`, `directive`, `teamSize`, `bounds`, `teamRoles` are NOT inherited — those are deliberate per-run choices
 
 **Response 201**
 ```ts
@@ -199,8 +207,15 @@ Create a board item.
   ownerAgentId?: string;     // required for claim
   note?: string;
   fileHashes?: Array<{ path: string; sha: string }>;  // required non-empty for claim
+  requiresVerification?: boolean;  // Playwright verifier gate opt-in
+  preferredRole?: string;          // soft routing for role-differentiated pattern
 }
 ```
+
+**Wire protocol for planner-seeded todos.** The planner can't call this endpoint directly — it emits via opencode's `todowrite` tool which only supports `{ content, status, priority }`. To express `requiresVerification` and `preferredRole`, the planner uses leading content prefixes that `latestTodosFrom` strips:
+- `[verify] …` → `requiresVerification: true`
+- `[role:<name>] …` → `preferredRole: '<name>'` (lowercased, kebab-cased, max 24 chars)
+- Both may compose: `[verify] [role:tester] …` or either order.
 
 **Response 201:** `{ item: BoardItem }`. Errors: `400` validation,
 `409` id UNIQUE conflict.
