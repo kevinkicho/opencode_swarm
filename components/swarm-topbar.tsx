@@ -8,10 +8,8 @@ import type { TickerState } from '@/lib/blackboard/live';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
-import { SwarmRunsPicker } from './swarm-runs-picker';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { ProviderBadge } from './provider-badge';
-import { LiveSessionPicker } from './live-session-picker';
 import { STATUS_VISUAL } from './swarm-runs-picker';
 import { abortSessionBrowser } from '@/lib/opencode/live';
 import { compact } from '@/lib/format';
@@ -83,21 +81,13 @@ export function SwarmTopbar({
       <span className="w-px h-4 bg-ink-600" />
 
       <nav className="flex items-center gap-2 pl-4 text-[12.5px] min-w-0 flex-1">
-        <LiveSessionPicker title={run.title} />
-        {/* Runs-navigation dropdown. Mirrors the sessions dropdown on
-            the left — users can now hop between runs without leaving
-            the topbar. Same component the bottom-bar uses; the click
-            opens its popover with every run's id/pattern/status. */}
-        <SwarmRunsPicker currentSwarmRunID={swarmRunMeta?.swarmRunID ?? null}>
-          <button
-            type="button"
-            className="flex items-center gap-1 h-6 px-1.5 rounded hover:bg-ink-800 transition text-fog-500 hover:text-fog-200"
-            aria-label="browse swarm runs"
-          >
-            <span className="font-mono text-[10px] uppercase tracking-widest2">runs</span>
-            <span className="font-mono text-[9px] text-fog-700">▾</span>
-          </button>
-        </SwarmRunsPicker>
+        {/* Run identity + status is the nav anchor now. Sessions
+            dropdown + duplicate runs dropdown were removed 2026-04-23 —
+            the bottombar has the canonical runs picker, and users
+            navigate by run, not by individual opencode session. */}
+        <span className="font-mono text-[12.5px] text-fog-300 truncate">
+          {run.title}
+        </span>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} />}
         {tier && <TierChip tier={tier.currentTier} maxTier={tier.maxTier} exhausted={tier.tierExhausted} />}
         {liveSessionId && liveDirectory && run.status === 'active' && (

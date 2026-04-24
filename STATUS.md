@@ -29,6 +29,21 @@ enough that scanning it doesn't match the actual state.
 
 ## Shipped
 
+### 2026-04-23 — topbar simplification
+
+- **Removed the `LiveSessionPicker` dropdown.** It let users hop
+  between opencode sessions inside a run; with the board + run-
+  centric navigation we've built this year, picking by session
+  never made sense as a primary verb. Users navigate by run, not
+  by opencode session index. Component file deleted
+  (`components/live-session-picker.tsx`); its one consumer in the
+  topbar was the only reader.
+- **Removed the duplicate `SwarmRunsPicker` from the topbar.** It
+  was mirrored from the bottombar's runs dropdown — two identical
+  "runs ▾" buttons on the same page. Bottombar remains the
+  canonical runs picker. Topbar now shows run title + run-anchor
+  chip + tier chip + abort chip, nothing duplicated.
+
 ### 2026-04-23 — pattern benchmarking script
 
 - **`scripts/_pattern_benchmark.mjs`** — runs the coordinator-backed
@@ -475,6 +490,28 @@ Todo count raised to 6-15 with mix of sizes.
   `/projects` matrix route shows activity by repo × day, but there's no
   "compare these two runs" surface. When present, comparison is a
   manual `demo-log/battle-<date>/COMPARISON.md` file.
+
+### UI performance
+
+- **Live run view (`/?swarmRun=<id>`) is slow to load on big runs.**
+  Observed 2026-04-23 on a ~8-min run with 7.8M tokens across 7
+  sessions — first paint took long enough that the user gave up.
+  Likely suspects (uncertain without profiling): the initial SSE
+  replay of all board events, multiplexed message-history fetch
+  across every session, and `toMessages` / `toRunMeta` transforms
+  running on every buffer update during hydration. Needs profiling
+  before optimizing. Not affecting the run itself — just the UX.
+
+- **No liveness decay when dev server vanishes.** Observed 2026-04-23:
+  after shutting down the dev server, an open run-view browser tab
+  shows a mixed state — `offline` badge top-right correctly reflects
+  the dropped SSE connection, but other chips ("live" on run anchor,
+  build-status blinking, N events in timeline) keep rendering stale
+  pre-shutdown snapshots. React's in-memory state from before the
+  disconnect stays live-looking until hard-refresh. Would be cleaner
+  to gray stale chips after a few seconds of no-liveness and show
+  "last seen Xm ago" instead. Could share a hook with
+  `useOpencodeHealth`.
 
 ### Infra / dev workflow
 
