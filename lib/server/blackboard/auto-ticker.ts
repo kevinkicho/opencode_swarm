@@ -63,6 +63,7 @@ import {
 } from './planner';
 import { listBoardItems, transitionStatus } from './store';
 import { auditCriteria } from './auditor';
+import { prewarmModels } from './model-prewarm';
 
 // Live-export lookups for cross-module calls. Direct imports above are
 // the fallback when the producer module hasn't published yet (unusual
@@ -815,6 +816,19 @@ async function maybeRunAudit(
     console.log(
       `[board/auto-ticker] ${swarmRunID}: audit (${reason}) — judging ${pending.length} pending criteria`,
     );
+    // Re-warm the auditor's ollama model. Auditor cadence is 5-20 min
+    // apart; ollama cloud evicts warm models between calls, and we've
+    // observed nemotron hanging opencode's prompt client when cold.
+    // A per-audit prewarm is cheap (~1s on a recently-warm model,
+    // up to 60s on truly cold). Non-ollama pins no-op.
+    if (meta.auditorModel) {
+      await prewarmModels([meta.auditorModel]).catch((err) => {
+        console.warn(
+          `[board/auto-ticker] ${swarmRunID}: auditor prewarm threw:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+    }
     const result = await auditCriteria({
       swarmRunID,
       auditorSessionID: meta.auditorSessionID,
