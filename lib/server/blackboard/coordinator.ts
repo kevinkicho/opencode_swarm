@@ -69,7 +69,7 @@ export interface CoordinatorExports {
   ) =>
     Promise<
       | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
-      | { ok: false; reason: 'timeout' | 'error' }
+      | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' }
     >;
 }
 
@@ -132,6 +132,52 @@ function zombieThresholdFor(pattern: string): number {
 // gap is typically <100ms but the buffer gives headroom for slower
 // backend flushes).
 const SESSION_IDLE_QUIET_MS = 2000;
+
+// Dispatch watchdog thresholds — POSTMORTEMS/2026-04-24 F1. The
+// silent-failure case (run_mod5dy6n_utsb32) had 15 minutes of zero
+// activity between dispatch and the planner's timeout. The watchdog
+// counts message parts inside waitForSessionIdle and:
+//   - logs WARN at SILENT_WARN_MS of no-new-parts
+//   - logs ERROR + aborts the session at SILENT_ERROR_MS
+// 90s / 240s thresholds chosen to be tight enough to catch the 15-min
+// hang case fast, but loose enough that legitimately-slow models
+// (ollama cloud cold-starts, large prompts) don't spuriously fire.
+// The first part typically lands within 5-30s; nothing in 90s means
+// the call almost certainly didn't reach the provider.
+const SILENT_WARN_MS = 90 * 1000;
+const SILENT_ERROR_MS = 240 * 1000;
+
+// Ollama daemon reachability probe — POSTMORTEMS/2026-04-24 F4. Fires
+// inside the watchdog only when silence already crossed PROBE_AFTER_MS
+// (30s). Checks that the local ollama daemon is responding to /api/ps;
+// if it isn't, the provider is unreachable (network drop, ollama
+// killed, port shift) and we should fail fast rather than waiting out
+// the 15-min planner timeout. Probe interval is throttled inside the
+// loop — once-per-poll-window beats once-per-tick.
+const PROBE_AFTER_MS = 30 * 1000;
+const PROBE_INTERVAL_MS = 30 * 1000;
+const PROBE_TIMEOUT_MS = 5 * 1000;
+const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
+
+async function probeOllamaPs(): Promise<{ ok: boolean; detail?: string }> {
+  const base = (process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL).replace(/\/$/, '');
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), PROBE_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${base}/api/ps`, {
+      method: 'GET',
+      signal: ac.signal,
+    });
+    if (!res.ok) {
+      return { ok: false, detail: `HTTP ${res.status}` };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // Owner-id convention for the coordinator: ag_ses_<last8>. Keeps the id
 // short for UI columns while remaining unambiguous per session. Matches the
@@ -420,8 +466,25 @@ export async function waitForSessionIdle(
   deadline: number,
 ): Promise<
   | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
-  | { ok: false; reason: 'timeout' | 'error' }
+  | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' }
 > {
+  // Dispatch watchdog state — F1. We track total parts across all
+  // new-since-dispatch assistant messages, plus the wallclock at last
+  // change. Initial state: zero parts seen, lastActivityTs = now.
+  // If parts count grows on a poll, we reset the silence timer. If
+  // the silence stays past SILENT_WARN_MS we log WARN once, and at
+  // SILENT_ERROR_MS we abort + return silent.
+  //
+  // F4 layer: once silence crosses PROBE_AFTER_MS, we periodically
+  // probe ollama's /api/ps. If the daemon doesn't respond we return
+  // 'provider-unavailable' instead of waiting for the silent-error
+  // threshold — sharper signal, faster recovery.
+  const watchdogStartedMs = Date.now();
+  let lastActivityMs = watchdogStartedMs;
+  let lastTotalParts = 0;
+  let warnedSilent = false;
+  let lastProbeMs = 0;
+
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     const messages = await getSessionMessagesServer(sessionID, workspace);
@@ -431,6 +494,79 @@ export async function waitForSessionIdle(
     const newAssistants = messages.filter(
       (m) => newIDs.has(m.info.id) && m.info.role === 'assistant',
     );
+
+    // Watchdog: total parts across all new assistant messages. A new
+    // part = the model emitted SOMETHING since last poll, even if no
+    // turn has completed. Also count messages themselves so a fresh
+    // assistant message with zero parts still resets the watchdog
+    // (caught the create event before any part lands).
+    const totalParts = newAssistants.reduce(
+      (sum, m) => sum + m.parts.length,
+      0,
+    );
+    if (totalParts !== lastTotalParts || newAssistants.length > 0) {
+      // Any forward progress (new message OR new part) resets the timer.
+      // newAssistants.length>0 alone catches the rare case where the
+      // first message has zero parts initially but exists.
+      if (totalParts !== lastTotalParts) {
+        lastActivityMs = Date.now();
+        lastTotalParts = totalParts;
+        warnedSilent = false;
+      }
+    }
+
+    const silentMs = Date.now() - lastActivityMs;
+
+    // F4 — provider reachability probe. Only fires once silence
+    // crosses PROBE_AFTER_MS, throttled to PROBE_INTERVAL_MS so we
+    // don't hammer ollama on every poll. If the daemon is unreachable
+    // we don't wait for the silent-error threshold — fail fast as
+    // 'provider-unavailable' so the caller can route to the retry/
+    // stale path immediately. False-positive risk: a 5s probe timeout
+    // during legitimate ollama load is rare; the probe is GET-only
+    // and ollama answers /api/ps in single-digit ms when healthy.
+    if (silentMs >= PROBE_AFTER_MS && Date.now() - lastProbeMs >= PROBE_INTERVAL_MS) {
+      lastProbeMs = Date.now();
+      const probe = await probeOllamaPs();
+      if (!probe.ok) {
+        console.error(
+          `[coordinator] session ${sessionID} silent ${Math.round(silentMs / 1000)}s + ollama unreachable (${probe.detail ?? 'no detail'}) — aborting (F4 probe)`,
+        );
+        try {
+          await abortSessionServer(sessionID, workspace);
+        } catch (err) {
+          const detail = err instanceof Error ? err.message : String(err);
+          console.warn(
+            `[coordinator] F4 abort failed for ${sessionID}: ${detail}`,
+          );
+        }
+        return { ok: false, reason: 'provider-unavailable' };
+      }
+    }
+
+    if (silentMs >= SILENT_ERROR_MS) {
+      const ageS = Math.round(silentMs / 1000);
+      console.error(
+        `[coordinator] session ${sessionID} silent ${ageS}s — aborting (F1 watchdog)`,
+      );
+      try {
+        await abortSessionServer(sessionID, workspace);
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[coordinator] watchdog abort failed for ${sessionID}: ${detail}`,
+        );
+      }
+      return { ok: false, reason: 'silent' };
+    }
+    if (silentMs >= SILENT_WARN_MS && !warnedSilent) {
+      const ageS = Math.round(silentMs / 1000);
+      console.warn(
+        `[coordinator] session ${sessionID} silent ${ageS}s — provider may be unreachable (F1 watchdog)`,
+      );
+      warnedSilent = true;
+    }
+
     if (newAssistants.length === 0) continue;
 
     if (newAssistants.some((m) => !!m.info.error)) {
@@ -718,13 +854,22 @@ export async function tickCoordinator(
   );
 
   if (!waited.ok) {
-    const reason = waited.reason === 'timeout' ? 'turn timed out' : 'turn errored';
+    const reason =
+      waited.reason === 'timeout'
+        ? 'turn timed out'
+        : waited.reason === 'silent'
+          ? 'turn went silent'
+          : waited.reason === 'provider-unavailable'
+            ? 'provider-unavailable'
+            : 'turn errored';
     // On timeout, abort the opencode turn eagerly. Without this the turn
     // keeps consuming tokens in the background for up to
     // ZOMBIE_TURN_THRESHOLD_MS (10 min) before the picker catches it on
     // its next pass. 'errored' skips the abort — opencode already surfaced
-    // a terminal signal, so there's nothing in flight to cancel. Same
-    // fire-and-forget pattern as the zombie-picker abort above.
+    // a terminal signal, so there's nothing in flight to cancel. 'silent'
+    // already aborted inside waitForSessionIdle (F1 watchdog), so no
+    // double-abort is needed. Same fire-and-forget pattern as the zombie-
+    // picker abort above.
     if (waited.reason === 'timeout') {
       console.log(
         `[coordinator] session ${sessionID.slice(-8)}: worker timeout after ${Math.round(timeoutMs / 60_000)}m on ${todo.id} — aborting turn`,

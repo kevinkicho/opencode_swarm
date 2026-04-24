@@ -189,15 +189,15 @@ exhibited the fix working.
 
 | Fix | Status | Commit | Verified against | Notes |
 |-----|--------|--------|------------------|-------|
-| F1  | PROPOSED | — | — | — |
-| F2  | PROPOSED | — | — | — |
-| F3  | PROPOSED | — | — | Requires editing launcher .ps1 (Windows-side) |
-| F4  | PROPOSED | — | — | — |
+| F1  | SHIPPED | (next commit) | — | dispatch watchdog inside waitForSessionIdle: WARN at 90s of no-new-parts, ERROR + abort at 240s; new reason='silent' on the ok=false return |
+| F2  | SHIPPED | (next commit) | — | lib/server/opencode-log-tail.ts polls /mnt/c/Users/<user>/.local/share/opencode/log for the newest .log; tails on 1s cadence; filters file.watcher.updated + snapshot prune + session.idle noise; started from instrumentation.ts on Node runtime |
+| F3  | PROPOSED | — | — | Requires editing launcher .ps1 (Windows-side, outside repo) |
+| F4  | SHIPPED | (next commit) | — | probeOllamaPs() inside watchdog, fires once silence ≥ 30s, throttled to every 30s; on /api/ps unreachable returns reason='provider-unavailable' + aborts session |
 | F5  | PROPOSED | — | — | Blocked on F3 findings |
-| F6  | PROPOSED | — | — | One-line config edit + restart |
-| F7  | PROPOSED | — | — | — |
-| F8  | PROPOSED | — | — | UI work |
-| F9  | PROPOSED | — | — | UI work |
+| F6  | PROPOSED | — | — | One-line config edit + restart (outside repo) |
+| F7  | SHIPPED | (next commit) | — | postSessionMessageServer preflight: estimateTokens vs getModelContextLimit (cached opencode /model TTL=5m). Refuses ≥85%, WARN ≥60%. Only fires when opts.model is set — agent-default path is unchecked because we don't know the resolved modelID at dispatch time |
+| F8  | SHIPPED | (next commit) | — | RunHealthChip in swarm-topbar.tsx: aggregates ticker stopReason + retry-exhausted board items into green/amber/red dot + tooltip breakdown. "sessions silent > 60s" + "last opencode error" deferred — F1 watchdog logs WARN to dev console, F2 tail surfaces opencode errors there |
+| F9  | SHIPPED | c041edd | — | board-rail.tsx renders ↻N amber chip on rows with [retry:N] notes (Phase 0.4) |
 
 ## 5 · Cross-references
 

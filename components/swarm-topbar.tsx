@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TickerState } from '@/lib/blackboard/live';
+import type { BoardItem } from '@/lib/blackboard/types';
 import { IconLogo, IconAgent, IconSettings } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
@@ -32,6 +33,7 @@ export function SwarmTopbar({
   swarmRunMeta,
   swarmRunStatus,
   tickerState,
+  boardItems,
 }: {
   run: RunMeta;
   providers: ProviderSummary[];
@@ -39,6 +41,12 @@ export function SwarmTopbar({
   onOpenSettings: () => void;
   liveSessionId: string | null;
   liveDirectory: string | null;
+  // Board items for the active run, used by the run-health chip to
+  // count retry-exhausted items (notes matching /^\[retry:\d+\]/).
+  // Undefined when the run isn't using a board (council, debate-judge,
+  // map-reduce, critic-loop without board phase) — chip falls back to
+  // ticker-only health.
+  boardItems?: BoardItem[] | null;
   // Present only on `?swarmRun=<id>`. Read-only snapshot of how the run was
   // launched — directive text + bounds at dispatch time. NOT the same as
   // `run.budgetCap` (which reflects the *current* routing cost cap). Keeping
@@ -94,6 +102,13 @@ export function SwarmTopbar({
           {run.title}
         </span>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} stale={backendStale} />}
+        {swarmRunMeta && (
+          <RunHealthChip
+            tickerState={tickerState}
+            boardItems={boardItems ?? null}
+            stale={backendStale}
+          />
+        )}
         {tier && <TierChip tier={tier.currentTier} maxTier={tier.maxTier} exhausted={tier.tierExhausted} stale={backendStale} />}
         {tier &&
           tickerState.state === 'stopped' &&
@@ -609,6 +624,163 @@ function RetryAfterChip({ endsAtMs }: { endsAtMs: number }) {
         </span>
         <span className="font-mono text-[10.5px] tabular-nums text-rust/90">
           {label}
+        </span>
+      </div>
+    </Tooltip>
+  );
+}
+
+// Run-health aggregator chip — POSTMORTEMS/2026-04-24 F8. One-glance
+// signal: "is this run currently in trouble?" Green dot = no issues
+// detected. Amber dot = retry-exhausted items present. Red dot =
+// ticker stopped on a non-idle reason (frozen / rate-limit / silent /
+// provider-unavailable). Click to expand and see the breakdown.
+//
+// What we DON'T track here that the F8 spec mentions:
+//   - "sessions silent > 60s" — needs new server signal aggregating
+//     watchdog state across sessions; deferred. The F1 watchdog
+//     already logs WARN/ERROR per-session, so the dev console
+//     surfaces this today.
+//   - "last opencode error" — F2 tails opencode's log into stdout,
+//     but we don't currently lift those errors back into the UI.
+//     Deferred to a follow-up that captures + buffers errors
+//     server-side and exposes them via a /run/health endpoint.
+function RunHealthChip({
+  tickerState,
+  boardItems,
+  stale = false,
+}: {
+  tickerState: TickerState;
+  boardItems: BoardItem[] | null;
+  stale?: boolean;
+}) {
+  // Severity ladder. Highest applies.
+  //   ok      — no signals
+  //   warn    — retry-exhausted items, or ticker stopped due to
+  //             auto-idle (the soft / acceptable stop)
+  //   error   — ticker stopped due to a hard failure
+  type Severity = 'ok' | 'warn' | 'error';
+
+  // Retry-exhausted detection: items whose `note` matches
+  // /^\[retry:\d+\]/ AND status is 'stale' or 'blocked'. The N=2 cap
+  // is enforced by retryOrStale; we don't need to filter by N value.
+  const retryExhausted = (boardItems ?? []).filter(
+    (it) =>
+      typeof it.note === 'string' &&
+      /^\[retry:\d+\]/.test(it.note) &&
+      (it.status === 'stale' || it.status === 'blocked'),
+  );
+
+  const tickerStopReason =
+    tickerState.state === 'stopped' ? tickerState.stopReason : undefined;
+
+  let severity: Severity = 'ok';
+  const reasons: Array<{ label: string; detail: string; severity: Severity }> = [];
+
+  if (tickerState.state === 'stopped') {
+    if (tickerStopReason === 'auto-idle') {
+      reasons.push({
+        label: 'idle stop',
+        detail: 'ticker auto-stopped — board drained',
+        severity: 'warn',
+      });
+      if (severity === 'ok') severity = 'warn';
+    } else if (tickerStopReason) {
+      reasons.push({
+        label: tickerStopReason,
+        detail:
+          tickerStopReason === 'opencode-frozen'
+            ? 'opencode stopped responding to ticker probes'
+            : tickerStopReason === 'zen-rate-limit'
+              ? 'opencode-zen returned 429 — backoff in effect'
+              : `ticker stopped on ${tickerStopReason}`,
+        severity: 'error',
+      });
+      severity = 'error';
+    }
+  }
+  if (retryExhausted.length > 0) {
+    reasons.push({
+      label: `${retryExhausted.length} retry-exhausted`,
+      detail: `${retryExhausted.length} board item${retryExhausted.length === 1 ? '' : 's'} marked stale after ≥2 worker failures — investigation needed`,
+      severity: 'warn',
+    });
+    if (severity === 'ok') severity = 'warn';
+  }
+
+  const dotTone =
+    severity === 'error' ? 'bg-rust' : severity === 'warn' ? 'bg-amber' : 'bg-mint';
+  const labelTone =
+    severity === 'error'
+      ? 'text-rust'
+      : severity === 'warn'
+        ? 'text-amber'
+        : 'text-mint';
+  const headerLabel =
+    severity === 'error' ? 'unhealthy' : severity === 'warn' ? 'attention' : 'healthy';
+
+  const tooltipBody = (
+    <div className="space-y-1.5 min-w-[240px]">
+      <div className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
+        run health · {headerLabel}
+      </div>
+      {reasons.length === 0 ? (
+        <div className="font-mono text-[10.5px] text-fog-500">
+          no issues detected — ticker active, no retry-exhausted items, no
+          stop-reason flagged.
+        </div>
+      ) : (
+        <ul className="list-none space-y-1">
+          {reasons.map((r, i) => (
+            <li key={i} className="flex items-start gap-1.5 font-mono text-[10.5px]">
+              <span
+                className={clsx(
+                  'mt-0.5 w-1.5 h-1.5 rounded-full shrink-0',
+                  r.severity === 'error'
+                    ? 'bg-rust'
+                    : r.severity === 'warn'
+                      ? 'bg-amber'
+                      : 'bg-mint',
+                )}
+              />
+              <span>
+                <span className="text-fog-200 uppercase tracking-widest2 text-[9.5px]">
+                  {r.label}
+                </span>
+                <span className="block text-fog-500">{r.detail}</span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="hairline-t pt-1 font-mono text-[9.5px] text-fog-700 normal-case">
+        F8 health surface · POSTMORTEMS/2026-04-24
+      </div>
+    </div>
+  );
+
+  return (
+    <Tooltip side="bottom" wide content={tooltipBody}>
+      <div
+        className={clsx(
+          'flex items-center gap-1.5 h-6 px-1.5 rounded hairline cursor-help',
+          stale && 'opacity-50',
+        )}
+      >
+        <span
+          className={clsx(
+            'w-1.5 h-1.5 rounded-full',
+            dotTone,
+            severity === 'error' && 'animate-pulse',
+          )}
+        />
+        <span
+          className={clsx(
+            'font-mono text-[10px] uppercase tracking-widest2',
+            labelTone,
+          )}
+        >
+          health
         </span>
       </div>
     </Tooltip>

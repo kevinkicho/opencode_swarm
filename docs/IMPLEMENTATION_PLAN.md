@@ -86,12 +86,12 @@ postmortem. Each has a validation probe documented in §3.
 
 | # | Fix | What | Effort | Status | Notes |
 |---|---|---|---|---|---|
-| 3.1 | F1 | Dispatch watchdog — silent-turn detector in coordinator.ts | 2h | PROPOSED | P0 — biggest single observability win |
-| 3.2 | F2 | Tail opencode log into dev console | 2h | PROPOSED | P0 |
-| 3.3 | F4 | Ollama `/api/ps` liveness probe in waitForSessionIdle | 1h | PROPOSED | P1 |
+| 3.1 | F1 | Dispatch watchdog — silent-turn detector in coordinator.ts | 2h | **SHIPPED** (next commit) | P0 — biggest single observability win |
+| 3.2 | F2 | Tail opencode log into dev console | 2h | **SHIPPED** (next commit) | P0 |
+| 3.3 | F4 | Ollama `/api/ps` liveness probe in waitForSessionIdle | 1h | **SHIPPED** (next commit) | P1 |
 | 3.4 | F5 | Session-level error read (after F3 enables debug logging) | 1h | PROPOSED | P1, blocked on 0.6 |
-| 3.5 | F7 | Preflight prompt-size estimate | 1h | PROPOSED | P2 |
-| 3.6 | F8 | Run-health banner in topbar | 2h | PROPOSED | P3 — UI work |
+| 3.5 | F7 | Preflight prompt-size estimate | 1h | **SHIPPED** (next commit) | P2 |
+| 3.6 | F8 | Run-health banner in topbar | 2h | **SHIPPED** (next commit) | P3 — UI work |
 
 **Validation:** each fix has a probe in `docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md` §3. Run probe against next live test run; promote ledger to VERIFIED if probe passes.
 

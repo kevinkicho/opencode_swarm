@@ -748,6 +748,7 @@ function PageBody({
         swarmRunMeta={swarmRunMeta}
         swarmRunStatus={swarmRunStatus}
         tickerState={liveTicker.state}
+        boardItems={liveBoard.items ?? null}
       />
       </ProfileBoundary>
 

@@ -706,6 +706,20 @@ export async function runPlannerSweep(
     if (waited.reason === 'timeout') {
       throw new Error(`planner sweep timed out after ${timeoutMs}ms`);
     }
+    if (waited.reason === 'silent') {
+      // F1 watchdog tripped — provider almost certainly unreachable.
+      // Surface a different message so the surrounding telemetry can
+      // distinguish "model burned 15 min then quit" from "no response
+      // ever started." Helps stop wasting a 15-min retry on a network
+      // failure.
+      throw new Error('planner sweep aborted: session went silent (provider unreachable?)');
+    }
+    if (waited.reason === 'provider-unavailable') {
+      // F4 probe tripped — ollama daemon is down. Distinct error message
+      // because the operator's response is different (restart ollama vs.
+      // diagnose model hang).
+      throw new Error('planner sweep aborted: ollama daemon unreachable');
+    }
     throw new Error('planner sweep failed: assistant turn errored');
   }
 

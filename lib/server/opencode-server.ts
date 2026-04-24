@@ -18,6 +18,17 @@
 import { opencodeFetch } from '../opencode/client';
 import type { OpencodeSession } from '../opencode/client';
 import type { OpencodeMessage } from '../opencode/types';
+import { estimateTokens, getModelContextLimit } from './opencode-models';
+
+// Preflight thresholds — POSTMORTEMS/2026-04-24 F7. Refuse dispatch
+// when the prompt's token estimate exceeds 85% of the model's
+// context limit; log WARN at 60%. The 85% ceiling leaves headroom
+// for tool definitions opencode injects and for the assistant's own
+// response budget; the 60% warning lets a sweep proceed with a
+// telegraphed risk so the operator can decide whether to retry with
+// a smaller prompt.
+const PROMPT_REFUSE_RATIO = 0.85;
+const PROMPT_WARN_RATIO = 0.6;
 
 // Create a session scoped to `directory`. Opencode's POST /session accepts
 // an optional { title } body; omitting it lets opencode mint a placeholder
@@ -137,6 +148,34 @@ export async function postSessionMessageServer(
   text: string,
   opts: { agent?: string; model?: string } = {}
 ): Promise<void> {
+  // F7 prompt-size preflight. Only fires when opts.model is set
+  // (caller passed a specific model — we have a clear key to look up).
+  // When opts.model is omitted (opencode resolves the agent's default
+  // model), we don't know which model will run the turn so we can't
+  // size-check; fall through and let opencode reject if needed.
+  if (opts.model) {
+    const limit = await getModelContextLimit(opts.model);
+    if (limit !== null) {
+      const tokens = estimateTokens(text);
+      const ratio = tokens / limit;
+      if (ratio >= PROMPT_REFUSE_RATIO) {
+        const limitK = (limit / 1000).toFixed(1);
+        const tokensK = (tokens / 1000).toFixed(1);
+        throw new Error(
+          `prompt-preflight refused: ${tokensK}k tokens estimated for ${opts.model} ` +
+            `(limit ${limitK}k, ratio ${(ratio * 100).toFixed(0)}% ≥ ${(PROMPT_REFUSE_RATIO * 100).toFixed(0)}%) — ` +
+            `shrink the prompt or pin to a higher-context model`,
+        );
+      }
+      if (ratio >= PROMPT_WARN_RATIO) {
+        console.warn(
+          `[opencode-server] prompt-preflight WARN: ${(tokens / 1000).toFixed(1)}k tokens for ${opts.model} ` +
+            `(${(ratio * 100).toFixed(0)}% of ${(limit / 1000).toFixed(1)}k limit) — close to refuse threshold`,
+        );
+      }
+    }
+  }
+
   const qs = new URLSearchParams({ directory }).toString();
   const body: Record<string, unknown> = {
     parts: [{ type: 'text', text }],
