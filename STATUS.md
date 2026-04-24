@@ -12,390 +12,146 @@ present-tense). Not a todo list for individual tasks — if it can be done
 in < 30 min, put it in the conversation or a commit, not here.
 
 **Maintenance.** Append-only during a work session; rewrite (prune +
-reorganize) every couple months. Date each entry in the shipped section.
-Known limitations and queued items live across session boundaries —
-keep them current, remove items when they're shipped or explicitly
-abandoned.
+reorganize) every couple months. Keep known-limitations and queued items
+current — remove when shipped or explicitly abandoned.
 
 ---
 
 ## Last updated
 
-**2026-04-23** — after the overnight-safety + hierarchical-patterns
-ship run. Next review: ~2026-06-01 or whenever this file has drifted
-enough that scanning it doesn't match the actual state.
+**2026-04-23** — post-consolidation. Today's 12 incremental shipped
+entries folded into one themed block. Next review: ~2026-06-01 or
+whenever the file has drifted enough that scanning it doesn't match
+the actual state.
 
 ---
 
 ## Shipped
 
-### 2026-04-23 — topbar simplification
+### 2026-04-23 — ambition-ratchet stack + Go routing + validation
 
-- **Removed the `LiveSessionPicker` dropdown.** It let users hop
-  between opencode sessions inside a run; with the board + run-
-  centric navigation we've built this year, picking by session
-  never made sense as a primary verb. Users navigate by run, not
-  by opencode session index. Component file deleted
-  (`components/live-session-picker.tsx`); its one consumer in the
-  topbar was the only reader.
-- **Removed the duplicate `SwarmRunsPicker` from the topbar.** It
-  was mirrored from the bottombar's runs dropdown — two identical
-  "runs ▾" buttons on the same page. Bottombar remains the
-  canonical runs picker. Topbar now shows run title + run-anchor
-  chip + tier chip + abort chip, nothing duplicated.
+One day, large ship run. Grouped by theme.
 
-### 2026-04-23 — pattern benchmarking script
+**Autonomous-long-run layers (SWARM_PATTERNS.md §"Tiered execution"):**
 
-- **`scripts/_pattern_benchmark.mjs`** — runs the coordinator-backed
-  blackboard-family patterns sequentially against the same workspace
-  + directive and reports per-pattern metrics: wall-clock, tokens,
-  cost, done/stale counts, critic/verifier rejections, git commits
-  landed. Produces a comparison table + JSON dump at the end.
-- **No workspace reset between runs** (respects
-  `feedback_workspace_accumulation.md`): each pattern builds on the
-  prior pattern's commits. Measures "which pattern produces the best
-  next increment at this maturity" not "best zero-state bootstrap."
-- **Default patterns:** blackboard, orchestrator-worker, role-
-  differentiated — the three coordinator-backed patterns. Council /
-  debate-judge / critic-loop excluded because their shape differs
-  (deliberation quality, not execution throughput) and wouldn't
-  compare fairly on commits-landed metrics. Easy override via
-  `--patterns <comma-list>`.
-- **Bounded per-run:** stops each pattern at `--max-done N` (default
-  6) OR `--max-minutes N` (default 15), whichever first. Prevents
-  runaway cost.
-- **Usage:**
-  ```
-  node scripts/_pattern_benchmark.mjs \
-    --workspace "C:/Users/kevin/Workspace/kyahoofinance032926" \
-    [--patterns blackboard,orchestrator-worker,role-differentiated] \
-    [--max-done 6] [--max-minutes 15] \
-    [--enable-critic-gate]
-  ```
-- **Not shipped but queued:** a fourth column for "tests green"
-  metric (would run `npm test` before/after each pattern and diff
-  the pass count). Requires the target repo has a working test
-  runner; `kyahoofinance032926` does but not every target will, so
-  detecting + skipping is follow-up work.
-- **Cost estimate for a full 3-pattern run:** ~$12 on Go (~40% of the
-  5h $30 budget). Takes ~45-60 min wall clock. Fire when you've got
-  time to let it run + budget to spare.
+- **Ambition ratchet / tier escalation** — when a blackboard-family run
+  drains its board and would auto-idle-stop, the auto-ticker instead
+  fires a planner sweep at the next tier (polish → structural →
+  capabilities → research → vision; MAX_TIER=5). Stops only when every
+  tier returns empty. TickerSnapshot carries `currentTier` /
+  `tierExhausted` / `maxTier`.
+- **Anti-busywork critic gate** (opt-in via `enableCriticGate: true`) —
+  dedicated critic session spawned at run creation; coordinator
+  consults it between "turn completed" and `to: 'done'`. Busywork
+  verdict → item stale with `[critic-rejected]` note. Fail-open on
+  malfunction. **Validated live 2026-04-23:** 2 busywork rejections
+  observed with reasons like *"No file edits produced; the fix was
+  already attributed to a prior turn"* — real catch, not rubber stamp.
+- **Playwright grounding / verifier gate** (opt-in via
+  `enableVerifierGate: true` + `workspaceDevUrl`) — dedicated verifier
+  session runs `npx playwright` via bash against the target dev server,
+  replies `VERIFIED` / `NOT_VERIFIED` / `UNCLEAR`. Planner flags
+  UX-outcome todos with a `[verify]` prefix; `latestTodosFrom` strips
+  it and sets `requiresVerification` on the board item. Schema
+  extended with `requires_verification` column (idempotent migration).
+- **Hierarchical pattern set** (retired the "no role hierarchy"
+  stance): `orchestrator-worker`, `role-differentiated`,
+  `debate-judge`, `critic-loop`, `deliberate-execute`. Each with its
+  own kickoff orchestrator in `lib/server/`.
 
-### 2026-04-23 — Playwright grounding (verifier gate, MVP)
+**Session / process safety:**
 
-- **Opt-in via `enableVerifierGate: true` + `workspaceDevUrl`.** Run
-  request gains two paired fields: the flag, and the URL of the
-  target repo's already-running dev server (user manages the dev
-  server lifecycle; we don't spawn it). Validator rejects the flag
-  without the URL since the verifier needs somewhere to navigate.
-- **Dedicated verifier session.** Analogous to the critic session.
-  Spawned once at run creation, held outside `sessionIDs`. Per-run
-  mutex serializes verifier prompts. Fail-open on timeout / parse /
-  HTTP errors.
-- **Per-todo `requiresVerification` flag.** Planner opts individual
-  todos into browser verification by prefixing their `content` with
-  the literal `[verify]` token. `latestTodosFrom` strips the prefix
-  and sets the flag on the board item. Added a
-  `requires_verification` column to the `board_items` SQLite schema
-  with idempotent `ALTER TABLE` migration for existing DBs.
-- **Coordinator hook.** After the critic gate approves a commit, if
-  the item has `requiresVerification && meta.enableVerifierGate &&
-  meta.verifierSessionID && meta.workspaceDevUrl`, the coordinator
-  calls `verifyWorkerOutcome`. NOT_VERIFIED → item goes stale with
-  `[verifier-rejected] {reason}` note (retry-stale revives it, same
-  as critic-rejected).
-- **Verifier prompt.** Tells the verifier session to use opencode's
-  `bash` tool to run `npx playwright` against `workspaceDevUrl`,
-  assert on DOM/text/flow, return `VERIFIED:` / `NOT_VERIFIED:` /
-  `UNCLEAR:` on one line. The verifier composes its own Playwright
-  script per review — we don't ship test code.
-- **Session cleanup paths updated.** Startup auto-cleanup,
-  shutdown-hook SIGTERM abort, and stopAutoTicker all now iterate
-  `meta.verifierSessionID` alongside `meta.sessionIDs` and
-  `meta.criticSessionID`.
+- **Auto-abort on every stop path** — `stopAutoTicker` aborts all
+  session turns (workers + critic + verifier) on auto-idle,
+  tier-exhausted, opencode-frozen, and manual stop.
+- **Shutdown hook awaits aborts** — SIGTERM/SIGINT/beforeExit run an
+  async shutdown that clears timers, awaits all abort HTTP calls
+  (5s cap), then `process.exit`. Closes the fire-and-forget race.
+- **Startup auto-cleanup** — on first module load the auto-ticker
+  iterates recent runs (< 48h) and aborts any still-in-flight turns.
+  Covers SIGKILL / crash / reboot gaps.
+- **Zombie auto-abort** in the coordinator picker (10-min threshold)
+  catches hanging assistant turns.
+- **HMR-resilient exports** on `coordinator.ts` / `planner.ts` /
+  `auto-ticker.ts` via globalThis stashes — edits take effect on live
+  tickers without restart.
 
-**Not yet shipped (parked for follow-up):**
-- Auto-spawning the target repo's dev server. Still user's job to
-  `npm run dev` in the workspace.
-- Verifier-verdict UI on the board items. Today you see
-  `[verifier-rejected]` notes in the board JSON; a dedicated
-  chip/badge would be the next step.
-- Planner prompt testing — the `[verify]` prefix teaching is new
-  and needs real-run observation to see if the planner uses it
-  appropriately (or overflagging).
+**Billing / routing:**
 
-### 2026-04-23 — topbar de-mocking
+- **`opencode-go/<id>` prefix** is the right default for paid runs —
+  routes through Go subscription first, falls through to Zen per the
+  user's opencode settings toggle. `opencode/<id>` (bare) goes
+  straight to Zen pay-per-use. Distinction cost us ~$2 in Zen credit
+  before we figured it out; captured in
+  `memory/feedback_zen_model_preference.md`.
+- **Per-agent model override** via opencode.json `agent.plan.model`;
+  our planner code posts with `agent: 'plan'`. Lets a single config
+  run planner on smart paid model + workers on cheap/free.
+- **Opencode silent-freeze diagnosis** traced to Zen free-tier 429s,
+  not process wedging. `memory/reference_opencode_freeze.md`
+  documents diagnosis path + recovery via retry-stale.
 
-- **Bundle-cost fallback in the topbar's `$` chip.** `toRunMeta` in
-  `lib/opencode/transform.ts` now sums `derivedCost(m.info)` instead
-  of `m.info.cost ?? 0` — so Zen bundle runs (big-pickle, no per-
-  message cost reported) show a pricing-estimated dollar figure
-  instead of `$0.00`. `derivedCost` already existed in the same file
-  for per-message provider display; it just wasn't wired to the
-  run-level aggregate. Aligns the topbar with the cost-dashboard's
-  fallback logic.
-- **Removed the fake `goTier` "5h rolling" chip** (mint-green chip
-  next to `$`). All fields were hardcoded constants (`used: 0`,
-  `cap: 12`, `'resets in 3h 12m'`, `'weekly $2.41 / $30'`) — Zen
-  doesn't expose a per-account rolling-usage API we can read, and a
-  lying chip is worse than no chip. Dropped the `goTier` field from
-  `RunMeta` entirely (swarm-types, transform, EMPTY_VIEW) and the
-  matching reader blocks in `swarm-topbar.tsx` and
-  `provider-stats.tsx`. The only real per-run signal is the
-  retry-after header on 429s, which is an error-path signal not a
-  dashboard one.
-- **Removed the `StatsStream` popover body** from the BudgetChip.
-  Its `tokens: used * 1200` seed was another fake derivation;
-  removing it leaves the popover with just the real
-  `tooltipBody` rows (total spend, cap, remaining, tokens). The
-  `StatsStream` component itself survives — `agent-roster.tsx`
-  still uses it (a separate mock surface; out of scope today).
+**Endpoints:**
 
-### 2026-04-23 — small-polish sweep (4 items)
+- `GET /api/swarm/run/:id/tokens` — per-session + aggregate
+  token/cost breakdown; role-labeled for hierarchical patterns.
+- `POST /api/swarm/run/:id/board/retry-stale` — bulk reopen of
+  stale items; auto-restarts the ticker for ticker-driven patterns.
 
-- **Tier indicator chip in the run topbar.** Renders to the right of
-  the run-anchor chip when a ticker exists — shows `tier 3/5 ·
-  capabilities` live while the ambition ratchet climbs. Reads off
-  `liveTicker.state` (extended client-side `TickerSnapshot` to
-  include `currentTier` / `maxTier` / `tierExhausted` — mirror of
-  the server snapshot fields shipped earlier). Iris accent when
-  escalating, dims to fog when `tierExhausted`.
-- **Startup auto-cleanup of orphan sessions.** `auto-ticker.ts`'s
-  `tickers()` init now runs a one-shot `listRuns() → abort all
-  sessions` pass on first module load, restricted to runs created
-  in the last 48 h. Closes the SIGKILL / crash / reboot gap the
-  shutdown-hook fix couldn't reach — if a previous dev died
-  uncleanly, the next dev boot auto-heals any in-flight opencode
-  turns before the user can spawn new work on top.
-- **Per-row bundle chip on cost-dashboard.** Small mint `bundle`
-  label renders next to the `$` figure when a row has
-  `costTotal === 0 && tokensTotal > 0` — same heuristic the
-  aggregate banner uses, applied per-row so subscription-bundle
-  runs aren't confused with genuinely-zero runs at a glance.
-- **Agent-roster stats-stream removal.** Replaced the fake
-  `tokens: used * 1200` animated stream in the per-agent popover
-  with a plain rows panel showing real tokens / cost / messages
-  sent / received. Completes the topbar-de-mock cleanup — stream
-  component survives in `components/ui/stats-stream.tsx` but has
-  no readers now (safe to delete if a future pass wants to).
+**UI:**
 
-### 2026-04-23 — harden session cleanup on server exit
+- **Tier indicator chip** in the run topbar (`tier 3/5 · capabilities`
+  live as the ratchet climbs).
+- **Topbar de-mocked** — bundle-cost fallback via `derivedCost` so
+  big-pickle runs show real $ estimates; fake `goTier` 5h chip
+  removed; fake `StatsStream` popover removed from BudgetChip + roster.
+- **Pattern-specific affordances**: `JudgeVerdictStrip` (debate-judge),
+  `CriticVerdictStrip` (critic-loop), `OrchestratorActionsStrip`
+  (orchestrator-worker nudges), phase-aware empty-state + deliberation
+  round counter (deliberate-execute), bundle banner on cost-dashboard,
+  per-row bundle chip on cost-dashboard.
+- **Roster role labels** — coordinator tags worker prompts with
+  `agent={role}` so hierarchical runs show role names, not "build."
+- **Topbar simplified** — removed `LiveSessionPicker` + duplicate
+  `SwarmRunsPicker`. Topbar is run title + anchor chip + tier chip +
+  abort chip, nothing duplicated.
+- **Timeline scroll fixes** — two-phase rAF snap on fresh load
+  (reliable default-to-bottom), 48 px tight stick-threshold,
+  56 px padding so the "latest" button no longer overlays the last
+  row.
+- **Browser `ChunkLoadError` auto-reload** with a brief overlay.
 
-- **Shutdown hook now awaits session aborts with a 5 s budget.**
-  The prior shutdown routed through `stopAutoTicker` which fires the
-  abort as fire-and-forget async work — on `SIGTERM` / `SIGINT` /
-  `beforeExit`, Node could exit before the abort HTTP calls reached
-  opencode. Now the shutdown handler is async: clears timers
-  synchronously, then `await`s all outstanding abort requests (with
-  a 5 s hard cap so a hung opencode can't freeze dev exit), then
-  `process.exit(exitCode)`. SIGINT → 130, SIGTERM → 143, beforeExit
-  lets Node finish naturally.
-- **Why it matters:** an in-flight opencode turn with no consumer
-  keeps burning tokens until the LLM call errors or completes.
-  Fire-and-forget abort on exit meant the process could die before
-  opencode acknowledged the cancel. Now exit waits for the
-  acknowledgement. Test-cycle use case: a `pkill -TERM next dev`
-  now cleanly cancels every live run's turns before the process
-  terminates.
-- **Not covered** (still a gap — queued as known-limitation):
-  `SIGKILL` / crash / machine-kernel-kill. No handler can run during
-  those, so sessions would leak. Only safeguard today is hitting the
-  back-cleanup endpoint on next dev boot; startup auto-cleanup is the
-  natural follow-up if that becomes painful.
+**Tooling + scripts:**
 
-### 2026-04-23 — session cleanup on run end
+- `scripts/_pattern_benchmark.mjs` — runs coordinator-backed patterns
+  sequentially on the same workspace, reports tokens/cost/commits/
+  critic-rejections/verifier-rejections per pattern.
+- `scripts/prune_demo_log.mjs` — dry-run-by-default pruner; gzips
+  ≥ 64 KB events.ndjson; `--delete --days N` removes old run dirs.
+- `scripts/_hierarchical_smoke.mjs` — pattern smoke skeleton.
 
-- **`stopAutoTicker` now fire-and-forget aborts every session on
-  the run** (workers in `meta.sessionIDs` + `meta.criticSessionID`
-  when present) via `abortSessionServer`. Fires on every stop path:
-  auto-idle, tier-exhausted, opencode-frozen, manual, SIGINT/SIGTERM
-  shutdown. Cancels any in-flight assistant turn so no orphaned
-  session keeps streaming tokens with no consumer after the run is
-  declared done.
-- **Root-cause:** observed during the 2026-04-23 critic-gate test:
-  the test run got 429'd on its first sweep, but nothing cleaned up
-  the 4 opencode sessions (3 workers + 1 critic). That run plus 22
-  older ones all had sessions still present on opencode. None were
-  actively producing (a completed-but-empty turn from a 429 is safe),
-  but the accumulation clutters the session list and any still-in-
-  flight turn from a 429 retry would keep burning tokens with no
-  consumer.
-- **One-shot back-cleanup executed** against all 23 existing runs:
-  64 session turns aborted, 0 errors. Mostly no-ops (turns were
-  already completed or error-finished) but cleared any zombie
-  state that had survived the retry-stale + opencode-frozen paths.
+**Tertiary plumbing:**
 
-### 2026-04-23 — anti-busywork critic gate
+- SSE shaping (`lib/server/sse-shaping.ts`) — strips redundant diff
+  patches, coalesces part.updated at 250 ms, dedupes replay. ~50 %
+  byte reduction on real runs.
+- Planner prompt rewrite — mission-anchored, auto-embeds README (32 KB
+  cap), anti-pattern list bans passive verifications. Todo count
+  6-15 with a mix of sizes.
+- `useLiveSwarmRunMessages` refetch throttle — 2 s cooldown +
+  trailing refresh, cuts server fan-in ~10× on busy runs. (Deeper
+  partial-SSE-merge fix tracked below.)
 
-- **`enableCriticGate: true` run option** spawns one extra opencode
-  session at run creation (the "critic"), held outside the worker pool.
-  Coordinator calls `reviewWorkerDiff` between "turn completed" and
-  `to: 'done'` transition. Critic reads the todo + edited paths + the
-  worker's text summary, replies with `VERDICT: SUBSTANTIVE` or
-  `VERDICT: BUSYWORK` on one line. Busywork → item transitions to
-  `stale` with `[critic-rejected]` note (retry-stale can revive it).
-- **Fail-open by design.** Timeout (60 s), unparseable reply, HTTP
-  failure, missing critic session → log and fall through to the normal
-  `done` transition. A critic malfunction never blocks a commit.
-- **Per-run mutex serializes reviews** since opencode rejects concurrent
-  prompts on the same session. In-memory map keyed by `swarmRunID`.
-- **Opt-in, blackboard-family only.** Other patterns (council, map-
-  reduce, debate-judge, critic-loop) have their own orchestrators that
-  bypass the coordinator's commit path, so the flag has no effect
-  there — validator rejects to surface the mismatch instead of
-  silently ignoring. Applies to `blackboard`, `orchestrator-worker`,
-  `role-differentiated`, `deliberate-execute`.
-- **Companion to the ambition ratchet** shipped earlier today. Rationale
-  in `memory/project_ambition_ratchet.md`; design in `SWARM_PATTERNS.md`
-  "Tiered execution" → "Companion layers" → anti-busywork critic.
+### Earlier (see `git log` for specifics)
 
-### 2026-04-23 — ambition ratchet (tier escalation)
-
-- **Auto-idle stop → tier escalation.** `auto-ticker.ts` now tries a
-  planner escalation sweep before stopping. Each escalation asks the
-  planner for work at the next tier (`currentTier + 1`); if it seeds
-  items, the run continues at the new tier. If every tier up to
-  `MAX_TIER = 5` produces zero, `tierExhausted` goes true and the
-  next cascade stops the ticker for real. Direct answer to the
-  "sudden ending" + "keep getting more ambitious" asks — runs don't
-  end at board-drain, they climb. See `SWARM_PATTERNS.md` "Tiered
-  execution (ambition ratchet)" for the full contract and
-  `memory/project_ambition_ratchet.md` for the cross-app decision
-  context (ollama-swarm second-opinion converged on this design).
-- **Tier ladder prompt.** `buildPlannerPrompt` accepts an optional
-  `escalationTier`; when set, prepends a tier-N preamble + ladder
-  (Polish → Structural → Capabilities → Research → Vision) and
-  instructs the planner to either emit ≥ tier-N work or return empty
-  (ending the run honestly rather than faking ambition).
-- **TickerSnapshot now carries `currentTier`, `tierExhausted`,
-  `maxTier`.** Consumable via `GET /api/swarm/run/:id/board/ticker`
-  for debug / future UI surface.
-
-### 2026-04-23 — freeze-diagnosis follow-ups
-
-- **`GET /api/swarm/run/:id/tokens`** — per-session + aggregate
-  token/cost breakdown in one call. Motivated by the overnight-run
-  deep-check: confirming "did we pass 22.33M tokens?" previously meant
-  eyeballing the cost-dashboard UI or rewriting a per-session fan-out
-  script. Reuses `deriveSessionRow` via a new `deriveRunTokens` export
-  in `swarm-registry.ts`. Role-labeled (uses `roleNamesBySessionID`) so
-  hierarchical-pattern drill-downs name sessions by role.
-- **`POST /api/swarm/run/:id/board/retry-stale`** — bulk reopen of
-  stale board items. Needed after the overnight run stranded 6/53 items
-  at `stale` (all with `[final after 2 retries] turn timed out` notes
-  from the zombie-abort path — see `memory/reference_opencode_freeze.md`
-  for the underlying Zen rate-limit cause). Without this, a run with
-  quota-induced stale items stayed at its final completion % forever.
-  Clears `ownerAgentId`, `fileHashes`, `staleSinceSha`, and the retry-
-  count note so `RETRY_TAG_RE` matches cleanly on the next retry-cycle.
-  Auto-restarts the ticker for ticker-driven patterns (blackboard,
-  orchestrator-worker, role-differentiated, deliberate-execute) if it's
-  currently stopped — otherwise reopening items would be a no-op from
-  the user's perspective.
-- **Opencode-freeze diagnosis captured.** `memory/reference_opencode_freeze.md`
-  documents the HTTP 429 `FreeUsageLimitError` root cause (Zen free-
-  tier quota), the log-grep diagnosis path, why process restart doesn't
-  help (per-account quota), and the recovery workflow now that retry-
-  stale exists.
-
-### 2026-04-23 — follow-up cleanup
-
-- **Roster role labels** propagate to the left-sidebar roster via the
-  coordinator (`063d13c`). Worker sessions now carry `info.agent={role}`
-  on their assistant turns, so hierarchical runs show "orchestrator" /
-  "judge" / "critic" / named roles in the roster, not default "build."
-- **`scripts/prune_demo_log.mjs`** — dry-run-by-default pruner for the
-  accreted demo-log directory. `--compress` gzips events.ndjson files
-  ≥ 64 KB (keeps everything else in place; replay readers accept the
-  .gz variant). `--delete --days N` removes run dirs older than N
-  days. Requires `--yes` to actually modify.
-- **Phase-aware empty-state** for the board views: deliberate-execute
-  runs during their deliberation phase now read "deliberating —
-  council is exchanging drafts before execution" instead of the
-  blackboard-flavored "waiting for planner sweep" message. Applied
-  to both the main-view `BoardFullView` and the sidebar `BoardRail`.
-- **Bundle-pricing banner** on cost-dashboard: when `$ spent` is $0
-  but `tokens` is > 0, a subtle note clarifies that the zero reading
-  is expected for Zen subscription bundle models (`big-pickle`),
-  not a broken aggregation.
-- **JudgeVerdictStrip** for `debate-judge` runs. Parses the judge
-  session's latest text reply for `WINNER:` / `MERGE:` / `REVISE:`;
-  renders a colored strip above the composer (mint / iris / amber).
-  Click jumps timeline to the verdict message.
-- **CriticVerdictStrip** for `critic-loop` runs. Parses the critic
-  session for `APPROVED:` / `REVISE:` + shows the worker's iteration
-  counter ("round N of M"). Click jumps to the verdict message.
-- **OrchestratorActionsStrip** for `orchestrator-worker` runs. Three
-  canned-prompt buttons (status report · re-strategize · focus check)
-  that post to session 0 with `agent='orchestrator'`. Visible only
-  after the orchestrator has produced its first completed text turn
-  so nudges don't race the initial planner sweep.
-- **Deliberation round counter** for `deliberate-execute` runs. The
-  board empty-state now reads `deliberating — …` + `round N of M`
-  below, plus a subtle `· synthesizing` suffix once the last round
-  has landed. Inference-based (client-side `deliberationRoundInfo`
-  counts completed text turns per session, takes max across them),
-  no server persistence. `DEFAULT_DELIBERATION_ROUNDS = 3` duplicated
-  on the client side as `lib/deliberate-progress.ts` export —
-  keep in sync with `lib/server/deliberate-execute.ts`.
-
-### 2026-04-23 — hierarchical patterns + overnight safety
-
-**Patterns.** Retired the "no role hierarchy" stance
-(`memory/feedback_no_role_hierarchy.md`). Five hierarchical patterns
-shipped alongside the existing self-organizing set:
-
-- `orchestrator-worker` — session 0 plans + re-strategizes; workers
-  claim off board. `persistentSweepMinutes` accepted.
-- `role-differentiated` — N workers with pinned `agent={role}`;
-  `teamRoles[]` or rotated defaults.
-- `critic-loop` — worker / critic 2-party loop, APPROVED / REVISE
-  verdict parsing, `criticMaxIterations` cap.
-- `debate-judge` — N generators + 1 judge, WINNER / MERGE / REVISE
-  verdict parsing, `debateMaxRounds` cap.
-- `deliberate-execute` — compositional: council rounds → synthesis
-  (todowrite) → blackboard execution on the same session pool.
-
-**Overnight-safety stack.** Diagnosed during an 8-hour run that went
-dead at ~1 h of 8 h productive. Shipped:
-
-- Zombie auto-abort in the coordinator picker (10-min threshold)
-- Turn timeout raised 5 min → 10 min
-- Eager re-sweep when board drains (30-s idle + 2-min MIN floor)
-- Periodic planner sweep (`persistentSweepMinutes` opt)
-- Opencode-frozen liveness watchdog (stops ticker with distinct reason)
-- HMR-resilient module exports via globalThis stashes
-- Browser `ChunkLoadError` auto-reload
-
-**SSE plumbing.** `lib/server/sse-shaping.ts` strips redundant
-`summary.diffs` patches from frames, coalesces part-update firehoses
-at 250 ms per part.id, dedupes historical replay. Measured ~50 % byte
-reduction on captured real runs.
-
-**Planner prompt rewrite.** Mission-anchored instead of
-verification-biased; auto-embeds workspace `README.md` (32 KB cap);
-anti-pattern list ("verify X still works" banned without evidence).
-Todo count raised to 6-15 with mix of sizes.
-
-**UI polish.**
-- Runs-picker SESS / CAPS column alignment fix
-- Board chips show role labels on hierarchical patterns
-- Collapsible `API RECIPES` block in new-run modal
-- Dev tab auto-reload on ChunkLoadError with brief overlay
-
-### Earlier (rough groupings — see `git log` for specifics)
-
-- **Blackboard parallelism fix** (2026-04-22) — per-session tick fan-out,
-  `restrictToSessionID` opt. Fixed 1-of-N sessions claiming all work.
-- **Council auto-rounds** (2026-04-22) — Rounds 2 and 3 fire server-side
-  after Round 1 idle; `ReconcileStrip`'s manual button still works.
-- **Map-reduce v2** (earlier in April) — synthesis as a board-claimed
-  todo instead of a pinned session 0 post.
-- **Stigmergy v0 + v1** (earlier in April) — file-heat observation,
-  heat-weighted todo picker in `tickCoordinator`.
-- **Opencode port isolation** (2026-04-22) — `:4097` with separate
-  `XDG_DATA_HOME` so this app's session list doesn't mix with the
-  ollama-swarm sibling.
+- **Blackboard parallelism fix** (2026-04-22) — per-session tick
+  fan-out; fixed 1-of-N sessions claiming all work.
+- **Council auto-rounds** (2026-04-22) — rounds 2/3 fire server-side.
+- **Map-reduce v2** — synthesis as a board-claimed `synthesize` todo.
+- **Stigmergy v0 + v1** — per-file edit heat observation + picker
+  weighting in `tickCoordinator`.
+- **Opencode port isolation** — `:4097` with separate `XDG_DATA_HOME`
+  so this app's session list doesn't mix with the ollama-swarm sibling.
 
 ---
 
@@ -403,140 +159,78 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Cost / billing
 
-- **`costTotal` is always `0` for `big-pickle` (Zen bundle).** Working as
-  intended — bundle models don't report per-token cost, and
-  `lib/opencode/pricing.ts` has hardcoded zeros. Cost-dashboard now
-  shows a 🏷️ banner clarifying this when `$0 spent + tokens > 0` is
-  detected (shipped 2026-04-23). Per-row bundle chips in the expensive-
-  runs list still not done — banner covers the summary-level optics.
+- **`costTotal` is always `0` for `big-pickle` (Zen bundle).** Working
+  as intended — bundle models don't report per-token cost. Cost-
+  dashboard shows banner + per-row chip when `$0 + tokens > 0` so the
+  zero reading isn't mistaken for "actually free."
 
 ### Orchestration / runtime
 
-- **Opencode "silent freeze" is usually a Zen rate-limit, not an
-  opencode bug.** As of 2026-04-23 we've traced every observed freeze
-  to HTTP 429 `FreeUsageLimitError` from `opencode.ai/zen/v1/messages`.
-  The quota is per-Zen-account (not per-process), so
-  `restart-4097.ps1` is useless — it only helps when the actual
-  process state is wedged, which we've never actually seen.
-  Diagnosis and recovery path captured in
-  `memory/reference_opencode_freeze.md`. The liveness watchdog still
-  stops the ticker with `stopped · opencode-frozen` because from its
-  vantage point the symptoms are identical to a real process freeze;
-  distinguishing "quota burnt" from "process dead" would require a
-  new probe that inspects opencode's log for recent 429s (queued
-  below under "nice-to-have" as `zen-rate-limit` stop reason).
-  Retry-stale (shipped above) handles the per-item recovery once
-  quota has cleared.
+- **"Silent freeze" ≈ Zen free-tier 429, not process wedging.** The
+  liveness watchdog still stops the ticker with `stopped ·
+  opencode-frozen`; distinguishing "quota burnt" from "process dead"
+  is queued below. Recovery path via retry-stale works once quota
+  clears.
 
-- **Zombie threshold is a global 10 min.** Per-pattern tuning would be
-  better (a critic-loop turn is legitimately shorter than a blackboard
-  refactor), but 10 min is a defensible compromise.
+- **Zombie threshold is global 10 min.** Per-pattern tuning is
+  queued; 10 min is a defensible compromise for now.
 
-- **HMR-resilient exports cover only three modules.** `coordinator.ts`,
-  `planner.ts`, `auto-ticker.ts` propagate edits without a ticker
-  restart. Other server-module edits (`opencode-server.ts`,
-  `swarm-registry.ts`, pattern-specific orchestrators) still require
-  a dev-server restart or ticker stop+start to take effect for in-flight
-  runs. Low priority — those modules change rarely.
+- **HMR-resilient exports cover only 3 modules** (`coordinator.ts`,
+  `planner.ts`, `auto-ticker.ts`). Other server modules
+  (`opencode-server.ts`, `swarm-registry.ts`, pattern-specific
+  orchestrators) need dev-server restart to pick up edits. Low
+  priority — those files change rarely.
 
-- **Ambition-ratchet tier state is in-memory only.** `TickerState.currentTier`
-  resets to 1 when the ticker restarts (HMR, crash, opencode freeze
-  requiring restart). If a run had reached tier 3, a restart takes it
-  back to tier 1 and the next escalation climbs from there. Practical
-  impact is modest — tier 1→3 takes one cascade each with a drained
-  board — but if we see runs losing tier progress often, persist on
-  `SwarmRunMeta` via a new `updateRun` helper.
+- **Ambition-ratchet tier state is in-memory only.** `currentTier`
+  resets to 1 on ticker restart. If we see runs lose tier progress
+  often, persist on `SwarmRunMeta` via a new `updateRun` helper.
 
-- **Periodic-mode sweeps don't participate in tier escalation.** Runs
-  launched with `persistentSweepMinutes > 0` skip the auto-idle stop
-  entirely, which means they also skip `attemptTierEscalation`. Their
-  periodic sweeps stay at `currentTier = 1` forever. Fine for MVP —
-  the overnight-run flow uses the default (non-persistent) mode which
-  does escalate. Tying periodic sweeps to tier escalation is a future
-  layer (probably "tier up after N drained cycles" rather than
-  "tier up on every sweep").
+- **Periodic-mode (`persistentSweepMinutes > 0`) skips tier
+  escalation.** Those runs' auto-idle branch is disabled, so the
+  ratchet never fires for them. Would need "tier up after N drained
+  periodic cycles" to participate.
 
-- **Stale session state across opencode restarts is manual cleanup.**
-  An in-flight run whose opencode process died will have stuck sessions
-  from its view; we don't reconcile. User workflow: stop the ticker,
-  maybe fire a fresh run.
-
-- **Non-ticker pattern runs still leak sessions at end-of-life.**
-  The 2026-04-23 `stopAutoTicker` auto-abort covers blackboard-family
-  runs (they route through the ticker). Council / map-reduce / debate-
-  judge / critic-loop complete through their own orchestrators and
-  currently just return without aborting anything. Not bleeding tokens
-  as long as their turns finished cleanly, but zombie turns from
-  unfinished orchestrator runs would still linger. Fix is a small
-  run-complete hook in each orchestrator module. Low priority — those
-  patterns are short-lived by design, so the window is narrow.
+- **Non-ticker pattern runs leak sessions at end-of-life.** Council /
+  map-reduce / debate-judge / critic-loop don't route through
+  `stopAutoTicker`. Narrow window (those patterns are short-lived)
+  but it's still a real gap. Small per-orchestrator hook fixes it.
 
 ### UI
 
-- ~~Roster doesn't label session 0 for hierarchical patterns~~ — shipped
-  2026-04-23 via `063d13c`. Coordinator now tags worker prompts with
-  `agent={role}`, which flows through `info.agent` into the roster.
-
-- **Pattern-specific UI affordances — shipped.** Coverage as of
-  2026-04-23:
-  - ✓ Council: ReconcileStrip (human-reconcile + manual R2)
-  - ✓ Deliberate-execute: phase-aware empty-state + round-of-M counter
-  - ✓ Debate-judge: JudgeVerdictStrip (WINNER/MERGE/REVISE)
-  - ✓ Critic-loop: CriticVerdictStrip (APPROVED/REVISE + round N/M)
-  - ✓ Orchestrator-worker: OrchestratorActionsStrip (status / re-
-    strategize / focus check)
-
-- **Cross-run comparisons only exist in `demo-log/` markdown.** The
-  `/projects` matrix route shows activity by repo × day, but there's no
-  "compare these two runs" surface. When present, comparison is a
-  manual `demo-log/battle-<date>/COMPARISON.md` file.
+- **Cross-run comparisons live only in `demo-log/` markdown.**
+  `/projects` shows activity-by-repo but no "compare these two runs"
+  surface.
 
 ### UI performance
 
 - **Live run view (`/?swarmRun=<id>`) is slow to load on big runs.**
-  Observed 2026-04-23 on a ~8-min run with 7.8M tokens across 7
-  sessions — first paint took long enough that the user gave up.
-  Likely suspects (uncertain without profiling): the initial SSE
-  replay of all board events, multiplexed message-history fetch
-  across every session, and `toMessages` / `toRunMeta` transforms
-  running on every buffer update during hydration. Needs profiling
-  before optimizing. Not affecting the run itself — just the UX.
+  Today's refetch throttle was a partial fix. The deeper problem:
+  SSE events trigger full session-history refetches. Proper fix is
+  partial SSE-merge (parse `message.part.updated` payloads and
+  splice into the local buffer). Nontrivial; a known-state profiling
+  pass would confirm the actual bottleneck.
 
-- **No liveness decay when dev server vanishes.** Observed 2026-04-23:
-  after shutting down the dev server, an open run-view browser tab
-  shows a mixed state — `offline` badge top-right correctly reflects
-  the dropped SSE connection, but other chips ("live" on run anchor,
-  build-status blinking, N events in timeline) keep rendering stale
-  pre-shutdown snapshots. React's in-memory state from before the
-  disconnect stays live-looking until hard-refresh. Would be cleaner
-  to gray stale chips after a few seconds of no-liveness and show
-  "last seen Xm ago" instead. Could share a hook with
-  `useOpencodeHealth`.
+- **No liveness decay when dev server vanishes.** After dev shutdown,
+  an open run-view tab shows mixed state (`offline` badge correctly,
+  but run-anchor "live" + blinking status circle keep rendering
+  stale). React in-memory state from before the disconnect stays
+  live-looking until hard-refresh. Cleaner UX: gray stale chips
+  after N seconds of no SSE heartbeat.
 
 ### Infra / dev workflow
 
-- **Dev-server restart on code edits is manual.** HMR mostly works but
-  has blind spots (see above). No automation reminds the developer;
-  `scripts/dev.mjs` has WATCHPACK_POLLING tuned for WSL but not
-  auto-restart on server-module edits.
+- **Dev restart on server-module edits is manual.** HMR covers client
+  components and the 3 HMR-resilient server modules; others need a
+  bounce. No automation reminds.
 
-- **Demo-log directory grows unbounded** — partially addressed. Ships
-  `scripts/prune_demo_log.mjs` (dry-run by default; `--compress` gzips
-  > 64 KB events.ndjson files, `--delete --days N` removes old run
-  dirs). Not on a schedule yet — run manually when disk pressure
-  matters.
+- **Demo-log retention** — pruner script exists but isn't scheduled.
+  Run manually when disk pressure matters.
 
-- **Battle test with the overnight-safety stack is partially validated.**
-  The 2026-04-23 overnight run (`run_mob31bx6_jzdfs2`) reached
-  47/53 done (89 %) across 6 sessions before hitting Zen's free-tier
-  quota. Nine `[retry:N]` / `[final after 2 retries]` notes on the
-  board prove the zombie-abort path fired — the stack's headline claim
-  (sessions don't hang forever) is confirmed. What remains unvalidated:
-  an 8 h run that *doesn't* hit the quota cliff at ~35 min.
-
-- **Smoke runner hasn't been executed against real opencode.** Ships in
-  `scripts/_hierarchical_smoke.mjs`; first run blocked on confirming
-  opencode is healthy after last night's freeze.
+- **Overnight-safety stack partially validated.** 2026-04-23 runs
+  reached 89 % completion across 6 sessions before a Zen quota cliff.
+  Zombie-abort validated (9 `[retry:N]` notes fired). What's still
+  missing: a full 8 h run that *doesn't* hit the quota wall at
+  ~35 min.
 
 ---
 
@@ -544,100 +238,96 @@ Todo count raised to 6-15 with mix of sizes.
 
 ### Next-up (high leverage, < 1 day each)
 
-<!-- Remaining pattern-UI items shipped 2026-04-23; see "Shipped" section. -->
+- **`zen-rate-limit` vs `opencode-frozen` in the watchdog.** A probe
+  that greps the opencode log for recent `statusCode":429` lines
+  would let the footer show `stopped · zen-rate-limit · retry 5h`
+  instead of a generic freeze. Implementation notes in
+  `memory/reference_opencode_freeze.md`.
 
-- **Playwright grounding tool for the planner** (ambition-ratchet
-  companion layer #2) — *parked 2026-04-23, awaiting signal*. Scope
-  as discussed: (a) dev-server lifecycle for the target repo so it
-  actually runs, (b) a verifier session analogous to the critic that
-  runs `npx playwright` via `bash` and replies `VERIFIED /
-  NOT_VERIFIED`, (c) a `requiresVerification` flag the planner sets
-  on UX-outcome todos. Roughly a day of work, most of it in the
-  dev-server plumbing we have no scaffolding for today. **Hold
-  condition:** run a handful of sessions with `enableCriticGate:
-  true` and observe whether the critic alone catches the
-  tier-3+ "added feature X" lies. If yes → leave parked; the critic
-  + ambition ratchet + retry-stale stack is enough. If tier-3+ runs
-  ship convincing-sounding commits whose features don't actually
-  work → ship this next, because it's the only layer that grounds
-  in external observation rather than LLM self-report.
-
-- **Tier indicator in the ticker chip / run header.** The snapshot
-  already carries `currentTier` / `tierExhausted` / `maxTier`; one
-  small badge in `components/swarm-topbar.tsx` shows "tier 3/5 —
-  capabilities" so the user can see the ratchet climbing in real
-  time. ~30 min.
+- **Non-ticker pattern session cleanup.** Council / map-reduce /
+  debate-judge / critic-loop each get a small `finalizeRun()`-style
+  hook that aborts worker + coordinator sessions at orchestration
+  end. Closes the session-leak story across all patterns.
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
-  Today roles bias self-selection via the intro prompt; the picker does
-  no role routing. Add an optional `preferredRole` field on board
-  items; when set, the coordinator prefers to dispatch to a session
-  with that role. Natural v2 of the role-differentiated pattern.
+  Today roles bias self-selection via the intro prompt; the coordinator
+  picker doesn't route by role. Add an optional `preferredRole` field
+  on board items + a picker bias.
+
+- **Run chaining / continuity.** New `continuationOf?: string` field on
+  `SwarmRunRequest` — a new run inherits prior workspace + prior tier +
+  prior escalation history. Unlocks the "unleash a swarm on this repo
+  for a week" usage pattern.
 
 ### Nice-to-have (lower leverage, bigger effort)
 
-- **Distinguish `zen-rate-limit` from `opencode-frozen` in the
-  watchdog.** Both present as "no completed turns for 10 min." The
-  former is self-healing (wait out `retry-after`); the latter needs a
-  process restart. A probe that grep's
-  `/mnt/c/Users/kevin/.opencode-ui-separate/opencode/log/<today>.log`
-  for recent `statusCode":429` lines would let the footer read
-  `stopped · zen-rate-limit · retry 5h` instead of a generic
-  `opencode-frozen`. Implementation notes in
-  `memory/reference_opencode_freeze.md` bottom section.
+- **Partial SSE-merge** in `useLiveSwarmRunMessages` (deeper fix for
+  the page-load slowness; today's 2 s throttle was the MVP).
 
-- **Auto-restart opencode on `opencode-frozen` detection.** Needs an
-  external control plane (the Next.js app can't reach the PowerShell
-  launcher). Could ship via a local HTTP endpoint the launcher exposes
-  + a client in the watchdog. Lower priority now that rate-limiting
-  (not process wedging) is the real freeze cause.
+- **Liveness decay chips** that gray when the SSE heartbeat stops.
 
-- **Per-pattern zombie / turn-timeout tuning.** Global 10-min for both
-  is a compromise. Some patterns could use shorter (critic-loop turns
-  should be fast) or longer (deliberate-execute synthesis can be slow).
+- **Auto-restart opencode on `opencode-frozen`.** Needs external
+  control plane (app can't reach the PowerShell launcher). Lower
+  priority now that most freezes are rate-limit, not process wedge.
 
-- **Cross-run comparison surface.** First step: a `/projects/<repo>/runs`
-  page with a multi-run diff viewer that pulls from `demo-log/`.
+- **Per-pattern zombie / turn-timeout tuning.**
 
-- **Cost visibility for bundle models.** A 🏷️ chip or similar on the
-  runs-picker row indicating "bundle-priced, token cost is subscription-
-  metered" instead of bare `$0.00`.
+- **Cross-run comparison surface** — `/projects/<repo>/runs` multi-run
+  diff viewer pulling from `demo-log/`.
+
+- **Tier state persistence on `SwarmRunMeta`** — survive ticker
+  restarts instead of resetting to tier 1.
+
+- **Periodic-mode tier escalation** — "tier up after N drained
+  periodic cycles."
 
 ### Designed but deprioritized
 
-- **Route C "writers-room" communication pattern** (from
-  `memory/project_a2a_routes.md`). Deferred along with Route B
-  (bounty-board) and Route D (subpoena). May never ship — Route A
-  (circuit-board / typed pins) covers current needs.
+- **Route C "writers-room"** (memory/project_a2a_routes.md). Deferred
+  with B/D; Route A covers current needs.
 
-- **Preset picker UX** for the new-run modal — richer tile previews,
-  inline pattern descriptions. Exists as an outline in
-  `SWARM_PATTERNS.md` §"Preset picker UX (future)".
+- **Preset picker UX** — richer tile previews in new-run modal.
 
-- **Auto-abort opencode turn inside worker timeout.** `waitForSessionIdle`
-  hits a timeout, transitions the board item to stale, but doesn't
-  actively abort the opencode turn. The zombie auto-abort will catch it
-  10 min later. Closing the loop directly inside the timeout path would
-  save those 10 min. Small change; not prioritized.
+- **Auto-abort opencode turn inside worker-timeout path.** Zombie
+  auto-abort catches it 10 min later anyway.
+
+---
+
+## Validation debt
+
+Things we shipped but haven't exercised against real runs.
+
+- **Playwright grounding (`enableVerifierGate: true`)** — schema + code
+  wired, never exercised live. Blocked on: user running the target
+  repo's dev server + passing `workspaceDevUrl` on a test run. Needs
+  observation of whether the planner actually uses the `[verify]`
+  prefix appropriately and whether the verifier composes usable
+  Playwright scripts.
+
+- **Pattern benchmark script** — `scripts/_pattern_benchmark.mjs`
+  works (syntax-checked); never invoked. ~$12 / ~1 h wall-clock for
+  the default 3-pattern run.
+
+- **Ambition-ratchet tier escalation** — tier-2 and beyond have never
+  fired in anger. Today's runs stopped at tier 1 before the board
+  fully drained. Needs a run that either drains naturally or has a
+  short directive.
+
+- **Non-ticker patterns (council / map-reduce / debate-judge /
+  critic-loop)** — type-checked, but nobody's load-tested them on a
+  real repo. Combined with the session-leak gap above.
 
 ---
 
 ## How to use this file
 
-**Adding an item:**
-- Shipped → append to "Shipped" under the right date heading, one-liner
-  + link to commit or durable doc if the context matters.
-- In-progress, blocking, or partially done → move to "Known limitations"
-  with honest framing about what's rough.
-- Designed but not built → add to "Queued" with a rough effort
-  estimate.
+**Adding:** shipped → under the current date heading; in-progress /
+blocking → "Known limitations"; designed-not-built → "Queued" with
+effort estimate.
 
-**Removing an item:**
-- Shipped item from "Queued" → move to "Shipped" under today's date.
-- Limitation fixed → remove entirely (commit has the record).
-- Decision to abandon something → move to `WHAT_THIS_PROJECT_IS_NOT.md`
-  with the justification, delete from here.
+**Removing:** shipped from Queued → move to Shipped; limitation fixed
+→ delete (commit has the record); abandoned → move justification to
+`WHAT_THIS_PROJECT_IS_NOT.md` and delete here.
 
-**When in doubt:** if the entry would be durable advice to future
-implementers, it belongs in one of the 5 durable docs. If it's
-time-scoped ("right now we have X limitation"), it belongs here.
+**When in doubt:** durable advice → 5 durable docs. Time-scoped
+("right now we have X") → here.
