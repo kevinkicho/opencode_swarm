@@ -28,6 +28,10 @@ export interface TickerSnapshot {
   currentTier: number;
   tierExhausted: boolean;
   maxTier: number;
+  // Epoch-ms when a Zen retry-after window ends. Present only on
+  // stopReason='zen-rate-limit' runs whose 429 carried a parseable
+  // retry-after. UI renders a live countdown chip from this.
+  retryAfterEndsAtMs?: number;
 }
 
 // Kept as three distinct arms (rather than a combined `active | stopped`)

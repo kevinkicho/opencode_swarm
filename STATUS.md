@@ -76,6 +76,16 @@ One day, large ship run. Grouped by theme.
   in `lib/server/zen-rate-limit-probe.ts`, respects
   `OPENCODE_LOG_DIR` env for non-default log locations.
 
+- **Retry-after countdown chip.** New `RetryAfterChip` in
+  `swarm-topbar.tsx` renders next to the tier chip when a run is
+  stopped with `stopReason: 'zen-rate-limit'` and a parseable
+  retry-after was captured. Ticks once per second showing the
+  remaining window (`retry 3h 47m` → `retry 3h 46m` → …) and
+  self-terminates once the window elapses. Server-side:
+  `TickerState.retryAfterEndsAtMs` set by the watchdog when it
+  detects a Zen 429; surfaced on both server + client
+  `TickerSnapshot`.
+
 - **Partial SSE-merge in `useLiveSwarmRunMessages`.** When an SSE
   event carries the full `message.part.updated` or `message.updated`
   payload, the hook splices it directly into the local message
@@ -261,13 +271,6 @@ One day, large ship run. Grouped by theme.
 ## Queued — designed but not started
 
 ### Next-up (high leverage, < 1 day each)
-
-- **Retry-after countdown chip for `zen-rate-limit` stops.** The
-  detection is shipped — `stopReason: 'zen-rate-limit'` is set
-  automatically when a 429 is in the opencode log. The ticker chip
-  could show `stopped · zen-rate-limit · retry 3h 47m` by surfacing
-  `retry-after` seconds on the snapshot and decrementing. UI work,
-  not server.
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the coordinator

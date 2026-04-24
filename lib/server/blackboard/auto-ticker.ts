@@ -192,6 +192,12 @@ interface TickerState {
   // escalation — without this counter, persistent-mode runs would
   // stay at tier 1 forever since they never hit the auto-idle path.
   consecutiveDrainedSweeps: number;
+  // When the liveness watchdog declared zen-rate-limit, this holds the
+  // epoch-ms at which the retry-after window opencode reported in the
+  // 429 response ends. Surfaced via TickerSnapshot so the UI can show
+  // a live-countdown chip ("retry 3h 47m") on rate-limited runs.
+  // Absent on any other stop reason.
+  retryAfterEndsAtMs?: number;
   // Periodic re-sweep cadence for long-running runs. When > 0, fires a
   // fresh planner sweep every N ms so an overnight run keeps producing
   // work as the codebase evolves. When > 0, the auto-idle stop logic is
@@ -652,6 +658,9 @@ async function checkLiveness(state: TickerState): Promise<void> {
       if (age >= STARTUP_GRACE_MS) {
         const rl = await detectRecentZen429();
         if (rl.found) {
+          if (rl.retryAfterSec && rl.retryAfterSec > 0) {
+            state.retryAfterEndsAtMs = Date.now() + rl.retryAfterSec * 1000;
+          }
           console.warn(
             `[board/auto-ticker] ${state.swarmRunID}: zen-rate-limit (startup) — 0 tokens after ${Math.round(age / 60_000)}min; most recent 429 at ${new Date(rl.lastHitAt!).toISOString()}, retry-after ${formatRetryAfter(rl.retryAfterSec)}. Stopping ticker; self-heals once quota clears.`,
           );
@@ -682,6 +691,9 @@ async function checkLiveness(state: TickerState): Promise<void> {
     if (stuckFor >= FROZEN_TOKENS_THRESHOLD_MS) {
       const rl = await detectRecentZen429();
       if (rl.found) {
+        if (rl.retryAfterSec && rl.retryAfterSec > 0) {
+          state.retryAfterEndsAtMs = Date.now() + rl.retryAfterSec * 1000;
+        }
         console.warn(
           `[board/auto-ticker] ${state.swarmRunID}: zen-rate-limit — no token delta in ${Math.round(stuckFor / 60_000)}min (tokens at ${tokens}); most recent 429 at ${new Date(rl.lastHitAt!).toISOString()}, retry-after ${formatRetryAfter(rl.retryAfterSec)}. Stopping ticker; self-heals once quota clears.`,
         );
@@ -1008,6 +1020,10 @@ export interface TickerSnapshot {
   currentTier: number;
   tierExhausted: boolean;
   maxTier: number;
+  // Epoch-ms when the Zen retry-after window ends (only present when
+  // stopReason is 'zen-rate-limit' AND the 429 response carried a
+  // parseable retry-after header). UI shows a live countdown chip.
+  retryAfterEndsAtMs?: number;
 }
 
 function snapshot(s: TickerState): TickerSnapshot {
@@ -1052,6 +1068,7 @@ function snapshot(s: TickerState): TickerSnapshot {
     currentTier: s.currentTier ?? 1,
     tierExhausted: s.tierExhausted ?? false,
     maxTier: MAX_TIER,
+    retryAfterEndsAtMs: s.retryAfterEndsAtMs,
   };
 }
 

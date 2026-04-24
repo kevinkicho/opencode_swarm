@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TickerState } from '@/lib/blackboard/live';
@@ -95,6 +95,12 @@ export function SwarmTopbar({
         </span>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} stale={backendStale} />}
         {tier && <TierChip tier={tier.currentTier} maxTier={tier.maxTier} exhausted={tier.tierExhausted} stale={backendStale} />}
+        {tier &&
+          tickerState.state === 'stopped' &&
+          tickerState.stopReason === 'zen-rate-limit' &&
+          tickerState.retryAfterEndsAtMs && (
+            <RetryAfterChip endsAtMs={tickerState.retryAfterEndsAtMs} />
+          )}
         {liveSessionId && liveDirectory && run.status === 'active' && (
           <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
         )}
@@ -565,6 +571,43 @@ function TierChip({
         </span>
         <span className="font-mono text-[10px] text-fog-600">·</span>
         <span className={clsx('font-mono text-[10px] lowercase', tone)}>
+          {label}
+        </span>
+      </div>
+    </Tooltip>
+  );
+}
+
+// Live countdown chip for zen-rate-limit stops. The opencode API's 429
+// carried a retry-after header which the liveness watchdog parsed and
+// stashed as `retryAfterEndsAtMs` on the ticker snapshot. This chip
+// re-renders once per second so the user sees a visible "retry 3h 47m"
+// countdown instead of a static frozen-looking chip. Self-terminates
+// (renders nothing) once the window elapses.
+function RetryAfterChip({ endsAtMs }: { endsAtMs: number }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(id);
+  }, []);
+  const remainingMs = endsAtMs - now;
+  if (remainingMs <= 0) return null;
+  const totalSec = Math.ceil(remainingMs / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const label =
+    h > 0 ? `${h}h ${m}m` : m > 0 ? `${m}m ${s}s` : `${s}s`;
+  return (
+    <Tooltip
+      side="bottom"
+      content={`zen-rate-limit — opencode's 429 said to retry after this window. Run resumes automatically on next tick once the window clears.`}
+    >
+      <div className="flex items-center gap-1 h-6 px-1.5 rounded hairline cursor-help">
+        <span className="font-mono text-[10px] uppercase tracking-widest2 text-rust">
+          retry
+        </span>
+        <span className="font-mono text-[10.5px] tabular-nums text-rust/90">
           {label}
         </span>
       </div>
