@@ -82,15 +82,29 @@ const POLL_INTERVAL_MS = 1000;
 // sessions at 10 min, so the worker timeout matches that boundary.
 const DEFAULT_TURN_TIMEOUT_MS = 10 * 60_000;
 
-// Zombie threshold for the session picker. opencode assistant turns can
-// hang with no completed AND no error (see
+// Per-pattern zombie threshold for the session picker. opencode assistant
+// turns can hang with no completed AND no error (see
 // memory/reference_opencode_zombie_messages.md) — in-flight indefinitely,
 // silently blocking dispatch because the picker skips any session with an
 // active in-flight turn. After this many ms, the picker treats the turn
-// as stale: auto-aborts it and dispatches to the session anyway. Chosen
-// at 10 min because real turns on hefty directives can legitimately run
-// 5+ min; shorter than that would trip on slow legitimate work.
-const ZOMBIE_TURN_THRESHOLD_MS = 10 * 60_000;
+// as stale: auto-aborts it and dispatches to the session anyway.
+//
+// Only blackboard-family patterns (blackboard / orchestrator-worker /
+// role-differentiated / deliberate-execute) run through tickCoordinator,
+// so those are the only values that matter in practice. 10 min is the
+// legacy default and works for typical refactor work; deliberate-execute's
+// synthesis phase gets more headroom because reconciling N council drafts
+// legitimately takes longer than a single-file edit.
+const ZOMBIE_TURN_THRESHOLD_DEFAULT_MS = 10 * 60_000;
+const ZOMBIE_TURN_THRESHOLDS_MS: Record<string, number> = {
+  blackboard: 10 * 60_000,
+  'orchestrator-worker': 10 * 60_000,
+  'role-differentiated': 10 * 60_000,
+  'deliberate-execute': 15 * 60_000,
+};
+function zombieThresholdFor(pattern: string): number {
+  return ZOMBIE_TURN_THRESHOLDS_MS[pattern] ?? ZOMBIE_TURN_THRESHOLD_DEFAULT_MS;
+}
 
 // How long the session must be silent (no new activity, all turns completed)
 // before we treat it as "done". opencode emits one assistant message per
@@ -457,7 +471,8 @@ export async function tickCoordinator(
     messagesByCandidate.set(sessionID, messages);
     const inFlightAge = oldestInFlightAgeMs(messages);
     if (inFlightAge > 0) {
-      if (inFlightAge < ZOMBIE_TURN_THRESHOLD_MS) {
+      const zombieThreshold = zombieThresholdFor(meta.pattern);
+      if (inFlightAge < zombieThreshold) {
         // Real in-flight work — skip this session for now.
         continue;
       }

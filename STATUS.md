@@ -76,6 +76,12 @@ One day, large ship run. Grouped by theme.
   in `lib/server/zen-rate-limit-probe.ts`, respects
   `OPENCODE_LOG_DIR` env for non-default log locations.
 
+- **Per-pattern zombie threshold.** `coordinator.ts` now reads
+  `meta.pattern` and picks from `ZOMBIE_TURN_THRESHOLDS_MS`: 10 min
+  default for blackboard / orchestrator-worker / role-differentiated;
+  15 min for deliberate-execute (synthesis phase legitimately takes
+  longer). Easy to tune further as real-run data accumulates.
+
 
 - **Auto-abort on every stop path** — `stopAutoTicker` aborts all
   session turns (workers + critic + verifier) on auto-idle,
@@ -175,9 +181,6 @@ One day, large ship run. Grouped by theme.
 
 ### Orchestration / runtime
 
-- **Zombie threshold is global 10 min.** Per-pattern tuning is
-  queued; 10 min is a defensible compromise for now.
-
 - **HMR covers only 3 server modules** (`coordinator.ts`,
   `planner.ts`, `auto-ticker.ts`). Edits to other `lib/server/`
   files need a dev-server bounce to take effect on live tickers.
@@ -253,7 +256,11 @@ One day, large ship run. Grouped by theme.
   control plane (app can't reach the PowerShell launcher). Lower
   priority now that most freezes are rate-limit, not process wedge.
 
-- **Per-pattern zombie / turn-timeout tuning.**
+- **Per-pattern turn-timeout tuning.** Zombie thresholds are now
+  per-pattern (shipped); per-turn timeout in `waitForSessionIdle`
+  is still a single `DEFAULT_TURN_TIMEOUT_MS`. Could apply the same
+  pattern-map treatment if real-run observation shows certain
+  patterns routinely timing out legitimately.
 
 - **Cross-run comparison surface** — `/projects/<repo>/runs` multi-run
   diff viewer pulling from `demo-log/`.
