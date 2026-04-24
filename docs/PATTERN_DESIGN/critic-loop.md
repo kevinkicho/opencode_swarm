@@ -121,7 +121,7 @@ a model; feedback quality may regress toward self-approval."
 | I1 | improvement | PROPOSED | — | — | prompt + parser ~3 h |
 | I2 | improvement | PROPOSED | — | — | depends on I1; ~1 h |
 | I3 | improvement | PROPOSED | — | — | orchestrator + store ~2–3 h |
-| I4 | improvement | PROPOSED | — | — | kickoff WARN ~15 min |
+| I4 | improvement | SHIPPED | (next commit) | — | kickoff WARN in runCriticLoopKickoff when teamModels[0] === teamModels[1] — surfaces same-model risk to dev console without blocking the run |
 
 ## 6 · Cross-references
 

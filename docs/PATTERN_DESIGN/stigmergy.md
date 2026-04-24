@@ -142,7 +142,7 @@ with exploitation (per-worker warmth).
 |---|---|---|---|---|---|
 | board-row-heat-decoration | tab-eq | SHIPPED | (next commit) | — | board-rail.tsx adds inline mini-bar + score on each open todo row; replicates coordinator.scoreTodoByHeat client-side; tone-stepped fog/amber/molten by score % of max |
 | heat-picked-timeline-chip | tab-eq | PROPOSED | — | — | ~2 h; optional |
-| I1 | improvement | PROPOSED | — | — | decay math + config ~2 h |
+| I1 | improvement | SHIPPED | (next commit) | — | decayFactor = 0.5^(Δt / HEAT_HALF_LIFE_MS) applied in coordinator.scoreTodoByHeat AND mirrored client-side in board-rail.heatScoreForItem; default half-life 30 min, env override OPENCODE_HEAT_HALF_LIFE_S (server only) |
 | I2 | improvement | PROPOSED | — | — | store schema change ~3 h |
 | I3 | improvement | PROPOSED | — | — | planner seed logic ~3 h |
 | I4 | improvement | PROPOSED | — | — | picker score tweak ~2 h |

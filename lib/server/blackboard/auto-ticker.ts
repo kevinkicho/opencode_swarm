@@ -62,6 +62,7 @@ import {
   type PlannerExports,
 } from './planner';
 import { listBoardItems, transitionStatus } from './store';
+import { listPlanRevisions } from './plan-revisions';
 import { auditCriteria } from './auditor';
 import { prewarmModels } from './model-prewarm';
 
@@ -167,7 +168,22 @@ export type StopReason =
   // ollama-swarm spec's "hard caps fire whichever first" — a ceiling
   // above which the run stops regardless of what the auditor or
   // planner say. Absent per-run overrides default to 8h / 200 / 300.
-  | 'hard-cap';
+  | 'hard-cap'
+  // PATTERN_DESIGN/orchestrator-worker.md I1. The orchestrator pattern
+  // can loop forever if every re-plan sweep proposes work that workers
+  // stale out (file contention, complexity underestimation). This cap
+  // bounds the loop at MAX_ORCHESTRATOR_REPLANS sweeps; the run stops
+  // with this reason and the run-health banner surfaces it for human
+  // intervention. Self-organizing patterns are uncapped — they don't
+  // exhibit this failure mode.
+  | 'replan-loop-exhausted';
+
+// PATTERN_DESIGN/orchestrator-worker.md I1. The cap counts ALL planner
+// sweeps for the run (initial + re-plans), so MAX_ORCHESTRATOR_REPLANS
+// = 6 means 1 initial + 5 re-plans before forced stop. Tuned generous
+// because legit orchestrator runs do iterate plans as workers reveal
+// scope; the cap exists for the pathological loop, not normal use.
+const MAX_ORCHESTRATOR_REPLANS = 6;
 
 interface PerSessionSlot {
   sessionID: string;
@@ -637,6 +653,39 @@ async function fanout(swarmRunID: string): Promise<void> {
   }
 }
 
+// PATTERN_DESIGN/blackboard.md I2 — detect items that workers refused
+// at least twice. The retryOrStale path tags these with a `[retry:N]`
+// note; once N≥2 the item should not count as "active work" for the
+// ratchet's drained-board predicate. Exported so other ratchet-style
+// callers (eager-sweep, audit) can apply the same exclusion if they
+// add work-available checks later.
+const RETRY_EXHAUSTED_RE = /^\[retry:(\d+)\]/;
+const RETRY_EXHAUSTED_THRESHOLD = 2;
+function isRetryExhausted(note: string | null | undefined): boolean {
+  if (!note) return false;
+  const m = RETRY_EXHAUSTED_RE.exec(note);
+  if (!m) return false;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n >= RETRY_EXHAUSTED_THRESHOLD;
+}
+
+// PATTERN_DESIGN/orchestrator-worker.md I1 — pattern-conditional
+// re-plan cap. Returns true when the orchestrator-worker run has hit
+// MAX_ORCHESTRATOR_REPLANS planner sweeps and should be stopped.
+// Self-organizing runs return false (uncapped). Counted via
+// plan_revisions ledger (the same source feeding the strategy tab),
+// so initial sweeps + re-plans + no-op sweeps all count uniformly.
+async function orchestratorReplanCapHit(swarmRunID: string): Promise<boolean> {
+  const meta = await getRun(swarmRunID).catch(() => null);
+  if (!meta || meta.pattern !== 'orchestrator-worker') return false;
+  // Cheap synchronous read against the SQLite ledger. listPlanRevisions
+  // returns the full delta history; we only need the count, but the
+  // call cost is negligible at run scale (≤ 6 rows by the time the
+  // cap fires).
+  const revisions = listPlanRevisions(swarmRunID);
+  return revisions.length >= MAX_ORCHESTRATOR_REPLANS;
+}
+
 // Tier-escalating planner sweep (ambition ratchet). On auto-idle the
 // ticker asks the planner for work at the next tier of ambition rather
 // than stopping. If the escalation seeds items → reset idle counters +
@@ -647,6 +696,19 @@ async function fanout(swarmRunID: string): Promise<void> {
 // for the design decision context.
 async function attemptTierEscalation(state: TickerState): Promise<void> {
   const swarmRunID = state.swarmRunID;
+
+  // PATTERN_DESIGN/orchestrator-worker.md I1 — hard cap on re-plan
+  // loops. Only enforced for orchestrator-worker. Self-organizing
+  // patterns can re-plan freely. Read meta on the same path we use
+  // elsewhere (~ms cost; the cap check is rare).
+  if (await orchestratorReplanCapHit(swarmRunID)) {
+    console.warn(
+      `[board/auto-ticker] ${swarmRunID}: orchestrator hit MAX_ORCHESTRATOR_REPLANS=${MAX_ORCHESTRATOR_REPLANS} — stopping ticker (replan-loop-exhausted)`,
+    );
+    stopAutoTicker(swarmRunID, 'replan-loop-exhausted');
+    return;
+  }
+
   state.lastSweepAtMs = Date.now();
   // `candidate` = what we'd escalate to naturally; `clampedNextTier`
   // is the bounded value used for the actual sweep. At MAX_TIER the
@@ -1034,6 +1096,17 @@ async function checkLiveness(state: TickerState): Promise<void> {
 async function runPeriodicSweep(state: TickerState): Promise<void> {
   if (state.stopped) return;
   if (state.resweepInFlight) return;
+
+  // PATTERN_DESIGN/orchestrator-worker.md I1 — same cap as the
+  // tier-escalation path. A long-running orchestrator-worker run
+  // can rack up sweeps via either path; the cap counts both.
+  if (await orchestratorReplanCapHit(state.swarmRunID)) {
+    console.warn(
+      `[board/auto-ticker] ${state.swarmRunID}: orchestrator hit MAX_ORCHESTRATOR_REPLANS=${MAX_ORCHESTRATOR_REPLANS} — periodic sweep skipped, stopping ticker (replan-loop-exhausted)`,
+    );
+    stopAutoTicker(state.swarmRunID, 'replan-loop-exhausted');
+    return;
+  }
   // Floor to prevent stacking: if a sweep just fired, skip this one.
   // Both the periodic timer and the eager-idle check route here, so
   // whichever one wins the race first is the one that runs.
@@ -1081,12 +1154,28 @@ async function runPeriodicSweep(state: TickerState): Promise<void> {
       // Count this as "drained" only if workers are also done — if
       // there's active work, the planner-is-quiet state is normal
       // (workers are still chewing through the last sweep's output).
-      const activeCount = listBoardItems(swarmRunID).filter(
-        (i) =>
-          i.status === 'open' ||
-          i.status === 'claimed' ||
-          i.status === 'in-progress',
-      ).length;
+      //
+      // PATTERN_DESIGN/blackboard.md I2 — retry-exhausted ratchet
+      // re-kick. Open items carrying a `[retry:N]` note where N≥2
+      // are workers-refused-twice, not active work. Treating them as
+      // "active" stranded run_mob31bx6_jzdfs2 — the ratchet stayed
+      // dormant because the predicate said "work available" while
+      // every worker had already declined. Exclude retry-exhausted
+      // open items from the active count so the next sweep can
+      // either rephrase them at a higher tier or drop them.
+      const activeCount = listBoardItems(swarmRunID).filter((i) => {
+        if (
+          i.status !== 'open' &&
+          i.status !== 'claimed' &&
+          i.status !== 'in-progress'
+        ) {
+          return false;
+        }
+        if (i.status === 'open' && isRetryExhausted(i.note)) {
+          return false;
+        }
+        return true;
+      }).length;
       if (activeCount === 0) {
         state.consecutiveDrainedSweeps += 1;
         if (

@@ -91,6 +91,27 @@ export function mintItemId(): string {
   return 't_' + randomBytes(4).toString('hex');
 }
 
+// PATTERN_DESIGN/blackboard.md I4 — criterion authoring preflight.
+// Returns true when the criterion text is concrete enough for the
+// auditor to verdict against. False on:
+//   - too short (< MIN_CRITERION_CHARS)
+//   - matches a "vague directive" shape (`make X better`, `improve X`,
+//     `polish X`, `clean up X`, `fix things`, `update Y`)
+// Conservative — letting marginal criteria through is fine; the goal
+// is to catch the obvious failures the planner sometimes emits when
+// it's tired (long sweep, run nearing budget).
+const MIN_CRITERION_CHARS = 20;
+const VAGUE_CRITERION_RE =
+  /^\s*(make|improve|polish|clean\s*up|fix|update|tighten|tidy|refine)\s+\w+\s+(better|good|nice|clean|right|proper|solid|tidy)\s*\.?$/i;
+// Sub-patterns also caught: a criterion that's just a bare imperative
+// without a verifiable condition. We don't try to detect every shape;
+// the regex above + length floor catches the common bad ones.
+export function isViableCriterion(content: string): boolean {
+  if (content.length < MIN_CRITERION_CHARS) return false;
+  if (VAGUE_CRITERION_RE.test(content.trim())) return false;
+  return true;
+}
+
 // Prompt history:
 // 2026-04-22 (first):  "Use the todowrite tool" — left model free to explore.
 //   Went 30+ turns before calling todowrite on "audit for typos" and blew
@@ -762,9 +783,21 @@ export async function runPlannerSweep(
   const baseMs = Date.now();
   const items: BoardItem[] = [];
   let offset = 0;
+  let droppedCriteria = 0;
   for (const raw of latest.todos) {
     const content = raw.content.trim();
     if (!content) continue;
+    // PATTERN_DESIGN/blackboard.md I4 — criterion authoring preflight.
+    // Vague criteria ("make the app better") get UNCLEAR-forever from
+    // the auditor and clutter the contract. Drop them silently with a
+    // WARN; the planner can re-emit on the next sweep.
+    if (raw.isCriterion && !isViableCriterion(content)) {
+      console.warn(
+        `[planner] dropping vague criterion: "${content}" (PATTERN_DESIGN/blackboard.md I4)`,
+      );
+      droppedCriteria += 1;
+      continue;
+    }
     // Criteria land as kind='criterion' and drop the worker-dispatch
     // flags (verify/role/files) since they're never claimed or
     // dispatched to. Other todos land as kind='todo' with all flags.

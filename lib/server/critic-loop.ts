@@ -174,6 +174,18 @@ export async function runCriticLoopKickoff(
   // criticSID = [1]. Applies to every dispatch in the loop.
   const workerModel = meta.teamModels?.[0];
   const criticModel = meta.teamModels?.[1];
+
+  // I4 — kickoff WARN if worker and critic share a model. The whole
+  // point of the critic loop is independent perspective; same model
+  // tends to approve too eagerly because the failure modes overlap.
+  // Don't block the run — the user might be testing intentionally —
+  // but make the risk visible in the dev console.
+  if (workerModel && criticModel && workerModel === criticModel) {
+    console.warn(
+      `[critic-loop] run ${swarmRunID}: worker and critic share model '${workerModel}' — feedback quality may regress toward self-approval (PATTERN_DESIGN/critic-loop.md I4)`,
+    );
+  }
+
   try {
     await postSessionMessageServer(
       criticSID,

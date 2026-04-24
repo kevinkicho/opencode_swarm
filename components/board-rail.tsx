@@ -84,19 +84,33 @@ function fileBasename(path: string): string {
   return idx < 0 ? norm : norm.slice(idx + 1);
 }
 
+// PATTERN_DESIGN/stigmergy.md I1 — heat half-life decay. Mirrors the
+// server-side decayFactor in coordinator.ts so the row's bar reflects
+// what the picker would actually score. Default half-life is 30 min;
+// no env override on the client (server's OPENCODE_HEAT_HALF_LIFE_S
+// isn't visible). Files touched recently count fully; old touches
+// fade out, matching the picker bias.
+const HEAT_HALF_LIFE_MS = 30 * 60 * 1000;
+function heatDecay(lastTouchedMs: number): number {
+  if (!lastTouchedMs || lastTouchedMs <= 0) return 1;
+  const dt = Math.max(0, Date.now() - lastTouchedMs);
+  return Math.pow(0.5, dt / HEAT_HALF_LIFE_MS);
+}
+
 function heatScoreForItem(item: BoardItem, heat: FileHeat[]): number {
   if (!heat.length) return 0;
   const content = item.content;
   let score = 0;
   for (const h of heat) {
     const norm = h.path.replace(/\\/g, '/');
+    const decayedCount = h.editCount * heatDecay(h.lastTouchedMs);
     if (content.includes(norm)) {
-      score += h.editCount * 2;
+      score += decayedCount * 2;
       continue;
     }
     const base = fileBasename(norm);
     if (base.length >= 4 && content.includes(base)) {
-      score += h.editCount;
+      score += decayedCount;
     }
   }
   return score;

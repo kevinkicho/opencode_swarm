@@ -693,7 +693,9 @@ function RunHealthChip({
             ? 'opencode stopped responding to ticker probes'
             : tickerStopReason === 'zen-rate-limit'
               ? 'opencode-zen returned 429 — backoff in effect'
-              : `ticker stopped on ${tickerStopReason}`,
+              : tickerStopReason === 'replan-loop-exhausted'
+                ? 'orchestrator hit the re-plan cap — human intervention needed (PATTERN_DESIGN/orchestrator-worker.md I1)'
+                : `ticker stopped on ${tickerStopReason}`,
         severity: 'error',
       });
       severity = 'error';

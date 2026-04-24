@@ -179,6 +179,25 @@ export async function runDebateJudgeKickoff(
   const judgeModel = meta.teamModels?.[0];
   const generatorModel = (idx: number) => meta.teamModels?.[idx + 1];
 
+  // I3 — generator-model diversity kickoff WARN. With ≥3 generators
+  // sharing one model, the debate produces near-identical proposals
+  // by construction (same model = same priors). Don't block the run
+  // — single-model-with-different-temps is a legitimate experiment —
+  // but surface the risk in the dev console.
+  if (generatorCount >= 3) {
+    const generatorModels = generatorSIDs
+      .map((_, i) => generatorModel(i))
+      .filter((m): m is string => typeof m === 'string' && m.length > 0);
+    if (generatorModels.length === generatorCount) {
+      const distinct = new Set(generatorModels);
+      if (distinct.size === 1) {
+        console.warn(
+          `[debate-judge] run ${swarmRunID}: ${generatorCount} generators all use '${generatorModels[0]}' — debate may converge trivially (PATTERN_DESIGN/debate-judge.md I3)`,
+        );
+      }
+    }
+  }
+
   // Prime judge first (sets up its contract), then fan-post to generators.
   try {
     await postSessionMessageServer(

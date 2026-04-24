@@ -107,15 +107,15 @@ first.
 
 | Pattern | Item | Effort |
 |---|---|---|
-| blackboard | I2 — retry-exhausted ratchet re-kick | 1h |
+| blackboard | I2 — retry-exhausted ratchet re-kick | 1h — **SHIPPED** |
 | blackboard | I3 — persist ticker stopReason in SQLite | 2h |
-| blackboard | I4 — criterion authoring preflight | 1h |
-| orchestrator-worker | I1 — hard cap on re-plan loops | 1h |
+| blackboard | I4 — criterion authoring preflight | 1h — **SHIPPED** |
+| orchestrator-worker | I1 — hard cap on re-plan loops | 1h — **SHIPPED** |
 | council | I3 — minority-view preservation | 1h |
 | council | I4 — per-member round-timeout | 2h |
-| critic-loop | I4 — kickoff WARN if critic+worker share model | 30m |
-| debate-judge | I3 — generator-model-diversity kickoff WARN | 30m |
-| stigmergy | I1 — heat half-life decay | 2h |
+| critic-loop | I4 — kickoff WARN if critic+worker share model | 30m — **SHIPPED** |
+| debate-judge | I3 — generator-model-diversity kickoff WARN | 30m — **SHIPPED** |
+| stigmergy | I1 — heat half-life decay | 2h — **SHIPPED** |
 
 ### Tier 2 (medium — 2-4h each)
 

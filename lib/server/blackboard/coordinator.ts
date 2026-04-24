@@ -304,6 +304,29 @@ function pathOverlaps(a: Set<string>, b: Set<string>): boolean {
 // createdAtMs ASC as the tiebreak. A todo with no file attribution
 // scores 0 and falls back to oldest-first, which is the correct
 // degenerate case.
+// PATTERN_DESIGN/stigmergy.md I1 — heat half-life decay. Without this,
+// editCount accumulates forever and an early-hot file dominates the
+// score for hours after it's been quiet, anchoring the swarm. Decay
+// weights each file's contribution by 0.5^(Δt / HEAT_HALF_LIFE_MS),
+// where Δt is wallclock since the file was last touched. Recent
+// edits count fully; old edits fade out. Half-life is configurable
+// via OPENCODE_HEAT_HALF_LIFE_S (seconds); default 1800 (30 min)
+// is gentler than the spec's 130s but matches our typical session
+// pacing. Override to 130 for spec-literal validation runs.
+const HEAT_HALF_LIFE_DEFAULT_MS = 30 * 60 * 1000;
+function heatHalfLifeMs(): number {
+  const env = process.env.OPENCODE_HEAT_HALF_LIFE_S;
+  if (!env) return HEAT_HALF_LIFE_DEFAULT_MS;
+  const n = parseInt(env, 10);
+  if (!Number.isFinite(n) || n <= 0) return HEAT_HALF_LIFE_DEFAULT_MS;
+  return n * 1000;
+}
+function decayFactor(lastTouchedMs: number): number {
+  if (lastTouchedMs <= 0) return 1; // unknown timestamp = no decay
+  const dt = Math.max(0, Date.now() - lastTouchedMs);
+  return Math.pow(0.5, dt / heatHalfLifeMs());
+}
+
 function scoreTodoByHeat(content: string, heat: FileHeat[]): number {
   let score = 0;
   for (const h of heat) {
@@ -311,12 +334,13 @@ function scoreTodoByHeat(content: string, heat: FileHeat[]): number {
     const lastSlash = norm.lastIndexOf('/');
     const base = lastSlash >= 0 ? norm.slice(lastSlash + 1) : norm;
     const dirWithSlash = lastSlash >= 0 ? norm.slice(0, lastSlash + 1) : '';
+    const decayedCount = h.editCount * decayFactor(h.lastTouchedMs);
     if (content.includes(h.path) || content.includes(norm)) {
-      score += h.editCount * 2;
+      score += decayedCount * 2;
     } else if (dirWithSlash && content.includes(dirWithSlash)) {
-      score += h.editCount;
+      score += decayedCount;
     } else if (base.length >= 4 && content.includes(base)) {
-      score += h.editCount;
+      score += decayedCount;
     }
   }
   return score;
