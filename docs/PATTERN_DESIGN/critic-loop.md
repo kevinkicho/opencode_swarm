@@ -117,7 +117,7 @@ a model; feedback quality may regress toward self-approval."
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| iterations-tab | tab | PROPOSED | — | — | UI ~3 h; diff compute client-side or I3 |
+| iterations-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=critic-loop; per-iteration timeline (#N draft + #Nr review) w/ APPROVED-row tint; reads slots from useLiveSwarmRunMessages |
 | I1 | improvement | PROPOSED | — | — | prompt + parser ~3 h |
 | I2 | improvement | PROPOSED | — | — | depends on I1; ~1 h |
 | I3 | improvement | PROPOSED | — | — | orchestrator + store ~2–3 h |

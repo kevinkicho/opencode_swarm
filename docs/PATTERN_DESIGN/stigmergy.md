@@ -140,7 +140,7 @@ with exploitation (per-worker warmth).
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| board-row-heat-decoration | tab-eq | PROPOSED | — | — | decoration ~2 h |
+| board-row-heat-decoration | tab-eq | SHIPPED | (next commit) | — | board-rail.tsx adds inline mini-bar + score on each open todo row; replicates coordinator.scoreTodoByHeat client-side; tone-stepped fog/amber/molten by score % of max |
 | heat-picked-timeline-chip | tab-eq | PROPOSED | — | — | ~2 h; optional |
 | I1 | improvement | PROPOSED | — | — | decay math + config ~2 h |
 | I2 | improvement | PROPOSED | — | — | store schema change ~3 h |

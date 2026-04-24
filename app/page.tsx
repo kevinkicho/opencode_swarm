@@ -364,6 +364,7 @@ function PageInner() {
         turnCards={turnCards}
         fileHeat={fileHeat}
         liveLastUpdated={liveSwarmRun.lastUpdated ?? liveData?.lastUpdated ?? null}
+        liveSlots={liveSwarmRun.slots}
         swarmRunID={swarmRunID}
         swarmRunMeta={swarmRun.meta}
         swarmRunStatus={currentRunStatus}
@@ -389,6 +390,7 @@ function PageBody({
   turnCards,
   fileHeat,
   liveLastUpdated,
+  liveSlots,
   swarmRunID,
   swarmRunMeta,
   swarmRunStatus,
@@ -409,6 +411,10 @@ function PageBody({
   turnCards: TurnCard[];
   fileHeat: FileHeat[];
   liveLastUpdated: number | null;
+  // Per-session message slots from useLiveSwarmRunMessages — threaded
+  // through to LeftTabs for the iterations / debate / map per-pattern
+  // tabs. Empty array when there's no active swarm run.
+  liveSlots: import('@/lib/opencode/live').LiveSwarmSessionSlot[];
   swarmRunID: string | null;
   swarmRunMeta: SwarmRunMeta | null;
   swarmRunStatus: SwarmRunStatus | null;
@@ -437,7 +443,17 @@ function PageBody({
   // Left-panel tab is lifted so the timeline can reveal the plan when a task
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
-  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board' | 'contracts' | 'heat'>('plan');
+  const [leftTab, setLeftTab] = useState<
+    | 'plan'
+    | 'roster'
+    | 'board'
+    | 'contracts'
+    | 'iterations'
+    | 'debate'
+    | 'roles'
+    | 'map'
+    | 'heat'
+  >('plan');
 
   // Board SSE subscription lives at the page level so both the left-rail
   // "board" tab and the main-view "board" toggle read from the same
@@ -760,6 +776,8 @@ function PageBody({
           boardRoleNames={boardRoleNames}
           boardPattern={swarmRunMeta?.pattern}
           deliberationProgress={deliberationProgress}
+          liveSlots={liveSlots}
+          runSessionIDs={swarmRunMeta?.sessionIDs ?? []}
         />
         </ProfileBoundary>
 

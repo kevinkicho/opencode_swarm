@@ -132,7 +132,7 @@ verdict chip.
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| debate-tab | tab | PROPOSED | — | — | UI ~3 h |
+| debate-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=debate-judge; rounds × generators matrix + judge verdict (WINNER mint / MERGE iris / REVISE amber) |
 | I1 | improvement | PROPOSED | — | — | prompt + parser ~3 h; shared with critic-loop I1 |
 | I2 | improvement | PROPOSED | — | — | needs I1; ~2 h |
 | I3 | improvement | PROPOSED | — | — | kickoff validation ~30 min |

@@ -5,16 +5,30 @@ import { useEffect, useState } from 'react';
 import type { Agent, AgentMessage, SwarmPattern, TodoItem } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
+import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
 import { ContractsRail } from './contracts-rail';
+import { IterationsRail } from './iterations-rail';
+import { DebateRail } from './debate-rail';
+import { RolesRail } from './roles-rail';
+import { MapRail } from './map-rail';
 import { HeatRail, type DiffStatsByPath } from './heat-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 
-export type Tab = 'plan' | 'roster' | 'board' | 'contracts' | 'heat';
+export type Tab =
+  | 'plan'
+  | 'roster'
+  | 'board'
+  | 'contracts'
+  | 'iterations'
+  | 'debate'
+  | 'roles'
+  | 'map'
+  | 'heat';
 
 export function LeftTabs({
   plan,
@@ -39,6 +53,8 @@ export function LeftTabs({
   boardRoleNames,
   boardPattern,
   deliberationProgress,
+  liveSlots,
+  runSessionIDs,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -77,6 +93,14 @@ export function LeftTabs({
   // Set for any pattern that populates the board (blackboard plus the
   // hierarchical patterns with board-execution phases).
   boardSwarmRunID?: string | null;
+  // Per-session message slots from useLiveSwarmRunMessages. Required by
+  // the iterations / debate / map pattern-specific tabs which build their
+  // views from per-session message arrays. Empty array → no slot data;
+  // those tabs render their empty state.
+  liveSlots?: LiveSwarmSessionSlot[];
+  // Run's session IDs in declared slot order. Required by the roles +
+  // map tabs to derive `s0` / `s1` / … session labels.
+  runSessionIDs?: string[];
   // Pattern-aware ownerAgentId → role name map for BoardRail chip labels
   // on hierarchical patterns. Empty map → numeric fallback in chips.
   boardRoleNames?: ReadonlyMap<string, string>;
@@ -95,6 +119,17 @@ export function LeftTabs({
     else setLocalTab(t);
   };
 
+  // Per-pattern visibility flags for the swarm-mode tabs. Each tab is
+  // rendered only when the run's pattern matches; the conditions live
+  // here so the JSX below can stay readable. The board / contracts
+  // tabs are gated on boardSwarmRunID (set for any board-using pattern)
+  // rather than pattern alone, since hierarchical patterns with a
+  // board-execution phase reuse the blackboard machinery.
+  const showIterationsTab = boardPattern === 'critic-loop';
+  const showDebateTab = boardPattern === 'debate-judge';
+  const showRolesTab = boardPattern === 'role-differentiated';
+  const showMapTab = boardPattern === 'map-reduce';
+
   // If the active run stops being a blackboard (or we switch to a different
   // run that has no board), 'board' becomes an invalid selection. Fall back
   // to 'plan' so the header doesn't show a highlighted tab with no content.
@@ -105,8 +140,12 @@ export function LeftTabs({
     if (!boardSwarmRunID && tab === 'board') setTab('plan');
     if (!boardSwarmRunID && tab === 'contracts') setTab('plan');
     if (heat.length === 0 && tab === 'heat') setTab('plan');
+    if (!showIterationsTab && tab === 'iterations') setTab('plan');
+    if (!showDebateTab && tab === 'debate') setTab('plan');
+    if (!showRolesTab && tab === 'roles') setTab('plan');
+    if (!showMapTab && tab === 'map') setTab('plan');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardSwarmRunID, heat.length, tab]);
+  }, [boardSwarmRunID, heat.length, tab, showIterationsTab, showDebateTab, showRolesTab, showMapTab]);
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -187,6 +226,76 @@ export function LeftTabs({
             }
           />
         )}
+        {showIterationsTab && (
+          <TabButton
+            active={tab === 'iterations'}
+            onClick={() => setTab('iterations')}
+            label="iterations"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">iterations</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  worker draft → critic review → revise loop. Final-row
+                  highlight on APPROVED (PATTERN_DESIGN/critic-loop.md §3).
+                </div>
+              </div>
+            }
+          />
+        )}
+        {showDebateTab && (
+          <TabButton
+            active={tab === 'debate'}
+            onClick={() => setTab('debate')}
+            label="debate"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">debate</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  per-round generator drafts × judge verdict
+                  (WINNER / MERGE / REVISE)
+                  (PATTERN_DESIGN/debate-judge.md §3).
+                </div>
+              </div>
+            }
+          />
+        )}
+        {showRolesTab && (
+          <TabButton
+            active={tab === 'roles'}
+            onClick={() => setTab('roles')}
+            label="roles"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">roles</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  per-role claimed / done / stale + preferredRole match-rate
+                  + avg-time. Stripe color = role accent
+                  (PATTERN_DESIGN/role-differentiated.md §3).
+                </div>
+              </div>
+            }
+          />
+        )}
+        {showMapTab && (
+          <TabButton
+            active={tab === 'map'}
+            onClick={() => setTab('map')}
+            label="map"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">map</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  MAP per-session scope/status/output + REDUCE synthesize-row
+                  (PATTERN_DESIGN/map-reduce.md §3).
+                </div>
+              </div>
+            }
+          />
+        )}
         {heat.length > 0 && (
           <TabButton
             active={tab === 'heat'}
@@ -257,10 +366,33 @@ export function LeftTabs({
             roleNames={boardRoleNames}
             pattern={boardPattern}
             deliberationProgress={deliberationProgress}
+            heat={heat}
           />
         )}
         {tab === 'contracts' && boardSwarmRunID && (
           <ContractsRail live={live} embedded />
+        )}
+        {tab === 'iterations' && showIterationsTab && (
+          <IterationsRail slots={liveSlots ?? []} embedded />
+        )}
+        {tab === 'debate' && showDebateTab && (
+          <DebateRail slots={liveSlots ?? []} embedded />
+        )}
+        {tab === 'roles' && showRolesTab && (
+          <RolesRail
+            live={live}
+            roleNames={boardRoleNames ?? new Map()}
+            sessionIDs={runSessionIDs ?? []}
+            embedded
+          />
+        )}
+        {tab === 'map' && showMapTab && (
+          <MapRail
+            slots={liveSlots ?? []}
+            live={live}
+            sessionIDs={runSessionIDs ?? []}
+            embedded
+          />
         )}
         {tab === 'heat' && (
           <HeatRail

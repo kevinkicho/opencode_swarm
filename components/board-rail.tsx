@@ -12,6 +12,7 @@ import {
 import type { BoardAgent, BoardItem, BoardItemKind, BoardItemStatus } from '@/lib/blackboard/types';
 import type { SwarmPattern } from '@/lib/swarm-types';
 import type { DeliberationProgress } from '@/lib/deliberate-progress';
+import type { FileHeat } from '@/lib/opencode/transform';
 import { Tooltip } from './ui/tooltip';
 
 // Inline board rail for the blackboard preset. Lives as a third tab in
@@ -69,6 +70,49 @@ function retryCountFromNote(note: string | null | undefined): number {
   return m ? Math.max(0, parseInt(m[1] ?? '0', 10)) : 0;
 }
 
+// Stigmergy decoration helpers (PATTERN_DESIGN/stigmergy.md §3, Phase
+// 1.6). Mirrors coordinator.ts::scoreTodoByHeat — full-path mention
+// in todo content scores 2× the file's edit count, basename-only match
+// (≥4 chars) scores 1×. Sum across all matched files in the heat map
+// to get the row's heat score; normalize by the max across open items
+// to drive the bar's width + tone. Surfaces "the picker would prefer
+// this row" (cold = low score) vs "this row keeps getting picked"
+// (hot = high score) at a glance, without leaving the board view.
+function fileBasename(path: string): string {
+  const norm = path.replace(/\\/g, '/');
+  const idx = norm.lastIndexOf('/');
+  return idx < 0 ? norm : norm.slice(idx + 1);
+}
+
+function heatScoreForItem(item: BoardItem, heat: FileHeat[]): number {
+  if (!heat.length) return 0;
+  const content = item.content;
+  let score = 0;
+  for (const h of heat) {
+    const norm = h.path.replace(/\\/g, '/');
+    if (content.includes(norm)) {
+      score += h.editCount * 2;
+      continue;
+    }
+    const base = fileBasename(norm);
+    if (base.length >= 4 && content.includes(base)) {
+      score += h.editCount;
+    }
+  }
+  return score;
+}
+
+// Tone steps from the spec: 0 = fog-700 (cold, picker-preferred), 1-20%
+// of max = amber/30, 20-50% = amber/50, 50-100% = molten/40 (hot,
+// picker avoids on the exploratory bias rule). Returns Tailwind bg
+// classes that work against the rail's ink-850/40 base.
+function heatBarTone(scoreFraction: number): string {
+  if (scoreFraction <= 0) return 'bg-fog-700/60';
+  if (scoreFraction < 0.2) return 'bg-amber/30';
+  if (scoreFraction < 0.5) return 'bg-amber/50';
+  return 'bg-molten/40';
+}
+
 const ACCENT_BG: Record<BoardAgent['accent'], string> = {
   molten: 'bg-molten/20 text-molten',
   mint: 'bg-mint/20 text-mint',
@@ -103,6 +147,7 @@ export function BoardRail({
   roleNames,
   pattern,
   deliberationProgress,
+  heat = [],
 }: {
   swarmRunID: string;
   // Live data passed in from a parent that owns the SSE subscription.
@@ -122,6 +167,9 @@ export function BoardRail({
   // Deliberation round inference for deliberate-execute runs —
   // rendered inline in the empty-state. Null for other patterns.
   deliberationProgress?: DeliberationProgress | null;
+  // Per-file heat data for the stigmergy decoration. Empty array →
+  // no decoration rendered. PATTERN_DESIGN/stigmergy.md §3.
+  heat?: FileHeat[];
 }) {
   const items = live.items ?? [];
 
@@ -131,6 +179,22 @@ export function BoardRail({
     agents.forEach((a) => m.set(a.id, a));
     return m;
   }, [agents]);
+
+  // Pre-compute heat scores for every open item + the max so each row
+  // can normalize without re-walking the heat array. Closed items
+  // (in-progress / done / stale / blocked) get 0 — the picker only
+  // scores open items, so the decoration follows the same scope.
+  const { heatScoreById, maxHeatScore } = useMemo(() => {
+    const scoreById = new Map<string, number>();
+    let max = 0;
+    for (const it of items) {
+      if (it.status !== 'open') continue;
+      const s = heatScoreForItem(it, heat);
+      scoreById.set(it.id, s);
+      if (s > max) max = s;
+    }
+    return { heatScoreById: scoreById, maxHeatScore: max };
+  }, [items, heat]);
 
   // "done" starts collapsed; all others expanded. User can toggle any.
   const [expanded, setExpanded] = useState<Record<Section['key'], boolean>>(() => {
@@ -207,6 +271,8 @@ export function BoardRail({
                     key={item.id}
                     item={item}
                     owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) ?? null : null}
+                    heatScore={heatScoreById.get(item.id) ?? 0}
+                    maxHeatScore={maxHeatScore}
                   />
                 ))
               )
@@ -259,11 +325,23 @@ export function BoardRail({
 function BoardRailRow({
   item,
   owner,
+  heatScore,
+  maxHeatScore,
 }: {
   item: BoardItem;
   owner: BoardAgent | null;
+  // Stigmergy heat score for this row. 0 = no heat / not open. Used
+  // with maxHeatScore to render a relative-width bar.
+  heatScore: number;
+  maxHeatScore: number;
 }) {
   const isStale = item.status === 'stale';
+  // Heat decoration is open-status only — the picker only scores open
+  // items, so anything else has score=0 and we drop the bar entirely.
+  // When the run has zero heat data (no patches yet), maxHeatScore=0
+  // and we drop the bar across the board to avoid a row of dead chips.
+  const showHeat = item.status === 'open' && maxHeatScore > 0;
+  const heatFraction = showHeat ? heatScore / maxHeatScore : 0;
   return (
     <Tooltip
       side="right"
@@ -351,6 +429,35 @@ function BoardRailRow({
             title={`files moved · head ${item.staleSinceSha}`}
           >
             ↯{item.staleSinceSha.slice(0, 4)}
+          </span>
+        )}
+        {showHeat && (
+          <span
+            className="shrink-0 flex items-center gap-1"
+            title={
+              heatScore > 0
+                ? `heat ${heatScore} / max ${maxHeatScore} · picker avoids hot rows on the exploratory bias`
+                : 'heat 0 — picker prefers cold rows'
+            }
+          >
+            <span
+              className="block h-[3px] rounded-sm bg-ink-900"
+              style={{ width: 24 }}
+              aria-hidden
+            >
+              <span
+                className={clsx('block h-full rounded-sm', heatBarTone(heatFraction))}
+                style={{ width: `${Math.max(8, heatFraction * 100)}%` }}
+              />
+            </span>
+            <span
+              className={clsx(
+                'font-mono text-[9px] tabular-nums w-5 text-right',
+                heatScore > 0 ? 'text-fog-500' : 'text-fog-800',
+              )}
+            >
+              {heatScore > 0 ? heatScore : '·'}
+            </span>
           </span>
         )}
         {owner ? (

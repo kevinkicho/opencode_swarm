@@ -126,7 +126,7 @@ at run creation.
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| roles-tab | tab | PROPOSED | — | — | UI ~3 h; all data already in store |
+| roles-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=role-differentiated; per-role row w/ claimed/done/stale + preferredRole match-rate + avg-time + accent stripe |
 | I1 | improvement | PROPOSED | — | — | coordinator ~2 h |
 | I2 | improvement | PROPOSED | — | — | watchdog ~1 h |
 | I3 | improvement | PROPOSED | — | — | planner + coordinator ~3 h |
