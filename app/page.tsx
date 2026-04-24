@@ -714,6 +714,7 @@ function PageBody({
       }}
     >
     <div className="relative h-screen w-screen flex flex-col bg-ink-900 overflow-hidden bg-noise">
+      <ProfileBoundary id="topbar">
       <SwarmTopbar
         run={runWithBounds}
         providers={providerSummary}
@@ -725,11 +726,13 @@ function PageBody({
         swarmRunStatus={swarmRunStatus}
         tickerState={liveTicker.state}
       />
+      </ProfileBoundary>
 
       <main
         className="flex-1 grid min-h-0"
         style={{ gridTemplateColumns: '320px 1fr' }}
       >
+        <ProfileBoundary id="left-tabs">
         <LeftTabs
           plan={runPlan}
           agents={agents}
@@ -754,6 +757,7 @@ function PageBody({
           boardPattern={swarmRunMeta?.pattern}
           deliberationProgress={deliberationProgress}
         />
+        </ProfileBoundary>
 
         <section className="flex-1 flex flex-col min-w-0 min-h-0 pl-3">
           <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
@@ -795,6 +799,7 @@ function PageBody({
             </span>
           </div>
           {runView === 'timeline' ? (
+            <ProfileBoundary id="swarm-timeline">
             <SwarmTimeline
               agents={agents}
               messages={messages}
@@ -807,9 +812,13 @@ function PageBody({
               todos={runPlan}
               onJumpToTodo={jumpToTodo}
             />
+            </ProfileBoundary>
           ) : runView === 'board' ? (
+            <ProfileBoundary id="board-full">
             <BoardFullView live={liveBoard} ticker={liveTicker} roleNames={boardRoleNames} pattern={swarmRunMeta?.pattern} deliberationProgress={deliberationProgress} />
+            </ProfileBoundary>
           ) : (
+            <ProfileBoundary id="turn-cards">
             <TurnCardsView
               cards={turnCards}
               agents={agents}
@@ -819,6 +828,7 @@ function PageBody({
               focusedId={focusedMsgId}
               onFocus={focusMessage}
             />
+            </ProfileBoundary>
           )}
         </section>
       </main>

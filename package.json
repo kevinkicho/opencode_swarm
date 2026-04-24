@@ -13,6 +13,7 @@
     "perf:lighthouse:dev": "node scripts/perf-lighthouse.mjs dev",
     "perf:lighthouse:prod": "node scripts/perf-lighthouse.mjs prod",
     "perf:bundle": "node scripts/perf-bundle.mjs",
+    "perf:tabs": "node scripts/perf-tab-switch.mjs",
     "prod": "next build && next start"
   },
   "dependencies": {

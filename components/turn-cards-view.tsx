@@ -9,9 +9,18 @@
 //
 // Renders chronological order (oldest first, newest at bottom) so reading
 // top-down matches how the agent actually worked.
+//
+// Virtualization: each AgentColumn uses @tanstack/react-virtual with the
+// outer scroll section as the scrollElement. Only visible cards are kept
+// in the DOM. Before virtualization, this view added ~2200 DOM nodes on
+// every switch into it (perf:tabs benchmark 2026-04-24). After, only the
+// few cards currently inside the viewport + a small overscan buffer
+// render. measureElement handles dynamic sizing so expanded cards shift
+// subsequent cards correctly.
 
 import clsx from 'clsx';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
 import type { TurnCard } from '@/lib/opencode/transform';
 import type { Agent } from '@/lib/swarm-types';
@@ -86,6 +95,16 @@ function fmtDuration(startMs: number, endMs?: number): string | null {
 const COLUMN_WIDTH = 340;
 const COLUMN_HEADER_HEIGHT = 32;
 
+// Gap between virtualized cards (matches the pre-virtualization gap-1.5
+// plus a hair). Baked into each card's layout via margin-bottom so the
+// virtualizer's measureElement picks it up as part of the card's size.
+const CARD_GAP_PX = 6;
+
+// Default size estimate when the virtualizer hasn't measured a card
+// yet. Cards default to CARD_COLLAPSED_HEIGHT (180px) + gap + small
+// padding; measureElement refines after mount.
+const CARD_ESTIMATE_PX = 190;
+
 // Strip the run's workspace prefix from a filepath so card rows lead
 // with `src/...` instead of `C:/Users/.../reponame/src/...`. Same
 // behavior as heat-rail's stripWorkspace — kept inline here to avoid
@@ -123,41 +142,52 @@ export function TurnCardsView({
   focusedId: string | null;
   onFocus: (id: string) => void;
 }) {
-  const agentById = new Map(agents.map((a) => [a.id, a]));
+  const agentById = useMemo(
+    () => new Map(agents.map((a) => [a.id, a])),
+    [agents],
+  );
   // sessionID → agent. agent.id is ag_<name>_<last8> (a derived hash),
   // NOT the raw sessionID, so we need this reverse index to land cards
   // in the right column. Agents without a sessionID (mock fixtures)
   // don't get indexed — their cards fall through to (sub-agents).
-  const agentBySession = new Map<string, Agent>();
-  for (const a of agents) if (a.sessionID) agentBySession.set(a.sessionID, a);
+  const agentBySession = useMemo(() => {
+    const m = new Map<string, Agent>();
+    for (const a of agents) if (a.sessionID) m.set(a.sessionID, a);
+    return m;
+  }, [agents]);
 
   // Group cards into their owning agent column. Cards with a sessionID
   // that doesn't resolve to a top-level roster agent fall into a
   // trailing (sub-agents) column — usually child task-spawn sessions.
-  const cardsByAgent = new Map<string, TurnCard[]>();
-  const otherCards: TurnCard[] = [];
-  for (const c of cards) {
-    const agent = agentBySession.get(c.sessionID);
-    if (agent) {
-      const list = cardsByAgent.get(agent.id);
-      if (list) list.push(c);
-      else cardsByAgent.set(agent.id, [c]);
-    } else {
-      otherCards.push(c);
+  const { cardsByAgent, otherCards } = useMemo(() => {
+    const byAgent = new Map<string, TurnCard[]>();
+    const other: TurnCard[] = [];
+    for (const c of cards) {
+      const agent = agentBySession.get(c.sessionID);
+      if (agent) {
+        const list = byAgent.get(agent.id);
+        if (list) list.push(c);
+        else byAgent.set(agent.id, [c]);
+      } else {
+        other.push(c);
+      }
     }
-  }
-  for (const list of cardsByAgent.values()) {
-    list.sort((a, b) => a.startedMs - b.startedMs);
-  }
-  otherCards.sort((a, b) => a.startedMs - b.startedMs);
+    for (const list of byAgent.values()) {
+      list.sort((a, b) => a.startedMs - b.startedMs);
+    }
+    other.sort((a, b) => a.startedMs - b.startedMs);
+    return { cardsByAgent: byAgent, otherCards: other };
+  }, [cards, agentBySession]);
 
-  const columns = [
-    ...agentOrder
-      .map((id) => ({ agent: agentById.get(id), cards: cardsByAgent.get(id) ?? [] }))
-      .filter(
-        (c): c is { agent: Agent; cards: TurnCard[] } => c.agent !== undefined,
-      ),
-  ];
+  const columns = useMemo(
+    () =>
+      agentOrder
+        .map((id) => ({ agent: agentById.get(id), cards: cardsByAgent.get(id) ?? [] }))
+        .filter(
+          (c): c is { agent: Agent; cards: TurnCard[] } => c.agent !== undefined,
+        ),
+    [agentOrder, agentById, cardsByAgent],
+  );
 
   const hasAny =
     columns.some((c) => c.cards.length > 0) || otherCards.length > 0;
@@ -190,6 +220,7 @@ export function TurnCardsView({
                 diffStatsByPath={diffStatsByPath}
                 focusedId={focusedId}
                 onFocus={onFocus}
+                scrollRef={scrollRef}
               />
             ))}
             {otherCards.length > 0 && (
@@ -200,6 +231,7 @@ export function TurnCardsView({
                 diffStatsByPath={diffStatsByPath}
                 focusedId={focusedId}
                 onFocus={onFocus}
+                scrollRef={scrollRef}
               />
             )}
           </div>
@@ -217,6 +249,7 @@ function AgentColumn({
   diffStatsByPath,
   focusedId,
   onFocus,
+  scrollRef,
 }: {
   agent: Agent | null;
   cards: TurnCard[];
@@ -224,6 +257,7 @@ function AgentColumn({
   diffStatsByPath: DiffStatsByPath;
   focusedId: string | null;
   onFocus: (id: string) => void;
+  scrollRef: React.RefObject<HTMLElement>;
 }) {
   const accent = agent?.accent ?? 'fog';
   const name = agent?.name ?? '(sub-agents)';
@@ -231,6 +265,42 @@ function AgentColumn({
   // showing `B`) with the last 4 chars of the sessionID. Tiny monospace
   // suffix so it reads as a machine tag, not content.
   const sessionSuffix = agent?.sessionID?.slice(-4) ?? '';
+
+  // Virtualized list: only cards visible in the scroll window render.
+  // scrollMargin accounts for the sticky column header so virtualizer
+  // offsets are computed against the list start, not the column start.
+  const virtualizer = useVirtualizer({
+    count: cards.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => CARD_ESTIMATE_PX,
+    overscan: 4,
+    scrollMargin: COLUMN_HEADER_HEIGHT,
+    // Stable key so expansion state survives scrolling (re-renders keep
+    // the same TurnCardRow instance when its card.id doesn't change).
+    // Defensive `?? String(index)` covers the window where the
+    // virtualizer re-measures an element whose row-index slot has
+    // already been removed from the underlying array (can happen when
+    // cards prop shrinks on a re-render).
+    getItemKey: (index) => cards[index]?.id ?? String(index),
+  });
+
+  // Scroll the focused card into view when focus changes. Virtualization
+  // means the focused card may not be in the DOM at all, so we use the
+  // virtualizer's own scrollToIndex rather than scrollIntoView on a ref.
+  useEffect(() => {
+    if (!focusedId) return;
+    const idx = cards.findIndex((c) => c.id === focusedId);
+    if (idx < 0) return;
+    virtualizer.scrollToIndex(idx, { align: 'center' });
+    // virtualizer is a stable instance; React complains about it as a
+    // dep without a memo hint. Scrolling depends only on focusedId +
+    // cards contents (indirectly via findIndex).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusedId, cards]);
+
+  const virtualItems = virtualizer.getVirtualItems();
+  const totalSize = virtualizer.getTotalSize();
+
   return (
     <div
       className="shrink-0 flex flex-col hairline-r"
@@ -249,26 +319,37 @@ function AgentColumn({
         </span>
       </div>
 
-      <ul className="flex flex-col flex-1 py-1 gap-1.5 px-1.5">
-        {cards.length === 0 ? (
+      {cards.length === 0 ? (
+        <ul className="list-none py-1 px-1.5">
           <li className="px-2 py-2 font-mono text-micro uppercase tracking-widest2 text-fog-700">
             idle
           </li>
-        ) : (
-          cards.map((c) => (
-            <TurnCardRow
-              key={c.id}
-              card={c}
-              accent={accent}
-              agentName={name}
-              workspace={workspace}
-              diffStatsByPath={diffStatsByPath}
-              focused={focusedId === c.id}
-              onFocus={onFocus}
-            />
-          ))
-        )}
-      </ul>
+        </ul>
+      ) : (
+        <ul
+          className="list-none py-1 px-1.5 relative"
+          style={{ height: `${totalSize}px`, width: '100%' }}
+        >
+          {virtualItems.map((vi) => {
+            const card = cards[vi.index];
+            return (
+              <TurnCardRow
+                key={vi.key}
+                measureRef={virtualizer.measureElement}
+                virtualIndex={vi.index}
+                virtualStart={vi.start}
+                card={card}
+                accent={accent}
+                agentName={name}
+                workspace={workspace}
+                diffStatsByPath={diffStatsByPath}
+                focused={focusedId === card.id}
+                onFocus={onFocus}
+              />
+            );
+          })}
+        </ul>
+      )}
     </div>
   );
 }
@@ -285,6 +366,9 @@ function TurnCardRow({
   diffStatsByPath,
   focused,
   onFocus,
+  measureRef,
+  virtualIndex,
+  virtualStart,
 }: {
   card: TurnCard;
   accent: Agent['accent'];
@@ -293,32 +377,46 @@ function TurnCardRow({
   diffStatsByPath: DiffStatsByPath;
   focused: boolean;
   onFocus: (id: string) => void;
+  measureRef: (el: HTMLElement | null) => void;
+  virtualIndex: number;
+  virtualStart: number;
 }) {
-  const ref = useRef<HTMLLIElement | null>(null);
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => {
-    if (focused && ref.current) {
-      ref.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-  }, [focused]);
+  // measureRef is the virtualizer's measureElement callback. It wires
+  // a ResizeObserver to the li and re-measures when size changes
+  // (including expand/collapse transitions) — no manual re-measure
+  // calls needed from child to parent, which would risk update loops.
 
   const dur = fmtDuration(card.startedMs, card.completedMs);
 
   return (
     <li
-      ref={ref}
+      ref={measureRef}
+      // IMPORTANT: @tanstack/react-virtual's measureElement reads
+      // `data-index` (not `data-virtual-index`) off the DOM to know
+      // which row it's measuring. Using the wrong key silently breaks
+      // dynamic sizing.
+      data-index={virtualIndex}
       className={clsx(
-        'relative rounded-sm hairline transition-colors cursor-pointer overflow-hidden bg-ink-850/40',
+        'rounded-sm hairline transition-colors cursor-pointer overflow-hidden bg-ink-850/40',
         focused ? 'bg-molten/10 border-molten/40' : 'hover:bg-ink-800/50',
       )}
       onClick={() => setExpanded((e) => !e)}
-      style={{ maxHeight: expanded ? undefined : CARD_COLLAPSED_HEIGHT }}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${virtualStart}px)`,
+        marginBottom: CARD_GAP_PX,
+        maxHeight: expanded ? undefined : CARD_COLLAPSED_HEIGHT,
+      }}
       aria-expanded={expanded}
     >
       {/* Accent stripe — agent identity (column header also colors the name) */}
       <div className={clsx('absolute left-0 top-0 bottom-0 w-[2px]', accentStripe[accent])} />
 
-      <div className="pl-3 pr-3 py-2 space-y-1.5">
+      <div className="pl-3 pr-3 py-2 space-y-1.5 relative">
         {/* Header row — time/status/tokens only; agent name is in column header */}
         <div className="flex items-center gap-2 font-mono text-micro uppercase tracking-widest2">
           <Tooltip content={new Date(card.startedMs).toISOString()} side="top">
