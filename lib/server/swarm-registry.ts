@@ -342,10 +342,18 @@ async function deriveSessionRow(
   const now = Date.now();
 
   // A trailing user message means opencode has accepted a prompt but hasn't
-  // yet attached the assistant reply. That's live — something is about to
-  // produce tokens.
+  // yet attached the assistant reply. That's live — but ONLY if the user
+  // post is recent. Sessions where the assistant never replied (opencode
+  // crashed, the run was aborted before the turn completed, etc.) get
+  // stuck with a trailing user message forever; without the freshness
+  // check below those orphans claim live status indefinitely. Same
+  // threshold the assistant-message zombie path uses below; consistent
+  // semantics across the two no-completed-yet branches.
   if (info.role === 'user') {
-    return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal };
+    if (now - info.time.created < ZOMBIE_THRESHOLD_MS) {
+      return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal };
+    }
+    return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal };
   }
 
   // Assistant message path.
