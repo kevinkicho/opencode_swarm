@@ -157,80 +157,56 @@ One day, large ship run. Grouped by theme.
 
 ## Known limitations — things that work but have sharp edges
 
-### Cost / billing
-
-- **`costTotal` is always `0` for `big-pickle` (Zen bundle).** Working
-  as intended — bundle models don't report per-token cost. Cost-
-  dashboard shows banner + per-row chip when `$0 + tokens > 0` so the
-  zero reading isn't mistaken for "actually free."
-
 ### Orchestration / runtime
-
-- **"Silent freeze" ≈ Zen free-tier 429, not process wedging.** The
-  liveness watchdog still stops the ticker with `stopped ·
-  opencode-frozen`; distinguishing "quota burnt" from "process dead"
-  is queued below. Recovery path via retry-stale works once quota
-  clears.
-
-- **Zombie threshold is global 10 min.** Per-pattern tuning is
-  queued; 10 min is a defensible compromise for now.
-
-- **HMR-resilient exports cover only 3 modules** (`coordinator.ts`,
-  `planner.ts`, `auto-ticker.ts`). Other server modules
-  (`opencode-server.ts`, `swarm-registry.ts`, pattern-specific
-  orchestrators) need dev-server restart to pick up edits. Low
-  priority — those files change rarely.
-
-- **Ambition-ratchet tier state is in-memory only.** `currentTier`
-  resets to 1 on ticker restart. If we see runs lose tier progress
-  often, persist on `SwarmRunMeta` via a new `updateRun` helper.
-
-- **Periodic-mode (`persistentSweepMinutes > 0`) skips tier
-  escalation.** Those runs' auto-idle branch is disabled, so the
-  ratchet never fires for them. Would need "tier up after N drained
-  periodic cycles" to participate.
 
 - **Non-ticker pattern runs leak sessions at end-of-life.** Council /
   map-reduce / debate-judge / critic-loop don't route through
   `stopAutoTicker`. Narrow window (those patterns are short-lived)
-  but it's still a real gap. Small per-orchestrator hook fixes it.
+  but still a real gap. Small per-orchestrator hook fixes it. *Fix
+  queued below as "non-ticker pattern session cleanup."*
 
-### UI
+- **Zombie threshold is global 10 min.** Per-pattern tuning is
+  queued; 10 min is a defensible compromise for now.
 
-- **Cross-run comparisons live only in `demo-log/` markdown.**
-  `/projects` shows activity-by-repo but no "compare these two runs"
-  surface.
+- **HMR covers only 3 server modules** (`coordinator.ts`,
+  `planner.ts`, `auto-ticker.ts`). Edits to other `lib/server/`
+  files need a dev-server bounce to take effect on live tickers.
+  Low priority — those files change rarely.
+
+- **Ambition-ratchet tier state is in-memory only.** `currentTier`
+  resets to 1 on ticker restart. If we start seeing runs lose tier
+  progress often, persist on `SwarmRunMeta` via a new `updateRun`
+  helper.
+
+- **Periodic-mode (`persistentSweepMinutes > 0`) skips tier
+  escalation.** Those runs' auto-idle branch is disabled, so the
+  ratchet never fires. Would need "tier up after N drained periodic
+  cycles" to participate.
+
+- **Silent-freeze diagnosis.** Most "opencode-frozen" observations
+  are actually Zen free-tier 429s, not process wedging. The
+  watchdog still shows a generic frozen reason; distinguishing
+  `zen-rate-limit` is queued. Recovery via retry-stale works once
+  quota clears. See `memory/reference_opencode_freeze.md`.
 
 ### UI performance
 
 - **Live run view (`/?swarmRun=<id>`) is slow to load on big runs.**
-  Today's refetch throttle was a partial fix. The deeper problem:
-  SSE events trigger full session-history refetches. Proper fix is
-  partial SSE-merge (parse `message.part.updated` payloads and
-  splice into the local buffer). Nontrivial; a known-state profiling
-  pass would confirm the actual bottleneck.
+  Today's refetch throttle was a partial fix; the deeper problem is
+  SSE events triggering full session-history refetches. Proper fix
+  is partial SSE-merge (parse `message.part.updated` payloads and
+  splice into the local buffer). Nontrivial.
 
-- **No liveness decay when dev server vanishes.** After dev shutdown,
-  an open run-view tab shows mixed state (`offline` badge correctly,
-  but run-anchor "live" + blinking status circle keep rendering
-  stale). React in-memory state from before the disconnect stays
-  live-looking until hard-refresh. Cleaner UX: gray stale chips
-  after N seconds of no SSE heartbeat.
+- **No liveness decay when dev server vanishes.** After dev
+  shutdown, an open run-view tab shows mixed state (`offline` badge
+  correct, but run-anchor "live" + blinking status circle keep
+  rendering stale). React in-memory state survives the disconnect.
+  Fix: gray stale chips after N seconds of no SSE heartbeat.
 
 ### Infra / dev workflow
 
-- **Dev restart on server-module edits is manual.** HMR covers client
-  components and the 3 HMR-resilient server modules; others need a
-  bounce. No automation reminds.
-
-- **Demo-log retention** — pruner script exists but isn't scheduled.
-  Run manually when disk pressure matters.
-
-- **Overnight-safety stack partially validated.** 2026-04-23 runs
-  reached 89 % completion across 6 sessions before a Zen quota cliff.
-  Zombie-abort validated (9 `[retry:N]` notes fired). What's still
-  missing: a full 8 h run that *doesn't* hit the quota wall at
-  ~35 min.
+- **Demo-log retention** — pruner script exists but isn't
+  scheduled. Run manually when disk pressure matters.
 
 ---
 
@@ -316,6 +292,12 @@ Things we shipped but haven't exercised against real runs.
 - **Non-ticker patterns (council / map-reduce / debate-judge /
   critic-loop)** — type-checked, but nobody's load-tested them on a
   real repo. Combined with the session-leak gap above.
+
+- **Overnight-safety stack end-to-end.** 2026-04-23 runs reached
+  89 % completion across 6 sessions before a Zen quota cliff.
+  Zombie-abort validated (9 `[retry:N]` notes fired). What's
+  missing: a full 8 h run that *doesn't* hit the quota wall at
+  ~35 min, so we can see behavior across the full duration.
 
 ---
 
