@@ -30,6 +30,7 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
+import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
 import type { OpencodeMessage } from '../opencode/types';
 
@@ -91,6 +92,7 @@ export async function runCouncilRounds(
   swarmRunID: string,
   opts: { maxRounds?: number } = {},
 ): Promise<void> {
+  try {
   const maxRounds = opts.maxRounds ?? DEFAULT_MAX_ROUNDS;
   if (maxRounds < 2) return;
 
@@ -187,4 +189,9 @@ export async function runCouncilRounds(
   console.log(
     `[council] run ${swarmRunID} — auto-rounds complete (${maxRounds} rounds total)`,
   );
+  } finally {
+    // Abort any lingering in-flight turns on session sessions so
+    // closing orchestrators don't leak tokens. No-op on idle sessions.
+    await finalizeRun(swarmRunID, 'council');
+  }
 }

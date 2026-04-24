@@ -25,6 +25,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { getRun } from './swarm-registry';
+import { finalizeRun } from './finalize-run';
 import { getSessionMessagesServer } from './opencode-server';
 import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
 import { getBoardItem, insertBoardItem } from './blackboard/store';
@@ -118,6 +119,7 @@ export function buildScopedDirective(
 // quietly — the map outputs still sit in each session's transcript even if
 // synthesis never lands, so the human can still reconcile manually.
 export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
+  try {
   const meta = await getRun(swarmRunID);
   if (!meta) {
     console.warn(`[map-reduce] run ${swarmRunID} not found — synthesis aborted`);
@@ -256,6 +258,9 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   console.warn(
     `[map-reduce] run ${swarmRunID} — synthesis dispatch deadline exceeded; item ${itemID} left for forensics`,
   );
+  } finally {
+    await finalizeRun(swarmRunID, 'map-reduce');
+  }
 }
 
 // Pull the latest completed assistant text part. Mirrors the "last assistant

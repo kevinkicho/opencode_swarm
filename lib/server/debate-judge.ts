@@ -15,6 +15,7 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
+import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
 import type { OpencodeMessage } from '../opencode/types';
 
@@ -150,6 +151,7 @@ export async function runDebateJudgeKickoff(
   swarmRunID: string,
   opts: { maxRounds?: number } = {},
 ): Promise<void> {
+  try {
   const meta = await getRun(swarmRunID);
   if (!meta) {
     console.warn(`[debate-judge] run ${swarmRunID} not found — kickoff aborted`);
@@ -332,5 +334,8 @@ export async function runDebateJudgeKickoff(
     console.log(
       `[debate-judge] run ${swarmRunID} round ${round}: REVISE — feedback fanned to ${generatorSIDs.length} generators`,
     );
+  }
+  } finally {
+    await finalizeRun(swarmRunID, 'debate-judge');
   }
 }

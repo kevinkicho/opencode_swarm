@@ -61,6 +61,14 @@ One day, large ship run. Grouped by theme.
 
 **Session / process safety:**
 
+- **Non-ticker pattern session cleanup** — council / map-reduce /
+  debate-judge / critic-loop orchestrators now wrap their kickoff
+  body in a try/finally that calls `finalizeRun(swarmRunID, ctx)`
+  (shared helper in `lib/server/finalize-run.ts`). Aborts every
+  session on run end, including exception paths. Closes the
+  session-leak story across all 9 patterns.
+
+
 - **Auto-abort on every stop path** — `stopAutoTicker` aborts all
   session turns (workers + critic + verifier) on auto-idle,
   tier-exhausted, opencode-frozen, and manual stop.
@@ -159,12 +167,6 @@ One day, large ship run. Grouped by theme.
 
 ### Orchestration / runtime
 
-- **Non-ticker pattern runs leak sessions at end-of-life.** Council /
-  map-reduce / debate-judge / critic-loop don't route through
-  `stopAutoTicker`. Narrow window (those patterns are short-lived)
-  but still a real gap. Small per-orchestrator hook fixes it. *Fix
-  queued below as "non-ticker pattern session cleanup."*
-
 - **Zombie threshold is global 10 min.** Per-pattern tuning is
   queued; 10 min is a defensible compromise for now.
 
@@ -219,11 +221,6 @@ One day, large ship run. Grouped by theme.
   would let the footer show `stopped · zen-rate-limit · retry 5h`
   instead of a generic freeze. Implementation notes in
   `memory/reference_opencode_freeze.md`.
-
-- **Non-ticker pattern session cleanup.** Council / map-reduce /
-  debate-judge / critic-loop each get a small `finalizeRun()`-style
-  hook that aborts worker + coordinator sessions at orchestration
-  end. Closes the session-leak story across all patterns.
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the coordinator

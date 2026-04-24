@@ -20,6 +20,7 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
+import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
 import type { OpencodeMessage } from '../opencode/types';
 
@@ -139,6 +140,7 @@ export async function runCriticLoopKickoff(
   swarmRunID: string,
   opts: { maxIterations?: number } = {},
 ): Promise<void> {
+  try {
   const meta = await getRun(swarmRunID);
   if (!meta) {
     console.warn(
@@ -315,5 +317,8 @@ export async function runCriticLoopKickoff(
     console.log(
       `[critic-loop] run ${swarmRunID} iter ${iter}: REVISE → worker ("${classified.body.slice(0, 80)}")`,
     );
+  }
+  } finally {
+    await finalizeRun(swarmRunID, 'critic-loop');
   }
 }
