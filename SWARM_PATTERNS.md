@@ -121,6 +121,31 @@ small atomic units.
   because no plan lives long enough to rot. This is the closest
   architecturally honest approximation of stigmergic behavior.
 
+**Declared roles (2026-04-24 stance revision).** Prior stance — "blackboard
+is self-organizing, no declared roles" — was superseded after practical
+testing with `github.com/kevinkicho/ollama_swarm` proved that making roles
+explicit tightens the CAS protocol and the audit story. Session 0 is the
+**planner** (owns contract authorship, all todowrite posts, replans);
+sessions 1..N are **workers** (claim → read/hash → implement → commit).
+The planner never touches files directly; workers never author todos.
+A per-commit **critic** (opt-in via `enableCriticGate`) accepts/rejects
+diffs against busywork patterns. A per-commit **verifier** (opt-in via
+`enableVerifierGate`) Playwright-checks user-observable outcomes. Stage 2
+will add an **auditor** role for per-criterion contract verdicts.
+
+Role labels are DISPLAY-ONLY for the blackboard — the coordinator does
+not pass them to opencode as the `agent` field (only hierarchical
+patterns like role-differentiated use opencode agent-configs). Users
+don't need `planner` / `worker-<N>` entries in their `opencode.json`.
+
+**`expectedFiles[]` per todo.** Planner tags each todo with a leading
+`[files:<path>[,<path>]]` prefix (cap ≤2 paths per the spec — smaller
+contention surface). Coordinator hashes these files at claim time (CAS
+anchor) and re-hashes at commit time: if any expectedFile's hash
+changed AND the file is NOT in the worker's editedPaths, the commit is
+rejected as `stale` with `[cas-drift:<path>]` note. Self-edits pass
+(the worker edited its own declared files).
+
 **Implementation modules** (`lib/server/blackboard/`):
 
 | Module | Role |

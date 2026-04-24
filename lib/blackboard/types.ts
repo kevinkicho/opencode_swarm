@@ -73,4 +73,16 @@ export interface BoardItem {
   // lib/server/blackboard/planner.ts::stripRoleTag. Left undefined on
   // self-organizing runs (blackboard, council, stigmergy).
   preferredRole?: string;
+  // Pre-announced file scope for the worker (2026-04-24, declared-roles
+  // alignment). Planner emits via a `[files:a.ts,b.tsx]` content prefix
+  // capped at 2 paths — smaller = smaller contention surface. At claim
+  // time the coordinator hashes each file and stores the (path, sha)
+  // pair in fileHashes as the CAS anchor; at commit time it re-hashes
+  // the expectedFiles NOT in the worker's edited paths and rejects the
+  // commit on drift (another worker modified the file under us). See
+  // SWARM_PATTERNS.md §1 "Implementation modules" and ollama-swarm's
+  // blackboard spec for the design rationale.
+  // Undefined → worker unconstrained, no CAS protection (pre-Stage-1
+  // behavior; kept working so legacy runs + un-tagged todos still move).
+  expectedFiles?: string[];
 }

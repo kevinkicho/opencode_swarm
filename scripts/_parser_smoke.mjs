@@ -18,7 +18,7 @@ const plannerPath = pathToFileURL(
   path.resolve('lib/server/blackboard/planner.ts'),
 ).href;
 
-const { stripVerifyTag, stripRoleTag } = await import(plannerPath);
+const { stripVerifyTag, stripRoleTag, stripFilesTag } = await import(plannerPath);
 
 let failed = 0;
 let passed = 0;
@@ -127,6 +127,50 @@ eq(
   'role: underscore normalized to hyphen',
 );
 
+// ── stripFilesTag cases ───────────────────────────────────────────────
+
+eq(
+  stripFilesTag('[files:lib/foo.ts] Refactor X'),
+  { content: 'Refactor X', expectedFiles: ['lib/foo.ts'] },
+  'files: single path',
+);
+
+eq(
+  stripFilesTag('[files:lib/foo.ts,src/bar.tsx] Refactor X'),
+  { content: 'Refactor X', expectedFiles: ['lib/foo.ts', 'src/bar.tsx'] },
+  'files: two paths',
+);
+
+eq(
+  stripFilesTag('[files: a.ts , b.ts , c.ts , d.ts ] Do stuff'),
+  { content: 'Do stuff', expectedFiles: ['a.ts', 'b.ts'] },
+  'files: capped at 2 paths, whitespace trimmed',
+);
+
+eq(
+  stripFilesTag('[FILES:lib/X.ts] Refactor'),
+  { content: 'Refactor', expectedFiles: ['lib/X.ts'] },
+  'files: case-insensitive tag',
+);
+
+eq(
+  stripFilesTag('[files:] Nothing'),
+  { content: 'Nothing', expectedFiles: undefined },
+  'files: empty list after tag → undefined',
+);
+
+eq(
+  stripFilesTag('[files:,,,] Still nothing'),
+  { content: 'Still nothing', expectedFiles: undefined },
+  'files: all-empty entries → undefined',
+);
+
+eq(
+  stripFilesTag('Untagged content'),
+  { content: 'Untagged content', expectedFiles: undefined },
+  'files: pass-through untagged',
+);
+
 // ── Composition cases ─────────────────────────────────────────────────
 
 {
@@ -147,6 +191,50 @@ eq(
     { content: second.content, verify: first.requiresVerification, role: second.preferredRole },
     { content: 'Test X', verify: false, role: 'tester' },
     'compose: only role (no verify)',
+  );
+}
+
+{
+  // All three tags in spec order: verify → role → files.
+  const a = stripVerifyTag('[verify] [role:tester] [files:a.ts,b.ts] Write tests');
+  const b = stripRoleTag(a.content);
+  const c = stripFilesTag(b.content);
+  eq(
+    {
+      content: c.content,
+      verify: a.requiresVerification,
+      role: b.preferredRole,
+      files: c.expectedFiles,
+    },
+    {
+      content: 'Write tests',
+      verify: true,
+      role: 'tester',
+      files: ['a.ts', 'b.ts'],
+    },
+    'compose: verify + role + files, spec order',
+  );
+}
+
+{
+  // Files only, no other tags.
+  const a = stripVerifyTag('[files:lib/x.ts] Fix typo');
+  const b = stripRoleTag(a.content);
+  const c = stripFilesTag(b.content);
+  eq(
+    {
+      content: c.content,
+      verify: a.requiresVerification,
+      role: b.preferredRole,
+      files: c.expectedFiles,
+    },
+    {
+      content: 'Fix typo',
+      verify: false,
+      role: undefined,
+      files: ['lib/x.ts'],
+    },
+    'compose: files only',
   );
 }
 

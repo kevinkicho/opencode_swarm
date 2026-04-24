@@ -52,7 +52,21 @@ export function roleNamesFromMeta(
       });
       break;
     }
-    // council / map-reduce / blackboard / deliberate-execute / none:
+    case 'blackboard': {
+      // Declared roles for blackboard (2026-04-24 stance revision, see
+      // STATUS.md). Session 0 is the planner (owns contract authorship,
+      // todowrite posts, replans); sessions 1..N are workers (claim →
+      // implement). Labels are DISPLAY-ONLY for blackboard — the
+      // coordinator doesn't pass them to opencode as `agent` field via
+      // this map; use `opencodeAgentForSession` for dispatch routing.
+      // User's opencode.json does NOT need matching `planner` or
+      // `worker-<N>` agent entries.
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(ownerIdForSession(sid), i === 0 ? 'planner' : `worker-${i}`);
+      });
+      break;
+    }
+    // council / map-reduce / deliberate-execute / none:
     // no pinned role at the pattern level. Returns empty map.
   }
   return out;
@@ -92,6 +106,33 @@ export function roleNamesBySessionID(
       });
       break;
     }
+    case 'blackboard': {
+      // See roleNamesFromMeta above for rationale. DISPLAY-ONLY labels.
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(sid, i === 0 ? 'planner' : `worker-${i}`);
+      });
+      break;
+    }
   }
   return out;
+}
+
+// Role to pass as opencode's `agent` field at dispatch time. Only
+// hierarchical patterns (orchestrator-worker, role-differentiated,
+// debate-judge, critic-loop) use opencode agent-configs for routing;
+// blackboard's planner/worker labels are display-only, so we return
+// undefined for it. Keeps user's opencode.json free of synthetic
+// `planner`/`worker-N` entries they never asked for.
+//
+// Hierarchical patterns: the role name IS the opencode agent-config
+// name the user set up (e.g. `orchestrator`, `judge`, `architect`).
+// Passing these as `agent` on postSessionMessageServer routes to
+// those configs; missing entries fall through to opencode's default.
+export function opencodeAgentForSession(
+  meta: RoleMetaLite | null | undefined,
+  sessionID: string,
+): string | undefined {
+  if (!meta) return undefined;
+  if (meta.pattern === 'blackboard') return undefined;
+  return roleNamesBySessionID(meta).get(sessionID);
 }

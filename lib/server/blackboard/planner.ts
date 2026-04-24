@@ -226,6 +226,16 @@ function buildPlannerPrompt(
     '',
     'Each todo must be a decisive, verifiable act that advances the Mission.',
     '',
+    '**Declare expected file scope per todo.** Prefix each todo\'s content',
+    'with `[files:<path>[,<path>]]` listing the files the worker will',
+    'touch. Cap at 2 paths (smaller = smaller contention surface when',
+    'workers run in parallel; the coordinator rejects commits whose CAS',
+    'anchors drift — another worker modified the file under this one).',
+    'Example: `[files:lib/foo.ts,src/bar.tsx] Refactor X to extract Y`.',
+    'Use paths relative to the workspace root. For research / survey /',
+    'investigation todos that produce no file edits, omit the prefix —',
+    'the coordinator skips CAS hashing when no expectedFiles are set.',
+    '',
     '**Flagging user-observable todos for Playwright verification.** If a',
     "todo claims a UX-visible outcome the user would notice in a browser —",
     '"the dashboard renders X", "clicking Y opens Z", "the chart shows',
@@ -340,6 +350,9 @@ interface RawTodo {
   // prefix. Normalized role name (kebab, lowercase, ≤ 24 chars).
   // Undefined when no prefix or on self-organizing runs.
   preferredRole?: string;
+  // Computed by latestTodosFrom from a leading `[files:a,b]`
+  // prefix. Capped at 2 paths. Undefined when no prefix.
+  expectedFiles?: string[];
 }
 
 // Strips the `[verify]` opt-in prefix from a todo's content and
@@ -393,6 +406,34 @@ export function stripRoleTag(content: string): {
   };
 }
 
+// Strips the `[files:<path>,<path>]` prefix and returns the expected
+// file scope for the todo (2026-04-24, declared-roles alignment). Same
+// wire-protocol rationale as stripVerifyTag / stripRoleTag — overload
+// the content field because todowrite only accepts content/status/
+// priority. Cap at 2 paths per the blackboard spec (smaller = smaller
+// contention surface at claim time). Extra paths are silently dropped
+// rather than rejecting the whole todo. Empty list → undefined so
+// consumers don't distinguish "tag absent" from "tag present but empty."
+const FILES_TAG_RE = /^\s*\[files:\s*([^\]]*)\s*\]\s*/i;
+const EXPECTED_FILES_MAX = 2;
+export function stripFilesTag(content: string): {
+  content: string;
+  expectedFiles: string[] | undefined;
+} {
+  const m = FILES_TAG_RE.exec(content);
+  if (!m) return { content, expectedFiles: undefined };
+  const paths = m[1]
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)
+    .slice(0, EXPECTED_FILES_MAX);
+  const stripped = content.slice(m[0].length).trim();
+  if (paths.length === 0) {
+    return { content: stripped, expectedFiles: undefined };
+  }
+  return { content: stripped, expectedFiles: paths };
+}
+
 // Last todowrite among the given message IDs wins. Mirrors
 // transform.ts::toRunPlan's "latest call replaces the list" contract, but
 // scoped to just the sweep's new messages so a pre-existing todowrite from
@@ -420,17 +461,18 @@ export function latestTodosFrom(
             (t as RawTodo).content.trim().length > 0,
         )
         .map((t) => {
-          // Strip in composition order: verify first, then role. Supports
-          // `[verify] [role:tester] content` and `[role:tester] content`
-          // equally; mixed order like `[role:tester] [verify] …` is
-          // tolerated because stripRoleTag re-strips leading whitespace.
+          // Strip in composition order: verify → role → files. Each
+          // stripper re-trims leading whitespace so mixed-order tags
+          // like `[files:a.ts] [verify] ...` are tolerated too.
           const afterVerify = stripVerifyTag(t.content);
           const afterRole = stripRoleTag(afterVerify.content);
+          const afterFiles = stripFilesTag(afterRole.content);
           return {
             ...t,
-            content: afterRole.content,
+            content: afterFiles.content,
             requiresVerification: afterVerify.requiresVerification,
             preferredRole: afterRole.preferredRole,
+            expectedFiles: afterFiles.expectedFiles,
           };
         });
       if (todos.length > 0) latest = { todos, messageId: m.info.id };
@@ -597,6 +639,7 @@ export async function runPlannerSweep(
       status: 'open',
       requiresVerification: raw.requiresVerification === true,
       preferredRole: raw.preferredRole,
+      expectedFiles: raw.expectedFiles,
       createdAtMs: baseMs + offset,
     });
     offset += 1;

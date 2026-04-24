@@ -88,6 +88,12 @@ function migrate(db: DB): void {
        ADD COLUMN preferred_role TEXT`,
     );
   }
+  if (!have.has('expected_files_json')) {
+    db.exec(
+      `ALTER TABLE board_items
+       ADD COLUMN expected_files_json TEXT`,
+    );
+  }
 }
 
 function resolveSchema(): string {

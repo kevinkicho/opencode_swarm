@@ -28,6 +28,60 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-24 — blackboard declared-roles Stage 1 (CAS hardening)
+
+Stance revision: user rescinded "blackboard is self-organizing, no
+declared roles" after practical testing with ollama-swarm. The
+blackboard pattern now carries declared roles and proper CAS
+protection on file claims — closer alignment with the ollama-swarm
+spec that proved out in production. Stage 1 is the CAS-hardening
+bundle; Stage 2 (auditor + criterion contract + hard caps) designed
+separately.
+
+- **Declared blackboard roles.** `roleNamesBySessionID` now returns
+  `{session[0]: 'planner', sessions[1..N]: 'worker-<N>'}` for
+  `pattern='blackboard'`. Visible in roster chips, board chips,
+  tokens drill-down. NEW helper `opencodeAgentForSession` keeps
+  dispatch routing scoped to hierarchical patterns only — blackboard
+  roles are DISPLAY-ONLY so users aren't forced to add synthetic
+  `planner` / `worker-<N>` agents to their opencode.json.
+- **`expectedFiles[]` on BoardItem.** New `expected_files_json`
+  column (idempotent migration); `BoardItem.expectedFiles?: string[]`
+  field. Planner emits via a `[files:<path>[,<path>]]` prefix capped
+  at 2 paths per todo (smaller = smaller CAS contention surface).
+  Third tag in the family alongside `[verify]` and `[role:X]`;
+  composes with both in spec order.
+- **Planner prompt updated** with the `[files:...]` instruction block
+  directly above the `[verify]` instruction. Old todos (no prefix)
+  remain valid — empty expectedFiles preserves pre-Stage-1 behavior
+  (no CAS protection, worker unconstrained).
+- **Work prompt now scopes worker to expectedFiles** when declared.
+  Adds "DO NOT edit files outside this list" section with the
+  per-todo file scope so workers know the contract. Soft instruction
+  today; hard CAS-drift rejection at commit makes it effectively
+  binding.
+- **Claim-time hash anchoring.** Coordinator reads + SHAs each
+  `expectedFile` BEFORE transitioning `open → claimed`; stores
+  `(path, sha)` pairs in `fileHashes`. Empty-sha sentinel marks
+  files absent at claim (worker expected to create them). Todos
+  without expectedFiles get `fileHashes: null` as before.
+- **Commit-time CAS drift rejection.** Before the critic gate, re-
+  hash every expectedFile; if any file's current hash differs from
+  claim-time AND the file is NOT in this worker's edited paths,
+  the commit is rejected as stale with `[cas-drift:<path>]` note.
+  Self-edits (file in editedPaths) pass through — own hash changes
+  are expected. Matches ollama-swarm spec's "1. Re-hash claimed
+  files → reject if any changed" commit-gate step.
+- **Smoke tests.** `scripts/_stage1_smoke.mjs` — 20 assertions over
+  role declaration + opencodeAgentForSession + pure drift logic.
+  `scripts/_parser_smoke.mjs` extended with `stripFilesTag` cases
+  (+9 assertions, 25 total). All four smokes green end-to-end.
+
+**Stage 2 (designed, not started):** Auditor role + Criterion contract
++ hard-cap enforcement (wall-clock / 200 commits / 300 todos). Design
+conversation needed before code — decisions pending on contract
+shape, audit cadence default, termination precedence.
+
 ### 2026-04-24 — team-picker → dispatch wiring
 
 Made the team picker actually pin per-session models. Prior state: the

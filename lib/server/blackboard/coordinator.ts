@@ -38,7 +38,7 @@ import {
   postSessionMessageServer,
 } from '../opencode-server';
 import { publishExports } from '../hmr-exports';
-import { roleNamesBySessionID } from '@/lib/blackboard/roles';
+import { opencodeAgentForSession, roleNamesBySessionID } from '@/lib/blackboard/roles';
 import { reviewWorkerDiff } from './critic';
 import { verifyWorkerOutcome } from './verifier';
 import { listBoardItems, transitionStatus } from './store';
@@ -367,19 +367,36 @@ function buildWorkPrompt(item: BoardItem): string {
   // synthesizer into editing files. Post the content verbatim and let the
   // CAS lifecycle handle progression.
   if (item.kind === 'synthesize') return item.content;
-  return [
+  const lines: string[] = [
     'Blackboard work prompt.',
     '',
     `Todo id: ${item.id}`,
     `Todo: ${item.content}`,
+  ];
+  // Pre-announced file scope (declared-roles alignment). When the
+  // planner tagged the todo with [files:a,b], the coordinator has
+  // already hashed those files at claim time for CAS drift detection;
+  // the worker MUST stay within this list or risk the commit being
+  // rejected as out-of-scope (future Stage 2 enforcement). Today this
+  // is a soft instruction plus a hard CAS check on drift at commit.
+  if (item.expectedFiles && item.expectedFiles.length > 0) {
+    lines.push(
+      '',
+      `Expected file scope (DO NOT edit files outside this list): ${item.expectedFiles.join(', ')}`,
+      'Other workers have claims on other files. Editing outside this',
+      'scope risks a CAS-drift rejection at commit time.',
+    );
+  }
+  lines.push(
     '',
-    'Complete this todo by editing the relevant file(s) directly. Keep the',
+    'Complete this todo by editing the file(s) above directly. Keep the',
     'scope narrow — one todo, one change. Do not call the task tool, do',
     'not spawn sub-agents. When done, reply with a one-sentence summary.',
     '',
     'If the todo turns out to be wrong or already done, reply "skip:" with',
     'a one-line reason and do not edit anything.',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 // Poll until the session has finished processing whatever prompt we just
@@ -609,17 +626,41 @@ export async function tickCoordinator(
   const sessionID = pickedSession;
   const ownerAgentId = ownerIdForSession(sessionID);
 
+  // Claim-time hash anchoring (2026-04-24 declared-roles alignment).
+  // When the planner declared expectedFiles on the todo, read and SHA
+  // each file BEFORE transitioning to 'claimed'. These anchors power
+  // the commit-time drift check: if a file's hash changed between
+  // claim and commit AND the file wasn't in this worker's edited
+  // paths, another worker modified it under us → reject with stale
+  // (CAS fail). An empty sha sentinel means the file didn't exist at
+  // claim time — worker is expected to create it; drift is detected
+  // if someone else created it concurrently.
+  //
+  // Todos without expectedFiles get fileHashes: null (pre-Stage-1
+  // behavior) — no CAS anchor, commit-time hashes recorded from
+  // editedPaths only.
+  let claimAnchors: { path: string; sha: string }[] | null = null;
+  if (todo.expectedFiles && todo.expectedFiles.length > 0) {
+    claimAnchors = [];
+    for (const rel of todo.expectedFiles) {
+      const abs = path.resolve(meta.workspace, rel);
+      try {
+        claimAnchors.push({ path: rel, sha: await sha7(abs) });
+      } catch {
+        // File absent at claim time — sentinel '' anchors "expected to
+        // be created." Drift check distinguishes this from a live hash.
+        claimAnchors.push({ path: rel, sha: '' });
+      }
+    }
+  }
+
   // Claim. CAS protects against another coordinator / external caller
-  // racing us to the same 'open' item. Empty fileHashes is acceptable here
-  // because we'll record post-work hashes at commit time; drift detection
-  // for concurrent claims lands in a later step when parallelism does.
+  // racing us to the same 'open' item.
   const claim = transitionStatus(swarmRunID, todo.id, {
     from: 'open',
     to: 'claimed',
     ownerAgentId,
-    // Required by the commit action route but not by the store layer —
-    // leaving empty is valid, commit will repopulate.
-    fileHashes: null,
+    fileHashes: claimAnchors,
   });
   if (!claim.ok) {
     return { status: 'skipped', reason: `claim lost race: ${claim.currentStatus}` };
@@ -638,14 +679,14 @@ export async function tickCoordinator(
   const knownIDs = new Set(before.map((m) => m.info.id));
 
   const prompt = buildWorkPrompt(todo);
-  // Pattern-aware role tagging on the worker's prompt. When the run has
-  // pinned roles (orchestrator-worker, role-differentiated, debate-judge,
-  // critic-loop), the worker's assistant turn carries info.agent={role}
-  // so the roster + board chips show the role label rather than the
-  // default "build" opencode seeds on session create. Self-organizing
-  // patterns get an empty map → default agent name.
-  const roleBySID = roleNamesBySessionID(meta);
-  const role = roleBySID.get(sessionID);
+  // Pattern-aware opencode agent-config routing for the worker's prompt.
+  // Hierarchical patterns (orchestrator-worker, role-differentiated,
+  // debate-judge, critic-loop) map session → role → opencode agent-config
+  // name from opencode.json. Blackboard's planner/worker labels are
+  // display-only (2026-04-24 stance revision) — opencodeAgentForSession
+  // returns undefined for it so we don't force users to define synthetic
+  // `planner` / `worker-<N>` agents in their opencode.json.
+  const dispatchAgent = opencodeAgentForSession(meta, sessionID);
   // Team-model pinning: when the new-run-modal team picker produced a
   // per-session model list, look up this session's pinned model by
   // index and pass it through. opencode's prompt endpoint accepts
@@ -658,7 +699,7 @@ export async function tickCoordinator(
     sessionIdx >= 0 ? meta.teamModels?.[sessionIdx] : undefined;
   try {
     await postSessionMessageServer(sessionID, meta.workspace, prompt, {
-      agent: role,
+      agent: dispatchAgent,
       model: pinnedModel,
     });
   } catch (err) {
@@ -704,6 +745,58 @@ export async function tickCoordinator(
   const editedPaths = rawEditedPaths.map((p) =>
     relativizeToWorkspace(meta.workspace, p),
   );
+
+  // Commit-time CAS drift check (2026-04-24 declared-roles alignment).
+  // For every file the planner pre-announced on the todo (claimAnchors,
+  // persisted in fileHashes at claim time), re-hash it now and compare
+  // against the claim-time anchor. A mismatch means the file moved
+  // under this worker — UNLESS the file is in this worker's editedPaths,
+  // in which case the change is the worker's own legitimate edit and
+  // doesn't count as drift. Any drift → stale (CAS fail), skip critic
+  // + verifier gates entirely. Matches the "1. Re-hash claimed files
+  // → reject if any changed" step of the ollama-swarm blackboard spec.
+  if (todo.expectedFiles && todo.expectedFiles.length > 0 && todo.fileHashes) {
+    const editedSet = new Set(editedPaths);
+    const driftedPaths: string[] = [];
+    for (const anchor of todo.fileHashes) {
+      if (editedSet.has(anchor.path)) continue; // legitimate self-edit
+      const abs = path.resolve(meta.workspace, anchor.path);
+      let currentSha = '';
+      try {
+        currentSha = await sha7(abs);
+      } catch {
+        // File absent now — drift if it existed at claim time.
+        currentSha = '';
+      }
+      if (currentSha !== anchor.sha) {
+        driftedPaths.push(anchor.path);
+      }
+    }
+    if (driftedPaths.length > 0) {
+      const detail = driftedPaths.slice(0, 3).join(',');
+      const more = driftedPaths.length > 3 ? ` +${driftedPaths.length - 3}` : '';
+      const note = `[cas-drift:${detail}${more}]`;
+      console.log(
+        `[coordinator] ${swarmRunID}/${todo.id}: CAS drift on ${driftedPaths.length} file(s) (${detail}${more}) — moving to stale before critic`,
+      );
+      const rolled = transitionStatus(swarmRunID, todo.id, {
+        from: 'in-progress',
+        to: 'stale',
+        note: note.slice(0, 200),
+        staleSinceSha: driftedPaths[0],
+      });
+      if (rolled.ok) {
+        return {
+          status: 'stale',
+          sessionID,
+          itemID: todo.id,
+          reason: `cas-drift: ${detail}${more}`,
+        };
+      }
+      // CAS rollback lost race (another agent moved the item) — fall
+      // through to the normal done path; the other transition wins.
+    }
+  }
 
   // Hash whatever was edited. A turn that produced no edits (skip: / text
   // answer / q-reply) still commits to done — the todo was addressed, just

@@ -51,6 +51,15 @@ CREATE TABLE IF NOT EXISTS board_items (
   -- to claim — see SWARM_PATTERNS.md §6.
   preferred_role TEXT,
 
+  -- Pre-announced expected file scope (2026-04-24 declared-roles
+  -- alignment). JSON array of paths; planner emits via a
+  -- [files:a.ts,b.tsx] prefix capped at 2 paths. Empty/NULL for
+  -- un-tagged todos preserves pre-Stage-1 behavior (no CAS
+  -- protection, worker unconstrained). Coordinator hashes these at
+  -- claim time for drift detection at commit. See
+  -- lib/blackboard/types.ts BoardItem.expectedFiles.
+  expected_files_json TEXT,
+
   PRIMARY KEY (swarm_run_id, id)
 );
 
