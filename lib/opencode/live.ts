@@ -84,6 +84,25 @@ export function getSessionMessagesBrowser(
   );
 }
 
+// Single-session lookup. Opencode exposes `/session/:id` returning the
+// full OpencodeSession record (probed 2026-04-24 via direct curl: 6-45ms
+// latency). Prefer this over getAllSessionsBrowser when you already know
+// the session id — the latter fans out to /project + /session?directory
+// per workspace, firing 9+ requests just to find the one session we care
+// about. Passing `directory` when known helps opencode pick the right
+// project scope up front (avoids a lookup hop).
+export function getSessionBrowser(
+  sessionId: string,
+  directory?: string,
+  init: RequestInit = {}
+): Promise<OpencodeSession> {
+  const qs = directory ? `?${new URLSearchParams({ directory }).toString()}` : '';
+  return getJsonBrowser<OpencodeSession>(
+    `/session/${encodeURIComponent(sessionId)}${qs}`,
+    init
+  );
+}
+
 // Session-aggregate diff. Opencode returns one entry per changed file with a
 // unified-diff string spanning the whole session. Note: ?messageID= and ?hash=
 // are accepted by opencode but ignored (probed 2026-04-20), so per-turn
@@ -244,51 +263,42 @@ export interface HealthSnapshot {
 
 // Lightweight health probe — single request to /project, cheap enough to poll
 // every few seconds as a background heartbeat for the prototype's footer.
+//
+// Migrated to TanStack Query (2026-04-24). Before the migration, each
+// call site (page.tsx + two via useBackendStale in topbar/timeline)
+// spawned its own poller — 3 independent /project fetches every 5s,
+// contributing ~27 calls in a 40s cold load. With TanStack Query,
+// all three share one query key and dedup automatically.
 export function useOpencodeHealth(intervalMs = 5000): HealthSnapshot {
-  const [state, setState] = useState<HealthSnapshot>({
-    status: 'checking',
-    projectCount: 0,
-    lastChecked: 0,
+  const q = useQuery({
+    queryKey: OPENCODE_HEALTH_QUERY_KEY,
+    queryFn: opencodeHealthFetcher,
+    refetchInterval: intervalMs,
+    placeholderData: (prev) => prev,
+    // On error, don't retry aggressively — the interval will retry anyway.
+    retry: false,
   });
-
-  useEffect(() => {
-    let cancelled = false;
-    let controller = new AbortController();
-
-    async function check() {
-      controller.abort();
-      controller = new AbortController();
-      try {
-        const projects = await getProjectsBrowser({ signal: controller.signal });
-        if (cancelled) return;
-        setState({
-          status: 'live',
-          projectCount: projects.length,
-          lastChecked: Date.now(),
-        });
-      } catch (err) {
-        if (cancelled) return;
-        if ((err as Error).name === 'AbortError') return;
-        setState({
-          status: 'offline',
-          projectCount: 0,
-          lastChecked: Date.now(),
-          error: (err as Error).message,
-        });
-      }
-    }
-
-    check();
-    const id = setInterval(check, intervalMs);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      clearInterval(id);
+  if (q.data) return q.data;
+  if (q.error) {
+    return {
+      status: 'offline',
+      projectCount: 0,
+      lastChecked: Date.now(),
+      error: (q.error as Error).message,
     };
-  }, [intervalMs]);
+  }
+  return { status: 'checking', projectCount: 0, lastChecked: 0 };
+}
 
-  return state;
+export const OPENCODE_HEALTH_QUERY_KEY = ['opencode', 'health'] as const;
+
+async function opencodeHealthFetcher(): Promise<HealthSnapshot> {
+  const projects = await getProjectsBrowser();
+  return {
+    status: 'live',
+    projectCount: projects.length,
+    lastChecked: Date.now(),
+  };
 }
 
 // Shared "is the backend reachable right now?" hook. Wraps
@@ -384,12 +394,23 @@ export function useLiveSession(
       controller.abort();
       controller = new AbortController();
       try {
-        const [sessions, messages] = await Promise.all([
-          getAllSessionsBrowser({ signal: controller.signal }),
+        // Direct single-session lookup instead of enumerating all
+        // workspace sessions. Before 2026-04-24 this called
+        // getAllSessionsBrowser which fanned out to /project +
+        // /session?directory=X per workspace (9+ requests just to
+        // locate one known session id). Each SSE event triggered a
+        // refetch, multiplying the cost. Probed via perf:cold: that
+        // pattern produced 29 /project + 15 /session calls in a 40s
+        // cold load. Single-lookup path cuts it to one call per
+        // refetch. `directory` is passed once known so opencode can
+        // resolve the project scope without a lookup hop.
+        const [session, messages] = await Promise.all([
+          getSessionBrowser(sessionId!, currentDirectory ?? undefined, {
+            signal: controller.signal,
+          }).catch(() => null),
           getSessionMessagesBrowser(sessionId!, { signal: controller.signal }),
         ]);
         if (cancelled) return;
-        const session = sessions.find((s) => s.id === sessionId) ?? null;
         setData({ session, messages, lastUpdated: Date.now() });
         setError(null);
         if (session?.directory && session.directory !== currentDirectory) {
