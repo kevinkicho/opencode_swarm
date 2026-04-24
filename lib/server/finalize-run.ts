@@ -27,6 +27,7 @@ export async function finalizeRun(
   const targets = [...meta.sessionIDs];
   if (meta.criticSessionID) targets.push(meta.criticSessionID);
   if (meta.verifierSessionID) targets.push(meta.verifierSessionID);
+  if (meta.auditorSessionID) targets.push(meta.auditorSessionID);
   if (targets.length === 0) return;
   const results = await Promise.allSettled(
     targets.map((sid) =>

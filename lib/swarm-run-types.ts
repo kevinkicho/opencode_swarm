@@ -67,6 +67,22 @@ export interface SwarmRunRequest {
   // server — we don't manage its lifecycle. Required when
   // enableVerifierGate is true; ignored otherwise.
   workspaceDevUrl?: string;
+  // Contract auditor gate (companion layer #3 to the ambition ratchet,
+  // Stage 2 declared-roles alignment). When true, the run creates a
+  // dedicated "auditor" opencode session at launch. The auto-ticker
+  // invokes it every `auditEveryNCommits` commits + on tier escalation
+  // + at run-end to verdict pending criteria (kind='criterion' board
+  // items) as MET / UNMET / WONT_DO. Criteria verdicts feed back into
+  // the planner's re-sweep context so new todos target unmet items.
+  // Default false — opt-in until the contract flow is validated on
+  // real runs (see docs/VALIDATION.md). Blackboard-family only.
+  enableAuditorGate?: boolean;
+  // Audit cadence in commits. Auditor runs every N successful
+  // `done` transitions on todos (criteria excluded from the count so
+  // adding new criteria doesn't trigger premature audit). Default 5.
+  // Also runs on tier escalation + run-end regardless of counter.
+  // Ignored when enableAuditorGate is false.
+  auditEveryNCommits?: number;
   // Per-session model pinning. One model ID per session in
   // new-run-modal picker order; length must equal the resolved
   // teamSize. When set, each session's dispatch opcodes carry the
@@ -141,6 +157,16 @@ export interface SwarmRunMeta {
   // enableVerifierGate is true. Also NOT in sessionIDs. Absent when
   // the flag is false or spawn failed.
   verifierSessionID?: string;
+  // Contract auditor — Stage 2 declared-roles alignment. Mirror of
+  // enableVerifierGate/verifierSessionID: flag set when the request
+  // opted in; sessionID populated only if the extra session spawn
+  // succeeded (absent on spawn failure → run continues without the
+  // auditor gate, fail-open).
+  enableAuditorGate?: boolean;
+  auditorSessionID?: string;
+  // Audit cadence (commits between audits). Default 5 when unset and
+  // auditor is enabled. See SwarmRunRequest for semantics.
+  auditEveryNCommits?: number;
   // Ambition-ratchet persisted tier state. Set by attemptTierEscalation
   // after each successful tier bump (via updateRunMeta) so a ticker
   // restart mid-run doesn't drop the ratchet back to tier 1. Absent

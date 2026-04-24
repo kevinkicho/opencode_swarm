@@ -341,6 +341,34 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.enableVerifierGate = obj.enableVerifierGate;
   }
 
+  if (obj.enableAuditorGate !== undefined) {
+    if (typeof obj.enableAuditorGate !== 'boolean') {
+      return 'enableAuditorGate must be boolean';
+    }
+    if (
+      obj.enableAuditorGate === true &&
+      req.pattern !== 'blackboard' &&
+      req.pattern !== 'orchestrator-worker' &&
+      req.pattern !== 'role-differentiated' &&
+      req.pattern !== 'deliberate-execute'
+    ) {
+      return `enableAuditorGate only applies to blackboard-family patterns (got '${req.pattern}')`;
+    }
+    req.enableAuditorGate = obj.enableAuditorGate;
+  }
+
+  if (obj.auditEveryNCommits !== undefined) {
+    if (
+      typeof obj.auditEveryNCommits !== 'number' ||
+      !Number.isInteger(obj.auditEveryNCommits) ||
+      obj.auditEveryNCommits < 1 ||
+      obj.auditEveryNCommits > 100
+    ) {
+      return 'auditEveryNCommits must be an integer between 1 and 100';
+    }
+    req.auditEveryNCommits = obj.auditEveryNCommits;
+  }
+
   if (obj.workspaceDevUrl !== undefined) {
     if (typeof obj.workspaceDevUrl !== 'string' || !obj.workspaceDevUrl.trim()) {
       return 'workspaceDevUrl must be a non-empty string';
@@ -612,6 +640,28 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
   }
 
+  // Step 2.7 (opt-in): auditor session for Stage 2 declared-roles
+  // contract gate. Same fail-open spawn semantics as critic/verifier.
+  // Auditor session is invoked every auditEveryNCommits commits + on
+  // tier escalation + at run-end to verdict pending criteria — see
+  // lib/server/blackboard/auditor.ts + the cadence logic in
+  // lib/server/blackboard/auto-ticker.ts.
+  let auditorSessionID: string | undefined;
+  if (parsed.enableAuditorGate) {
+    try {
+      const auditor = await createSessionServer(
+        parsed.workspace,
+        seedTitle ? `${seedTitle} · auditor` : undefined,
+      );
+      auditorSessionID = auditor.id;
+    } catch (err) {
+      console.warn(
+        '[swarm/run] auditor session spawn failed — run continues without auditor gate:',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
   // Step 3: persist meta.json with every survivor. If this fails we've
   // already created opencode sessions — accept the orphans rather than
   // introduce rollback. The user can see them in opencode's own UI; our
@@ -634,6 +684,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     meta = await createRun(parsed, sessionIDs, {
       criticSessionID,
       verifierSessionID,
+      auditorSessionID,
       startTier,
       teamModels: teamModelsSurvivors,
     });

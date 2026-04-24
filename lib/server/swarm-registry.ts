@@ -114,6 +114,7 @@ export async function createRun(
   extras: {
     criticSessionID?: string;
     verifierSessionID?: string;
+    auditorSessionID?: string;
     // When req.continuationOf is set, the caller resolves the prior run's
     // currentTier and passes it here so meta.currentTier seeds the new
     // run at the inherited tier (vs the default tier 1 start). Ignored
@@ -148,6 +149,14 @@ export async function createRun(
     enableVerifierGate: req.enableVerifierGate ? true : undefined,
     workspaceDevUrl: req.workspaceDevUrl,
     verifierSessionID: extras.verifierSessionID,
+    // Auditor gate (Stage 2 declared-roles). Same shape as critic /
+    // verifier: flag copied when truthy, sessionID only when spawn
+    // succeeded. auditEveryNCommits is the cadence knob — defaulted
+    // in auto-ticker when unset, but we persist the request value
+    // when present so runs can resume with the user's chosen cadence.
+    enableAuditorGate: req.enableAuditorGate ? true : undefined,
+    auditorSessionID: extras.auditorSessionID,
+    auditEveryNCommits: req.auditEveryNCommits,
     // Run-chaining lineage + inherited tier. currentTier stays absent
     // (interpreted as tier 1) for standalone runs; only written here
     // when the caller explicitly resolves a > 1 starting tier from a
