@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { ChunkErrorReload } from '@/components/chunk-error-reload';
 import { ReactScanProbe } from '@/components/perf/react-scan-probe';
+import { WebVitalsReporter } from '@/components/perf/web-vitals-reporter';
 
 // Dev-phase note (2026-04-22): swapped from `next/font/google` to CSS-native
 // font stacks because WSL blocks fetching fonts.gstatic.com during Next's
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="font-sans">
         <ChunkErrorReload />
         <ReactScanProbe />
+        <WebVitalsReporter />
         {children}
       </body>
     </html>

@@ -4,6 +4,7 @@ import clsx from 'clsx';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { ProfileBoundary } from '@/components/perf/profile-boundary';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
@@ -161,7 +162,9 @@ const EMPTY_VIEW: SwarmView = {
 export default function Page() {
   return (
     <Suspense fallback={null}>
-      <PageInner />
+      <ProfileBoundary id="page-inner">
+        <PageInner />
+      </ProfileBoundary>
     </Suspense>
   );
 }
