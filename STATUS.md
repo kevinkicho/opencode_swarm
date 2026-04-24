@@ -546,6 +546,17 @@ One day, large ship run. Grouped by theme.
 
 ## Queued — designed but not started
 
+### Next-up (high leverage, < 1 day each)
+
+- **Heat tab: file-tree toggle (VSCode-style).** Button in the heat-rail
+  header flips between the current heat-list view and a tree view of
+  the workspace files. Files in the tree show heat chips (edit counts)
+  so the value add over the list is "navigate by structure instead of
+  by heat score." Click a file → same file-heat inspector opens. Shape
+  A from the 2026-04-24 design exchange. Needs `GET /api/swarm/run/:id/tree`
+  (or a workspace-scoped variant) for the filesystem enumeration,
+  gitignore-aware, short cache. ~2-3 h scope.
+
 ### Designed but deprioritized
 
 - **Route C "writers-room"** (memory/project_a2a_routes.md). Deferred
