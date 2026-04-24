@@ -52,17 +52,22 @@ export interface PlannerExports {
   ) => Promise<PlannerSweepResult>;
 }
 
-// Default timeout for a planner sweep. Raised from the original 90s after
-// 2026-04-22 incident: a real-repo sweep (kBioIntelBrowser04052026) spent
-// 31 exploratory assistant turns before emitting todowrite. 90s threw the
-// sweep's wait-loop but left the session running — it burned 5M tokens in
-// 70+ duplicate todowrite calls before a human noticed.
-//
-// 5min matches the dispatch deadline in runMapReduceSynthesis and gives a
-// model room to explore *once* before committing to a plan. The abort-on-
-// timeout path below is the real safety net; this just reduces how often
-// it fires for legitimate work.
-const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+// Default timeout for a planner sweep. History:
+//   - 90s (original). 2026-04-22 incident: kBioIntelBrowser04052026 took
+//     31 exploratory turns before todowrite. 90s threw the wait-loop but
+//     left the session running; burned 5M tokens in 70+ duplicate
+//     todowrite calls before a human noticed.
+//   - 5min (2026-04-22). Sized against opencode-zen/go latencies. Worked
+//     fine until we moved to ollama-cloud models.
+//   - 15min (2026-04-24). Ollama cloud models (glm-5.1:cloud, gemma4:31b-
+//     cloud, nemotron-3-super:cloud) have materially higher cold-start
+//     and per-turn latency than zen/go — an observation from the first
+//     multi-pattern ollama test run where BOTH glm-5.1 and nemotron-3-
+//     super hit the 5-min cap mid-exploration. The planner emits 6-15
+//     todos after up to 10 exploratory tool calls; at ~30-60s per turn
+//     on ollama cloud, 15min is the new realistic ceiling. The abort-on-
+//     timeout path below still catches genuine hangs.
+const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 
 export interface PlannerSweepResult {
   items: BoardItem[];
