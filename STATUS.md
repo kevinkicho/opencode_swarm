@@ -68,6 +68,14 @@ One day, large ship run. Grouped by theme.
   session on run end, including exception paths. Closes the
   session-leak story across all 9 patterns.
 
+- **`zen-rate-limit` vs `opencode-frozen` distinction.** The
+  liveness watchdog now probes the opencode log for recent
+  `statusCode":429` entries before declaring a freeze. If found
+  → `stopReason: 'zen-rate-limit'` with retry-after logged.
+  Otherwise → `stopReason: 'opencode-frozen'` as before. Helper
+  in `lib/server/zen-rate-limit-probe.ts`, respects
+  `OPENCODE_LOG_DIR` env for non-default log locations.
+
 
 - **Auto-abort on every stop path** — `stopAutoTicker` aborts all
   session turns (workers + critic + verifier) on auto-idle,
@@ -185,11 +193,12 @@ One day, large ship run. Grouped by theme.
   ratchet never fires. Would need "tier up after N drained periodic
   cycles" to participate.
 
-- **Silent-freeze diagnosis.** Most "opencode-frozen" observations
-  are actually Zen free-tier 429s, not process wedging. The
-  watchdog still shows a generic frozen reason; distinguishing
-  `zen-rate-limit` is queued. Recovery via retry-stale works once
-  quota clears. See `memory/reference_opencode_freeze.md`.
+- **Silent-freeze is now auto-distinguished.** The liveness watchdog
+  probes the opencode log for a recent `statusCode":429` before
+  declaring a freeze. If found → `stopReason: zen-rate-limit`
+  (with retry-after logged). Otherwise → `stopReason:
+  opencode-frozen`. UI-side polish (chip showing the retry-after
+  countdown) still queued below.
 
 ### UI performance
 
@@ -216,11 +225,12 @@ One day, large ship run. Grouped by theme.
 
 ### Next-up (high leverage, < 1 day each)
 
-- **`zen-rate-limit` vs `opencode-frozen` in the watchdog.** A probe
-  that greps the opencode log for recent `statusCode":429` lines
-  would let the footer show `stopped · zen-rate-limit · retry 5h`
-  instead of a generic freeze. Implementation notes in
-  `memory/reference_opencode_freeze.md`.
+- **Retry-after countdown chip for `zen-rate-limit` stops.** The
+  detection is shipped — `stopReason: 'zen-rate-limit'` is set
+  automatically when a 429 is in the opencode log. The ticker chip
+  could show `stopped · zen-rate-limit · retry 3h 47m` by surfacing
+  `retry-after` seconds on the snapshot and decrementing. UI work,
+  not server.
 
 - **Per-todo `preferredRole` routing for role-differentiated** (~ 1-2 h).
   Today roles bias self-selection via the intro prompt; the coordinator

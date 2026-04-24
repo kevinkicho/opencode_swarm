@@ -40,6 +40,10 @@
 
 import { deriveRunRow, getRun, listRuns } from '../swarm-registry';
 import { abortSessionServer } from '../opencode-server';
+import {
+  detectRecentZen429,
+  formatRetryAfter,
+} from '../zen-rate-limit-probe';
 import { liveExports, publishExports } from '../hmr-exports';
 import {
   COORDINATOR_EXPORTS_KEY,
@@ -132,7 +136,11 @@ const FROZEN_TOKENS_THRESHOLD_MS = 10 * 60 * 1000;
 // then is broken in a way worth stopping.
 const STARTUP_GRACE_MS = 15 * 60 * 1000;
 
-export type StopReason = 'auto-idle' | 'manual' | 'opencode-frozen';
+export type StopReason =
+  | 'auto-idle'
+  | 'manual'
+  | 'opencode-frozen'
+  | 'zen-rate-limit';
 
 interface PerSessionSlot {
   sessionID: string;
@@ -578,10 +586,18 @@ async function checkLiveness(state: TickerState): Promise<void> {
       // Nothing produced yet — grace period before calling it frozen.
       const age = now - state.startedAtMs;
       if (age >= STARTUP_GRACE_MS) {
-        console.warn(
-          `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen (startup) — 0 tokens after ${Math.round(age / 60_000)}min. Stopping ticker. Restart opencode + the ticker to recover.`,
-        );
-        stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+        const rl = await detectRecentZen429();
+        if (rl.found) {
+          console.warn(
+            `[board/auto-ticker] ${state.swarmRunID}: zen-rate-limit (startup) — 0 tokens after ${Math.round(age / 60_000)}min; most recent 429 at ${new Date(rl.lastHitAt!).toISOString()}, retry-after ${formatRetryAfter(rl.retryAfterSec)}. Stopping ticker; self-heals once quota clears.`,
+          );
+          stopAutoTicker(state.swarmRunID, 'zen-rate-limit');
+        } else {
+          console.warn(
+            `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen (startup) — 0 tokens after ${Math.round(age / 60_000)}min, no recent 429 in the log. Stopping ticker. Restart opencode + the ticker to recover.`,
+          );
+          stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+        }
       }
       return;
     }
@@ -593,13 +609,25 @@ async function checkLiveness(state: TickerState): Promise<void> {
       return;
     }
 
-    // Tokens stuck. If long enough, declare frozen.
+    // Tokens stuck. If long enough, declare frozen — but first check
+    // if the opencode log shows a recent 429. That's self-healing
+    // (wait out retry-after) and warrants a different stop reason so
+    // the UI can surface a useful "retry 5h" instead of a generic
+    // "process dead" message.
     const stuckFor = now - state.lastTokensChangedAtMs;
     if (stuckFor >= FROZEN_TOKENS_THRESHOLD_MS) {
-      console.warn(
-        `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen — no token delta in ${Math.round(stuckFor / 60_000)}min (tokens stuck at ${tokens}). Stopping ticker. Restart opencode + the ticker to recover.`,
-      );
-      stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+      const rl = await detectRecentZen429();
+      if (rl.found) {
+        console.warn(
+          `[board/auto-ticker] ${state.swarmRunID}: zen-rate-limit — no token delta in ${Math.round(stuckFor / 60_000)}min (tokens at ${tokens}); most recent 429 at ${new Date(rl.lastHitAt!).toISOString()}, retry-after ${formatRetryAfter(rl.retryAfterSec)}. Stopping ticker; self-heals once quota clears.`,
+        );
+        stopAutoTicker(state.swarmRunID, 'zen-rate-limit');
+      } else {
+        console.warn(
+          `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen — no token delta in ${Math.round(stuckFor / 60_000)}min (tokens stuck at ${tokens}), no recent 429 in the log. Stopping ticker. Restart opencode + the ticker to recover.`,
+        );
+        stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
