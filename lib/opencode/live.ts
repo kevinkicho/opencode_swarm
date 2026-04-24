@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   OpencodeMessage,
+  OpencodePart,
   OpencodePermissionReply,
   OpencodePermissionRequest,
   OpencodeProject,
@@ -953,6 +954,88 @@ export function useLiveSwarmRunMessages(
       void doFetch(sessionID);
     }
 
+    // Partial-merge fast path. When an SSE event carries the full
+    // part or message-info payload, splice it directly into the local
+    // buffer instead of triggering a full session-history refetch.
+    // Cuts the common "turn streaming" burn pattern from O(messages)
+    // per event to O(1) per event — the biggest win for
+    // page-hydration slowness on long runs. Falls back to refetch
+    // when the event doesn't carry enough, or when the message isn't
+    // yet in our buffer (rare race on brand-new turns).
+    function applyLocally(ev: MessageEvent, sid: string): boolean {
+      let parsed: {
+        type?: string;
+        properties?: {
+          sessionID?: string;
+          messageID?: string;
+          part?: OpencodePart;
+          info?: OpencodeMessage['info'];
+        };
+      };
+      try {
+        parsed = JSON.parse(ev.data);
+      } catch {
+        return false;
+      }
+      const props = parsed.properties ?? {};
+      if (parsed.type === 'message.part.updated') {
+        const part = props.part;
+        const messageID = props.messageID;
+        if (!part?.id || !messageID) return false;
+        let applied = false;
+        setSlots((prev) => {
+          const idx = prev.findIndex((s) => s.sessionID === sid);
+          if (idx < 0) return prev;
+          const slot = prev[idx];
+          const msgIdx = slot.messages.findIndex((m) => m.info.id === messageID);
+          if (msgIdx < 0) return prev; // message not yet hydrated
+          const msg = slot.messages[msgIdx];
+          const partIdx = msg.parts.findIndex((p) => p.id === part.id);
+          const nextParts =
+            partIdx < 0
+              ? [...msg.parts, part]
+              : msg.parts.map((p, i) => (i === partIdx ? part : p));
+          const nextMessages = slot.messages.map((m, i) =>
+            i === msgIdx ? { ...m, parts: nextParts } : m,
+          );
+          const copy = prev.slice();
+          copy[idx] = {
+            ...slot,
+            messages: nextMessages,
+            lastUpdated: Date.now(),
+          };
+          applied = true;
+          return copy;
+        });
+        return applied;
+      }
+      if (parsed.type === 'message.updated') {
+        const info = props.info;
+        if (!info?.id) return false;
+        let applied = false;
+        setSlots((prev) => {
+          const idx = prev.findIndex((s) => s.sessionID === sid);
+          if (idx < 0) return prev;
+          const slot = prev[idx];
+          const msgIdx = slot.messages.findIndex((m) => m.info.id === info.id);
+          if (msgIdx < 0) return prev;
+          const nextMessages = slot.messages.map((m, i) =>
+            i === msgIdx ? { ...m, info } : m,
+          );
+          const copy = prev.slice();
+          copy[idx] = {
+            ...slot,
+            messages: nextMessages,
+            lastUpdated: Date.now(),
+          };
+          applied = true;
+          return copy;
+        });
+        return applied;
+      }
+      return false;
+    }
+
     setLoading(true);
     hydrate();
 
@@ -966,6 +1049,10 @@ export function useLiveSwarmRunMessages(
         };
         const sid = parsed.properties?.sessionID;
         if (!sid || !sessionSet.has(sid)) return;
+        // Try to merge the event locally; only refetch if we can't.
+        // Local merges are O(1); refetch is O(full history × N bytes)
+        // and over parallel worker activity dominates hydration cost.
+        if (applyLocally(ev, sid)) return;
         refetchOne(sid);
       } catch {
         // heartbeat / connected frames — ignore

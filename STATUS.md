@@ -76,6 +76,18 @@ One day, large ship run. Grouped by theme.
   in `lib/server/zen-rate-limit-probe.ts`, respects
   `OPENCODE_LOG_DIR` env for non-default log locations.
 
+- **Partial SSE-merge in `useLiveSwarmRunMessages`.** When an SSE
+  event carries the full `message.part.updated` or `message.updated`
+  payload, the hook splices it directly into the local message
+  buffer in O(1) instead of triggering a full session-history
+  refetch. Falls back to refetch (with the existing 2 s cooldown
+  throttle) only when the event doesn't carry enough data or the
+  target message isn't yet in the buffer. The cost of an active
+  run's stream drops from O(N × total_messages) per interval to
+  O(N) — the dominant cost that made the run view slow on busy
+  runs. The initial hydrate is still a parallel `Promise.all` of
+  full fetches; that's the remaining first-paint cost.
+
 - **Liveness decay when backend vanishes.** New
   `useBackendStale()` hook (in `lib/opencode/live.ts`) wraps
   `useOpencodeHealth` with a 2-consecutive-offline debounce.
@@ -231,11 +243,17 @@ One day, large ship run. Grouped by theme.
 
 ### UI performance
 
-- **Live run view (`/?swarmRun=<id>`) is slow to load on big runs.**
-  Today's refetch throttle was a partial fix; the deeper problem is
-  SSE events triggering full session-history refetches. Proper fix
-  is partial SSE-merge (parse `message.part.updated` payloads and
-  splice into the local buffer). Nontrivial.
+- **Live run view — initial hydration cost on very big runs** (not
+  related to SSE now). Partial SSE-merge shipped — `useLiveSwarm-
+  RunMessages` now splices `message.part.updated` / `message.updated`
+  payloads locally in O(1) instead of full-history refetch. That
+  was the dominant cost during active runs. The remaining load
+  cost is the initial `Promise.all` of N parallel full-history
+  fetches on first mount; still worst-case for a brand-new tab
+  opening a run with 100s of messages per session. Mitigations:
+  stagger the initial hydrate (first session's data renders before
+  the Nth's lands), or range-limit the initial fetch to the last
+  K messages (full history on scroll up). Not urgent now.
 
 
 ---
@@ -262,11 +280,6 @@ One day, large ship run. Grouped by theme.
   for a week" usage pattern.
 
 ### Nice-to-have (lower leverage, bigger effort)
-
-- **Partial SSE-merge** in `useLiveSwarmRunMessages` (deeper fix for
-  the page-load slowness; today's 2 s throttle was the MVP).
-
-- **Liveness decay chips** that gray when the SSE heartbeat stops.
 
 - **Auto-restart opencode on `opencode-frozen`.** Needs external
   control plane (app can't reach the PowerShell launcher). Lower
