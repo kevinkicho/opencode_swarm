@@ -76,6 +76,16 @@ One day, large ship run. Grouped by theme.
   in `lib/server/zen-rate-limit-probe.ts`, respects
   `OPENCODE_LOG_DIR` env for non-default log locations.
 
+- **Demo-log retention now runs on dev boot.** New module
+  `lib/server/demo-log-retention.ts::pruneDemoLog()` walks `demo-log/`,
+  gzips large `events.ndjson` / `board-events.ndjson` files
+  (≥ 64 KB), and — *only when `DEMO_LOG_AUTO_DELETE=1` env is set* —
+  rm-rf's run directories older than `DEMO_LOG_RETENTION_DAYS`
+  (default 30). Called from auto-ticker's startup pass alongside
+  orphan-session cleanup. Compression is always on and
+  non-destructive; deletion stays opt-in. Manual
+  `scripts/prune_demo_log.mjs` still works for ad-hoc runs.
+
 - **Per-pattern zombie threshold.** `coordinator.ts` now reads
   `meta.pattern` and picks from `ZOMBIE_TURN_THRESHOLDS_MS`: 10 min
   default for blackboard / orchestrator-worker / role-differentiated;
@@ -216,11 +226,6 @@ One day, large ship run. Grouped by theme.
   correct, but run-anchor "live" + blinking status circle keep
   rendering stale). React in-memory state survives the disconnect.
   Fix: gray stale chips after N seconds of no SSE heartbeat.
-
-### Infra / dev workflow
-
-- **Demo-log retention** — pruner script exists but isn't
-  scheduled. Run manually when disk pressure matters.
 
 ---
 

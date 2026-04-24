@@ -44,6 +44,7 @@ import {
   detectRecentZen429,
   formatRetryAfter,
 } from '../zen-rate-limit-probe';
+import { pruneDemoLog } from '../demo-log-retention';
 import { liveExports, publishExports } from '../hmr-exports';
 import {
   COORDINATOR_EXPORTS_KEY,
@@ -235,25 +236,41 @@ function tickers(): TickerMap {
         const all = await listRuns();
         const cutoff = Date.now() - STARTUP_CLEANUP_HORIZON_MS;
         const recent = all.filter((m) => m.createdAt >= cutoff);
-        if (recent.length === 0) return;
-        let targets = 0;
-        await Promise.allSettled(
-          recent.flatMap((meta) => {
-            const sids = [...meta.sessionIDs];
-            if (meta.criticSessionID) sids.push(meta.criticSessionID);
-            if (meta.verifierSessionID) sids.push(meta.verifierSessionID);
-            targets += sids.length;
-            return sids.map((sid) =>
-              abortSessionServer(sid, meta.workspace).catch(() => undefined),
-            );
-          }),
-        );
-        console.log(
-          `[board/auto-ticker] startup: aborted ${targets} session(s) across ${recent.length} recent run(s) (< ${Math.round(STARTUP_CLEANUP_HORIZON_MS / 3600000)}h old)`,
-        );
+        if (recent.length > 0) {
+          let targets = 0;
+          await Promise.allSettled(
+            recent.flatMap((meta) => {
+              const sids = [...meta.sessionIDs];
+              if (meta.criticSessionID) sids.push(meta.criticSessionID);
+              if (meta.verifierSessionID) sids.push(meta.verifierSessionID);
+              targets += sids.length;
+              return sids.map((sid) =>
+                abortSessionServer(sid, meta.workspace).catch(() => undefined),
+              );
+            }),
+          );
+          console.log(
+            `[board/auto-ticker] startup: aborted ${targets} session(s) across ${recent.length} recent run(s) (< ${Math.round(STARTUP_CLEANUP_HORIZON_MS / 3600000)}h old)`,
+          );
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[board/auto-ticker] startup cleanup failed: ${message}`);
+      }
+      // Demo-log retention: always-safe compress, opt-in delete. Runs
+      // in the same startup pass so users don't have to remember to
+      // invoke scripts/prune_demo_log.mjs manually. See
+      // lib/server/demo-log-retention.ts.
+      try {
+        const s = await pruneDemoLog();
+        if (s.scanned > 0) {
+          console.log(
+            `[board/auto-ticker] startup: demo-log retention — scanned=${s.scanned} compressed=${s.compressed} deleted=${s.deleted} errors=${s.errors}`,
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[board/auto-ticker] startup demo-log prune failed: ${message}`);
       }
     })();
   }
