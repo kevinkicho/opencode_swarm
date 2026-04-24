@@ -75,3 +75,51 @@ CREATE INDEX IF NOT EXISTS board_items_run_status
 -- `UPDATE … WHERE status = 'open'` relies on this + the PK for atomicity.
 -- No other code should UPDATE board_items.status without a matching
 -- `WHERE status = <expected>` — see store.ts transitionStatus().
+
+-- Plan revisions log — one row per planner sweep that produced new
+-- items. Backs the orchestrator-worker `strategy` tab
+-- (PATTERN_DESIGN/orchestrator-worker.md §3, item I2). Logged at the
+-- end of runPlannerSweep so re-plans on any pattern get tracked
+-- (the strategy tab itself only renders for orchestrator-worker, but
+-- the data is pattern-agnostic).
+--
+-- Delta semantics:
+--   added_json     — todos in this sweep but NOT in the prior sweep
+--   removed_json   — todos in the prior sweep but NOT in this one
+--                    (the orchestrator dropped them; the planner can
+--                    decide a previously-proposed item is no longer
+--                    worth doing)
+--   rephrased_json — fuzzy-matched edits: an item the prior sweep had
+--                    in slightly different wording. Each entry is
+--                    {before, after}. Jaccard ≥ 0.6 over tokenized
+--                    content is the match threshold.
+-- All three are JSON-encoded TEXT so the row stays flat. Counts are
+-- redundantly cached in *_count for quick chips without parsing.
+CREATE TABLE IF NOT EXISTS plan_revisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  swarm_run_id TEXT NOT NULL,
+  round INTEGER NOT NULL,
+  added_json TEXT NOT NULL,
+  removed_json TEXT NOT NULL,
+  rephrased_json TEXT NOT NULL,
+  added_count INTEGER NOT NULL,
+  removed_count INTEGER NOT NULL,
+  rephrased_count INTEGER NOT NULL,
+  -- Snapshot of the board's open/claimed/in-progress/done counts at
+  -- the moment this sweep landed, encoded as JSON
+  -- ({open,claimed,inProgress,done,stale,blocked,total}). Lets the
+  -- strategy tab show "12/40 · 3ip · 2stale" without rejoining
+  -- against board_items at query time.
+  board_snapshot_json TEXT NOT NULL,
+  -- First 200 chars of the orchestrator's assistant text — the row's
+  -- excerpt column. Truncation at write time keeps the SELECT cheap.
+  excerpt TEXT,
+  -- opencode message ID of the assistant turn that produced this
+  -- sweep — lets the UI link from a strategy row directly to the
+  -- transcript turn.
+  plan_message_id TEXT,
+  created_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS plan_revisions_run
+  ON plan_revisions(swarm_run_id, round DESC);

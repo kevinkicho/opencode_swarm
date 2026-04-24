@@ -34,6 +34,13 @@ import {
 import { publishExports } from '../hmr-exports';
 import { waitForSessionIdle } from './coordinator';
 import { insertBoardItem, listBoardItems } from './store';
+import {
+  computeDelta,
+  getLatestRevisionContents,
+  nextRoundForRun,
+  recordPlanRevision,
+  type BoardSnapshot,
+} from './plan-revisions';
 import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
@@ -706,6 +713,28 @@ export async function runPlannerSweep(
   if (!latest) {
     // Assistant finished but didn't call todowrite. Return empty items —
     // caller can decide whether to retry with a stricter prompt.
+    // Still log a no-op revision so the strategy tab can render
+    // "sweep #N — orchestrator declined to revise" rather than missing
+    // a round entirely.
+    try {
+      const round = nextRoundForRun(swarmRunID);
+      recordPlanRevision({
+        swarmRunID,
+        round,
+        added: [],
+        removed: [],
+        rephrased: [],
+        boardSnapshot: snapshotBoard(swarmRunID),
+        excerpt: extractAssistantExcerpt(waited.messages, waited.newIDs),
+        planMessageId: null,
+      });
+    } catch (err) {
+      console.warn(
+        `[planner] plan-revision log failed (no-op sweep): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    }
     return { items: [], sessionID, planMessageID: null };
   }
 
@@ -746,7 +775,106 @@ export async function runPlannerSweep(
     offset += 1;
     items.push(item);
   }
+
+  // Log the plan-revision delta. Compares the new sweep's content list
+  // against the prior sweep's logical list (recovered by replaying the
+  // plan_revisions chain forward — see plan-revisions.ts). The first
+  // sweep on a run treats all items as added. Errors are swallowed
+  // (warn-and-continue) so a logging hiccup never breaks the sweep.
+  try {
+    const round = nextRoundForRun(swarmRunID);
+    const currentContents = items
+      .filter((it) => it.kind === 'todo' || it.kind === 'criterion')
+      .map((it) => it.content);
+    const prior = getLatestRevisionContents(swarmRunID);
+    const priorContents = prior?.contents ?? [];
+    const delta = computeDelta(priorContents, currentContents);
+    recordPlanRevision({
+      swarmRunID,
+      round,
+      added: delta.added,
+      removed: delta.removed,
+      rephrased: delta.rephrased,
+      boardSnapshot: snapshotBoard(swarmRunID),
+      excerpt: extractAssistantExcerpt(waited.messages, waited.newIDs),
+      planMessageId: latest.messageId,
+    });
+  } catch (err) {
+    console.warn(
+      `[planner] plan-revision log failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
+
   return { items, sessionID, planMessageID: latest.messageId };
+}
+
+// Compute the board snapshot for plan_revisions.board_snapshot_json.
+// Counts every status bucket — strategy tab uses these to render the
+// sweep-time chip without a join against board_items.
+function snapshotBoard(swarmRunID: string): BoardSnapshot {
+  const all = listBoardItems(swarmRunID);
+  const snap: BoardSnapshot = {
+    total: all.length,
+    open: 0,
+    claimed: 0,
+    inProgress: 0,
+    done: 0,
+    stale: 0,
+    blocked: 0,
+  };
+  for (const it of all) {
+    switch (it.status) {
+      case 'open':
+        snap.open += 1;
+        break;
+      case 'claimed':
+        snap.claimed += 1;
+        break;
+      case 'in-progress':
+        snap.inProgress += 1;
+        break;
+      case 'done':
+        snap.done += 1;
+        break;
+      case 'stale':
+        snap.stale += 1;
+        break;
+      case 'blocked':
+        snap.blocked += 1;
+        break;
+      default:
+        break;
+    }
+  }
+  return snap;
+}
+
+// Pull a 200-char excerpt from the assistant's plan turn — text +
+// reasoning combined (matches the planner-tab UX expectation that the
+// row "speaks" the orchestrator's reasoning at a glance). Empty when
+// the turn produced only tool calls without text. Used by both the
+// happy-path and the no-op path so the log is uniformly populated.
+function extractAssistantExcerpt(
+  messages: OpencodeMessage[],
+  scopeIDs: Set<string>,
+): string | null {
+  let combined = '';
+  for (const m of messages) {
+    if (!scopeIDs.has(m.info.id)) continue;
+    if (m.info.role !== 'assistant') continue;
+    for (const part of m.parts) {
+      if (part.type === 'text' || part.type === 'reasoning') {
+        const t = (part as { text?: string }).text;
+        if (typeof t === 'string') combined += t;
+      }
+    }
+  }
+  if (!combined) return null;
+  const trimmed = combined.replace(/\s+/g, ' ').trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.length > 200 ? trimmed.slice(0, 197) + '…' : trimmed;
 }
 
 // HMR-resilient publish — see lib/server/hmr-exports.ts. auto-ticker's

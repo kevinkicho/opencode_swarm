@@ -454,6 +454,7 @@ function PageBody({
     | 'map'
     | 'council'
     | 'phases'
+    | 'strategy'
     | 'heat'
   >('plan');
 

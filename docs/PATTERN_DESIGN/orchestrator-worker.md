@@ -124,9 +124,9 @@ would have caught the silent failure at t+90s.
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| strategy-tab | tab | PROPOSED | — | — | UI ~4 h; blocked on I2 for data |
+| strategy-tab | tab | SHIPPED | (next commit) | — | vertical newest-first sweep timeline; per-sweep board snapshot chip + +N/-M/~K delta counts; iris stripe when changed; click-to-expand shows full added/removed/rephrased text |
 | I1 | improvement | PROPOSED | — | — | backend ~2 h |
-| I2 | improvement | PROPOSED | — | — | backend + schema ~3–4 h |
+| I2 | improvement | SHIPPED | (next commit) | — | plan_revisions SQLite table + computeDelta token-jaccard ≥ 0.6 fuzzy match + GET /api/swarm/run/:id/strategy; logged from runPlannerSweep so all sweep paths (initial, attemptReSweep, runPeriodicSweep) feed it |
 | I3 | improvement | PROPOSED | — | — | backend + endpoint ~2 h |
 | I4 | improvement | PROPOSED | — | — | shared with POSTMORTEMS/2026-04-24 F1 |
 

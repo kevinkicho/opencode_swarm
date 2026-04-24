@@ -17,6 +17,7 @@ import { RolesRail } from './roles-rail';
 import { MapRail } from './map-rail';
 import { CouncilRail } from './council-rail';
 import { PhasesRail } from './phases-rail';
+import { StrategyRail } from './strategy-rail';
 import { HeatRail, type DiffStatsByPath } from './heat-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
@@ -32,6 +33,7 @@ export type Tab =
   | 'map'
   | 'council'
   | 'phases'
+  | 'strategy'
   | 'heat';
 
 export function LeftTabs({
@@ -135,6 +137,7 @@ export function LeftTabs({
   const showMapTab = boardPattern === 'map-reduce';
   const showCouncilTab = boardPattern === 'council';
   const showPhasesTab = boardPattern === 'deliberate-execute';
+  const showStrategyTab = boardPattern === 'orchestrator-worker';
 
   // If the active run stops being a blackboard (or we switch to a different
   // run that has no board), 'board' becomes an invalid selection. Fall back
@@ -152,8 +155,9 @@ export function LeftTabs({
     if (!showMapTab && tab === 'map') setTab('plan');
     if (!showCouncilTab && tab === 'council') setTab('plan');
     if (!showPhasesTab && tab === 'phases') setTab('plan');
+    if (!showStrategyTab && tab === 'strategy') setTab('plan');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardSwarmRunID, heat.length, tab, showIterationsTab, showDebateTab, showRolesTab, showMapTab, showCouncilTab, showPhasesTab]);
+  }, [boardSwarmRunID, heat.length, tab, showIterationsTab, showDebateTab, showRolesTab, showMapTab, showCouncilTab, showPhasesTab, showStrategyTab]);
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -340,6 +344,24 @@ export function LeftTabs({
             }
           />
         )}
+        {showStrategyTab && boardSwarmRunID && (
+          <TabButton
+            active={tab === 'strategy'}
+            onClick={() => setTab('strategy')}
+            label="strategy"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">strategy</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  orchestrator re-plan timeline — per-sweep board snapshot,
+                  added/removed/rephrased delta vs prior sweep, plan
+                  excerpt (PATTERN_DESIGN/orchestrator-worker.md §3 + I2).
+                </div>
+              </div>
+            }
+          />
+        )}
         {heat.length > 0 && (
           <TabButton
             active={tab === 'heat'}
@@ -448,6 +470,9 @@ export function LeftTabs({
             deliberationProgress={deliberationProgress}
             embedded
           />
+        )}
+        {tab === 'strategy' && showStrategyTab && boardSwarmRunID && (
+          <StrategyRail swarmRunID={boardSwarmRunID} embedded />
         )}
         {tab === 'heat' && (
           <HeatRail

@@ -73,7 +73,7 @@ must come first.
 |---|---|---|---|---|---|
 | 2.1 | **council** | `council` | client-side similarity compute (token-jaccard or cosine) | 4h | **SHIPPED** (next commit) |
 | 2.2 | **deliberate-execute** | `phases` | phase-boundary detection in transform.ts | 4h | **SHIPPED** (next commit) |
-| 2.3 | **orchestrator-worker** | `strategy` | `plan_revisions` SQLite table + per-sweep delta logging (I2) | 4h | PROPOSED |
+| 2.3 | **orchestrator-worker** | `strategy` | `plan_revisions` SQLite table + per-sweep delta logging (I2) | 4h | **SHIPPED** (next commit) |
 
 **Sequence:** 2.3 first (it has a clear backend prereq); 2.1 + 2.2 can go in either order.
 
@@ -122,7 +122,7 @@ first.
 | Pattern | Item | Effort |
 |---|---|---|
 | blackboard | I1 — auto-replan on CAS drift | 3h |
-| orchestrator-worker | I2 — plan-delta logging | 3h |
+| orchestrator-worker | I2 — plan-delta logging | 3h — **SHIPPED** with 2.3 |
 | map-reduce | I1 — synthesis-critic gate | 4h |
 | critic-loop | I1+I2 — structured verdict + auto-terminate on nitpick loop | 4h |
 | debate-judge | I1+I2 — structured REVISE feedback + addressed-detection | 5h |
