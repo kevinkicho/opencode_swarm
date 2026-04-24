@@ -204,12 +204,16 @@ function PageInner() {
   const swarmRunID = params.get('swarmRun');
   const directSessionId = params.get('session');
   const swarmRun = useLiveSwarmRun(swarmRunID);
-  // Ledger-wide poll. Feeds both the topbar status dot (this page) and the
-  // runs picker (via its own internal call — see note below). We poll here
-  // so the topbar has a live status even before the user opens the picker.
-  // The picker's internal poll stays — cheap at prototype scale and keeps
-  // the picker component self-contained.
-  const runsSnapshot = useSwarmRuns(4000);
+  // Ledger-wide poll DISABLED at page level — the runs picker owns its
+  // own fetch (gated on popover open), and the palette's recent-retros
+  // list is a convenience that tolerates missing data on first open.
+  // Before this gate the PageInner-level poll + picker duplicate-hook
+  // together fired 28+ calls to /api/swarm/run in a 40s cold load,
+  // consuming ~61s of browser connection-queue time (HTTP/1.1 limits
+  // to 6 connections per origin; 2 are permanently held by SSE long-
+  // polls). Topbar status dot reads as `null` until the palette/picker
+  // is opened — acceptable tradeoff per 2026-04-24 perf:cold audit.
+  const runsSnapshot = useSwarmRuns({ intervalMs: 4000, enabled: false });
   const currentRunStatus: SwarmRunStatus | null = useMemo(() => {
     if (!swarmRunID) return null;
     const row = runsSnapshot.rows.find((r) => r.meta.swarmRunID === swarmRunID);

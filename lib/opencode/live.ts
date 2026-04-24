@@ -1226,13 +1226,31 @@ export interface SwarmRunsSnapshot {
   lastUpdated: number | null;
 }
 
-export function useSwarmRuns(intervalMs = 4000): SwarmRunsSnapshot {
+// useSwarmRuns — lists every swarm run (live + finished + stale). Supports
+// both legacy signature (just an interval number) and an option object so
+// callers can gate polling by UI state (e.g. only poll while the runs
+// picker popover is open). A closed picker has no reason to refetch the
+// ledger every 4s, and that polling was the single worst cold-load
+// offender per the perf:cold benchmark (28+ calls in ~40s).
+export function useSwarmRuns(
+  arg: number | { intervalMs?: number; enabled?: boolean } = {},
+): SwarmRunsSnapshot {
+  const { intervalMs, enabled } =
+    typeof arg === 'number'
+      ? { intervalMs: arg, enabled: true }
+      : { intervalMs: arg.intervalMs ?? 4000, enabled: arg.enabled ?? true };
   const [rows, setRows] = useState<SwarmRunListRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(enabled);
   const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
   useEffect(() => {
+    if (!enabled) {
+      // When disabled, preserve the previously-fetched rows (stale-is-fine)
+      // and park loading at false so the UI doesn't spin forever.
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     let controller = new AbortController();
 
@@ -1272,7 +1290,7 @@ export function useSwarmRuns(intervalMs = 4000): SwarmRunsSnapshot {
       controller.abort();
       clearInterval(id);
     };
-  }, [intervalMs]);
+  }, [intervalMs, enabled]);
 
   return { rows, error, loading, lastUpdated };
 }

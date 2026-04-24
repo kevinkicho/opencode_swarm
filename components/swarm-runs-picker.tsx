@@ -75,12 +75,40 @@ function formatBoundsShort(meta: SwarmRunMeta): string {
   return parts.join(' · ');
 }
 
+// Outer shell — just wires the trigger <children> into the Popover. The
+// picker's data-fetching (useSwarmRuns polling) lives in PickerPanel which
+// is ONLY mounted when the popover actually opens. Before this split, the
+// hook ran on every render of the outer component (which is always mounted
+// in page.tsx), meaning /api/swarm/run polled every 4s forever even when
+// the user hadn't touched the picker. Confirmed by perf:cold which caught
+// 28+ polls to that endpoint during a 40s cold load.
 export function SwarmRunsPicker({
   children,
   currentSwarmRunID,
 }: {
   children: React.ReactElement;
   currentSwarmRunID?: string | null;
+}) {
+  return (
+    <Popover
+      side="top"
+      align="start"
+      width={760}
+      content={(close) => (
+        <PickerPanel close={close} currentSwarmRunID={currentSwarmRunID ?? null} />
+      )}
+    >
+      {children}
+    </Popover>
+  );
+}
+
+function PickerPanel({
+  close,
+  currentSwarmRunID,
+}: {
+  close: () => void;
+  currentSwarmRunID: string | null;
 }) {
   const { rows, error, loading, lastUpdated } = useSwarmRuns(4000);
   const [query, setQuery] = useState('');
@@ -132,20 +160,15 @@ export function SwarmRunsPicker({
           : `${rows.length} ${rows.length === 1 ? 'run' : 'runs'}`;
 
   return (
-    <Popover
-      side="top"
-      align="start"
-      width={760}
-      content={(close) => (
-        <div className="flex flex-col min-h-0">
-          <div className="px-3 h-7 hairline-b flex items-center gap-3">
-            <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600 shrink-0">
-              swarm runs
-            </span>
-            <span className="font-mono text-[10px] text-fog-700 tabular-nums ml-auto shrink-0">
-              {statusLabel}
-            </span>
-          </div>
+    <div className="flex flex-col min-h-0">
+      <div className="px-3 h-7 hairline-b flex items-center gap-3">
+        <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600 shrink-0">
+          swarm runs
+        </span>
+        <span className="font-mono text-[10px] text-fog-700 tabular-nums ml-auto shrink-0">
+          {statusLabel}
+        </span>
+      </div>
           <div className="px-3 py-1.5 hairline-b flex items-center gap-2 bg-ink-900/30">
             <IconSearch size={12} className="text-fog-600 shrink-0" />
             <input
@@ -320,10 +343,6 @@ export function SwarmRunsPicker({
               </li>
             )}
           </ul>
-        </div>
-      )}
-    >
-      {children}
-    </Popover>
+    </div>
   );
 }
