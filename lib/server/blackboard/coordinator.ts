@@ -838,6 +838,7 @@ export async function tickCoordinator(
       todo,
       editedPaths,
       workerAssistantText: workerText,
+      criticModel: meta.criticModel,
     });
     if (review.verdict === 'busywork') {
       const rejected = transitionStatus(swarmRunID, todo.id, {
@@ -893,6 +894,7 @@ export async function tickCoordinator(
       directive: meta.directive,
       todo,
       workerAssistantText: workerText,
+      verifierModel: meta.verifierModel,
     });
     if (v.verdict === 'not-verified') {
       const rejected = transitionStatus(swarmRunID, todo.id, {

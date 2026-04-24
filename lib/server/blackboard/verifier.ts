@@ -46,6 +46,9 @@ export interface VerifierReviewInput {
   todo: BoardItem;
   workerAssistantText: string;
   timeoutMs?: number;
+  // Pinned model (2026-04-24). Passed as `model` on
+  // postSessionMessageServer; undefined → opencode default.
+  verifierModel?: string;
 }
 
 export interface VerifierReviewResult {
@@ -162,6 +165,7 @@ export async function verifyWorkerOutcome(
         input.verifierSessionID,
         input.workspace,
         prompt,
+        { model: input.verifierModel },
       );
 
       const deadline = Date.now() + timeoutMs;

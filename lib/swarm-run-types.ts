@@ -83,6 +83,17 @@ export interface SwarmRunRequest {
   // Also runs on tier escalation + run-end regardless of counter.
   // Ignored when enableAuditorGate is false.
   auditEveryNCommits?: number;
+  // Per-gate model pins (2026-04-24). Each gate's dedicated opencode
+  // session spawns without a model hint (opencode picks default);
+  // when set, the session's prompts carry `model: <id>` so the gate
+  // runs on a specific provider/model. Same contract as teamModels
+  // for workers. IDs follow the catalog shape (`opencode/<model>` or
+  // `ollama/<model>:cloud`). Absent → opencode default. Typical
+  // use: a lightweight model for the critic (cheap, fast verdicts),
+  // a smarter model for the auditor (holistic contract judgment).
+  criticModel?: string;
+  verifierModel?: string;
+  auditorModel?: string;
   // Per-session model pinning. One model ID per session in
   // new-run-modal picker order; length must equal the resolved
   // teamSize. When set, each session's dispatch opcodes carry the
@@ -183,6 +194,12 @@ export interface SwarmRunMeta {
   // Audit cadence (commits between audits). Default 5 when unset and
   // auditor is enabled. See SwarmRunRequest for semantics.
   auditEveryNCommits?: number;
+  // Per-gate model pins mirrored from the request. See SwarmRunRequest
+  // for semantics. Each gate's reviewer module reads these from meta
+  // and passes as `model` on its postSessionMessageServer calls.
+  criticModel?: string;
+  verifierModel?: string;
+  auditorModel?: string;
   // Ambition-ratchet persisted tier state. Set by attemptTierEscalation
   // after each successful tier bump (via updateRunMeta) so a ticker
   // restart mid-run doesn't drop the ratchet back to tier 1. Absent

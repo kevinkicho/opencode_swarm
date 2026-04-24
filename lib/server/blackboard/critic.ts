@@ -57,6 +57,9 @@ export interface CriticReviewInput {
   editedPaths: string[];
   workerAssistantText: string;
   timeoutMs?: number;
+  // Pinned model for the critic (2026-04-24). Passed as `model` on
+  // postSessionMessageServer; undefined → opencode default.
+  criticModel?: string;
 }
 
 export interface CriticReviewResult {
@@ -185,6 +188,7 @@ export async function reviewWorkerDiff(
         input.criticSessionID,
         input.workspace,
         prompt,
+        { model: input.criticModel },
       );
 
       const deadline = Date.now() + timeoutMs;

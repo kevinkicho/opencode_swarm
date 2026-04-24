@@ -823,6 +823,7 @@ async function maybeRunAudit(
       criteria: pending,
       recentDoneSummaries: doneSummaries,
       currentTier: state.currentTier,
+      auditorModel: meta.auditorModel,
     });
 
     let metCount = 0;

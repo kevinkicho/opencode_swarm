@@ -157,6 +157,13 @@ export async function createRun(
     enableAuditorGate: req.enableAuditorGate ? true : undefined,
     auditorSessionID: extras.auditorSessionID,
     auditEveryNCommits: req.auditEveryNCommits,
+    // Per-gate model pins (2026-04-24). Each gate's reviewer module
+    // reads meta.<gate>Model and passes it on postSessionMessageServer
+    // so the gate runs on a specific provider/model independent of
+    // the worker team's models.
+    criticModel: req.criticModel,
+    verifierModel: req.verifierModel,
+    auditorModel: req.auditorModel,
     // Run-chaining lineage + inherited tier. currentTier stays absent
     // (interpreted as tier 1) for standalone runs; only written here
     // when the caller explicitly resolves a > 1 starting tier from a

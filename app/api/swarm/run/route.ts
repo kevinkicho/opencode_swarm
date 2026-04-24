@@ -396,6 +396,21 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.auditEveryNCommits = obj.auditEveryNCommits;
   }
 
+  // Per-gate model pins (2026-04-24). Generic validation: non-empty
+  // string; opencode authoritative on whether the model ID resolves.
+  const pinFields: Array<keyof Pick<
+    SwarmRunRequest,
+    'criticModel' | 'verifierModel' | 'auditorModel'
+  >> = ['criticModel', 'verifierModel', 'auditorModel'];
+  for (const field of pinFields) {
+    const val = (obj as Record<string, unknown>)[field];
+    if (val === undefined) continue;
+    if (typeof val !== 'string' || !val.trim()) {
+      return `${field}, when provided, must be a non-empty model-ID string`;
+    }
+    req[field] = val.trim();
+  }
+
   if (obj.workspaceDevUrl !== undefined) {
     if (typeof obj.workspaceDevUrl !== 'string' || !obj.workspaceDevUrl.trim()) {
       return 'workspaceDevUrl must be a non-empty string';

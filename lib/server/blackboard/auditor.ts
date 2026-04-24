@@ -68,6 +68,10 @@ export interface AuditInput {
   // WONT_DO at tier 5 if it's clearly below the new ambition band.
   currentTier?: number;
   timeoutMs?: number;
+  // Pinned model (2026-04-24). Passed as `model` on
+  // postSessionMessageServer so the auditor runs on a specific
+  // provider/model. Undefined → opencode default.
+  auditorModel?: string;
 }
 
 export interface AuditResult {
@@ -223,6 +227,7 @@ export async function auditCriteria(input: AuditInput): Promise<AuditResult> {
         input.auditorSessionID,
         input.workspace,
         prompt,
+        { model: input.auditorModel },
       );
 
       const deadline = Date.now() + timeoutMs;
