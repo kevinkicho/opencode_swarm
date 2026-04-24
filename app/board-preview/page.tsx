@@ -54,6 +54,7 @@ const KIND_GLYPH: Record<BoardItemKind, string> = {
   todo:       '·',
   finding:    '✓',
   synthesize: 'Σ',
+  criterion:  '◆',
 };
 
 const KIND_LABEL: Record<BoardItemKind, string> = {
@@ -62,6 +63,7 @@ const KIND_LABEL: Record<BoardItemKind, string> = {
   todo:       'todo',
   finding:    'finding',
   synthesize: 'synthesize',
+  criterion:  'criterion',
 };
 
 const KIND_TONE: Record<BoardItemKind, string> = {
@@ -70,6 +72,7 @@ const KIND_TONE: Record<BoardItemKind, string> = {
   todo:       'text-fog-400',
   finding:    'text-mint',
   synthesize: 'text-mint',
+  criterion:  'text-amber',
 };
 
 const ACCENT_BG: Record<BoardAgent['accent'], string> = {

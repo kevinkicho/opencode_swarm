@@ -20,13 +20,27 @@
 //                  files" todo preamble. See SWARM_PATTERNS.md §3 v2 migration
 //                  and lib/server/map-reduce.ts::runMapReduceSynthesis for the
 //                  dispatch contract.
+//   - criterion  — an acceptance condition the auditor verdicts against
+//                  (2026-04-24 Stage 2 declared-roles alignment). Status
+//                  reused for verdicts: `open`=pending, `done`=met,
+//                  `blocked`=unmet (could flip to met later), `stale`=wont-do.
+//                  Authored by planner or auditor; never rewritten once
+//                  authored (ollama-swarm spec: auditor can ADD but not
+//                  REWRITE existing criteria). Criteria never dispatch to
+//                  a worker — the coordinator's picker skips kind='criterion'.
 export type BoardItemKind =
   | 'claim'
   | 'question'
   | 'todo'
   | 'finding'
-  | 'synthesize';
+  | 'synthesize'
+  | 'criterion';
 
+// Status values are shared across kinds but interpreted per-kind:
+//   todo   : open → claimed → in-progress → done | stale | blocked
+//   claim  : in-progress → done | stale
+//   finding: done (immutable)
+//   criterion: open (pending) → done (met) | blocked (unmet) | stale (wont-do)
 export type BoardItemStatus =
   | 'open'         // on the board, nobody claimed it
   | 'claimed'      // owner declared intent, hasn't started producing output

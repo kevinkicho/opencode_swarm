@@ -152,8 +152,16 @@ function buildPlannerPrompt(
     const activeLines = boardContext.activeSummaries.length
       ? boardContext.activeSummaries.map((s, i) => `  ${i + 1}. ${s}`).join('\n')
       : '  (none)';
+    const criteriaLines = boardContext.criteriaSummaries.length
+      ? boardContext.criteriaSummaries.map((s, i) => `  ${i + 1}. ${s}`).join('\n')
+      : '  (none)';
     sections.push(
       '## Prior work on this run',
+      '',
+      'CONTRACT CRITERIA (authored earlier, auditor verdicts shown) — do NOT',
+      'rewrite these; you may ADD new criteria but the text of an existing',
+      'one is frozen. Target your new todos at UNMET criteria:',
+      criteriaLines,
       '',
       'COMPLETED — do NOT re-propose:',
       doneLines,
@@ -225,6 +233,20 @@ function buildPlannerPrompt(
     '- Items indistinguishable from the COMPLETED list above.',
     '',
     'Each todo must be a decisive, verifiable act that advances the Mission.',
+    '',
+    '**Author acceptance criteria alongside todos.** For each major',
+    'outcome the mission demands, emit a todowrite entry prefixed with',
+    '`[criterion]` describing the condition in plain language. Example:',
+    '`[criterion] Dashboard market-heatmap panel renders live data from',
+    'the API when the mission\'s target repo is running`. Criteria are',
+    'contract items — they describe WHAT SUCCESS LOOKS LIKE, not work to',
+    'do. The auditor verdicts against them (MET / UNMET / WONT_DO) as',
+    'the run progresses. Criteria are ADDITIVE: you can emit new ones on',
+    "later sweeps as the mission's shape clarifies, but never rewrite",
+    'existing ones — the auditor relies on stable contract text. Aim',
+    'for 3-6 criteria at boot; more can come as work unfolds. Criteria',
+    'do NOT get [verify], [role:X], or [files:] prefixes — they\'re',
+    'verdict targets, not worker-dispatch targets.',
     '',
     '**Declare expected file scope per todo.** Prefix each todo\'s content',
     'with `[files:<path>[,<path>]]` listing the files the worker will',
@@ -316,6 +338,10 @@ async function readWorkspaceReadme(workspace: string): Promise<string | null> {
 export interface PlannerBoardContext {
   doneSummaries: string[];
   activeSummaries: string[];
+  // 2026-04-24 Stage 2: surface the existing contract so re-sweeps
+  // don't duplicate criteria or re-propose already-verdicted work.
+  // Labels include the criterion's verdict status when available.
+  criteriaSummaries: string[];
 }
 
 // Build compact board context for a re-sweep prompt. Caps at 50 per
@@ -325,15 +351,37 @@ export function buildPlannerBoardContext(swarmRunID: string): PlannerBoardContex
   const all = listBoardItems(swarmRunID);
   const truncate = (s: string) =>
     s.length > 120 ? s.slice(0, 117).trimEnd() + '…' : s;
+  // Exclude criteria from done/active so the planner doesn't see them
+  // in the work buckets — they surface separately below.
   const done = all
-    .filter((i) => i.status === 'done')
+    .filter((i) => i.status === 'done' && i.kind !== 'criterion')
     .slice(-50)
     .map((i) => truncate(i.content));
   const active = all
-    .filter((i) => i.status === 'open' || i.status === 'claimed' || i.status === 'in-progress')
+    .filter(
+      (i) =>
+        (i.status === 'open' || i.status === 'claimed' || i.status === 'in-progress') &&
+        i.kind !== 'criterion',
+    )
     .slice(-50)
     .map((i) => truncate(i.content));
-  return { doneSummaries: done, activeSummaries: active };
+  // Criteria with status labels — auditor verdict visibility helps the
+  // planner scope future work to unmet criteria.
+  const verdictLabel: Record<string, string> = {
+    open: 'pending',
+    done: 'MET',
+    blocked: 'UNMET',
+    stale: 'wont-do',
+  };
+  const criteria = all
+    .filter((i) => i.kind === 'criterion')
+    .slice(-30)
+    .map((i) => `[${verdictLabel[i.status] ?? i.status}] ${truncate(i.content)}`);
+  return {
+    doneSummaries: done,
+    activeSummaries: active,
+    criteriaSummaries: criteria,
+  };
 }
 
 interface RawTodo {
@@ -353,6 +401,12 @@ interface RawTodo {
   // Computed by latestTodosFrom from a leading `[files:a,b]`
   // prefix. Capped at 2 paths. Undefined when no prefix.
   expectedFiles?: string[];
+  // Computed by latestTodosFrom from a leading `[criterion]`
+  // prefix. Routes the entry to insertBoardItem with kind='criterion'
+  // instead of kind='todo'. Other flags (verify/role/files) are
+  // dropped when this is true — criteria are auditor-verdict targets,
+  // not worker-dispatch targets.
+  isCriterion?: boolean;
 }
 
 // Strips the `[verify]` opt-in prefix from a todo's content and
@@ -434,6 +488,27 @@ export function stripFilesTag(content: string): {
   return { content: stripped, expectedFiles: paths };
 }
 
+// Strips the `[criterion]` prefix — marks the todowrite entry as a
+// contract acceptance criterion rather than a work todo (2026-04-24
+// Stage 2 declared-roles alignment). Criteria land on the board with
+// kind='criterion' and the auditor verdicts against them; workers
+// never claim or dispatch to them. Free-text content (same shape as
+// todos) lets the auditor use natural-language judgment instead of
+// machine-verifiable assertions — keeps the planner's hand free to
+// author ambitious criteria the ambition ratchet can work toward.
+const CRITERION_TAG_RE = /^\s*\[criterion\]\s*/i;
+export function stripCriterionTag(content: string): {
+  content: string;
+  isCriterion: boolean;
+} {
+  const m = CRITERION_TAG_RE.exec(content);
+  if (!m) return { content, isCriterion: false };
+  return {
+    content: content.slice(m[0].length).trim(),
+    isCriterion: true,
+  };
+}
+
 // Last todowrite among the given message IDs wins. Mirrors
 // transform.ts::toRunPlan's "latest call replaces the list" contract, but
 // scoped to just the sweep's new messages so a pre-existing todowrite from
@@ -461,10 +536,20 @@ export function latestTodosFrom(
             (t as RawTodo).content.trim().length > 0,
         )
         .map((t) => {
-          // Strip in composition order: verify → role → files. Each
-          // stripper re-trims leading whitespace so mixed-order tags
-          // like `[files:a.ts] [verify] ...` are tolerated too.
-          const afterVerify = stripVerifyTag(t.content);
+          // Strip in composition order: criterion → verify → role →
+          // files. Criterion goes first because when present the other
+          // flags become irrelevant (criteria don't dispatch to workers).
+          // Each stripper re-trims leading whitespace so mixed-order
+          // tags are tolerated.
+          const afterCriterion = stripCriterionTag(t.content);
+          if (afterCriterion.isCriterion) {
+            return {
+              ...t,
+              content: afterCriterion.content,
+              isCriterion: true,
+            };
+          }
+          const afterVerify = stripVerifyTag(afterCriterion.content);
           const afterRole = stripRoleTag(afterVerify.content);
           const afterFiles = stripFilesTag(afterRole.content);
           return {
@@ -632,16 +717,27 @@ export async function runPlannerSweep(
   for (const raw of latest.todos) {
     const content = raw.content.trim();
     if (!content) continue;
-    const item = insertBoardItem(swarmRunID, {
-      id: mintItemId(),
-      kind: 'todo',
-      content,
-      status: 'open',
-      requiresVerification: raw.requiresVerification === true,
-      preferredRole: raw.preferredRole,
-      expectedFiles: raw.expectedFiles,
-      createdAtMs: baseMs + offset,
-    });
+    // Criteria land as kind='criterion' and drop the worker-dispatch
+    // flags (verify/role/files) since they're never claimed or
+    // dispatched to. Other todos land as kind='todo' with all flags.
+    const item = raw.isCriterion
+      ? insertBoardItem(swarmRunID, {
+          id: mintItemId(),
+          kind: 'criterion',
+          content,
+          status: 'open',
+          createdAtMs: baseMs + offset,
+        })
+      : insertBoardItem(swarmRunID, {
+          id: mintItemId(),
+          kind: 'todo',
+          content,
+          status: 'open',
+          requiresVerification: raw.requiresVerification === true,
+          preferredRole: raw.preferredRole,
+          expectedFiles: raw.expectedFiles,
+          createdAtMs: baseMs + offset,
+        });
     offset += 1;
     items.push(item);
   }

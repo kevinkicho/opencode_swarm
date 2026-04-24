@@ -42,6 +42,10 @@ const KIND_GLYPH: Record<BoardItemKind, string> = {
   todo: '',
   finding: '✓',
   synthesize: 'Σ',
+  // Acceptance criterion (Stage 2 declared-roles). Auditor verdicts
+  // against these; never dispatched to a worker. Diamond glyph marks
+  // them as contract-shape, not work-shape.
+  criterion: '◆',
 };
 
 const KIND_TONE: Record<BoardItemKind, string> = {
@@ -50,6 +54,7 @@ const KIND_TONE: Record<BoardItemKind, string> = {
   todo: 'text-fog-400',
   finding: 'text-mint',
   synthesize: 'text-mint',
+  criterion: 'text-amber',
 };
 
 const ACCENT_BG: Record<BoardAgent['accent'], string> = {

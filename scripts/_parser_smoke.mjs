@@ -18,7 +18,7 @@ const plannerPath = pathToFileURL(
   path.resolve('lib/server/blackboard/planner.ts'),
 ).href;
 
-const { stripVerifyTag, stripRoleTag, stripFilesTag } = await import(plannerPath);
+const { stripVerifyTag, stripRoleTag, stripFilesTag, stripCriterionTag } = await import(plannerPath);
 
 let failed = 0;
 let passed = 0;
@@ -169,6 +169,38 @@ eq(
   stripFilesTag('Untagged content'),
   { content: 'Untagged content', expectedFiles: undefined },
   'files: pass-through untagged',
+);
+
+// ── stripCriterionTag cases ───────────────────────────────────────────
+
+eq(
+  stripCriterionTag('[criterion] Dashboard renders live data'),
+  { content: 'Dashboard renders live data', isCriterion: true },
+  'criterion: simple prefix',
+);
+
+eq(
+  stripCriterionTag('[CRITERION] Uppercase tag'),
+  { content: 'Uppercase tag', isCriterion: true },
+  'criterion: case-insensitive',
+);
+
+eq(
+  stripCriterionTag('  [Criterion]   Whitespace tolerated'),
+  { content: 'Whitespace tolerated', isCriterion: true },
+  'criterion: whitespace trimmed',
+);
+
+eq(
+  stripCriterionTag('A regular todo'),
+  { content: 'A regular todo', isCriterion: false },
+  'criterion: pass-through untagged',
+);
+
+eq(
+  stripCriterionTag(''),
+  { content: '', isCriterion: false },
+  'criterion: empty input',
 );
 
 // ── Composition cases ─────────────────────────────────────────────────
