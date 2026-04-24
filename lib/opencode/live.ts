@@ -3,8 +3,8 @@
 // Browser-side opencode client. Talks to our Next.js proxy at `/api/opencode/*`
 // — the proxy injects Basic auth server-side, so no credentials ship here.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import type {
   OpencodeMessage,
   OpencodePart,
@@ -82,6 +82,14 @@ export function getSessionMessagesBrowser(
     `/session/${encodeURIComponent(sessionId)}/message`,
     init
   );
+}
+
+// Query-key factory for session messages. Centralized so both
+// useLiveSession and useLiveSwarmRunMessages use the same key shape and
+// TanStack Query's cache dedups across them — the primary session in a
+// swarm run used to be fetched twice (once per hook) on every cold load.
+export function sessionMessagesQueryKey(sessionId: string) {
+  return ['session', sessionId, 'messages'] as const;
 }
 
 // Single-session lookup. Opencode exposes `/session/:id` returning the
@@ -336,9 +344,12 @@ export interface LiveSessionSnapshot {
   lastUpdated: number;
 }
 
-// SSE-driven live view of one session. Initial REST fetch establishes baseline,
-// then /api/opencode/event triggers refetches as message/session events arrive.
-// A 30s safety poll catches any dropped-stream edge cases. Pass null to skip.
+// SSE-driven live view of one session. Messages come from TanStack Query
+// (shared cache with useLiveSwarmRunMessages — same sessionMessagesQueryKey,
+// so the primary session is fetched ONCE even if both hooks are active on
+// the same page). Session metadata + SSE subscription live in the effect
+// since they're per-session and SSE integration needs imperative refs.
+// Pass null to skip.
 export function useLiveSession(
   sessionId: string | null,
   fallbackPollMs = 30_000
@@ -347,20 +358,27 @@ export function useLiveSession(
   error: string | null;
   loading: boolean;
 } {
-  const [data, setData] = useState<LiveSessionSnapshot | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [session, setSession] = useState<OpencodeSession | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+
+  const messagesQuery = useQuery({
+    queryKey: sessionMessagesQueryKey(sessionId ?? ''),
+    queryFn: () => getSessionMessagesBrowser(sessionId!),
+    enabled: Boolean(sessionId),
+    // Matches the old fallback-poll cadence; TanStack Query also
+    // refetches on window-focus + reconnect from the provider defaults.
+    refetchInterval: fallbackPollMs,
+  });
+
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!sessionId) {
-      setData(null);
-      setError(null);
-      setLoading(false);
+      setSession(null);
+      setSessionError(null);
       return;
     }
-
     let cancelled = false;
-    let pendingRefetch = false;
     let controller = new AbortController();
     let currentDirectory: string | null = null;
     let es: EventSource | null = null;
@@ -381,65 +399,63 @@ export function useLiveSession(
             properties?: { sessionID?: string };
           };
           if (parsed.properties?.sessionID !== sessionId) return;
-          refetch();
+          // Invalidate the messages query so TanStack Query refetches.
+          // All consumers of this session's messages (including
+          // useLiveSwarmRunMessages, if it overlaps) pick up the update.
+          void queryClient.invalidateQueries({
+            queryKey: sessionMessagesQueryKey(sessionId),
+          });
         } catch {
           // heartbeat / connected frames — ignore
         }
       };
     };
 
-    async function refetch() {
-      if (pendingRefetch) return;
-      pendingRefetch = true;
+    async function fetchSessionMeta() {
       controller.abort();
       controller = new AbortController();
       try {
-        // Direct single-session lookup instead of enumerating all
-        // workspace sessions. Before 2026-04-24 this called
-        // getAllSessionsBrowser which fanned out to /project +
-        // /session?directory=X per workspace (9+ requests just to
-        // locate one known session id). Each SSE event triggered a
-        // refetch, multiplying the cost. Probed via perf:cold: that
-        // pattern produced 29 /project + 15 /session calls in a 40s
-        // cold load. Single-lookup path cuts it to one call per
-        // refetch. `directory` is passed once known so opencode can
-        // resolve the project scope without a lookup hop.
-        const [session, messages] = await Promise.all([
-          getSessionBrowser(sessionId!, currentDirectory ?? undefined, {
-            signal: controller.signal,
-          }).catch(() => null),
-          getSessionMessagesBrowser(sessionId!, { signal: controller.signal }),
-        ]);
+        const meta = await getSessionBrowser(
+          sessionId!,
+          currentDirectory ?? undefined,
+          { signal: controller.signal },
+        );
         if (cancelled) return;
-        setData({ session, messages, lastUpdated: Date.now() });
-        setError(null);
-        if (session?.directory && session.directory !== currentDirectory) {
-          currentDirectory = session.directory;
-          openStream(session.directory);
+        setSession(meta);
+        setSessionError(null);
+        if (meta.directory && meta.directory !== currentDirectory) {
+          currentDirectory = meta.directory;
+          openStream(meta.directory);
         }
       } catch (err) {
         if (cancelled) return;
         if ((err as Error).name === 'AbortError') return;
-        setError((err as Error).message);
-      } finally {
-        pendingRefetch = false;
-        if (!cancelled) setLoading(false);
+        setSessionError((err as Error).message);
       }
     }
 
-    setLoading(true);
-    refetch();
-
-    // Safety net: if the stream drops or an event is missed, still catch up.
-    const pollId = setInterval(refetch, fallbackPollMs);
+    void fetchSessionMeta();
 
     return () => {
       cancelled = true;
       controller.abort();
       if (es) es.close();
-      clearInterval(pollId);
     };
-  }, [sessionId, fallbackPollMs]);
+  }, [sessionId, queryClient]);
+
+  const data = useMemo<LiveSessionSnapshot | null>(() => {
+    if (!sessionId) return null;
+    return {
+      session,
+      messages: messagesQuery.data ?? [],
+      lastUpdated: messagesQuery.dataUpdatedAt || 0,
+    };
+  }, [sessionId, session, messagesQuery.data, messagesQuery.dataUpdatedAt]);
+
+  const error =
+    sessionError ||
+    (messagesQuery.error ? (messagesQuery.error as Error).message : null);
+  const loading = Boolean(sessionId) && messagesQuery.isLoading;
 
   return { data, error, loading };
 }
@@ -851,6 +867,15 @@ export function useLiveSwarmRunMessages(
   const [loading, setLoading] = useState<boolean>(Boolean(meta));
   const [error, setError] = useState<string | null>(null);
 
+  // Mirror every message update into the TanStack Query cache. Why: this
+  // hook does the "messages for all N sessions in a run" heavy lifting;
+  // useLiveSession does the "messages for ONE session" single-view case.
+  // Before this mirror, the primary session was fetched twice on every
+  // cold load — once by this hook's hydrate, once by useLiveSession's
+  // initial refetch. With the mirror, whichever hook finishes first
+  // populates the shared cache and the other reads it instantly.
+  const queryClient = useQueryClient();
+
   // Stable key for the effect: swarmRunID is unique, workspace pins the SSE
   // directory, and the sessionIDs list is immutable for a given run (meta.json
   // is write-once). Joining on a separator that can't appear in opencode IDs
@@ -915,6 +940,14 @@ export function useLiveSwarmRunMessages(
           lastUpdated: ts,
         }));
         setSlots(next);
+        // Mirror into the TanStack Query cache — useLiveSession on the
+        // same session will read this instead of firing its own fetch.
+        for (const slot of next) {
+          queryClient.setQueryData(
+            sessionMessagesQueryKey(slot.sessionID),
+            slot.messages,
+          );
+        }
         setError(null);
       } catch (err) {
         if (cancelled) return;
@@ -940,6 +973,9 @@ export function useLiveSwarmRunMessages(
           copy[idx] = { ...copy[idx], messages, lastUpdated: ts };
           return copy;
         });
+        // Mirror into shared cache so useLiveSession picks up this
+        // session's refresh without its own fetch.
+        queryClient.setQueryData(sessionMessagesQueryKey(sessionID), messages);
       } catch (err) {
         if (cancelled) return;
         if ((err as Error).name === 'AbortError') return;
