@@ -11,7 +11,7 @@ import { Popover } from './ui/popover';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { ProviderBadge } from './provider-badge';
 import { STATUS_VISUAL } from './swarm-runs-picker';
-import { abortSessionBrowser } from '@/lib/opencode/live';
+import { abortSessionBrowser, useBackendStale } from '@/lib/opencode/live';
 import { compact } from '@/lib/format';
 
 const TIER_LABELS: Record<number, string> = {
@@ -62,6 +62,11 @@ export function SwarmTopbar({
   // or stopped with known tier state). The 'none' arm lacks the tier
   // fields by design — drawing 0/? would be worse than absence.
   const tier = tickerState.state === 'none' ? null : tickerState;
+  // When the backend has been unreachable for > ~5 s, React's in-memory
+  // snapshots (run status, tier chip, agent animations) are showing
+  // stale data with no way to refresh. Gray the affected chips so users
+  // can tell at a glance what's still reliable vs what's a cached frame.
+  const backendStale = useBackendStale();
 
   return (
     <header className="relative h-12 flex items-center hairline-b mica">
@@ -88,8 +93,8 @@ export function SwarmTopbar({
         <span className="font-mono text-[12.5px] text-fog-300 truncate">
           {run.title}
         </span>
-        {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} />}
-        {tier && <TierChip tier={tier.currentTier} maxTier={tier.maxTier} exhausted={tier.tierExhausted} />}
+        {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} stale={backendStale} />}
+        {tier && <TierChip tier={tier.currentTier} maxTier={tier.maxTier} exhausted={tier.tierExhausted} stale={backendStale} />}
         {liveSessionId && liveDirectory && run.status === 'active' && (
           <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
         )}
@@ -176,9 +181,15 @@ export function SwarmTopbar({
 function RunAnchorChip({
   meta,
   status,
+  stale = false,
 }: {
   meta: SwarmRunMeta;
   status: SwarmRunStatus | null;
+  // When true, the backend has been unreachable long enough that any
+  // status we show is a React cache from before the disconnect. We
+  // don't blank it (history is still useful) but we fade it so the
+  // user can tell at a glance "this is yesterday's news."
+  stale?: boolean;
 }) {
   const directive = meta.directive?.trim() ?? '';
   const costCap = meta.bounds?.costCap;
@@ -334,11 +345,21 @@ function RunAnchorChip({
         </div>
       )}
     >
-      <button className="fluent-btn gap-1.5 min-w-0 max-w-[320px]" title={directive || meta.swarmRunID}>
+      <button
+        className={clsx(
+          'fluent-btn gap-1.5 min-w-0 max-w-[320px] transition-opacity',
+          stale && 'opacity-50 grayscale',
+        )}
+        title={
+          stale
+            ? 'backend unreachable — status shown is pre-disconnect cache'
+            : directive || meta.swarmRunID
+        }
+      >
         <span
           className={clsx(
             'w-1.5 h-1.5 rounded-full shrink-0',
-            visual ? visual.dot : 'bg-fog-700'
+            visual && !stale ? visual.dot : 'bg-fog-700',
           )}
           aria-label={visual ? `status: ${visual.label}` : 'status: unknown'}
         />
@@ -502,10 +523,12 @@ function TierChip({
   tier,
   maxTier,
   exhausted,
+  stale = false,
 }: {
   tier: number;
   maxTier: number;
   exhausted: boolean;
+  stale?: boolean;
 }) {
   const label = TIER_LABELS[tier] ?? `tier ${tier}`;
   // At max tier with `exhausted` set, the ratchet has declared "no more
@@ -528,7 +551,12 @@ function TierChip({
           : `tier ${tier}/${maxTier} (${label}) — ambition ratchet; escalates on board drain`
       }
     >
-      <div className="flex items-center gap-1 h-6 px-1.5 rounded hairline cursor-help">
+      <div
+        className={clsx(
+          'flex items-center gap-1 h-6 px-1.5 rounded hairline cursor-help transition-opacity',
+          stale && 'opacity-50 grayscale',
+        )}
+      >
         <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
           tier
         </span>

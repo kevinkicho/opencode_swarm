@@ -11,6 +11,7 @@ import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 import { TimelineFlow, TIMELINE_GUTTER_WIDTH } from './timeline-flow';
 import { partMeta, partHex, partOrder, toolMeta, isCrossLane } from '@/lib/part-taxonomy';
 import { compact } from '@/lib/format';
+import { useBackendStale } from '@/lib/opencode/live';
 import {
   usePlayback,
   phaseFor,
@@ -95,6 +96,10 @@ export function SwarmTimeline({
   const [partFilter, setPartFilter] = useState<PartType | 'all'>('all');
   const { clockSec } = usePlayback();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // When the dev backend has been unreachable long enough, the lane
+  // status circles should stop pulsing — their "live" animation is
+  // stale data after the SSE feed drops. See useBackendStale docs.
+  const backendStale = useBackendStale();
   // Anchor-tracking refs for stick-to-bottom: `firstIdRef` distinguishes a
   // fresh session (forces a jump), `lastIdRef` triggers follow-on auto-scroll
   // only when the user was already near the bottom.
@@ -407,8 +412,14 @@ export function SwarmTimeline({
                         <span
                           className={clsx(
                             'w-1.5 h-1.5 rounded-full shrink-0',
-                            circle.dot,
-                            circle.animation,
+                            // When the backend is stale, drop the animation
+                            // and use a neutral dot color — an orange pulse
+                            // without a live SSE feed is disinformation. The
+                            // lane itself still renders (history is
+                            // useful); just the "live-looking" veneer
+                            // comes off.
+                            backendStale ? 'bg-fog-700' : circle.dot,
+                            backendStale ? undefined : circle.animation,
                           )}
                         />
                         <span className="text-[12px] text-fog-100 truncate flex-1 min-w-0">

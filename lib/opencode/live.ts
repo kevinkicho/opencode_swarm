@@ -289,6 +289,35 @@ export function useOpencodeHealth(intervalMs = 5000): HealthSnapshot {
   return state;
 }
 
+// Shared "is the backend reachable right now?" hook. Wraps
+// useOpencodeHealth with a staleness-debounce so a single transient
+// failure doesn't flicker every dependent chip. Any chip that wants
+// to gray out when the dev server / proxy is down can call this.
+//
+// Staleness rule: requires at least two consecutive 'offline' health
+// readings before returning true. At the default 5 s poll interval
+// that's ~5 s of downtime before UI goes stale — fast enough to be
+// felt, slow enough to tolerate a single failed request.
+//
+// Cost note: each caller opens its own 5 s poll. At prototype scale
+// the overhead is trivial; if we ever need to share one instance,
+// wrap this in a Context provider.
+export function useBackendStale(): boolean {
+  const health = useOpencodeHealth(5_000);
+  const [stale, setStale] = useState(false);
+  const offlineStreakRef = useRef(0);
+  useEffect(() => {
+    if (health.status === 'offline') {
+      offlineStreakRef.current += 1;
+      if (offlineStreakRef.current >= 2) setStale(true);
+    } else {
+      offlineStreakRef.current = 0;
+      if (stale) setStale(false);
+    }
+  }, [health.status, stale]);
+  return stale;
+}
+
 export interface LiveSessionSnapshot {
   session: OpencodeSession | null;
   messages: OpencodeMessage[];

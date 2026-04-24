@@ -76,6 +76,16 @@ One day, large ship run. Grouped by theme.
   in `lib/server/zen-rate-limit-probe.ts`, respects
   `OPENCODE_LOG_DIR` env for non-default log locations.
 
+- **Liveness decay when backend vanishes.** New
+  `useBackendStale()` hook (in `lib/opencode/live.ts`) wraps
+  `useOpencodeHealth` with a 2-consecutive-offline debounce.
+  Consumed by `SwarmTopbar` (RunAnchorChip + TierChip fade to
+  opacity-50 + grayscale with a "status shown is pre-disconnect
+  cache" tooltip) and `SwarmTimeline` (lane status circles drop
+  their animation + switch to a neutral fog dot). Fixes the
+  "offline badge says offline but blinking circle still blinks"
+  mixed-signal problem we saw after dev shutdown.
+
 - **Periodic-mode tier escalation** — `runPeriodicSweep` now tracks
   `consecutiveDrainedSweeps`. When ≥ 2 consecutive sweeps produce
   zero new work AND the board has zero active items (open +
@@ -227,11 +237,6 @@ One day, large ship run. Grouped by theme.
   is partial SSE-merge (parse `message.part.updated` payloads and
   splice into the local buffer). Nontrivial.
 
-- **No liveness decay when dev server vanishes.** After dev
-  shutdown, an open run-view tab shows mixed state (`offline` badge
-  correct, but run-anchor "live" + blinking status circle keep
-  rendering stale). React in-memory state survives the disconnect.
-  Fix: gray stale chips after N seconds of no SSE heartbeat.
 
 ---
 
