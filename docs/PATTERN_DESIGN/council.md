@@ -117,8 +117,8 @@ failures stalling the council.
 | council-tab | tab | SHIPPED | (next commit) | — | per-round per-member draft length + diff-vs-prior + mean-pairwise-token-jaccard convergence chip + last-two-rounds trend arrow; client-side compute (no backend) |
 | I1 | improvement | PROPOSED | — | — | backend ~3 h; needs embedding call or token-jaccard |
 | I2 | improvement | PROPOSED | — | — | stance classifier ~4 h |
-| I3 | improvement | PROPOSED | — | — | prompt edit + validation ~2 h |
-| I4 | improvement | PROPOSED | — | — | wait-loop refactor ~3 h |
+| I3 | improvement | SHIPPED | (next commit) | — | buildRoundPrompt now takes isFinalRound flag; on R_max appends "Dissent: section explicitly required" instruction so 3-vs-2 splits don't quietly collapse into majority text |
+| I4 | improvement | SHIPPED | (next commit) | — | per-member waitForSessionIdle now runs in parallel via Promise.all so each member gets the full ROUND_WAIT_MS budget; default lowered to 10 min per spec; hung members recorded as no-draft (text=null) and round proceeds with remaining drafts |
 
 ## 6 · Cross-references
 

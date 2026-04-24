@@ -63,6 +63,10 @@ import {
 } from './planner';
 import { listBoardItems, transitionStatus } from './store';
 import { listPlanRevisions } from './plan-revisions';
+import {
+  persistTickerSnapshot,
+  readTickerSnapshot,
+} from './ticker-snapshots';
 import { auditCriteria } from './auditor';
 import { prewarmModels } from './model-prewarm';
 
@@ -1376,6 +1380,21 @@ export function stopAutoTicker(
   s.stopped = true;
   s.stoppedAtMs = Date.now();
   s.stopReason = reason;
+
+  // PATTERN_DESIGN/blackboard.md I3 — persist the final snapshot to
+  // SQLite so getTickerSnapshot can reconstruct a stopped-state
+  // response after dev restart / HMR. Synchronous + cheap (single
+  // INSERT/REPLACE); failure here is logged but doesn't block the
+  // stop sequence below.
+  try {
+    persistTickerSnapshot(swarmRunID, s.stoppedAtMs, reason, snapshot(s) as unknown as Record<string, unknown>);
+  } catch (err) {
+    console.warn(
+      `[board/auto-ticker] ${swarmRunID}: ticker snapshot persist failed:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+
   if (s.timer) clearInterval(s.timer);
   s.timer = null;
   if (s.periodicSweepTimer) clearInterval(s.periodicSweepTimer);
@@ -1501,7 +1520,21 @@ export function listAutoTickers(): TickerSnapshot[] {
 // an entry in the map with stopped: true).
 export function getTickerSnapshot(swarmRunID: string): TickerSnapshot | null {
   const s = tickers().get(swarmRunID);
-  return s ? snapshot(s) : null;
+  if (s) return snapshot(s);
+
+  // PATTERN_DESIGN/blackboard.md I3 — fallback to the persisted
+  // snapshot when no in-memory state exists. After dev restart the
+  // tickers map is empty; without this hydration the UI sees
+  // "ticker never ran" instead of the original stop reason.
+  // Only fires when in-memory is empty — running tickers always
+  // win.
+  const persisted = readTickerSnapshot(swarmRunID);
+  if (!persisted) return null;
+  // The persisted snapshot was written by snapshot() so the shape
+  // matches TickerSnapshot exactly — return as-is. Defensive cast
+  // because the read path stores it as Record<string, unknown> to
+  // stay decoupled from this module's type.
+  return persisted.snapshot as unknown as TickerSnapshot;
 }
 
 // Publish to globalThis so in-flight setInterval callbacks resolve to

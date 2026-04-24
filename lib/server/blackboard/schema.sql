@@ -123,3 +123,26 @@ CREATE TABLE IF NOT EXISTS plan_revisions (
 
 CREATE INDEX IF NOT EXISTS plan_revisions_run
   ON plan_revisions(swarm_run_id, round DESC);
+
+-- Persistent ticker stop record — backs PATTERN_DESIGN/blackboard.md
+-- I3. The in-memory `tickers` map is process-local; on dev-server
+-- restart we lose every run's stop reason. This table lets
+-- getTickerSnapshot reconstruct a stopped-state snapshot after
+-- restart so the UI doesn't go from "stopped: hard-cap" → "no ticker
+-- ever ran" across an HMR or a Node process recycle.
+--
+-- Written on stopAutoTicker firing (one INSERT-or-REPLACE per run).
+-- Read by getTickerSnapshot when no in-memory state exists. Active
+-- runs DON'T touch this table — running snapshots come from
+-- in-memory state only; persistence is for terminal state only.
+CREATE TABLE IF NOT EXISTS ticker_snapshots (
+  swarm_run_id TEXT PRIMARY KEY,
+  stopped_at INTEGER NOT NULL,
+  stop_reason TEXT NOT NULL,
+  -- Full TickerSnapshot at stop time, JSON-encoded. Lets the read
+  -- path return the same shape the live in-memory cache returns —
+  -- including currentTier, retryAfterEndsAtMs, etc. — without
+  -- inventing partial reconstructions.
+  snapshot_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);

@@ -40,10 +40,12 @@ import type { OpencodeMessage } from '../opencode/types';
 // Configurable later via request body (`rounds`) or run bounds.
 const DEFAULT_MAX_ROUNDS = 3;
 
-// Per-round wait ceiling. 20 min is generous — each council member only
-// does one reply per round, which in practice completes in 1–3 min. A
-// blown deadline logs and proceeds with whatever text we have.
-const ROUND_WAIT_MS = 20 * 60 * 1000;
+// Per-round wait ceiling. 10 min was the spec target
+// (PATTERN_DESIGN/council.md I4); empirically council members reply in
+// 1–3 min so this is generous headroom. A blown deadline records the
+// member as no-draft (null text) and the round proceeds with the
+// remaining drafts — single hung members no longer stall the council.
+const ROUND_WAIT_MS = 10 * 60 * 1000;
 
 // Shared with map-reduce.ts (same shape, intentionally duplicated to keep
 // these server-side pattern modules decoupled — cross-imports between
@@ -63,6 +65,7 @@ function extractLatestAssistantText(messages: OpencodeMessage[]): string | null 
 function buildRoundPrompt(
   roundNum: number,
   drafts: Array<{ sessionID: string; text: string | null }>,
+  isFinalRound: boolean,
 ): string {
   const blocks = drafts
     .filter((d) => d.text !== null)
@@ -76,14 +79,35 @@ function buildRoundPrompt(
   // "↻ round 2" or by this orchestrator — same prompt shape either way.
   // Round ≥3 asks for convergence explicitly: by the third pass members
   // should either agree or flag hard disagreements, not restate.
-  const header =
-    roundNum === 2
-      ? 'Round 2. Below are the Round-1 drafts from every council member. ' +
-        "Revise your own response in light of the others, or state clearly " +
-        "which member's draft you accept and why. Respond now."
-      : `Round ${roundNum}. Below are the Round-${roundNum - 1} drafts from every ` +
-        'council member. Continue deliberating: converge on shared conclusions ' +
-        'where you can, and flag irreconcilable differences clearly. Respond now.';
+  let header: string;
+  if (roundNum === 2) {
+    header =
+      'Round 2. Below are the Round-1 drafts from every council member. ' +
+      "Revise your own response in light of the others, or state clearly " +
+      "which member's draft you accept and why. Respond now.";
+  } else {
+    header =
+      `Round ${roundNum}. Below are the Round-${roundNum - 1} drafts from every ` +
+      'council member. Continue deliberating: converge on shared conclusions ' +
+      'where you can, and flag irreconcilable differences clearly. Respond now.';
+  }
+
+  // PATTERN_DESIGN/council.md I3 — minority-view preservation. On the
+  // final round, instruct each member to spell out any dissenting
+  // position (their own or another member's) explicitly, so a 3-vs-2
+  // split doesn't quietly collapse into the majority's text. Doesn't
+  // change earlier rounds — the deliberation phase should still prefer
+  // convergence; only the final round's summary is contractually
+  // required to surface dissent.
+  if (isFinalRound) {
+    header +=
+      '\n\nThis is the FINAL round. In your response, if any member has ' +
+      'staked out a position that differs from yours OR yours differs from the ' +
+      "majority's, devote a clearly-labeled `Dissent:` section at the end " +
+      'naming the disagreeing member(s) and summarizing the dissenting position ' +
+      'in 1-3 sentences. If the council is fully aligned, state "Dissent: none" ' +
+      'explicitly. Do not silently drop minority views.';
+  }
 
   return `${header}\n\n${blocks.join('\n\n')}`;
 }
@@ -129,34 +153,40 @@ export async function runCouncilRounds(
   }
 
   for (let roundNum = 2; roundNum <= maxRounds; roundNum += 1) {
+    // PATTERN_DESIGN/council.md I4 — per-member wait runs in parallel
+    // so each member gets the full ROUND_WAIT_MS. Sequential waits
+    // would have shared the deadline (member 5 starts with member 1's
+    // remaining time) and the round-end could've blown past the
+    // per-round budget. Promise.all preserves draft order; failures
+    // are absorbed into per-member text=null at the resolve step.
     const deadline = Date.now() + ROUND_WAIT_MS;
-    const drafts: Array<{ sessionID: string; text: string | null }> = [];
-
-    for (const sid of meta.sessionIDs) {
-      const known = knownIDsBySession.get(sid) ?? new Set<string>();
-      const result = await waitForSessionIdle(sid, meta.workspace, known, deadline);
-      if (!result.ok) {
-        console.warn(
-          `[council] session ${sid} wait failed (${result.reason}) — using last completed text if any`,
-        );
-      }
-
-      // Always fetch current state — even on timeout, a partially-done
-      // assistant turn may have a final text we can use. Update
-      // knownIDs so the next round only awaits genuinely new messages.
-      let text: string | null = null;
-      try {
-        const msgs = await getSessionMessagesServer(sid, meta.workspace);
-        text = extractLatestAssistantText(msgs);
-        knownIDsBySession.set(sid, new Set(msgs.map((m) => m.info.id)));
-      } catch (err) {
-        console.warn(
-          `[council] session ${sid} message fetch failed:`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-      drafts.push({ sessionID: sid, text });
-    }
+    const drafts = await Promise.all(
+      meta.sessionIDs.map(async (sid) => {
+        const known = knownIDsBySession.get(sid) ?? new Set<string>();
+        const result = await waitForSessionIdle(sid, meta.workspace, known, deadline);
+        if (!result.ok) {
+          console.warn(
+            `[council] session ${sid} wait failed (${result.reason}) — recording as no-draft for round ${roundNum} (PATTERN_DESIGN/council.md I4)`,
+          );
+        }
+        // Always fetch current state — even on timeout, a partially-
+        // done assistant turn may have a final text we can use.
+        // Update knownIDs so the next round only awaits genuinely new
+        // messages.
+        let text: string | null = null;
+        try {
+          const msgs = await getSessionMessagesServer(sid, meta.workspace);
+          text = extractLatestAssistantText(msgs);
+          knownIDsBySession.set(sid, new Set(msgs.map((m) => m.info.id)));
+        } catch (err) {
+          console.warn(
+            `[council] session ${sid} message fetch failed:`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+        return { sessionID: sid, text };
+      }),
+    );
 
     const present = drafts.filter((d) => d.text !== null);
     if (present.length < 2) {
@@ -166,7 +196,7 @@ export async function runCouncilRounds(
       return;
     }
 
-    const prompt = buildRoundPrompt(roundNum, drafts);
+    const prompt = buildRoundPrompt(roundNum, drafts, roundNum === maxRounds);
     console.log(
       `[council] run ${swarmRunID} — firing round ${roundNum} to ${meta.sessionIDs.length} sessions (${present.length} drafts embedded)`,
     );
