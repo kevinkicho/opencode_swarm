@@ -4,6 +4,7 @@
 // — the proxy injects Basic auth server-side, so no credentials ship here.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type {
   OpencodeMessage,
   OpencodePart,
@@ -1226,12 +1227,22 @@ export interface SwarmRunsSnapshot {
   lastUpdated: number | null;
 }
 
-// useSwarmRuns — lists every swarm run (live + finished + stale). Supports
-// both legacy signature (just an interval number) and an option object so
-// callers can gate polling by UI state (e.g. only poll while the runs
-// picker popover is open). A closed picker has no reason to refetch the
-// ledger every 4s, and that polling was the single worst cold-load
-// offender per the perf:cold benchmark (28+ calls in ~40s).
+// useSwarmRuns — lists every swarm run (live + finished + stale). Migrated
+// to TanStack Query (2026-04-24 pilot per docs/POSTMORTEMS/ and the cold-
+// load audit). Benefits over the previous useEffect+setInterval shape:
+//
+//   - Dedup: multiple callers mounting the hook share one in-flight fetch
+//     and one cached result. Before, each mount = its own poll loop.
+//   - Cache persistence: data survives component unmounts and is instantly
+//     available to the next mount (subject to staleTime).
+//   - Visibility / reconnect integration: refetchOnWindowFocus and
+//     refetchOnReconnect come for free from the QueryProvider defaults.
+//   - Devtools: full history of every query's state under the inline
+//     devtools panel in dev builds.
+//
+// Legacy signature (just an interval number) still works for backward
+// compat with older call sites. Options form accepts `enabled` to gate
+// the fetch by UI state (picker open, etc.).
 export function useSwarmRuns(
   arg: number | { intervalMs?: number; enabled?: boolean } = {},
 ): SwarmRunsSnapshot {
@@ -1239,58 +1250,40 @@ export function useSwarmRuns(
     typeof arg === 'number'
       ? { intervalMs: arg, enabled: true }
       : { intervalMs: arg.intervalMs ?? 4000, enabled: arg.enabled ?? true };
-  const [rows, setRows] = useState<SwarmRunListRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(enabled);
-  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
 
-  useEffect(() => {
-    if (!enabled) {
-      // When disabled, preserve the previously-fetched rows (stale-is-fine)
-      // and park loading at false so the UI doesn't spin forever.
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    let controller = new AbortController();
+  const q = useQuery({
+    queryKey: SWARM_RUNS_QUERY_KEY,
+    queryFn: swarmRunsFetcher,
+    enabled,
+    // refetchInterval runs only while the query is `enabled`; staleness
+    // bookkeeping still applies when disabled so returning to an enabled
+    // mount uses the cached snapshot without an extra flight.
+    refetchInterval: enabled ? intervalMs : false,
+    // When disabled, useQuery returns whatever's in cache; we don't want
+    // the first disabled read to go through a loading state.
+    placeholderData: (prev) => prev,
+  });
 
-    async function poll() {
-      controller.abort();
-      controller = new AbortController();
-      try {
-        const res = await fetch('/api/swarm/run', {
-          signal: controller.signal,
-          cache: 'no-store',
-        });
-        if (!res.ok) {
-          const detail = await res.text().catch(() => '');
-          throw new Error(
-            `swarm run list -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
-          );
-        }
-        const body = (await res.json()) as { runs?: SwarmRunListRow[] };
-        if (cancelled) return;
-        setRows(body.runs ?? []);
-        setLastUpdated(Date.now());
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        if ((err as Error).name === 'AbortError') return;
-        setError((err as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
+  return {
+    rows: q.data ?? [],
+    error: q.error ? (q.error as Error).message : null,
+    loading: q.isLoading,
+    lastUpdated: q.dataUpdatedAt || null,
+  };
+}
 
-    poll();
-    const id = setInterval(poll, intervalMs);
+// Shared key + fetcher so other modules can `queryClient.invalidateQueries`
+// or `prefetchQuery` this endpoint without re-deriving the key shape.
+export const SWARM_RUNS_QUERY_KEY = ['swarm', 'runs', 'list'] as const;
 
-    return () => {
-      cancelled = true;
-      controller.abort();
-      clearInterval(id);
-    };
-  }, [intervalMs, enabled]);
-
-  return { rows, error, loading, lastUpdated };
+async function swarmRunsFetcher(): Promise<SwarmRunListRow[]> {
+  const res = await fetch('/api/swarm/run', { cache: 'no-store' });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `swarm run list -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`,
+    );
+  }
+  const body = (await res.json()) as { runs?: SwarmRunListRow[] };
+  return body.runs ?? [];
 }

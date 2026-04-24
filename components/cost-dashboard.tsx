@@ -93,12 +93,18 @@ export function CostDashboard({
   open: boolean;
   onClose: () => void;
 }) {
-  // Always poll at 4s — the endpoint is local and cheap, and keeping the
-  // data warm means the dashboard is already populated when the user
-  // opens the drawer. The picker polls independently; duplication is
-  // trivial at prototype scale. When/if we add the deferred list-endpoint
-  // cache (DESIGN.md §7 follow-up), both consumers coalesce automatically.
-  const { rows, error, loading, lastUpdated } = useSwarmRuns(4000);
+  // Poll at 4s while the drawer is open. The "always poll to warm the
+  // cache" design from 2026-04 was audited out in the 2026-04-24
+  // perf:cold run — CostDashboard's always-mounted dynamic() wrapper
+  // (not gated on `open`) caused this hook to fire every 4s on every
+  // page load, chewing through browser connection slots for a drawer
+  // the user may never open. Gated via `enabled: open` now; first
+  // fetch fires on drawer-open, TanStack Query serves stale cache
+  // instantly if the picker has already fetched in the same window.
+  const { rows, error, loading, lastUpdated } = useSwarmRuns({
+    intervalMs: 4000,
+    enabled: open,
+  });
 
   const derived = useMemo(() => deriveAggregates(rows), [rows]);
 
