@@ -15,6 +15,8 @@ import { IterationsRail } from './iterations-rail';
 import { DebateRail } from './debate-rail';
 import { RolesRail } from './roles-rail';
 import { MapRail } from './map-rail';
+import { CouncilRail } from './council-rail';
+import { PhasesRail } from './phases-rail';
 import { HeatRail, type DiffStatsByPath } from './heat-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
@@ -28,6 +30,8 @@ export type Tab =
   | 'debate'
   | 'roles'
   | 'map'
+  | 'council'
+  | 'phases'
   | 'heat';
 
 export function LeftTabs({
@@ -129,6 +133,8 @@ export function LeftTabs({
   const showDebateTab = boardPattern === 'debate-judge';
   const showRolesTab = boardPattern === 'role-differentiated';
   const showMapTab = boardPattern === 'map-reduce';
+  const showCouncilTab = boardPattern === 'council';
+  const showPhasesTab = boardPattern === 'deliberate-execute';
 
   // If the active run stops being a blackboard (or we switch to a different
   // run that has no board), 'board' becomes an invalid selection. Fall back
@@ -144,8 +150,10 @@ export function LeftTabs({
     if (!showDebateTab && tab === 'debate') setTab('plan');
     if (!showRolesTab && tab === 'roles') setTab('plan');
     if (!showMapTab && tab === 'map') setTab('plan');
+    if (!showCouncilTab && tab === 'council') setTab('plan');
+    if (!showPhasesTab && tab === 'phases') setTab('plan');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardSwarmRunID, heat.length, tab, showIterationsTab, showDebateTab, showRolesTab, showMapTab]);
+  }, [boardSwarmRunID, heat.length, tab, showIterationsTab, showDebateTab, showRolesTab, showMapTab, showCouncilTab, showPhasesTab]);
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -296,6 +304,42 @@ export function LeftTabs({
             }
           />
         )}
+        {showCouncilTab && (
+          <TabButton
+            active={tab === 'council'}
+            onClick={() => setTab('council')}
+            label="council"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">council</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  per-round member drafts × convergence chip
+                  (mean pairwise token-jaccard) — spot consensus before
+                  R_max fires (PATTERN_DESIGN/council.md §3).
+                </div>
+              </div>
+            }
+          />
+        )}
+        {showPhasesTab && (
+          <TabButton
+            active={tab === 'phases'}
+            onClick={() => setTab('phases')}
+            label="phases"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">phases</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  deliberation rounds → synthesis → execution. Per-round
+                  members idle/avg-len/convergence; phase boundary banners
+                  (PATTERN_DESIGN/deliberate-execute.md §3).
+                </div>
+              </div>
+            }
+          />
+        )}
         {heat.length > 0 && (
           <TabButton
             active={tab === 'heat'}
@@ -391,6 +435,17 @@ export function LeftTabs({
             slots={liveSlots ?? []}
             live={live}
             sessionIDs={runSessionIDs ?? []}
+            embedded
+          />
+        )}
+        {tab === 'council' && showCouncilTab && (
+          <CouncilRail slots={liveSlots ?? []} embedded />
+        )}
+        {tab === 'phases' && showPhasesTab && (
+          <PhasesRail
+            slots={liveSlots ?? []}
+            live={live}
+            deliberationProgress={deliberationProgress}
             embedded
           />
         )}

@@ -114,7 +114,7 @@ failures stalling the council.
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| council-tab | tab | PROPOSED | — | — | UI ~4 h; needs similarity compute client-side |
+| council-tab | tab | SHIPPED | (next commit) | — | per-round per-member draft length + diff-vs-prior + mean-pairwise-token-jaccard convergence chip + last-two-rounds trend arrow; client-side compute (no backend) |
 | I1 | improvement | PROPOSED | — | — | backend ~3 h; needs embedding call or token-jaccard |
 | I2 | improvement | PROPOSED | — | — | stance classifier ~4 h |
 | I3 | improvement | PROPOSED | — | — | prompt edit + validation ~2 h |

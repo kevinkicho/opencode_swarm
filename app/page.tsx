@@ -452,6 +452,8 @@ function PageBody({
     | 'debate'
     | 'roles'
     | 'map'
+    | 'council'
+    | 'phases'
     | 'heat'
   >('plan');
 

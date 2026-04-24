@@ -71,8 +71,8 @@ must come first.
 
 | # | Pattern | Tab | Backend prereq | UI | Status |
 |---|---|---|---|---|---|
-| 2.1 | **council** | `council` | client-side similarity compute (token-jaccard or cosine) | 4h | PROPOSED |
-| 2.2 | **deliberate-execute** | `phases` | phase-boundary detection in transform.ts | 4h | PROPOSED |
+| 2.1 | **council** | `council` | client-side similarity compute (token-jaccard or cosine) | 4h | **SHIPPED** (next commit) |
+| 2.2 | **deliberate-execute** | `phases` | phase-boundary detection in transform.ts | 4h | **SHIPPED** (next commit) |
 | 2.3 | **orchestrator-worker** | `strategy` | `plan_revisions` SQLite table + per-sweep delta logging (I2) | 4h | PROPOSED |
 
 **Sequence:** 2.3 first (it has a clear backend prereq); 2.1 + 2.2 can go in either order.

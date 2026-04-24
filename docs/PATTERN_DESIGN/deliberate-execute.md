@@ -135,7 +135,7 @@ Don't auto-skip — keep as human signal.
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| phases-tab | tab | PROPOSED | — | — | UI ~4 h; needs phase-boundary detection |
+| phases-tab | tab | SHIPPED | (next commit) | — | three stacked sections: deliberation per-round members/avg-len/convergence/time, synthesis single row → todowrite, execution todo counters; phase-active banner via background tone shift; convergence inline-duplicated from council-rail (shared helper deferred) |
 | I1 | improvement | PROPOSED | — | — | new verifier session + loop ~4 h |
 | I2 | improvement | PROPOSED | — | — | synthesis prompt + parser ~3 h |
 | I3 | improvement | PROPOSED | — | — | shared with council.md I3 |
