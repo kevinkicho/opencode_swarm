@@ -44,6 +44,7 @@ import type {
   SwarmRunResponse,
 } from '@/lib/swarm-run-types';
 import type { SwarmPattern } from '@/lib/swarm-types';
+import { patternDefaults } from '@/lib/swarm-patterns';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -518,6 +519,33 @@ export async function POST(req: NextRequest): Promise<Response> {
       },
       { status: 400 },
     );
+  }
+
+  // Apply per-pattern model defaults (2026-04-24). For each field the
+  // caller didn't supply, consult the pattern's default. User overrides
+  // always win — this only plugs gaps. See lib/swarm-patterns.ts for
+  // the mapping table and rationale.
+  const defaults = patternDefaults[parsed.pattern];
+  if (defaults.teamModels && !parsed.teamModels) {
+    parsed.teamModels = defaults.teamModels(teamSize);
+  }
+  if (defaults.criticModel && !parsed.criticModel) {
+    parsed.criticModel = defaults.criticModel;
+  }
+  if (defaults.verifierModel && !parsed.verifierModel) {
+    parsed.verifierModel = defaults.verifierModel;
+  }
+  if (defaults.auditorModel && !parsed.auditorModel) {
+    parsed.auditorModel = defaults.auditorModel;
+  }
+  if (defaults.teamRoles && !parsed.teamRoles && parsed.pattern === 'role-differentiated') {
+    // Cycle or truncate to teamSize so the roles array lines up with
+    // the session count (role-differentiated.ts validates this pairing).
+    const roles: string[] = [];
+    for (let i = 0; i < teamSize; i += 1) {
+      roles.push(defaults.teamRoles[i % defaults.teamRoles.length]);
+    }
+    parsed.teamRoles = roles;
   }
 
   const seedTitle = parsed.title ?? parsed.directive?.split('\n', 1)[0]?.trim();
