@@ -76,6 +76,14 @@ One day, large ship run. Grouped by theme.
   in `lib/server/zen-rate-limit-probe.ts`, respects
   `OPENCODE_LOG_DIR` env for non-default log locations.
 
+- **Periodic-mode tier escalation** — `runPeriodicSweep` now tracks
+  `consecutiveDrainedSweeps`. When ≥ 2 consecutive sweeps produce
+  zero new work AND the board has zero active items (open +
+  claimed + in-progress), fires `attemptTierEscalation`. Default
+  20-min sweep cadence means ~40 min of drained quiet before the
+  ratchet climbs. Resets on any sweep that seeds work or leaves
+  active board items.
+
 - **Ambition-ratchet tier state persists.** `attemptTierEscalation`
   writes `currentTier` to `SwarmRunMeta` via a new `updateRunMeta`
   helper; `ensureSlots` reads it back on the first fanout of a
@@ -204,11 +212,6 @@ One day, large ship run. Grouped by theme.
   files need a dev-server bounce to take effect on live tickers.
   Low priority — those files change rarely.
 
-- **Periodic-mode (`persistentSweepMinutes > 0`) skips tier
-  escalation.** Those runs' auto-idle branch is disabled, so the
-  ratchet never fires. Would need "tier up after N drained periodic
-  cycles" to participate.
-
 - **Silent-freeze is now auto-distinguished.** The liveness watchdog
   probes the opencode log for a recent `statusCode":429` before
   declaring a freeze. If found → `stopReason: zen-rate-limit`
@@ -272,9 +275,6 @@ One day, large ship run. Grouped by theme.
 
 - **Cross-run comparison surface** — `/projects/<repo>/runs` multi-run
   diff viewer pulling from `demo-log/`.
-
-- **Periodic-mode tier escalation** — "tier up after N drained
-  periodic cycles."
 
 ### Designed but deprioritized
 
