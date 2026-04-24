@@ -172,8 +172,10 @@ export async function runCouncilRounds(
     );
 
     const postResults = await Promise.allSettled(
-      meta.sessionIDs.map((sid) =>
-        postSessionMessageServer(sid, meta.workspace, prompt),
+      meta.sessionIDs.map((sid, i) =>
+        postSessionMessageServer(sid, meta.workspace, prompt, {
+          model: meta.teamModels?.[i],
+        }),
       ),
     );
     postResults.forEach((r, i) => {

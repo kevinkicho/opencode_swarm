@@ -170,18 +170,22 @@ export async function runCriticLoopKickoff(
   // Prime the critic with its contract first (before it sees any draft),
   // then kick off the worker with the task. Both use agent={role} so the
   // roster shows distinct identities.
+  // Session index mapping for teamModels lookup: workerSID = [0],
+  // criticSID = [1]. Applies to every dispatch in the loop.
+  const workerModel = meta.teamModels?.[0];
+  const criticModel = meta.teamModels?.[1];
   try {
     await postSessionMessageServer(
       criticSID,
       meta.workspace,
       buildCriticIntroPrompt(meta.directive),
-      { agent: CRITIC_AGENT_NAME },
+      { agent: CRITIC_AGENT_NAME, model: criticModel },
     );
     await postSessionMessageServer(
       workerSID,
       meta.workspace,
       buildWorkerIntroPrompt(meta.directive),
-      { agent: WORKER_AGENT_NAME },
+      { agent: WORKER_AGENT_NAME, model: workerModel },
     );
   } catch (err) {
     console.warn(
@@ -235,7 +239,7 @@ export async function runCriticLoopKickoff(
         criticSID,
         meta.workspace,
         buildReviewPrompt(draft, iter),
-        { agent: CRITIC_AGENT_NAME },
+        { agent: CRITIC_AGENT_NAME, model: criticModel },
       );
     } catch (err) {
       console.warn(
@@ -285,7 +289,7 @@ export async function runCriticLoopKickoff(
           workerSID,
           meta.workspace,
           `Critic-loop budget exhausted after ${maxIterations} iterations. Shipping your current draft as-is. Critic's final feedback was: ${classified.body}`,
-          { agent: WORKER_AGENT_NAME },
+          { agent: WORKER_AGENT_NAME, model: workerModel },
         );
       } catch {
         // Non-fatal; just log.
@@ -305,7 +309,7 @@ export async function runCriticLoopKickoff(
         workerSID,
         meta.workspace,
         buildRevisionPrompt(classified.body, iter + 1, maxIterations),
-        { agent: WORKER_AGENT_NAME },
+        { agent: WORKER_AGENT_NAME, model: workerModel },
       );
     } catch (err) {
       console.warn(

@@ -110,7 +110,7 @@ export async function runOrchestratorWorkerKickoff(
       orchestratorSessionID,
       meta.workspace,
       intro,
-      { agent: ORCHESTRATOR_AGENT_NAME },
+      { agent: ORCHESTRATOR_AGENT_NAME, model: meta.teamModels?.[0] },
     );
     console.log(
       `[orchestrator-worker] run ${swarmRunID}: orchestrator intro posted to ${orchestratorSessionID.slice(-8)}`,

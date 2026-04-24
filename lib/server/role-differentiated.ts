@@ -144,7 +144,7 @@ export async function runRoleDifferentiatedKickoff(
         sid,
         meta.workspace,
         buildRoleIntroPrompt(roles[i], roles, meta.directive),
-        { agent: roles[i] },
+        { agent: roles[i], model: meta.teamModels?.[i] },
       );
     }),
   );

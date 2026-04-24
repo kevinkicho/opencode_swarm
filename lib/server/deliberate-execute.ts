@@ -180,6 +180,7 @@ export async function runDeliberateExecuteKickoff(
       synthSID,
       meta.workspace,
       buildSynthesisPrompt(meta.directive, drafts),
+      { model: meta.teamModels?.[0] },
     );
   } catch (err) {
     console.warn(

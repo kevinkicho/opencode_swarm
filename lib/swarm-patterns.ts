@@ -128,7 +128,13 @@ export interface PatternDefaults {
 }
 
 export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
-  none: {},
+  // Even the baseline pattern gets a default now — without teamModels
+  // pinning, the session falls back to opencode.json's root model which
+  // is typically a zen/go-tier default. For ollama-only runs we want
+  // the baseline on GLM (fastest of the three) for calibration.
+  none: {
+    teamModels: (n) => Array(n).fill(GLM),
+  },
   blackboard: {
     // session[0] = planner (display-only role); sessions[1..N-1] = workers.
     teamModels: (n) => [GLM, ...Array(Math.max(0, n - 1)).fill(GEMMA)],

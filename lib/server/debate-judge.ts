@@ -174,6 +174,10 @@ export async function runDebateJudgeKickoff(
     opts.maxRounds ?? meta.debateMaxRounds ?? DEFAULT_MAX_ROUNDS;
   const [judgeSID, ...generatorSIDs] = meta.sessionIDs;
   const generatorCount = generatorSIDs.length;
+  // Session index mapping: judge=[0], generators=[1..N-1]. meta.teamModels
+  // is populated by the per-pattern defaults when the request omits it.
+  const judgeModel = meta.teamModels?.[0];
+  const generatorModel = (idx: number) => meta.teamModels?.[idx + 1];
 
   // Prime judge first (sets up its contract), then fan-post to generators.
   try {
@@ -181,7 +185,7 @@ export async function runDebateJudgeKickoff(
       judgeSID,
       meta.workspace,
       buildJudgeIntroPrompt(meta.directive, generatorCount),
-      { agent: JUDGE_AGENT_NAME },
+      { agent: JUDGE_AGENT_NAME, model: judgeModel },
     );
     await Promise.all(
       generatorSIDs.map((sid, idx) =>
@@ -189,7 +193,10 @@ export async function runDebateJudgeKickoff(
           sid,
           meta.workspace,
           buildGeneratorIntroPrompt(meta.directive, idx + 1, generatorCount),
-          { agent: `${GENERATOR_AGENT_PREFIX}${idx + 1}` },
+          {
+            agent: `${GENERATOR_AGENT_PREFIX}${idx + 1}`,
+            model: generatorModel(idx),
+          },
         ),
       ),
     );
@@ -262,7 +269,7 @@ export async function runDebateJudgeKickoff(
         judgeSID,
         meta.workspace,
         buildJudgmentPrompt(drafts, round, maxRounds),
-        { agent: JUDGE_AGENT_NAME },
+        { agent: JUDGE_AGENT_NAME, model: judgeModel },
       );
     } catch (err) {
       console.warn(
@@ -320,7 +327,10 @@ export async function runDebateJudgeKickoff(
             sid,
             meta.workspace,
             buildRevisionPrompt(verdict.body, round + 1, maxRounds),
-            { agent: `${GENERATOR_AGENT_PREFIX}${idx + 1}` },
+            {
+              agent: `${GENERATOR_AGENT_PREFIX}${idx + 1}`,
+              model: generatorModel(idx),
+            },
           ),
         ),
       );

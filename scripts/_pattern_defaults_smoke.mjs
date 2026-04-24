@@ -123,11 +123,13 @@ eq(
 );
 
 // ── none ──────────────────────────────────────────────────────────────
-// `none` has no defaults; teamModels fn undefined.
+// `none` defaults to GLM so the baseline run also uses ollama (2026-04-24
+// ollama-only testing mandate — prior stance "no defaults" had none falling
+// back to opencode.json's root model, which routes to go-tier).
 eq(
-  patternDefaults.none.teamModels,
-  undefined,
-  'none: no teamModels default',
+  patternDefaults.none.teamModels(1),
+  [GLM],
+  'none: single session defaults to ollama glm',
 );
 
 // ── Report ────────────────────────────────────────────────────────────
