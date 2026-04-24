@@ -75,13 +75,29 @@ We deliberately use opencode's canonical names instead of inventing new ones. So
 ## 4. UI surface map
 
 ### Layout shell — `app/page.tsx`
-- **Topbar** — run title, $ budget chip, go-tier rolling cap chip, agent count, palette/settings/account.
-- **Roster** (260px left rail) — collapsed agent rows: accent stripe, status circle, name, attention badge.
+- **Topbar** (`components/swarm-topbar.tsx`) — run anchor chip (title · pattern · session count), tier chip (ambition ratchet, `1/5..5/5`), $ budget chip, agent count, retry-after countdown when a Zen 429 is active, provider-stats popover, palette/settings/account.
+- **Roster** (260px left rail, `components/agent-roster.tsx`) — collapsed agent rows: accent stripe, status circle, name, attention badge.
+- **Left-rail tabs** — `plan` (`components/plan-rail.tsx`, always on), `heat` (`components/heat-rail.tsx`, file-edit heatmap — stigmergy v0), `board` (`components/board-rail.tsx`, visible only when `pattern='blackboard'`).
 - **Timeline** (1fr center) — sticky lane headers + event canvas (see below).
+- **Pattern-specific strips** — render under the timeline when the active run's pattern produces a pattern-specific signal. One strip per pattern; strip is lazy-mounted. Each is *read* + *small imperative surface*:
+  - `SynthesisStrip` (map-reduce) — per-member draft pills, progress, synthesis state
+  - `ReconcileStrip` (council) — reconcile action pills, `N/N drafts` counter
+  - `JudgeVerdictStrip` (debate-judge) — `WINNER` / `MERGE` / `REVISE` + rationale
+  - `CriticVerdictStrip` (critic-loop) — `APPROVED` / `REVISE` + critic text
+  - `OrchestratorActionsStrip` (orchestrator-worker) — pattern-specific nudges
+- **Cost-cap banner** (`components/cost-cap-banner.tsx`) — surfaces above the composer when the `/api/opencode` proxy returns 402 on a send; `raise cap` action opens the routing modal. Local dismissal; block re-appears on next send if the cap hasn't moved. See §9 "Cost ceiling enforcement."
+- **Permission strip** (`components/permission-strip.tsx`) — above the composer when opencode fires `permission.asked`.
 - **Composer** (bottom) — typed message dispatch with target picker (broadcast / specific agent / human).
 - **Status rail** (footer) — live websocket dot, palette / routing / glossary / branch-history triggers.
 - **Drawer** (right, 380px) — inspector for the focused message OR selected agent.
-- **Modals** — palette (⌘K), run dispatch (observation), branch history, spawn agent, glossary.
+- **Modals** — palette (⌘K), new-run (⌘N), routing (observation), branch history, spawn agent, glossary.
+
+### Standalone routes (outside the main swarm view)
+- `/metrics` — cross-preset metrics (`components/cross-preset-metrics.tsx` + `components/cost-dashboard.tsx`). Groups every persisted run by `meta.pattern` and surfaces per-preset aggregates (runs, avg/med duration, avg $, avg tokens, live/stale/err %). Feeds from `GET /api/swarm/run`; grouping is client-side. See §6.4 Phase 4.
+- `/projects` — run picker UI; lists every run grouped by source/workspace. Read-only discovery (no delete/archive buttons — retention is a backend concern, see §7.7).
+- `/board-preview?swarmRun=<id>` — full-board view for a blackboard run. Polls the live board via `useLiveBoard`; same data as the inline board-rail tab, more screen real estate.
+- `/retro/[swarmRunID]` — session rollup playback viewer; reads L2 `AgentRollup` / `RunRetro` via `GET /api/swarm/recall`. See §7.4.
+- `/debug/opencode/**` — dev harness for probing opencode endpoints. Not user-facing.
 
 ### Timeline internals — `components/swarm-timeline.tsx` + `components/timeline-flow.tsx`
 - Each row = one **lead A2A event** + 0..N **chip events** docked beneath.
@@ -91,6 +107,7 @@ We deliberately use opencode's canonical names instead of inventing new ones. So
 - Playback clock (see `lib/playback-context.tsx`) phases each part: `hidden → streaming → settled`. Future-time events are filtered out, current ones animate in.
 
 ### Modals (each has a clear contract — do not mix)
+- **New-run modal** (`new-run-modal.tsx`) — *imperative*. Creates a run now. Verb: `launch`. Source required; directive/team/bounds are optional seeds. Opens via ⌘N or the topbar. See §4.3.
 - **Spawn modal** (`spawn-agent-modal.tsx`) — *imperative*. Creates an agent now. Verb: `spawn`.
 - **Routing modal** (`routing-modal.tsx`) — *declarative observation + bounds*. Sets run-level caps (spend / tokens / wallclock), per-provider soft ceilings, and surfaces observed dispatch distribution. Verb: `save`. Effect applies to *next dispatch*. **No per-agent assignments live here, and no system-inferred role labels either.** Agents self-select providers within the bounds; humans observe and nudge. The `eyebrow="observation"` tooltip explains this contract in-product. See §4.2.
 - **Branch history** (`commit-history.tsx`) — *read-only*. Run log of commits / prompts / tools / reviews.
@@ -417,9 +434,11 @@ Runs are durable training signal — deletion is the wrong default. Three states
 - `npm run swarm:compress` (`scripts/compress.mjs`) walks every run, uses `events.ndjson` mtime as the idle signal (≥24h), gzips via atomic `.gz.tmp → rename`, then unlinks the plain. A partial crash is recoverable on the next sweep: both files coexisting means the gzip finished but the unlink didn't, so the sweep removes the plain and reports `cleanup`.
 - The runs picker stays read-only (no delete/archive buttons). Retention is a backend concern; the picker is pure discovery. See the comment at the top of `components/swarm-runs-picker.tsx`.
 
+**Auto-pruning on dev startup (shipped 2026-04-23).** `lib/server/demo-log-retention.ts::pruneDemoLog()` runs from `auto-ticker.ts` on process start. Always-on behavior: gzips any plain `events.ndjson` larger than 64 KB (same algorithm as `scripts/compress.mjs`). Opt-in behavior: when `DEMO_LOG_AUTO_DELETE=1`, deletes run directories older than `DEMO_LOG_RETENTION_DAYS` (default 30). Deletion is off by default so routine dev boots never lose history — the retention switch is explicit.
+
 **Dev-stage cleanup.** `rm -rf .opencode_swarm/runs/<id>/` is fine. `listRuns()` already skips malformed/missing meta, so partial deletes don't break the list endpoint.
 
-Decided 2026-04-21.
+Decided 2026-04-21 (compression), extended 2026-04-23 (auto-prune on startup).
 
 ---
 
@@ -505,11 +524,20 @@ These are recorded so future contributors don't burn cycles re-asking:
 
 | Path | Purpose |
 |---|---|
-| `app/page.tsx` | Top-level layout shell, modal orchestration, keyboard shortcuts |
+| `app/page.tsx` | Top-level layout shell, modal orchestration, keyboard shortcuts (⌘K / ⌘N) |
+| `app/metrics/page.tsx` | Cross-preset metrics route (§6.4 Phase 4 — shipped 2026-04-21) |
+| `app/projects/page.tsx` | Run picker route; groups runs by source/workspace |
+| `app/board-preview/page.tsx` | Full-screen board view for a blackboard run |
+| `app/retro/[swarmRunID]/page.tsx` | L2 rollup playback viewer |
 | `components/swarm-timeline.tsx` | Timeline scroll container + sticky lane headers + filter bar |
 | `components/timeline-flow.tsx` | Card / wire / drop / chip layout math + SVG rendering |
+| `components/swarm-topbar.tsx` | Topbar: run anchor chip, tier chip, $ chip, retry-after countdown, provider stats popover |
 | `components/agent-roster.tsx` | Left rail, attention badges, expanded agent panel |
+| `components/plan-rail.tsx` / `heat-rail.tsx` / `board-rail.tsx` | Left-rail tabs (always-on plan, file-heat, board — board only when `pattern='blackboard'`) |
 | `components/inspector.tsx` | Right drawer content for focused message OR selected agent |
+| `components/cost-cap-banner.tsx` | 402 surface above the composer; opens routing modal to raise the cap |
+| `components/cost-dashboard.tsx` / `cross-preset-metrics.tsx` | `/metrics` route contents |
+| `components/synthesis-strip.tsx` / `reconcile-strip.tsx` / `judge-verdict-strip.tsx` / `critic-verdict-strip.tsx` / `orchestrator-actions-strip.tsx` | Pattern-specific strips under the timeline |
 | `components/routing-modal.tsx` | Observation panel (run bounds + observed dispatch); see §4.2 for the philosophy |
 | `components/spawn-agent-modal.tsx` | Imperative agent creation; family picker |
 | `components/new-run-modal.tsx` | Run initiation; source required, directive/team/bounds optional; see §4.3 |
@@ -519,6 +547,7 @@ These are recorded so future contributors don't burn cycles re-asking:
 | `lib/opencode/transform.ts` | opencode payload → `Agent`, `AgentMessage`, `RunMeta`, `ProviderSummary`, `LiveTurn`, `TodoItem` |
 | `lib/part-taxonomy.ts` | Part/tool color map + `isCrossLane()` predicate |
 | `lib/playback-context.tsx` | Run clock + per-part phase machine |
+| `docs/ARCHITECTURE.md` | Runtime data-flow, exhaustive component/file map, debugging playbook |
 | `docs/opencode-vocabulary.md` | Detailed canonical vocab from opencode SDK |
 
 ---

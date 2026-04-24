@@ -235,6 +235,24 @@ failure modes. Everything below lives in `lib/server/blackboard/`:
   the start. Surfaces in `components/board-rail.tsx`'s ticker footer
   as `stopped · opencode-frozen` — distinct from `auto-idle` so the
   user knows to restart opencode rather than the ticker.
+- **Zen rate-limit probe** (`lib/server/zen-rate-limit-probe.ts`). Before
+  declaring a stall as `opencode-frozen`, the watchdog tails opencode's
+  own log directory (`OPENCODE_LOG_DIR`) for recent `statusCode":429`
+  lines. If a 429 is present within the stall window, the ticker stops
+  with `stopReason: 'zen-rate-limit'` instead, and `retryAfterEndsAtMs`
+  is populated from the `retry-after` header when parseable. The UI
+  renders a live countdown via `RetryAfterChip` in the topbar so the
+  user knows to wait out the window rather than bounce opencode. No log
+  dir = probe no-ops and every stall is attributed to "opencode-frozen"
+  as before.
+- **Session cleanup on run end** (`lib/server/finalize-run.ts`). For
+  non-ticker orchestrators (council, map-reduce, debate-judge,
+  critic-loop, deliberate-execute) the kickoff wraps its body in
+  `try/finally` and calls `finalizeRun(swarmRunID)` to abort every
+  session in `meta.sessionIDs` (plus `criticSessionID` / `verifierSessionID`
+  when set). Ticker-driven patterns go through `stopAutoTicker` which
+  has the equivalent hook. Closes the "run ended but opencode sessions
+  still in-flight" gap that used to leak turns across restarts.
 - **HMR-resilient module exports** (`lib/server/hmr-exports.ts`). Three
   modules publish their exports to `Symbol.for()` slots on `globalThis`:
   `coordinator.ts` (tickCoordinator, waitForSessionIdle), `planner.ts`
@@ -325,6 +343,8 @@ the POST response doesn't wait on them.
 | `blackboard/planner.ts` | `runPlannerSweep` — posts the planner prompt to session 0, extracts todowrite, seeds board. Prompt is mission-anchored with workspace README auto-embedded (see commit `a5b7c86`). Exports `latestTodosFrom`, `mintItemId`, `buildPlannerBoardContext` for reuse by other orchestrators. |
 | `blackboard/auto-ticker.ts` | Timer-based ticker with per-session fanout. Hosts periodic sweep, eager sweep, liveness watchdog (§1.5.2). `AutoTickerOpts.orchestratorSessionID` excludes a session from worker dispatch for hierarchical patterns. |
 | `blackboard/bus.ts` | Process-local event bus that `board/store` fires on insert/update/transition. Consumed by the board-events SSE route. |
+| `blackboard/critic.ts` | Opt-in anti-busywork critic gate (`enableCriticGate: true` on any pattern). A dedicated critic session reviews board-item completion claims and rejects busywork into `stale` with a `[critic-rejected]` note. Fail-open — a missing verdict passes. Companion layer to the ambition ratchet; see `memory/project_ambition_ratchet.md`. |
+| `blackboard/verifier.ts` | Opt-in Playwright verifier gate (`enableVerifierGate: true` + `workspaceDevUrl`). Board items carrying `requiresVerification: true` route through a dedicated verifier session that calls `npx playwright`. Verdicts: `VERIFIED` / `NOT_VERIFIED` / `UNCLEAR`. `NOT_VERIFIED` rolls the claim back to `open` so a worker retries with the failure log. |
 
 ### `components/` (presentation)
 

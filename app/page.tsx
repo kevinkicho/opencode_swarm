@@ -654,9 +654,14 @@ function PageBody({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const k = e.key.toLowerCase();
+      if (k === 'k') {
         e.preventDefault();
         setPaletteOpen((prev) => !prev);
+      } else if (k === 'n') {
+        e.preventDefault();
+        setNewRunOpen(true);
       }
     };
     window.addEventListener('keydown', onKey);

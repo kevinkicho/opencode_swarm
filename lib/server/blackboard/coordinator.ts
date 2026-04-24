@@ -80,7 +80,24 @@ const POLL_INTERVAL_MS = 1000;
 // just slow work involving multiple reads + a test file edit + a test
 // run. The zombie auto-abort in the picker already handles truly-stuck
 // sessions at 10 min, so the worker timeout matches that boundary.
+//
+// Per-pattern tuning mirrors ZOMBIE_TURN_THRESHOLDS_MS: patterns whose
+// turns legitimately take longer get more budget. deliberate-execute's
+// synthesis phase reconciles N drafts + writes todowrite — slower than
+// a single-file edit. critic-loop's worker turns are typically tight
+// revisions on a focused target, so a shorter timeout catches hung
+// turns faster without losing legitimate work. Patterns not in the map
+// fall back to DEFAULT_TURN_TIMEOUT_MS.
 const DEFAULT_TURN_TIMEOUT_MS = 10 * 60_000;
+const TURN_TIMEOUTS_MS: Record<string, number> = {
+  blackboard: 10 * 60_000,
+  'orchestrator-worker': 10 * 60_000,
+  'role-differentiated': 10 * 60_000,
+  'deliberate-execute': 15 * 60_000,
+};
+function turnTimeoutFor(pattern: string): number {
+  return TURN_TIMEOUTS_MS[pattern] ?? DEFAULT_TURN_TIMEOUT_MS;
+}
 
 // Per-pattern zombie threshold for the session picker. opencode assistant
 // turns can hang with no completed AND no error (see
@@ -612,7 +629,7 @@ export async function tickCoordinator(
     return { status: 'stale', sessionID, itemID: todo.id, reason: `${outcome}: ${message}` };
   }
 
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
+  const timeoutMs = opts.timeoutMs ?? turnTimeoutFor(meta.pattern);
   const deadline = Date.now() + timeoutMs;
   const waited = await waitForSessionIdle(
     sessionID,

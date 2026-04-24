@@ -121,6 +121,22 @@ small atomic units.
   because no plan lives long enough to rot. This is the closest
   architecturally honest approximation of stigmergic behavior.
 
+**Implementation modules** (`lib/server/blackboard/`):
+
+| Module | Role |
+|---|---|
+| `store.ts` | SQLite CRUD + CAS-safe `transitionStatus`. Source of truth for board state. |
+| `coordinator.ts` | `tickCoordinator` — session picker, claim, work, commit. Zombie auto-abort at 10 min. |
+| `planner.ts` | `runPlannerSweep` — posts the planner prompt, parses `todowrite`, seeds board. Mission-anchored with README auto-embed. |
+| `auto-ticker.ts` | Timer-based per-session fanout, eager re-sweep, periodic sweep, liveness watchdog, ambition-ratchet tier escalation. |
+| `bus.ts` | Process-local event bus fired by `store` on insert/update; consumed by the `/board/events` SSE route. |
+| `critic.ts` | Opt-in anti-busywork critic gate (`enableCriticGate`). Dedicated critic session reviews completion claims; busywork → `stale`. |
+| `verifier.ts` | Opt-in Playwright verifier gate (`enableVerifierGate`). Board items with `requiresVerification: true` route through `npx playwright`; `NOT_VERIFIED` rolls the claim back. |
+
+See `docs/ARCHITECTURE.md` §2 for the exhaustive component/file map and
+§1.5.2 for the overnight-safety stack (zombie thresholds, turn timeouts,
+HMR-resilient exports, opencode-frozen watchdog).
+
 ### 2. Stigmergy / pheromone trails `[x]`
 
 > **Status 2026-04-22 (v1 shipped).** `tickCoordinator` in
@@ -279,13 +295,16 @@ the human.
 
 > **Status 2026-04-23.** The prior stance — "these are role-pinning shapes
 > and therefore rejected" — was superseded at the user's direction. All
-> four patterns below are legitimate design choices for runs whose work
+> five patterns below are legitimate design choices for runs whose work
 > benefits from explicit role structure. See DESIGN.md §1 "On roles" and
-> `memory/feedback_no_role_hierarchy.md` for the rationale. Implementation
-> status ranges from `[ ]` designed-but-not-built through `[~]` partial to
-> `[x]` shipped.
+> `memory/feedback_no_role_hierarchy.md` for the rationale. **All five
+> orchestrators shipped 2026-04-23** (`lib/server/orchestrator-worker.ts`,
+> `lib/server/role-differentiated.ts`, `lib/server/debate-judge.ts`,
+> `lib/server/critic-loop.ts`, `lib/server/deliberate-execute.ts`); each
+> is selectable via `pattern=<name>` on `POST /api/swarm/run` and
+> available in the new-run-modal pattern picker.
 
-### 5. Orchestrator–worker `[~]` — pilot for the hierarchical branch
+### 5. Orchestrator–worker `[x]` — pilot for the hierarchical branch
 
 One "orchestrator" session plans + dispatches; N worker sessions claim
 and implement. Shares the blackboard's board-store + ticker machinery;
@@ -305,7 +324,7 @@ mission the way a persistent orchestrator would.
 orchestrator prompt that explains its authority + the worker roster.
 Workers dispatched via the same board-claim mechanics as blackboard.
 
-### 6. Role differentiation `[ ]`
+### 6. Role differentiation `[x]`
 
 Prescribed system prompts per agent — architect, tester,
 security-reviewer, ux, data-modeler, etc. Each worker session carries a
@@ -317,7 +336,12 @@ Good fit when the work has clear sub-disciplines (frontend/backend,
 code/docs/tests). Less useful on uniformly-shaped work where every
 agent needs the same toolset.
 
-### 7. Debate + judge `[ ]`
+**Shipped 2026-04-23.** `lib/server/role-differentiated.ts` —
+`runRoleDifferentiatedKickoff` + `resolveTeamRoles`. Each worker session
+opens with `agent={role}`; architect seeds the board on session 0.
+`teamRoles[]` in the request body overrides the default rotation.
+
+### 7. Debate + judge `[x]`
 
 Two or more generator sessions produce competing answers; one judge
 session evaluates and selects / merges / rejects. Extends the Council
@@ -330,7 +354,12 @@ The judge role MUST be visible — users need to know which session is
 arbitrating. Consider surfacing the judge's rationale as a `reconcile`
 item on the board so the decision audit-trails.
 
-### 8. Critic / Reflexion loops `[ ]`
+**Shipped 2026-04-23.** `lib/server/debate-judge.ts` —
+`runDebateJudgeKickoff`. N generators + 1 judge; verdicts parsed as
+`WINNER` / `MERGE` / `REVISE`, loops up to `debateMaxRounds`. Judge
+verdicts surface in `components/judge-verdict-strip.tsx`.
+
+### 8. Critic / Reflexion loops `[x]`
 
 Worker produces a draft → pinned critic reviews → worker revises. N
 iterations. The critic is stable across the run (same session each
@@ -342,7 +371,19 @@ fallback. Best on outputs where quality is non-binary — essays,
 architectural decisions, UX copy — and a human wouldn't obviously spot
 the right answer on first pass.
 
-### 9. Deliberate → Execute `[ ]` (compositional)
+**Shipped 2026-04-23.** `lib/server/critic-loop.ts` —
+`runCriticLoopKickoff`. Exactly 2 sessions. Verdict parser accepts
+`APPROVED:` / `REVISE:`; loops up to `criticMaxIterations`. Verdicts
+surface in `components/critic-verdict-strip.tsx`.
+
+Separately, the **anti-busywork critic gate** (opt-in via
+`enableCriticGate: true` on any pattern) is a smaller sibling shape —
+a dedicated critic session reviews board-item completion claims and
+rejects busywork into `stale`. See `lib/server/blackboard/critic.ts`
+and the "Tiered execution" section below for how it composes with
+the ambition ratchet.
+
+### 9. Deliberate → Execute `[x]` (compositional)
 
 Council phase 1 for divergent drafts → council phase 2 for convergence
 → automatic handoff to a blackboard phase for execution. The
@@ -352,6 +393,13 @@ seeds a blackboard board; workers then drain them.
 Good fit for "think deeply, then build" missions where the initial
 framing matters more than implementation speed. Higher token cost than
 straight blackboard.
+
+**Shipped 2026-04-23.** `lib/server/deliberate-execute.ts` —
+`runDeliberateExecuteKickoff`. Composes `runCouncilRounds` (from
+`council.ts`) for the divergent/converge phases, then extracts todos
+via `todowrite` on session 0 and hands off to the blackboard
+coordinator. Per-pattern turn timeout raised to 15 min (vs 10 min
+default) because synthesis turns legitimately run longer.
 
 ---
 
@@ -540,11 +588,20 @@ landed against a pattern with simpler semantics.
 
 | # | Preset        | Status | Notes                                                                          |
 |---|---------------|--------|--------------------------------------------------------------------------------|
-| 1 | `council`     | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
-| 2 | `blackboard`  | `[x]`  | Store + HTTP API + live preview + coordinator + auto-ticker (per-session fan-out) + UI picker + inline rail + ticker-state surface + board-event SSE (2026-04-22); 403-file end-to-end and parallelism both validated 2026-04-22 |
-| 3 | `map-reduce`  | `[x]`  | v1: auto-slice + scoped directives + background synthesis + synthesis-strip. v2: synthesis routed via blackboard-claim (`synthesize` kind) with deterministic idempotent item id, replacing the `sessionIDs[0]` pin |
-| 4 | Stigmergy     | `[x]`  | v0 (observability): per-file edit counts surfaced as `heat` tab in LeftTabs (2026-04-22). v1 (picker weighting in `tickCoordinator` — exploratory bias + oldest tiebreak) shipped 2026-04-22. |
+| 1 | `council`             | `[x]`  | Multi-session mux + reconcile strip; served as the scaffolding for #2/#3      |
+| 2 | `blackboard`          | `[x]`  | Store + HTTP API + live preview + coordinator + auto-ticker (per-session fan-out) + UI picker + inline rail + ticker-state surface + board-event SSE (2026-04-22); 403-file end-to-end and parallelism both validated 2026-04-22 |
+| 3 | `map-reduce`          | `[x]`  | v1: auto-slice + scoped directives + background synthesis + synthesis-strip. v2: synthesis routed via blackboard-claim (`synthesize` kind) with deterministic idempotent item id, replacing the `sessionIDs[0]` pin |
+| 4 | Stigmergy             | `[x]`  | v0 (observability): per-file edit counts surfaced as `heat` tab in LeftTabs (2026-04-22). v1 (picker weighting in `tickCoordinator` — exploratory bias + oldest tiebreak) shipped 2026-04-22. |
+| 5 | `orchestrator-worker` | `[x]`  | Shipped 2026-04-23 — `lib/server/orchestrator-worker.ts`. Session 0 plans + dispatches; workers claim off board via `excludeSessionIDs` option on `tickCoordinator`. |
+| 6 | `role-differentiated` | `[x]`  | Shipped 2026-04-23 — `lib/server/role-differentiated.ts`. Pinned `agent={role}` per session; architect seeds board on session 0. |
+| 7 | `debate-judge`        | `[x]`  | Shipped 2026-04-23 — `lib/server/debate-judge.ts`. N generators + 1 judge; WINNER/MERGE/REVISE parser; loops up to `debateMaxRounds`. |
+| 8 | `critic-loop`         | `[x]`  | Shipped 2026-04-23 — `lib/server/critic-loop.ts`. Exactly 2 sessions; APPROVED/REVISE parser; loops up to `criticMaxIterations`. |
+| 9 | `deliberate-execute`  | `[x]`  | Shipped 2026-04-23 — `lib/server/deliberate-execute.ts`. Council rounds → synthesis → blackboard handoff; per-pattern turn timeout 15 min. |
 
-Critic loops, debate, orchestrator-worker, and role differentiation are
-**not on this roadmap**. If someone pushes for them, point at DESIGN.md §9
-and this file's rejected list.
+All nine patterns above ship end-to-end as of 2026-04-23. The prior
+"critic loops, debate, orchestrator-worker, and role differentiation are
+not on this roadmap" sentence — anchored in the pre-reversal stance — is
+retired; see `memory/feedback_no_role_hierarchy.md` for the rationale
+behind the shift. The meta-patterns below (tiered execution / ambition
+ratchet, anti-busywork critic gate, Playwright verifier) compose with
+whichever pattern fits the work.
