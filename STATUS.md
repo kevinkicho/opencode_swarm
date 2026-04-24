@@ -548,6 +548,39 @@ One day, large ship run. Grouped by theme.
 
 ### Next-up (high leverage, < 1 day each)
 
+- **Lane meter `out — in —` placeholders on dead/idle runs.** In
+  `swarm-timeline.tsx` `LaneMeter`, the `out` and `in` labels currently
+  show `formatRate(throughput.outRate)` / `inRate` — these are LIVE
+  parts-per-second rates which are 0 on any run that isn't actively
+  generating, so the labels collapse to em-dashes. Reads visually like
+  "no data exists" even though cumulative tokens are present right
+  below. Fix: extend `Agent` with `tokensIn` + `tokensOut`, populate
+  in `transform.ts` (sum `info.tokens.input.text + input.cache.read +
+  input.cache.write` for in, `info.tokens.output` for out per assistant
+  message), and have LaneMeter fall back to `out {compact(tokensOut)}`
+  / `in {compact(tokensIn)}` when both rates are 0. ~30 min. User
+  flagged 2026-04-24 on run_mob31bx6_jzdfs2.
+
+- **`latest ↓` button doesn't scroll fully + no sticky-to-bottom.** In
+  `components/ui/scroll-to-bottom.tsx` `onClick` uses
+  `el.scrollTo({ behavior: 'smooth' })`. Smooth scroll animates over
+  ~1s; during the animation new SSE events grow `el.scrollHeight`
+  beyond the original target, so the user lands 100-300px short of
+  the new bottom. That breaks `swarm-timeline.tsx` line 209-216's 48px
+  sticky-to-bottom check, so subsequent items don't auto-follow.
+  Fix: replace the smooth scroll with the same two-phase synchronous
+  snap that swarm-timeline already uses on first-render at line 200-203
+  (set scrollTop = scrollHeight, then rAF → set again to catch any
+  layout still settling). ~15 min. User flagged 2026-04-24.
+
+- **Cold-load 30s+ delay on first navigation in dev (artifact, not
+  bug).** Next.js compiles each route + each lazy modal chunk on the
+  first request, serially. Measured 27s per modal chunk, ~38s
+  user-perceived "first populated data" in dev (perf:cold benchmark
+  2026-04-24). NOT a real performance problem — `npm run prod`
+  serves all pre-compiled chunks in <1s. Documented for future-me
+  who'll wonder why dev feels slow.
+
 - **Postmortem F1–F9 from `docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md`.**
   Nine fixes declared, all `PROPOSED`. F1 (dispatch watchdog) + F2 (opencode log
   tail into dev console) are P0 and unblock everything else — ~3–4 h each.
