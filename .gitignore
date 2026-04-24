@@ -15,3 +15,4 @@ tmp/
 # Dev-phase artifacts from scripts/_* smoke runs. Event logs and
 # launch payloads are too large / ephemeral to version.
 demo-log/
+.perf/
