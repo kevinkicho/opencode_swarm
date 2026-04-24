@@ -273,26 +273,27 @@ function HeatRow({
           </span>
         </Tooltip>
 
-        {/* +added line count. Mint when > 0, dim "—" when not yet known
-            (diff hasn't loaded for this file path). Tabular-nums keeps
-            digits aligned across rows. */}
+        {/* +added line count. Mint when > 0; blank when zero — `+0` was
+            visual noise on add-only changes (e.g. pure-deletion file).
+            Em-dash reserved for "diff hasn't loaded yet," distinct from
+            zero. Tabular-nums keeps digits aligned across rows. */}
         <span
           className={clsx(
             'font-mono text-[10.5px] tabular-nums text-right',
             diffStats && diffStats.added > 0 ? 'text-mint' : 'text-fog-700',
           )}
         >
-          {diffStats ? `+${diffStats.added}` : '—'}
+          {!diffStats ? '—' : diffStats.added > 0 ? `+${diffStats.added}` : ''}
         </span>
 
-        {/* -deleted line count. Rust when > 0, dim otherwise. */}
+        {/* -deleted line count. Rust when > 0; blank when zero. */}
         <span
           className={clsx(
             'font-mono text-[10.5px] tabular-nums text-right',
             diffStats && diffStats.deleted > 0 ? 'text-rust' : 'text-fog-700',
           )}
         >
-          {diffStats ? `-${diffStats.deleted}` : '—'}
+          {!diffStats ? '—' : diffStats.deleted > 0 ? `-${diffStats.deleted}` : ''}
         </span>
       </div>
     </li>
