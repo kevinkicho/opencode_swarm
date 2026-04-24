@@ -208,6 +208,14 @@ export function toAgents(messages: OpencodeMessage[]): {
     const id = agentIdFor(m.info.agent, 'assistant', m.info.sessionID);
     const existing = byId.get(id);
     const tokens = m.info.tokens?.total ?? 0;
+    // Per-direction breakdown for LaneMeter cumulative-fallback. opencode's
+    // info.tokens.input is "raw" input tokens; .cache.{read,write} are
+    // additional input-side accounting. Sum them for "in"; .output is the
+    // model's generation. .reasoning isn't surfaced separately — folded
+    // into output for the cumulative purpose.
+    const t = m.info.tokens;
+    const tokensIn = t ? t.input + t.cache.read + t.cache.write : 0;
+    const tokensOut = t ? t.output : 0;
     const cost = derivedCost(m.info);
 
     if (!existing) {
@@ -227,6 +235,8 @@ export function toAgents(messages: OpencodeMessage[]): {
         status: 'idle',
         focus: m.info.mode,
         tokensUsed: tokens,
+        tokensIn,
+        tokensOut,
         // Placeholder — PageInner overrides via runBudgetCap / pricing (see
         // withTokenBudget in app/page.tsx). Left non-zero so roster ratios
         // don't divide by zero in the mock-data / no-bounds case.
@@ -240,6 +250,8 @@ export function toAgents(messages: OpencodeMessage[]): {
       });
     } else {
       existing.tokensUsed += tokens;
+      existing.tokensIn += tokensIn;
+      existing.tokensOut += tokensOut;
       existing.costUsed += cost;
       existing.messagesSent += 1;
     }

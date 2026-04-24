@@ -276,6 +276,15 @@ type GlobalWithTickers = typeof globalThis & {
 // the noise / safety tradeoff that fits the size of our registry.
 const STARTUP_CLEANUP_HORIZON_MS = 48 * 60 * 60 * 1000;
 
+// Skip-cleanup threshold: if a run shows activity within this window we
+// treat it as live + hands-off, leaving the orphan-cleanup to wait for
+// the next dev restart. Catches the case observed 2026-04-24 where
+// dev restart fired the cleanup mid-run (planner had ~1 min idle), the
+// cleanup aborted the live planner, and the user lost their actively-
+// generating run. STATUS.md "auto-ticker startup-cleanup too aggressive"
+// queue item.
+const STARTUP_CLEANUP_RECENT_ACTIVITY_MS = 5 * 60 * 1000;
+
 function tickers(): TickerMap {
   const g = globalThis as GlobalWithTickers;
   if (!g[globalTickerKey]) g[globalTickerKey] = new Map();
@@ -293,22 +302,58 @@ function tickers(): TickerMap {
         const cutoff = Date.now() - STARTUP_CLEANUP_HORIZON_MS;
         const recent = all.filter((m) => m.createdAt >= cutoff);
         if (recent.length > 0) {
-          let targets = 0;
-          await Promise.allSettled(
-            recent.flatMap((meta) => {
-              const sids = [...meta.sessionIDs];
-              if (meta.criticSessionID) sids.push(meta.criticSessionID);
-              if (meta.verifierSessionID) sids.push(meta.verifierSessionID);
-              if (meta.auditorSessionID) sids.push(meta.auditorSessionID);
-              targets += sids.length;
-              return sids.map((sid) =>
-                abortSessionServer(sid, meta.workspace).catch(() => undefined),
-              );
-            }),
-          );
-          console.log(
-            `[board/auto-ticker] startup: aborted ${targets} session(s) across ${recent.length} recent run(s) (< ${Math.round(STARTUP_CLEANUP_HORIZON_MS / 3600000)}h old)`,
-          );
+          // Filter out runs with recent activity — those are healthy
+          // (probably actively running) and aborting their sessions
+          // would kill live planners. We check via deriveRunRow for
+          // each recent run's lastActivityTs; if it falls inside
+          // STARTUP_CLEANUP_RECENT_ACTIVITY_MS, skip. The check is
+          // sequential rather than parallel because at startup there
+          // are usually only a handful of recent runs and we don't
+          // want to flood opencode with N parallel session lookups
+          // before the actual cleanup work.
+          const recentActivityCutoff =
+            Date.now() - STARTUP_CLEANUP_RECENT_ACTIVITY_MS;
+          const orphans: typeof recent = [];
+          let skippedAlive = 0;
+          for (const meta of recent) {
+            try {
+              const row = await deriveRunRow(meta);
+              const lastActive = row.lastActivityTs ?? meta.createdAt;
+              if (lastActive >= recentActivityCutoff) {
+                skippedAlive += 1;
+                continue;
+              }
+            } catch {
+              // If we can't compute status (opencode unreachable for
+              // this run's sessions, etc.), be conservative — fall
+              // through and treat as an orphan. Status-unknown is
+              // closer to dead than alive.
+            }
+            orphans.push(meta);
+          }
+          if (skippedAlive > 0) {
+            console.log(
+              `[board/auto-ticker] startup: skipped ${skippedAlive} run(s) with recent activity (< ${Math.round(STARTUP_CLEANUP_RECENT_ACTIVITY_MS / 60000)}m) — orphan-cleanup leaves them alone`,
+            );
+          }
+          if (orphans.length > 0) {
+            let targets = 0;
+            await Promise.allSettled(
+              orphans.flatMap((meta) => {
+                const sids = [...meta.sessionIDs];
+                if (meta.criticSessionID) sids.push(meta.criticSessionID);
+                if (meta.verifierSessionID) sids.push(meta.verifierSessionID);
+                if (meta.auditorSessionID) sids.push(meta.auditorSessionID);
+                targets += sids.length;
+                return sids.map((sid) =>
+                  abortSessionServer(sid, meta.workspace).catch(() => undefined),
+                );
+              }),
+            );
+            console.log(
+              `[board/auto-ticker] startup: aborted ${targets} session(s) across ${orphans.length} orphan run(s) (< ${Math.round(STARTUP_CLEANUP_HORIZON_MS / 3600000)}h old, > ${Math.round(STARTUP_CLEANUP_RECENT_ACTIVITY_MS / 60000)}m idle)`,
+            );
+          }
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

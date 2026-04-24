@@ -114,6 +114,15 @@ export interface Agent {
   // Ephemeral, freely updatable, never routed on. Not a role.
   focus?: string;
   tokensUsed: number;
+  // Cumulative input vs output token breakdown. Sourced from opencode's
+  // per-message info.tokens.{input,output} fields summed across all the
+  // agent's assistant messages. Surfaced by LaneMeter as a fallback
+  // when the live throughput rate is 0 — without these, idle/dead lanes
+  // show "out — in —" placeholders that read as "no data" even though
+  // cumulative totals exist. (PATTERN_DESIGN/blackboard.md, STATUS.md
+  // 2026-04-24 lane-meter fix.)
+  tokensIn: number;
+  tokensOut: number;
   tokensBudget: number;
   costUsed: number;
   messagesSent: number;

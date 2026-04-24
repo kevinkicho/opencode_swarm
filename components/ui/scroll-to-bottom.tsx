@@ -54,7 +54,19 @@ export function ScrollToBottomButton({
   const onClick = () => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+    // Two-phase synchronous snap — matches swarm-timeline's first-render
+    // anchor at swarm-timeline.tsx:200-203. Smooth-scroll animates over
+    // ~1s; during the animation new SSE events grow scrollHeight beyond
+    // the original target, so the user lands 100-300px short of the new
+    // bottom. Setting scrollTop directly twice (once now, once after
+    // rAF) catches any layout the React commit is still settling.
+    // Pairs with the timeline's existing 48px sticky-to-bottom check —
+    // after this snap, subsequent SSE events auto-follow because we're
+    // demonstrably at bottom.
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() => {
+      if (scrollRef.current === el) el.scrollTop = el.scrollHeight;
+    });
   };
 
   return (

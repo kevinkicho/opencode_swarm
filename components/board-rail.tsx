@@ -57,6 +57,18 @@ const KIND_TONE: Record<BoardItemKind, string> = {
   criterion: 'text-amber',
 };
 
+// Parse the retry counter out of a coordinator-stamped note. Format from
+// retryOrStale() in coordinator.ts: `[retry:N] reason text`. Surfaced
+// inline on the row body (not just the hover tooltip) so a glance at the
+// rail tells the user "this item has been retried N times" without
+// dragging the cursor over every stale row. POSTMORTEMS F9.
+const RETRY_TAG_RE = /^\[retry:(\d+)\]/;
+function retryCountFromNote(note: string | null | undefined): number {
+  if (!note) return 0;
+  const m = RETRY_TAG_RE.exec(note);
+  return m ? Math.max(0, parseInt(m[1] ?? '0', 10)) : 0;
+}
+
 const ACCENT_BG: Record<BoardAgent['accent'], string> = {
   molten: 'bg-molten/20 text-molten',
   mint: 'bg-mint/20 text-mint',
@@ -313,6 +325,26 @@ function BoardRailRow({
         <span className="text-[11.5px] text-fog-200 truncate flex-1 min-w-0 font-mono">
           {item.content}
         </span>
+        {(() => {
+          const retries = retryCountFromNote(item.note);
+          if (retries <= 0) return null;
+          // Tone steps: 1 retry → amber (warning), 2 retries → rust (max
+          // out, retryOrStale gives up after MAX_STALE_RETRIES=2). Keeps
+          // the eye drawn to truly-exhausted items while still flagging
+          // the once-failed ones.
+          const tone = retries >= 2 ? 'text-rust' : 'text-amber';
+          return (
+            <span
+              className={clsx(
+                'shrink-0 font-mono text-[9px] tabular-nums',
+                tone,
+              )}
+              title={`retried ${retries}× · ${item.note ?? ''}`}
+            >
+              ↻{retries}
+            </span>
+          );
+        })()}
         {isStale && item.staleSinceSha && (
           <span
             className="shrink-0 font-mono text-[9px] text-amber tabular-nums"

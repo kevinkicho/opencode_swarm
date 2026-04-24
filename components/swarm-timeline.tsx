@@ -440,7 +440,13 @@ export function SwarmTimeline({
                         )}
                         <ProviderBadge provider={a.model.provider} size="sm" clickable />
                       </div>
-                      <LaneMeter throughput={throughput} tokens={a.tokensUsed} cost={a.costUsed} />
+                      <LaneMeter
+                        throughput={throughput}
+                        tokens={a.tokensUsed}
+                        tokensIn={a.tokensIn}
+                        tokensOut={a.tokensOut}
+                        cost={a.costUsed}
+                      />
                     </div>
                     {active && (
                       <span className="absolute left-0 right-0 bottom-0 h-[1px] bg-molten" />
@@ -502,10 +508,14 @@ export function SwarmTimeline({
 function LaneMeter({
   throughput,
   tokens,
+  tokensIn,
+  tokensOut,
   cost,
 }: {
   throughput: LaneThroughput;
   tokens: number;
+  tokensIn: number;
+  tokensOut: number;
   cost: number;
 }) {
   const hasOut = throughput.outRate > 0;
@@ -523,24 +533,36 @@ function LaneMeter({
   return (
     <>
       <div className="mt-1 flex items-center gap-1.5 h-3 font-mono text-[9.5px] tabular-nums">
-        <Tooltip content="outbound part rate" side="top">
+        {/* When the throughput rate is zero (idle / dead lane), fall back
+            to the cumulative tokens-in / tokens-out totals. The previous
+            behavior — formatRate(0) → "—" — read visually as "no data
+            exists" even when the lane had real history. Tooltip switches
+            tone to match: live lanes get rate-per-second, idle lanes get
+            cumulative breakdown. STATUS.md 2026-04-24 fix. */}
+        <Tooltip
+          content={hasOut ? 'outbound part rate' : 'cumulative output tokens (idle)'}
+          side="top"
+        >
           <span
             className={clsx(
               'shrink-0 transition-colors cursor-help',
-              hasOut ? 'text-fog-200' : 'text-fog-800',
+              hasOut ? 'text-fog-200' : tokensOut > 0 ? 'text-fog-500' : 'text-fog-800',
             )}
           >
-            out {formatRate(throughput.outRate)}
+            out {hasOut ? formatRate(throughput.outRate) : compact(tokensOut)}
           </span>
         </Tooltip>
-        <Tooltip content="inbound part rate" side="top">
+        <Tooltip
+          content={hasIn ? 'inbound part rate' : 'cumulative input tokens (idle)'}
+          side="top"
+        >
           <span
             className={clsx(
               'shrink-0 transition-colors cursor-help',
-              hasIn ? 'text-fog-200' : 'text-fog-800',
+              hasIn ? 'text-fog-200' : tokensIn > 0 ? 'text-fog-500' : 'text-fog-800',
             )}
           >
-            in {formatRate(throughput.inRate)}
+            in {hasIn ? formatRate(throughput.inRate) : compact(tokensIn)}
           </span>
         </Tooltip>
         <div className="ml-auto flex items-center gap-[3px]">
