@@ -429,7 +429,7 @@ export function SwarmTimeline({
                         )}
                         <ProviderBadge provider={a.model.provider} size="sm" clickable />
                       </div>
-                      <LaneMeter throughput={throughput} />
+                      <LaneMeter throughput={throughput} tokens={a.tokensUsed} cost={a.costUsed} />
                     </div>
                     {active && (
                       <span className="absolute left-0 right-0 bottom-0 h-[1px] bg-molten" />
@@ -488,7 +488,15 @@ export function SwarmTimeline({
   );
 }
 
-function LaneMeter({ throughput }: { throughput: LaneThroughput }) {
+function LaneMeter({
+  throughput,
+  tokens,
+  cost,
+}: {
+  throughput: LaneThroughput;
+  tokens: number;
+  cost: number;
+}) {
   const hasOut = throughput.outRate > 0;
   const hasIn = throughput.inRate > 0;
   const anyActive = hasOut || hasIn;
@@ -502,38 +510,53 @@ function LaneMeter({ throughput }: { throughput: LaneThroughput }) {
   const dots = Array.from(uniqueColors.values()).slice(0, 5);
 
   return (
-    <div className="mt-1 flex items-center gap-1.5 h-3 font-mono text-[9.5px] tabular-nums">
-      <Tooltip content="outbound part rate" side="top">
-        <span
-          className={clsx(
-            'shrink-0 transition-colors cursor-help',
-            hasOut ? 'text-fog-200' : 'text-fog-800',
-          )}
-        >
-          out {formatRate(throughput.outRate)}
-        </span>
-      </Tooltip>
-      <Tooltip content="inbound part rate" side="top">
-        <span
-          className={clsx(
-            'shrink-0 transition-colors cursor-help',
-            hasIn ? 'text-fog-200' : 'text-fog-800',
-          )}
-        >
-          in {formatRate(throughput.inRate)}
-        </span>
-      </Tooltip>
-      <div className="ml-auto flex items-center gap-[3px]">
-        {dots.map((color, i) => (
+    <>
+      <div className="mt-1 flex items-center gap-1.5 h-3 font-mono text-[9.5px] tabular-nums">
+        <Tooltip content="outbound part rate" side="top">
           <span
-            key={i}
-            className="w-1 h-1 rounded-full animate-pulse"
-            style={{ backgroundColor: color }}
-          />
-        ))}
-        {!anyActive && <span className="w-1 h-1 rounded-full bg-ink-600" />}
+            className={clsx(
+              'shrink-0 transition-colors cursor-help',
+              hasOut ? 'text-fog-200' : 'text-fog-800',
+            )}
+          >
+            out {formatRate(throughput.outRate)}
+          </span>
+        </Tooltip>
+        <Tooltip content="inbound part rate" side="top">
+          <span
+            className={clsx(
+              'shrink-0 transition-colors cursor-help',
+              hasIn ? 'text-fog-200' : 'text-fog-800',
+            )}
+          >
+            in {formatRate(throughput.inRate)}
+          </span>
+        </Tooltip>
+        <div className="ml-auto flex items-center gap-[3px]">
+          {dots.map((color, i) => (
+            <span
+              key={i}
+              className="w-1 h-1 rounded-full animate-pulse"
+              style={{ backgroundColor: color }}
+            />
+          ))}
+          {!anyActive && <span className="w-1 h-1 rounded-full bg-ink-600" />}
+        </div>
       </div>
-    </div>
+      {/* Cumulative tokens + cost. Always rendered so a quiet lane
+          still carries meaningful data (rates alone read as zeros
+          when a session is between turns). Compact format: "12.4K
+          tok · $0.42" fits within the typical lane width. */}
+      <div className="mt-0.5 flex items-center gap-1.5 font-mono text-[9.5px] tabular-nums text-fog-600">
+        <Tooltip content="cumulative tokens this session" side="top">
+          <span className="shrink-0 cursor-help">{compact(tokens)} tok</span>
+        </Tooltip>
+        <span className="text-fog-800">·</span>
+        <Tooltip content="cumulative cost this session" side="top">
+          <span className="shrink-0 cursor-help">${cost.toFixed(2)}</span>
+        </Tooltip>
+      </div>
+    </>
   );
 }
 
