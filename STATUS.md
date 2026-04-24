@@ -581,6 +581,21 @@ One day, large ship run. Grouped by theme.
   serves all pre-compiled chunks in <1s. Documented for future-me
   who'll wonder why dev feels slow.
 
+- **Auto-ticker startup-cleanup aborts sessions in still-active
+  runs.** On dev restart, `lib/server/blackboard/auto-ticker.ts`
+  startup hook scans all runs younger than 48h and aborts every
+  session marked "live" in opencode. Observed 2026-04-24 on
+  run_modgus90_uny5ga: planner had ~1m of idle time during dev
+  restart, cleanup swept 151 sessions across 37 runs, planner
+  status flipped to `error`. The cleanup's intent is good (no
+  zombie "live" sessions from dead dev runs), but it's too wide:
+  it shouldn't reap sessions in runs whose lastActivityTs is
+  within the last few minutes, or runs whose board still has open
+  items + non-zero tokens (signal: still useful, not a corpse).
+  Fix: add a guard in the cleanup loop — skip runs where
+  `lastActivityTs > now - 5min` OR (open board items > 0 AND
+  totalTokens > 0). ~30 min.
+
 - **Postmortem F1–F9 from `docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md`.**
   Nine fixes declared, all `PROPOSED`. F1 (dispatch watchdog) + F2 (opencode log
   tail into dev console) are P0 and unblock everything else — ~3–4 h each.
