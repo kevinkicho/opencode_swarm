@@ -250,7 +250,87 @@ there are 429s, the Zen probe didn't find them and
 
 ---
 
-## 6. Parser correctness (stripVerifyTag, stripRoleTag)
+## 6. Ollama tier — code-level invariants
+
+**What it does.** Locks in the 2026-04-24 three-tier reversal at the
+Next.js layer: `providerOf()` buckets ollama correctly, `priceFor()`
+returns 0 for all 5 `ollama/*:cloud` model IDs without cross-
+contaminating the zen pricing rows (e.g. `ollama/kimi-k2.6:cloud` must
+not hit the zen `kimi-k2-6` row and get charged per-token — the
+`LOOKUP` reorder is the guard, this test locks it), both catalogs
+carry all 5 entries with the right provider/family/pricing shape.
+
+**Invocation.**
+```bash
+npx tsx scripts/_ollama_smoke.mjs
+```
+
+**Pass signals.** All 55 assertions pass. Exits 0.
+
+**Fail signals.** Most likely regressions:
+- A new zen pricing row uses a pattern that matches `ollama/*:cloud`
+  before the catchall hits → model gets per-token priced by mistake
+- Someone removes a model from the catalog without updating the other
+- `familyMeta['ollama']` accidentally dropped → modal picker crashes
+
+**What this does NOT cover.** Actual dispatch through opencode to
+ollama's cloud API. That needs §6.6 below — live-run validation with
+opencode configured for the ollama provider.
+
+## 7. Ollama tier — live dispatch (not yet exercised)
+
+**What needs validating.** An actual run dispatching through an
+`ollama/*:cloud` model. The Next.js layer is invariant-tested in §6.5;
+what remains is verifying opencode correctly routes to the ollama
+endpoint when given `ollama/glm-5.1:cloud` (etc.) as the model field.
+
+**Setup (one-time).**
+1. An ollama account with the max monthly plan active.
+2. Configure `opencode.json` (or equivalent) with an `ollama` provider
+   block that routes `ollama/*:cloud` model IDs to
+   `https://ollama.com/api/chat` (or the current ollama cloud API
+   endpoint). See the `ollama_swarm` sibling repo at
+   `github.com/kevinkicho/ollama_swarm` for a working provider-block
+   shape.
+
+**Invocation.**
+```bash
+curl -X POST http://localhost:<port>/api/swarm/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pattern": "blackboard",
+    "workspace": "/abs/path/to/target/repo",
+    "directive": "Smoke-test an ollama-dispatched run.",
+    "teamSize": 2
+  }'
+```
+
+Then pick `glm 5.1 (ollama)` or another `ollama` family model in the
+new-run-modal (or include it in the team config).
+
+**Pass signals.**
+- First assistant turn lands within the normal window; tokens tick
+  upward.
+- UI provider badges show `ollama` (iris accent) on the roster rows.
+- `GET /api/swarm/run/:id/tokens` returns non-zero `tokens` and
+  `cost: 0` for ollama-tier sessions (subscription-bundled).
+- Cost-dashboard / provider-stats popover shows an ollama row with
+  calls > 0 and $0.
+
+**Fail signals.**
+- Opencode returns 404 / provider unknown → `opencode.json` isn't
+  configured for ollama.
+- Tokens stay at 0 past STARTUP_GRACE (15 min) → watchdog declares
+  `opencode-frozen` or `zen-rate-limit`. Grep opencode's log for
+  `ollama` to confirm the request even got routed there.
+- Costs accumulate > $0 on ollama-tier sessions → LOOKUP reorder
+  broke; re-run §6.5 smoke to pinpoint.
+
+**This is the one live validation this session shipped without
+exercising — feeding it to a real opencode + ollama is the first
+natural opportunity.**
+
+## 8. Parser correctness (stripVerifyTag, stripRoleTag)
 
 **What it does.** `latestTodosFrom` in `lib/server/blackboard/planner.ts`
 strips leading `[verify]` / `[role:<name>]` prefixes from todo content
