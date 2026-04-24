@@ -11,7 +11,8 @@
     "swarm:reindex": "npx tsx scripts/reindex.mjs",
     "perf:lighthouse": "node scripts/perf-lighthouse.mjs",
     "perf:lighthouse:dev": "node scripts/perf-lighthouse.mjs dev",
-    "perf:lighthouse:prod": "node scripts/perf-lighthouse.mjs prod"
+    "perf:lighthouse:prod": "node scripts/perf-lighthouse.mjs prod",
+    "perf:bundle": "node scripts/perf-bundle.mjs"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
@@ -27,6 +28,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@next/bundle-analyzer": "^16.2.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
@@ -35,6 +37,7 @@
     "lighthouse": "^13.1.0",
     "playwright": "^1.59.1",
     "postcss": "^8.4.49",
+    "react-scan": "^0.5.3",
     "tailwindcss": "^3.4.15",
     "typescript": "^5.6.3"
   }

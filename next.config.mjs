@@ -1,3 +1,13 @@
+import bundleAnalyzer from '@next/bundle-analyzer';
+
+// Bundle analyzer: opt-in via env flag so the default build stays fast.
+// `npm run perf:bundle` sets ANALYZE=true, which opens an interactive
+// treemap showing what's in each route's initial JS. Use this to chase
+// "why is the first page load huge?" questions.
+const withBundleAnalyzer = bundleAnalyzer({
+  enabled: process.env.ANALYZE === 'true',
+});
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -22,4 +32,4 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withBundleAnalyzer(nextConfig);
