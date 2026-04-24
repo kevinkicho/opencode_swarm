@@ -349,7 +349,10 @@ interface RawTodo {
 // content rather than invent a new tool). Case-insensitive; allows
 // variants like `[verify]`, `[VERIFY]`, `[Verify]`.
 const VERIFY_TAG_RE = /^\s*\[verify\]\s*/i;
-function stripVerifyTag(content: string): {
+// Exported for `scripts/_parser_smoke.mjs` — pure function, safe to
+// import from a smoke script that doesn't want to pull in the rest of
+// the planner's server-only dependency graph.
+export function stripVerifyTag(content: string): {
   content: string;
   requiresVerification: boolean;
 } {
@@ -370,7 +373,9 @@ function stripVerifyTag(content: string): {
 // matches `tester` downstream. Applies idempotently after
 // stripVerifyTag so `[verify] [role:tester] ...` composes.
 const ROLE_TAG_RE = /^\s*\[role:\s*([a-z0-9][a-z0-9\s\-_]{0,31})\s*\]\s*/i;
-function stripRoleTag(content: string): {
+// Exported for `scripts/_parser_smoke.mjs` — same rationale as
+// stripVerifyTag.
+export function stripRoleTag(content: string): {
   content: string;
   preferredRole: string | undefined;
 } {

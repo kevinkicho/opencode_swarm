@@ -172,6 +172,33 @@ One day, large ship run. Grouped by theme.
   runs get tier-appropriate planning on their first sweep without
   touching every kickoff call site.
 
+- **Opt-in opencode auto-restart** on `stopReason: 'opencode-frozen'`.
+  New `OPENCODE_RESTART_CMD` env var; when set, the frozen watchdog
+  spawns it via `child_process.spawn({ shell, detached, stdio:
+  'ignore' })` so the user's launcher (PowerShell, systemd, Docker
+  restart) brings opencode back without human intervention. Module-
+  level 10-min debounce prevents restart hammering on still-broken
+  opencode. Zero-config behavior unchanged — ticker stays stopped
+  when the env var is unset. `lib/server/opencode-restart.ts`.
+
+- **Cross-run comparison surface** at `/projects/[slug]`. Repo-leaf
+  slug lands on a page that lists every run targeting the workspace,
+  grouped into continuation chains built from `continuationOf`
+  pointers. Per-run row: pattern, status, tier (with `↗` marker for
+  inherited runs), duration, tokens, cost, age. Chain header
+  aggregates total tokens/cost/duration so "this lineage burned $X
+  over Y hours" is visible at a glance. Existing `/projects` matrix
+  rows now link through. `app/projects/[slug]/page.tsx` +
+  `components/repo-runs-view.tsx`.
+
+- **Validation runbook** at `docs/VALIDATION.md`. Consolidates every
+  validation-debt item (Playwright gate, pattern benchmark, tier
+  escalation, non-ticker patterns, overnight safety) with setup /
+  invocation / pass-fail signals so a real-run pass can execute
+  without re-deriving the plan each time. Plus `scripts/_parser_smoke.mjs`
+  — 16 assertions over `stripVerifyTag` / `stripRoleTag`, run with
+  `npx tsx scripts/_parser_smoke.mjs`, exits 0 on pass.
+
 - **Auto-abort on worker-timeout.** When `tickCoordinator`'s
   `waitForSessionIdle` returns `{ ok: false, reason: 'timeout' }`, the
   coordinator now calls `abortSessionServer` immediately instead of
@@ -310,16 +337,6 @@ One day, large ship run. Grouped by theme.
 
 ## Queued — designed but not started
 
-### Nice-to-have (lower leverage, bigger effort)
-
-- **Auto-restart opencode on `opencode-frozen`.** Needs external
-  control plane (app can't reach the PowerShell launcher). Lower
-  priority now that most freezes are rate-limit, not process wedge.
-
-- **Cross-run comparison surface** — `/projects/<repo>/runs` multi-run
-  diff viewer pulling from `demo-log/`. Partially unblocked by
-  continuationOf — the lineage pointer gives a natural join key.
-
 ### Designed but deprioritized
 
 - **Route C "writers-room"** (memory/project_a2a_routes.md). Deferred
@@ -329,7 +346,9 @@ One day, large ship run. Grouped by theme.
 
 ## Validation debt
 
-Things we shipped but haven't exercised against real runs.
+Things we shipped but haven't exercised against real runs. See
+`docs/VALIDATION.md` for the per-item runbook (setup / invocation /
+pass-fail signals).
 
 - **Playwright grounding (`enableVerifierGate: true`)** — schema + code
   wired, never exercised live. Blocked on: user running the target

@@ -45,6 +45,7 @@ import {
   formatRetryAfter,
 } from '../zen-rate-limit-probe';
 import { pruneDemoLog } from '../demo-log-retention';
+import { maybeRestartOpencode } from '../opencode-restart';
 import { liveExports, publishExports } from '../hmr-exports';
 import {
   COORDINATOR_EXPORTS_KEY,
@@ -670,6 +671,7 @@ async function checkLiveness(state: TickerState): Promise<void> {
             `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen (startup) — 0 tokens after ${Math.round(age / 60_000)}min, no recent 429 in the log. Stopping ticker. Restart opencode + the ticker to recover.`,
           );
           stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+          maybeRestartOpencode(`${state.swarmRunID} (startup freeze)`);
         }
       }
       return;
@@ -703,6 +705,7 @@ async function checkLiveness(state: TickerState): Promise<void> {
           `[board/auto-ticker] ${state.swarmRunID}: opencode-frozen — no token delta in ${Math.round(stuckFor / 60_000)}min (tokens stuck at ${tokens}), no recent 429 in the log. Stopping ticker. Restart opencode + the ticker to recover.`,
         );
         stopAutoTicker(state.swarmRunID, 'opencode-frozen');
+        maybeRestartOpencode(`${state.swarmRunID} (mid-run freeze)`);
       }
     }
   } catch (err) {

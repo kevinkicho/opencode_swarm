@@ -357,15 +357,18 @@ function MatrixRow({
                 </div>
               )}
               <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700 tabular-nums">
-                {project.runs.length} total · {totalInWindow} in window
+                {project.runs.length} total · {totalInWindow} in window · click to compare runs
               </div>
             </div>
           }
           side="right"
         >
-          <span className="font-mono text-[11px] text-fog-300 truncate cursor-default">
+          <Link
+            href={`/projects/${encodeURIComponent(project.repoName)}`}
+            className="font-mono text-[11px] text-fog-300 truncate hover:text-fog-100 transition-colors"
+          >
             {project.repoName}
-          </span>
+          </Link>
         </Tooltip>
       </div>
 

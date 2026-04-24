@@ -549,6 +549,7 @@ These are recorded so future contributors don't burn cycles re-asking:
 | `lib/playback-context.tsx` | Run clock + per-part phase machine |
 | `docs/ARCHITECTURE.md` | Runtime data-flow, exhaustive component/file map, debugging playbook |
 | `docs/API.md` | Greppable catalog of every HTTP endpoint (method · path · body · response · errors) |
+| `docs/VALIDATION.md` | Runbook for features that shipped but need real-run exercise (Playwright gate, pattern benchmark, tier escalation, non-ticker patterns, overnight safety) |
 | `docs/opencode-vocabulary.md` | Detailed canonical vocab from opencode SDK |
 
 ---

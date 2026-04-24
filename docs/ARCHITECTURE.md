@@ -235,6 +235,18 @@ failure modes. Everything below lives in `lib/server/blackboard/`:
   the start. Surfaces in `components/board-rail.tsx`'s ticker footer
   as `stopped · opencode-frozen` — distinct from `auto-idle` so the
   user knows to restart opencode rather than the ticker.
+- **Opt-in opencode auto-restart** (`lib/server/opencode-restart.ts`).
+  After the frozen watchdog stops a ticker, `maybeRestartOpencode` runs
+  `OPENCODE_RESTART_CMD` via `child_process.spawn({ shell, detached,
+  stdio: 'ignore' })` so the user's launcher (PowerShell one-liner,
+  systemd user service, Docker restart, whatever) comes back up
+  without human intervention. Zero-config when the env var is unset —
+  the ticker stays stopped exactly as before. Module-level debounce
+  at 10 min so a loop of restarts into a still-broken opencode doesn't
+  hammer; the STARTUP_GRACE (15 min) naturally paces the next attempt.
+  Ticker still needs a manual `POST …/board/ticker { action: 'start' }`
+  after opencode comes back — the restart doesn't auto-resume so the
+  user observes recovery explicitly.
 - **Zen rate-limit probe** (`lib/server/zen-rate-limit-probe.ts`). Before
   declaring a stall as `opencode-frozen`, the watchdog tails opencode's
   own log directory (`OPENCODE_LOG_DIR`) for recent `statusCode":429`
