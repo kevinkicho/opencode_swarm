@@ -28,6 +28,89 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-24 — blackboard declared-roles Stage 2 (Auditor + contract + hard caps)
+
+Completes the ollama-swarm spec alignment started in Stage 1. Closes
+P0 gaps from the 2026-04-24 declared-roles audit: no auditor role, no
+criterion contract, no "all criteria met" feedback loop, no hard-cap
+enforcement. Four self-contained commits (3ffb9c9, 3cb09c0, a68d824,
+this one), smoke-tested between each.
+
+**Stage 2.1 — Criterion as BoardItemKind (3ffb9c9).**
+- New `kind='criterion'` on `BoardItem`; status values reused per-kind
+  (open=pending, done=met, blocked=unmet, stale=wont-do).
+- `stripCriterionTag` parser for `[criterion]` content prefix;
+  composes with existing tags.
+- Planner prompt teaches the LLM to author 3-6 criteria at boot + add
+  new ones on later sweeps (never rewrite existing ones — frozen
+  contract text).
+- `buildPlannerBoardContext` surfaces criteria with verdict labels
+  (`[MET]` / `[UNMET]` / `[pending]`) so re-sweeps target unmet.
+- UI: new diamond glyph `◆` for kind='criterion' in board-rail +
+  board-preview (amber).
+- Coordinator picker already filtered by kind — criteria safely
+  excluded from worker dispatch without code change.
+
+**Stage 2.2 — Auditor session + batch review (3cb09c0).**
+- `lib/server/blackboard/auditor.ts` — mirror of critic.ts; per-run
+  mutex; batch audit (N criteria → N verdicts in one prompt/reply).
+- `auditCriteria({ swarmRunID, auditorSessionID, criteria,
+  recentDoneSummaries, currentTier })` → verdicts `met|unmet|
+  wont-do|unclear`.
+- Opt-in `enableAuditorGate` + `auditEveryNCommits` on
+  `SwarmRunRequest` + `SwarmRunMeta`. Blackboard-family only.
+- Route Step 2.7 spawns dedicated auditor session at run creation;
+  fail-open on spawn failure (same as critic/verifier).
+- finalize-run + auto-ticker cleanup paths all abort the auditor
+  session on run end.
+
+**Stage 2.3 — Audit cadence in auto-ticker (a68d824).**
+- Three triggers: every K commits (fire-and-forget), on tier
+  escalation (AWAITED so verdicts are in the next sweep's prompt
+  context), on run-end (fire-and-forget).
+- `maybeRunAudit(state, reason)` applies verdicts via
+  `transitionStatus`:
+    - MET → done (from 'open'|'blocked')
+    - UNMET → blocked (criteria can oscillate)
+    - WONT_DO → stale
+    - unclear → no transition (retry next audit)
+- `TickerState`: `commitsSinceLastAudit`, `auditInFlight`,
+  `auditEveryNCommits` (lazy-synced from meta).
+
+**Stage 2.4 — Hard caps + MAX_TIER continuity (this commit).**
+- User's 2026-04-24 termination precedence: ratchet wins over
+  "all criteria met"; run continues until a hard cap or manual stop.
+- `SwarmRunBounds` extended: `commitsCap` (default 200),
+  `todosCap` (default 300). `minutesCap` already existed, now
+  enforced (default 480 = 8h).
+- `StopReason` gains `'hard-cap'`.
+- `checkHardCaps(state)` runs on every commit (via tickSession) and
+  every liveness tick (60s — catches wall-clock on quiet runs).
+- `attemptTierEscalation`: MAX_TIER NO LONGER stops the ticker —
+  caps `nextTier` at MAX_TIER and re-sweeps there. Subsequent
+  cascades re-sweep at MAX_TIER again (throttled by
+  MIN_MS_BETWEEN_SWEEPS). `tierExhausted` stays as a diagnostic
+  flag but no longer feeds into any stop path.
+- Deleted the `if (state.tierExhausted) stopAutoTicker('auto-idle')`
+  branch from the idle-cascade tick logic.
+- Route validator accepts `bounds.commitsCap` + `bounds.todosCap`
+  as positive integers.
+
+Design decisions pending (from 2026-04-24 design conversation):
+- ✅ #1 Criterion shape: BoardItemKind='criterion' + free-text content
+- ✅ #2 Authorship timing: refine-as-you-go (planner can add on later
+       sweeps; auditor can also add; neither rewrites existing)
+- ✅ #3 Termination precedence: ratchet wins; at MAX_TIER keep going
+       until hard cap or manual stop
+- ✅ #4 Audit cadence default: K=5; audit on tier escalation (yes);
+       audit at run-end (yes)
+
+Typecheck clean through all four commits. Smoke tests green:
+- _parser_smoke.mjs         — 30 passed
+- _stage1_smoke.mjs         — 20 passed
+- _ollama_smoke.mjs         — 55 passed
+- _team_models_smoke.mjs    — 11 passed
+
 ### 2026-04-24 — blackboard declared-roles Stage 1 (CAS hardening)
 
 Stance revision: user rescinded "blackboard is self-organizing, no

@@ -147,11 +147,26 @@ const FROZEN_TOKENS_THRESHOLD_MS = 10 * 60 * 1000;
 // then is broken in a way worth stopping.
 const STARTUP_GRACE_MS = 15 * 60 * 1000;
 
+// Stage 2 hard-cap defaults (ollama-swarm spec: "hard caps fire
+// whichever first: wall-clock default 8h, 200 commits, 300 todos").
+// Effective caps are max(meta.bounds.<cap>, default). Per-run override
+// is authoritative when set; defaults keep hands-off runs from running
+// forever at MAX_TIER when the ambition ratchet can't self-exhaust
+// anymore (Stage 2 removed the tierExhausted → stop path).
+const DEFAULT_WALLCLOCK_MINUTES = 8 * 60; // 8h
+const DEFAULT_COMMITS_CAP = 200;
+const DEFAULT_TODOS_CAP = 300;
+
 export type StopReason =
   | 'auto-idle'
   | 'manual'
   | 'opencode-frozen'
-  | 'zen-rate-limit';
+  | 'zen-rate-limit'
+  // Stage 2 hard-cap enforcement (wall-clock / commits / todos). The
+  // ollama-swarm spec's "hard caps fire whichever first" — a ceiling
+  // above which the run stops regardless of what the auditor or
+  // planner say. Absent per-run overrides default to 8h / 200 / 300.
+  | 'hard-cap';
 
 interface PerSessionSlot {
   sessionID: string;
@@ -196,6 +211,12 @@ interface TickerState {
   commitsSinceLastAudit: number;
   auditInFlight: boolean;
   auditEveryNCommits: number;
+  // Stage 2 hard-cap counters. totalCommits is a monotonic counter of
+  // successful 'picked' outcomes (todos landed as done) across the run
+  // — the signal for bounds.commitsCap. The todos-seen cap reads
+  // directly from listBoardItems (cheaper to compute on-demand than
+  // cache) so no counter field is needed for it.
+  totalCommits: number;
   // Count of back-to-back periodic sweeps that produced zero new work
   // AND found the board devoid of active (open/claimed/in-progress)
   // items. Incremented in runPeriodicSweep; resets when a sweep seeds
@@ -465,17 +486,24 @@ async function tickSession(
       slot.consecutiveIdle = 0;
     }
 
-    // Stage 2 audit-cadence trigger. 'picked' = a worker successfully
-    // committed a todo to done, which is what "a commit" means for our
-    // purposes. Increment the counter and fire an audit asynchronously
-    // when we cross the cadence threshold. maybeRunAudit gates on
-    // whether the run actually has an auditor configured, so runs
-    // without the gate pay only this one counter increment.
+    // Stage 2 commit-cadence + hard-cap bookkeeping. 'picked' = a worker
+    // successfully committed a todo to done — what "a commit" means in
+    // the spec. Increments both the totalCommits (hard-cap signal) and
+    // commitsSinceLastAudit (audit-cadence signal) counters. maybeRun-
+    // Audit gates on whether the run actually has an auditor configured
+    // so runs without the gate pay only the counter increments.
     if (outcome.status === 'picked') {
+      state.totalCommits += 1;
       state.commitsSinceLastAudit += 1;
       if (state.commitsSinceLastAudit >= state.auditEveryNCommits) {
         void maybeRunAudit(state, 'cadence');
       }
+      // Hard-cap check after every commit — at-commit is when all
+      // three dimensions (commits, todos, wall-clock) are most likely
+      // to have shifted. Fire-and-forget: if breached, checkHardCaps
+      // calls stopAutoTicker itself. Don't race against further ticks
+      // — state.stopped gates any subsequent work.
+      void checkHardCaps(state);
     }
     const slots = [...state.slots.values()];
 
@@ -515,22 +543,17 @@ async function tickSession(
       slots.length > 0 &&
       slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP)
     ) {
-      // Ambition ratchet (see SWARM_PATTERNS.md "Tiered execution"). Before
-      // stopping, try a tier-N+1 planner escalation. If it seeds items, the
-      // ticker keeps going at the new tier. If every tier up to MAX_TIER
-      // has been tried and produced zero, `tierExhausted` goes true and we
-      // stop for real on the next cascade.
-      if (state.tierExhausted) {
-        console.log(
-          `[board/auto-ticker] ${state.swarmRunID}: all ${slots.length} sessions idle post-max-tier — stopping`,
-        );
-        stopAutoTicker(state.swarmRunID, 'auto-idle');
-      } else if (!state.resweepInFlight) {
+      // Ambition ratchet (see SWARM_PATTERNS.md "Tiered execution"). On
+      // idle cascade we try a tier-N+1 planner escalation. If it seeds
+      // items, the ticker keeps going at the new tier. Stage 2 (user's
+      // 2026-04-24 termination-precedence decision): MAX_TIER does NOT
+      // stop the ticker — attemptTierEscalation caps nextTier at
+      // MAX_TIER, re-sweeps there, and returns. Subsequent cascades
+      // re-sweep at MAX_TIER again (throttled by MIN_MS_BETWEEN_SWEEPS).
+      // Only hard caps (commitsCap / todosCap / minutesCap) or a manual
+      // stop end the run.
+      if (!state.resweepInFlight) {
         state.resweepInFlight = true;
-        // Fire-and-forget so this tick doesn't block. Escalation either
-        // seeds tier-N+1 todos (reset idle counters + bump tier) or
-        // produces zero (bump tier; next cascade tries the next tier,
-        // unless we've hit MAX_TIER in which case tierExhausted goes true).
         void attemptTierEscalation(state);
       }
     }
@@ -579,24 +602,22 @@ async function fanout(swarmRunID: string): Promise<void> {
 async function attemptTierEscalation(state: TickerState): Promise<void> {
   const swarmRunID = state.swarmRunID;
   state.lastSweepAtMs = Date.now();
-  const nextTier = state.currentTier + 1;
+  // `candidate` = what we'd escalate to naturally; `clampedNextTier`
+  // is the bounded value used for the actual sweep. At MAX_TIER the
+  // two diverge — candidate might be 6 but we re-sweep at 5 again
+  // (Stage 2 MAX_TIER continuity — user's 2026-04-24 precedence call).
+  const candidate = state.currentTier + 1;
+  const clampedNextTier = Math.min(candidate, MAX_TIER);
   const tierLabel =
-    TIER_LADDER.find((t) => t.tier === nextTier)?.name ?? `Tier ${nextTier}`;
+    TIER_LADDER.find((t) => t.tier === clampedNextTier)?.name ?? `Tier ${clampedNextTier}`;
   try {
-    if (nextTier > MAX_TIER) {
-      // We've already topped out. Mark exhausted so the next cascade
-      // triggers the actual stop. (Reached here only if currentTier ===
-      // MAX_TIER and a prior escalation at MAX_TIER seeded items, so
-      // we kept running — now the board drained again and there's
-      // nowhere to escalate to.)
+    if (clampedNextTier === state.currentTier) {
       console.log(
-        `[board/auto-ticker] ${swarmRunID}: already at MAX_TIER=${MAX_TIER}, nothing to escalate to`,
+        `[board/auto-ticker] ${swarmRunID}: at MAX_TIER=${MAX_TIER} — re-sweeping at tier ${MAX_TIER} instead of escalating. Run continues until a hard cap or manual stop.`,
       );
-      state.tierExhausted = true;
-      return;
     }
     console.log(
-      `[board/auto-ticker] ${swarmRunID}: attempting tier escalation ${state.currentTier} → ${nextTier} (${tierLabel})`,
+      `[board/auto-ticker] ${swarmRunID}: attempting tier escalation ${state.currentTier} → ${clampedNextTier} (${tierLabel})`,
     );
     // Stage 2 audit: run a pre-escalation audit so the next sweep's
     // prompt context carries fresh verdicts (criteriaSummaries surface
@@ -617,7 +638,7 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
     const result = await livePlanner().runPlannerSweep(swarmRunID, {
       overwrite: true,
       includeBoardContext: true,
-      escalationTier: nextTier,
+      escalationTier: clampedNextTier,
     });
     const afterOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
@@ -625,19 +646,19 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
     const newlyOpen = afterOpen - beforeOpen;
     if (newlyOpen > 0) {
       console.log(
-        `[board/auto-ticker] ${swarmRunID}: tier-${nextTier} escalation seeded ${newlyOpen} new todo(s) — resetting idle counters`,
+        `[board/auto-ticker] ${swarmRunID}: tier-${clampedNextTier} escalation seeded ${newlyOpen} new todo(s) — resetting idle counters`,
       );
-      state.currentTier = nextTier;
+      state.currentTier = clampedNextTier;
       for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
     } else {
       // This tier had nothing to propose. Bump current tier so the next
       // cascade attempts the tier above. If we just attempted MAX_TIER
       // and got nothing, there's nowhere higher — mark exhausted.
       console.log(
-        `[board/auto-ticker] ${swarmRunID}: tier-${nextTier} escalation produced no work (planner returned ${result.items.length} item(s) total)`,
+        `[board/auto-ticker] ${swarmRunID}: tier-${clampedNextTier} escalation produced no work (planner returned ${result.items.length} item(s) total)`,
       );
-      state.currentTier = nextTier;
-      if (nextTier >= MAX_TIER) {
+      state.currentTier = clampedNextTier;
+      if (clampedNextTier >= MAX_TIER) {
         state.tierExhausted = true;
       }
     }
@@ -656,7 +677,7 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(
-      `[board/auto-ticker] ${swarmRunID}: tier-${nextTier} escalation threw:`,
+      `[board/auto-ticker] ${swarmRunID}: tier-${clampedNextTier} escalation threw:`,
       message,
     );
     // Don't bump tier on exception — a transient opencode / network error
@@ -665,6 +686,64 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
   } finally {
     state.resweepInFlight = false;
   }
+}
+
+// Hard-cap check — Stage 2. Called after each successful commit and
+// before each tick. Returns true if a cap breached; caller stops the
+// ticker. Reads meta lazily (caller paths are hot enough that we
+// benefit from not forcing a getRun on every tick).
+//
+// Three dimensions, any of which triggers stop:
+//   - wall-clock (ms since state.startedAtMs) vs minutesCap
+//   - totalCommits vs commitsCap
+//   - count of kind='todo' board items vs todosCap
+//
+// All three default to the ollama-swarm spec's values when meta.bounds
+// doesn't override; users who want longer / larger runs set per-run
+// caps explicitly. costCap is NOT checked here — the opencode proxy
+// gate at app/api/opencode/[...path]/route.ts owns that dimension
+// (it 402s the prompt before the model turn spends tokens).
+async function checkHardCaps(state: TickerState): Promise<boolean> {
+  if (state.stopped) return false;
+  const meta = await getRun(state.swarmRunID).catch(() => null);
+  if (!meta) return false;
+
+  const minutesCap = meta.bounds?.minutesCap ?? DEFAULT_WALLCLOCK_MINUTES;
+  const commitsCap = meta.bounds?.commitsCap ?? DEFAULT_COMMITS_CAP;
+  const todosCap = meta.bounds?.todosCap ?? DEFAULT_TODOS_CAP;
+
+  const elapsedMs = Date.now() - state.startedAtMs;
+  const elapsedMinutes = elapsedMs / 60_000;
+  if (elapsedMinutes >= minutesCap) {
+    console.log(
+      `[board/auto-ticker] ${state.swarmRunID}: hard-cap breached — wall-clock ${Math.round(elapsedMinutes)}min >= ${minutesCap}min. Stopping.`,
+    );
+    stopAutoTicker(state.swarmRunID, 'hard-cap');
+    return true;
+  }
+
+  if (state.totalCommits >= commitsCap) {
+    console.log(
+      `[board/auto-ticker] ${state.swarmRunID}: hard-cap breached — commits ${state.totalCommits} >= ${commitsCap}. Stopping.`,
+    );
+    stopAutoTicker(state.swarmRunID, 'hard-cap');
+    return true;
+  }
+
+  // Todos seen = count of kind='todo' board items (any status). Cheap
+  // enough at prototype scale (hundreds of items in-memory).
+  const todoCount = listBoardItems(state.swarmRunID).filter(
+    (i) => i.kind === 'todo',
+  ).length;
+  if (todoCount >= todosCap) {
+    console.log(
+      `[board/auto-ticker] ${state.swarmRunID}: hard-cap breached — todos authored ${todoCount} >= ${todosCap}. Stopping.`,
+    );
+    stopAutoTicker(state.swarmRunID, 'hard-cap');
+    return true;
+  }
+
+  return false;
 }
 
 // Audit trigger — Stage 2 declared-roles contract gate.
@@ -806,6 +885,12 @@ async function maybeRunAudit(
 // transient opencode read failure shouldn't kill a healthy run.
 async function checkLiveness(state: TickerState): Promise<void> {
   if (state.stopped) return;
+  // Stage 2 hard-cap check piggy-backs on the liveness interval. The
+  // commit-time check in tickSession covers burst overruns; this
+  // catches wall-clock breaches on runs that go quiet (no 'picked'
+  // outcomes for an extended window) but have been running long
+  // enough to trip the minutes cap.
+  if (await checkHardCaps(state)) return;
   try {
     const meta = await getRun(state.swarmRunID);
     if (!meta) return;
@@ -1098,6 +1183,7 @@ export function startAutoTicker(
     // happens lazily in maybeRunAudit so a run without an auditor
     // doesn't pay the getRun() cost.
     auditEveryNCommits: 5,
+    totalCommits: 0,
     periodicSweepMs,
     periodicSweepTimer,
     orchestratorSessionID,

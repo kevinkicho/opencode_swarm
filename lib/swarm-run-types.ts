@@ -120,7 +120,23 @@ export interface SwarmRunRequest {
 
 export interface SwarmRunBounds {
   costCap?: number;
+  // Wall-clock cap in minutes. Default 480 (8h) for blackboard-family
+  // ticker-driven runs — the ollama-swarm spec's "hard caps fire
+  // whichever first: wall-clock (default 8h), 200 commits, 300 todos."
+  // Set to a number > 0 to override; set to a very large number for
+  // "effectively unbounded" (no sentinel value; just pick 10000+).
   minutesCap?: number;
+  // Max number of successful commits (todos transitioned to done) before
+  // the ticker auto-stops with stopReason='hard-cap'. Default 200.
+  // Criteria status-transitions via auditor don't count toward this —
+  // only worker-completed todos. Stage 2 declared-roles alignment.
+  commitsCap?: number;
+  // Max number of todos ever authored on the board (planner
+  // todowrite outputs) before the ticker auto-stops. Default 300.
+  // Criteria are excluded from the count. Prevents runaway planner
+  // sweeps from flooding the board with work neither the user nor
+  // the auditor asked for.
+  todosCap?: number;
 }
 
 // --- run metadata (persisted to meta.json) ----------------------------------

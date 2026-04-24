@@ -209,7 +209,12 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
   if (obj.bounds !== undefined) {
     if (!obj.bounds || typeof obj.bounds !== 'object') return 'bounds must be an object';
     const b = obj.bounds as Record<string, unknown>;
-    const bounds: { costCap?: number; minutesCap?: number } = {};
+    const bounds: {
+      costCap?: number;
+      minutesCap?: number;
+      commitsCap?: number;
+      todosCap?: number;
+    } = {};
     if (b.costCap !== undefined) {
       if (typeof b.costCap !== 'number' || !Number.isFinite(b.costCap)) {
         return 'bounds.costCap must be a finite number';
@@ -221,6 +226,28 @@ function parseRequest(raw: unknown): SwarmRunRequest | string {
         return 'bounds.minutesCap must be a finite number';
       }
       bounds.minutesCap = b.minutesCap;
+    }
+    if (b.commitsCap !== undefined) {
+      if (
+        typeof b.commitsCap !== 'number' ||
+        !Number.isFinite(b.commitsCap) ||
+        !Number.isInteger(b.commitsCap) ||
+        b.commitsCap < 1
+      ) {
+        return 'bounds.commitsCap must be a positive integer';
+      }
+      bounds.commitsCap = b.commitsCap;
+    }
+    if (b.todosCap !== undefined) {
+      if (
+        typeof b.todosCap !== 'number' ||
+        !Number.isFinite(b.todosCap) ||
+        !Number.isInteger(b.todosCap) ||
+        b.todosCap < 1
+      ) {
+        return 'bounds.todosCap must be a positive integer';
+      }
+      bounds.todosCap = b.todosCap;
     }
     req.bounds = bounds;
   }
