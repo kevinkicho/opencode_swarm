@@ -437,7 +437,7 @@ function PageBody({
   // Left-panel tab is lifted so the timeline can reveal the plan when a task
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
-  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board' | 'heat'>('plan');
+  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board' | 'contracts' | 'heat'>('plan');
 
   // Board SSE subscription lives at the page level so both the left-rail
   // "board" tab and the main-view "board" toggle read from the same

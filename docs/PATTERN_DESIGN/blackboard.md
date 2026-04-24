@@ -158,7 +158,7 @@ again on next sweep.
 
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
-| contracts-tab | tab | PROPOSED | — | — | design frozen here; UI work ~3 h |
+| contracts-tab | tab | SHIPPED | (next commit) | — | wired into LeftTabs; visible only when `boardSwarmRunID` is set; renders ContractsRail with sticky header chips + sorted item rows. ~3 h actual. To verify: load any blackboard run, switch to "contracts" tab, confirm met/unmet/stale/busy/drift chips reflect actual data. |
 | I1 | improvement | PROPOSED | — | — | backend ~2–4 h |
 | I2 | improvement | PROPOSED | — | — | backend ~1–2 h; tied to run_mob31bx6_jzdfs2 |
 | I3 | improvement | PROPOSED | — | — | backend ~2 h; see POSTMORTEMS/2026-04-24 F-equivalent |

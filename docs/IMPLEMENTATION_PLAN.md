@@ -19,12 +19,12 @@ Safe, isolated, no architectural risk.
 
 | # | Item | Source | Effort | Status |
 |---|---|---|---|---|
-| 0.1 | Lane meter `out — in —` placeholders show cumulative when rate=0 | STATUS.md | 30m | PROPOSED |
-| 0.2 | `latest ↓` button two-phase synchronous snap (no smooth-scroll race) | STATUS.md | 15m | PROPOSED |
-| 0.3 | Auto-ticker startup-cleanup skips runs with recent activity / open work | STATUS.md | 30m | PROPOSED |
-| 0.4 | Retry-exhausted `[retry:N]` chip on board rows (F9 from postmortem) | POSTMORTEMS | 30m | PROPOSED |
-| 0.5 | Reconcile `opencode.json` model context overrides (F6) | POSTMORTEMS | 15m | PROPOSED |
-| 0.6 | Add `OPENCODE_LOG=debug` to launcher (F3) — gates F5 below | POSTMORTEMS | 5m | PROPOSED |
+| 0.1 | Lane meter `out — in —` placeholders show cumulative when rate=0 | STATUS.md | 30m | **SHIPPED** (c041edd) |
+| 0.2 | `latest ↓` button two-phase synchronous snap (no smooth-scroll race) | STATUS.md | 15m | **SHIPPED** (c041edd) |
+| 0.3 | Auto-ticker startup-cleanup skips runs with recent activity / open work | STATUS.md | 30m | **SHIPPED** (c041edd) |
+| 0.4 | Retry-exhausted `[retry:N]` chip on board rows (F9 from postmortem) | POSTMORTEMS | 30m | **SHIPPED** (c041edd) |
+| 0.5 | Reconcile `opencode.json` model context overrides (F6) | POSTMORTEMS | 15m | PROPOSED — outside repo, needs user-side edit |
+| 0.6 | Add `OPENCODE_LOG=debug` to launcher (F3) — gates F5 below | POSTMORTEMS | 5m | PROPOSED — outside repo (.ps1 launcher), needs user-side edit |
 | 0.7 | Dev wrapper orphan handling — make scripts/dev.mjs detach cleanly | STATUS.md | 1h | PROPOSED |
 
 **Order rationale:** all are independent, ship as separate commits, ~30m each. Do these first to clear cruft before deeper UI work.
@@ -39,7 +39,7 @@ visibility-to-user-when-running-that-pattern.
 
 | # | Pattern | Tab | Source | Effort | Status |
 |---|---|---|---|---|---|
-| 1.1 | **blackboard** | `contracts` | PATTERN_DESIGN/blackboard.md §3 | 3h | PROPOSED ← user explicitly asked for this |
+| 1.1 | **blackboard** | `contracts` | PATTERN_DESIGN/blackboard.md §3 | 3h | **SHIPPED** (next commit) |
 | 1.2 | **critic-loop** | `iterations` | PATTERN_DESIGN/critic-loop.md §3 | 3h | PROPOSED |
 | 1.3 | **debate-judge** | `debate` | PATTERN_DESIGN/debate-judge.md §3 | 3h | PROPOSED |
 | 1.4 | **role-differentiated** | `roles` | PATTERN_DESIGN/role-differentiated.md §3 | 3h | PROPOSED |

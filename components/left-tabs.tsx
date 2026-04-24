@@ -9,11 +9,12 @@ import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
+import { ContractsRail } from './contracts-rail';
 import { HeatRail, type DiffStatsByPath } from './heat-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 
-export type Tab = 'plan' | 'roster' | 'board' | 'heat';
+export type Tab = 'plan' | 'roster' | 'board' | 'contracts' | 'heat';
 
 export function LeftTabs({
   plan,
@@ -102,6 +103,7 @@ export function LeftTabs({
   // shouldn't leave the header in an invalid state.
   useEffect(() => {
     if (!boardSwarmRunID && tab === 'board') setTab('plan');
+    if (!boardSwarmRunID && tab === 'contracts') setTab('plan');
     if (heat.length === 0 && tab === 'heat') setTab('plan');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardSwarmRunID, heat.length, tab]);
@@ -161,6 +163,25 @@ export function LeftTabs({
                 <div className="font-mono text-[11px] text-fog-200">blackboard</div>
                 <div className="font-mono text-[10.5px] text-fog-500">
                   shared board — items claimed via CAS, status transitions live-streamed (SWARM_PATTERNS.md §1).
+                </div>
+              </div>
+            }
+          />
+        )}
+        {boardSwarmRunID && (
+          <TabButton
+            active={tab === 'contracts'}
+            onClick={() => setTab('contracts')}
+            label="contracts"
+            count=""
+            tooltip={
+              <div className="space-y-0.5 max-w-[280px]">
+                <div className="font-mono text-[11px] text-fog-200">contracts</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  verdict view — auditor met/unmet on criteria, anti-busywork
+                  critic, Playwright verifier pass/fail, CAS drift, retry counter.
+                  Same items as the board, sorted by verdict severity
+                  (PATTERN_DESIGN/blackboard.md §3).
                 </div>
               </div>
             }
@@ -237,6 +258,9 @@ export function LeftTabs({
             pattern={boardPattern}
             deliberationProgress={deliberationProgress}
           />
+        )}
+        {tab === 'contracts' && boardSwarmRunID && (
+          <ContractsRail live={live} embedded />
         )}
         {tab === 'heat' && (
           <HeatRail
