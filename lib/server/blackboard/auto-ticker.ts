@@ -38,7 +38,7 @@
 //
 // Server-only. Not imported from client code.
 
-import { deriveRunRow, getRun, listRuns } from '../swarm-registry';
+import { deriveRunRow, getRun, listRuns, updateRunMeta } from '../swarm-registry';
 import { abortSessionServer } from '../opencode-server';
 import {
   detectRecentZen429,
@@ -371,6 +371,12 @@ function makeSlot(sessionID: string): PerSessionSlot {
 // Ensure sessionIDs + slots are populated. Called once per run lifecycle
 // (cached after first fanout). Returns false when the run can't be resolved
 // — caller should skip the tick.
+//
+// Also hydrates `currentTier` from meta.currentTier if the run has
+// persisted tier state from a prior ticker lifecycle (see
+// attemptTierEscalation's updateRunMeta call). Lets a ticker restart
+// resume at the tier where the previous one left off instead of
+// dropping back to tier 1 on every reboot.
 async function ensureSlots(state: TickerState): Promise<boolean> {
   if (state.sessionIDs.length > 0) return true;
   const meta = await getRun(state.swarmRunID);
@@ -381,6 +387,19 @@ async function ensureSlots(state: TickerState): Promise<boolean> {
     state.sessionIDs = [...meta.sessionIDs];
     for (const sid of state.sessionIDs) {
       if (!state.slots.has(sid)) state.slots.set(sid, makeSlot(sid));
+    }
+    // Resume the ambition ratchet from its persisted tier, if any.
+    // Only take the persisted value if it's higher than the default —
+    // don't accidentally regress from an in-memory bump that happened
+    // mid-tick before the first fanout (unlikely but cheap to guard).
+    if (
+      typeof meta.currentTier === 'number' &&
+      meta.currentTier > state.currentTier
+    ) {
+      state.currentTier = meta.currentTier;
+      console.log(
+        `[board/auto-ticker] ${state.swarmRunID}: resumed ambition ratchet at persisted tier ${meta.currentTier}`,
+      );
     }
   }
   return true;
@@ -566,6 +585,18 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
         state.tierExhausted = true;
       }
     }
+    // Persist the new tier to meta.json so a ticker restart can resume
+    // at the current tier instead of dropping back to 1. Fire-and-
+    // forget: a failed write isn't worth stalling the ticker for, and
+    // the next successful bump will overwrite anyway.
+    void updateRunMeta(swarmRunID, { currentTier: state.currentTier }).catch(
+      (err) => {
+        console.warn(
+          `[board/auto-ticker] ${swarmRunID}: tier persist failed:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      },
+    );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.warn(

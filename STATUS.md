@@ -76,6 +76,14 @@ One day, large ship run. Grouped by theme.
   in `lib/server/zen-rate-limit-probe.ts`, respects
   `OPENCODE_LOG_DIR` env for non-default log locations.
 
+- **Ambition-ratchet tier state persists.** `attemptTierEscalation`
+  writes `currentTier` to `SwarmRunMeta` via a new `updateRunMeta`
+  helper; `ensureSlots` reads it back on the first fanout of a
+  fresh ticker lifecycle. A ticker restart mid-run now resumes at
+  the persisted tier instead of dropping back to 1. Fire-and-forget
+  write — a failed persist doesn't stall the ticker; next bump
+  overwrites.
+
 - **Demo-log retention now runs on dev boot.** New module
   `lib/server/demo-log-retention.ts::pruneDemoLog()` walks `demo-log/`,
   gzips large `events.ndjson` / `board-events.ndjson` files
@@ -196,11 +204,6 @@ One day, large ship run. Grouped by theme.
   files need a dev-server bounce to take effect on live tickers.
   Low priority — those files change rarely.
 
-- **Ambition-ratchet tier state is in-memory only.** `currentTier`
-  resets to 1 on ticker restart. If we start seeing runs lose tier
-  progress often, persist on `SwarmRunMeta` via a new `updateRun`
-  helper.
-
 - **Periodic-mode (`persistentSweepMinutes > 0`) skips tier
   escalation.** Those runs' auto-idle branch is disabled, so the
   ratchet never fires. Would need "tier up after N drained periodic
@@ -269,9 +272,6 @@ One day, large ship run. Grouped by theme.
 
 - **Cross-run comparison surface** — `/projects/<repo>/runs` multi-run
   diff viewer pulling from `demo-log/`.
-
-- **Tier state persistence on `SwarmRunMeta`** — survive ticker
-  restarts instead of resetting to tier 1.
 
 - **Periodic-mode tier escalation** — "tier up after N drained
   periodic cycles."

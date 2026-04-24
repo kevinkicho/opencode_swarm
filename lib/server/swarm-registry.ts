@@ -158,6 +158,27 @@ export async function getRun(swarmRunID: string): Promise<SwarmRunMeta | null> {
   }
 }
 
+// Read-modify-write of meta.json for post-create mutations. The file
+// is small (< 2 KB even for the largest configs) and writes are
+// single-process single-writer (Next.js dev), so a naive read-parse-
+// merge-write is fine. Callers should keep patches narrow — only the
+// ambition-ratchet uses this today to persist currentTier; adding new
+// fields means extending SwarmRunMeta in swarm-run-types.ts first.
+//
+// Returns the new meta on success or null if the run doesn't exist /
+// the file is malformed. Silently no-ops on missing — the caller
+// (e.g. fire-and-forget ticker write) doesn't need to know.
+export async function updateRunMeta(
+  swarmRunID: string,
+  patch: Partial<SwarmRunMeta>,
+): Promise<SwarmRunMeta | null> {
+  const current = await getRun(swarmRunID);
+  if (!current) return null;
+  const next: SwarmRunMeta = { ...current, ...patch };
+  await fs.writeFile(metaPath(swarmRunID), JSON.stringify(next, null, 2), 'utf8');
+  return next;
+}
+
 // Enumerate every run under ROOT/runs by reading each meta.json. Returns
 // newest-first by createdAt — that's the order the picker wants, and it
 // matches the lexicographic order of the b36 time prefix in swarmRunID, so

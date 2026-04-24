@@ -108,6 +108,11 @@ export interface SwarmRunMeta {
   // enableVerifierGate is true. Also NOT in sessionIDs. Absent when
   // the flag is false or spawn failed.
   verifierSessionID?: string;
+  // Ambition-ratchet persisted tier state. Set by attemptTierEscalation
+  // after each successful tier bump (via updateRunMeta) so a ticker
+  // restart mid-run doesn't drop the ratchet back to tier 1. Absent
+  // until the first escalation succeeds; interpreted as tier 1 then.
+  currentTier?: number;
 }
 
 // --- response shape ---------------------------------------------------------
