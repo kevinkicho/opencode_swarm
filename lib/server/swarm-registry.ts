@@ -202,12 +202,57 @@ export async function createRun(
   return meta;
 }
 
+// 2026-04-25 — getRun() TTL cache. WSL2's 9P protocol for /mnt/c file
+// reads costs 50-200ms each. With multiple polling hooks (useLiveTicker
+// 5s, useLiveBoard 2s, useSwarmRun, useSwarmRuns, plus every API route
+// that calls getRun for existence checks), the dev server was burning
+// hundreds of ms per second on redundant file reads of the same
+// meta.json — saturating the request queue and making the browser feel
+// stuck.
+//
+// 2-second TTL captures the burst-pattern (multiple hooks fan out at
+// the same render tick) while still picking up legit mutations within
+// a render-cycle delay. updateRunMeta below invalidates explicitly so
+// writes don't have to wait for TTL expiry.
+//
+// Keyed by globalThis so HMR module reloads don't lose the cache —
+// matches the same pattern as the F7 baselineCache in opencode-server.ts.
+const META_CACHE_TTL_MS = 2000;
+interface MetaCacheEntry {
+  value: SwarmRunMeta | null;
+  fetchedAt: number;
+}
+const globalMetaCacheKey = Symbol.for('opencode_swarm.swarmRegistry.metaCache');
+type GlobalWithMetaCache = typeof globalThis & {
+  [globalMetaCacheKey]?: Map<string, MetaCacheEntry>;
+};
+function metaCache(): Map<string, MetaCacheEntry> {
+  const g = globalThis as GlobalWithMetaCache;
+  if (!g[globalMetaCacheKey]) g[globalMetaCacheKey] = new Map();
+  return g[globalMetaCacheKey]!;
+}
+function invalidateMetaCache(swarmRunID: string): void {
+  metaCache().delete(swarmRunID);
+}
+
 export async function getRun(swarmRunID: string): Promise<SwarmRunMeta | null> {
+  const cache = metaCache();
+  const cached = cache.get(swarmRunID);
+  if (cached && Date.now() - cached.fetchedAt < META_CACHE_TTL_MS) {
+    return cached.value;
+  }
   try {
     const raw = await fs.readFile(metaPath(swarmRunID), 'utf8');
-    return JSON.parse(raw) as SwarmRunMeta;
+    const value = JSON.parse(raw) as SwarmRunMeta;
+    cache.set(swarmRunID, { value, fetchedAt: Date.now() });
+    return value;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      // Cache the negative answer too — a 404 polling loop shouldn't
+      // hammer fs.readFile every tick. TTL applies the same way.
+      cache.set(swarmRunID, { value: null, fetchedAt: Date.now() });
+      return null;
+    }
     throw err;
   }
 }
@@ -230,6 +275,9 @@ export async function updateRunMeta(
   if (!current) return null;
   const next: SwarmRunMeta = { ...current, ...patch };
   await fs.writeFile(metaPath(swarmRunID), JSON.stringify(next, null, 2), 'utf8');
+  // Replace cache entry with the freshly-written value so subsequent
+  // getRun calls within the TTL window see the update without a re-read.
+  metaCache().set(swarmRunID, { value: next, fetchedAt: Date.now() });
   return next;
 }
 
