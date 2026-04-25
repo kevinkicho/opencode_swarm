@@ -89,28 +89,76 @@ const devEnv = {
   CHOKIDAR_USEPOLLING: 'true',
   CHOKIDAR_INTERVAL: '300',
 };
+// detached:true puts the child in a NEW process group, which lets us
+// kill the entire group via `process.kill(-pid, signal)` — that
+// reaches the shell child AND the next-server grandchild AND any
+// further descendants. Without this (and especially with shell:true),
+// killing only the shell can leave next-server orphaned, holding the
+// dev port and blocking the next launch with EADDRINUSE. Observed
+// repeatedly during 2026-04-24 multi-pattern testing where every
+// teardown left a stale next-server (`pid 129224`, `pid 136965`) on
+// the previously-used port until pkill cleaned up.
+//
+// stdio:'inherit' is preserved so the child's output still streams
+// to our terminal — detached normally implies no parent stdio
+// linkage, but explicit inherit keeps the dev server logs visible.
 const child = spawn('next', ['dev', '-p', String(port)], {
   stdio: 'inherit',
   shell: true,
   env: devEnv,
+  detached: true,
 });
 
-// Forward signals to the child so Ctrl+C, `kill <pid>`, or a parent
-// process restart cleanly tears down next-dev and frees the listening
-// port. Without this, `shell: true` can leave the grandchild running
-// on the dev port, blocking the next launch with EADDRINUSE.
-function forward(signal) {
-  if (!child.killed) {
+// Group-kill via process.kill(-pid, signal). The negative pid is the
+// POSIX convention for "send to every process in this group" — only
+// works because we set detached:true above. Wrapped in try/catch
+// because the group may already be empty by the time we get here
+// (e.g. natural exit before the signal arrived).
+function killGroup(signal) {
+  if (!child.pid) return;
+  try {
+    process.kill(-child.pid, signal);
+  } catch {
+    // Group already dead, or no permission — try the direct child kill
+    // as a fallback so we still cover the normal-mode shutdown path.
     try {
-      child.kill(signal);
+      if (!child.killed) child.kill(signal);
     } catch {
-      // Child already dead — no-op.
+      // Both paths failed — nothing more we can do.
     }
   }
 }
-process.on('SIGINT', () => forward('SIGINT'));
-process.on('SIGTERM', () => forward('SIGTERM'));
-process.on('SIGHUP', () => forward('SIGHUP'));
+process.on('SIGINT', () => killGroup('SIGINT'));
+process.on('SIGTERM', () => killGroup('SIGTERM'));
+process.on('SIGHUP', () => killGroup('SIGHUP'));
+
+// Watch stdin for EOF — if the parent process (npm, claude task
+// runner, etc.) dies and our stdin pipe closes, kill the child
+// group too. This catches the "parent killed without forwarding a
+// signal" case (orphan reparenting to init), which is what
+// produced the `next-server` zombies we kept finding via
+// `ps aux | grep next-server` after task teardown.
+if (process.stdin && typeof process.stdin.on === 'function') {
+  process.stdin.on('end', () => {
+    console.log('\n[dev] parent stdin closed — tearing down child group');
+    killGroup('SIGTERM');
+    // Brief grace then exit. process.exit propagates through to a
+    // SIGKILL on the group if SIGTERM didn't take, since detached
+    // children don't auto-die on parent exit.
+    setTimeout(() => {
+      killGroup('SIGKILL');
+      process.exit(143);
+    }, 1500);
+  });
+  // resume() needed to actually receive 'end' — Node defaults stdin
+  // to paused mode otherwise. Doesn't read any data; just enables
+  // the EOF event.
+  try {
+    process.stdin.resume();
+  } catch {
+    // Some environments (no tty) don't allow resume — non-fatal.
+  }
+}
 
 // Exit with the child's exit code so monitors (npm scripts, systemd,
 // etc.) see the real outcome. If the child is killed by a signal we
