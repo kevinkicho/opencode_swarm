@@ -93,7 +93,7 @@ export function SwarmRunsPicker({
     <Popover
       side="top"
       align="start"
-      width={760}
+      width={1100}
       content={(close) => (
         <PickerPanel close={close} currentSwarmRunID={currentSwarmRunID ?? null} />
       )}
