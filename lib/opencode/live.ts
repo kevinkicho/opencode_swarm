@@ -861,11 +861,29 @@ export interface LiveSwarmRunMessagesSnapshot {
 
 export function useLiveSwarmRunMessages(
   meta: SwarmRunMeta | null,
-  fallbackPollMs = 30_000
+  fallbackPollMs = 30_000,
+  // IMPLEMENTATION_PLAN 6.4 — per-session visibility gating.
+  // When set, SSE events for sessionIDs NOT in this list skip the
+  // refetch path. Hydrate still loads all sessions (cold-load needs
+  // full state); subsequent updates for hidden sessions are dropped.
+  // Used by the page when the user has narrowed focus (e.g., open
+  // inspector on one session) so the other sessions stop polling
+  // during the focus window. Undefined → all sessions visible
+  // (preserves prior behavior).
+  visibleSessionIDs?: readonly string[],
 ): LiveSwarmRunMessagesSnapshot {
   const [slots, setSlots] = useState<LiveSwarmSessionSlot[]>([]);
   const [loading, setLoading] = useState<boolean>(Boolean(meta));
   const [error, setError] = useState<string | null>(null);
+
+  // Visibility gate ref (6.4): live-updated each render so the SSE
+  // event handler reads the latest visible set without re-running the
+  // hook's main effect (which would re-arm SSE — needless churn).
+  // null means "all visible" (preserves prior behavior).
+  const visibleRef = useRef<Set<string> | null>(null);
+  visibleRef.current = visibleSessionIDs
+    ? new Set(visibleSessionIDs)
+    : null;
 
   // Mirror every message update into the TanStack Query cache. Why: this
   // hook does the "messages for all N sessions in a run" heavy lifting;
@@ -989,8 +1007,18 @@ export function useLiveSwarmRunMessages(
     // Called from SSE + fallback poll. Throttles: if within cooldown
     // window OR a fetch is in flight, sets dirty flag + arms a trailing
     // timer. Otherwise fetches immediately.
+    //
+    // Per-session visibility gate (6.4): skip when the sessionID isn't
+    // in the visible set. The closure reads the latest visible set at
+    // call time so a runtime visibility change takes effect on the
+    // next event without re-arming the SSE connection.
     function refetchOne(sessionID: string) {
       if (!sessionSet.has(sessionID) || cancelled) return;
+      if (visibleRef.current && !visibleRef.current.has(sessionID)) {
+        // Hidden session — let the trailing-merge fast path keep slot
+        // metadata fresh via applyLocally; skip the full refetch.
+        return;
+      }
       const cooldownExpiry = cooldownUntil.get(sessionID) ?? 0;
       const remaining = cooldownExpiry - Date.now();
       if (inFlight.has(sessionID) || remaining > 0) {
