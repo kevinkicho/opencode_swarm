@@ -776,13 +776,38 @@ export async function tickCoordinator(
   }
 
   const all = listBoardItems(swarmRunID);
+  // STATUS Run-health #5 — exclude retry-exhausted opens from the picker
+  // so a board full of "workers refused twice" items doesn't keep the
+  // run "active" forever. Sessions go idle → ratchet fires → tier
+  // escalation rephrases or drops them. Mirrors the predicate the
+  // periodic-sweep path (auto-ticker.ts ~L1252) already uses for the
+  // ambition-ratchet drained-board check; before this fix the standard
+  // auto-idle path saw these as active work and the ratchet stayed
+  // dormant indefinitely (run_mob31bx6_jzdfs2 stranded at 22.33M with
+  // every open item at [retry:2]).
   const openTodos = all.filter(
     (i) =>
       i.status === 'open' &&
-      (i.kind === 'todo' || i.kind === 'question' || i.kind === 'synthesize'),
+      (i.kind === 'todo' || i.kind === 'question' || i.kind === 'synthesize') &&
+      currentRetryCount(i.note) < MAX_STALE_RETRIES,
   );
   if (openTodos.length === 0) {
-    return { status: 'skipped', reason: 'no open todos' };
+    // Distinguish "no opens" from "only retry-exhausted opens" so the
+    // dev console shows what's happening when the run is gated on a
+    // re-plan rather than truly drained.
+    const retryStuck = all.filter(
+      (i) =>
+        i.status === 'open' &&
+        (i.kind === 'todo' || i.kind === 'question' || i.kind === 'synthesize') &&
+        currentRetryCount(i.note) >= MAX_STALE_RETRIES,
+    ).length;
+    return {
+      status: 'skipped',
+      reason:
+        retryStuck > 0
+          ? `no claimable todos (${retryStuck} retry-exhausted excluded)`
+          : 'no open todos',
+    };
   }
 
   // Session picker: skip any session that owns a claimed/in-progress item

@@ -13,9 +13,12 @@ import type { SwarmPattern } from './swarm-types';
 
 // --- POST /api/swarm/run ----------------------------------------------------
 
-// Body accepted by the run endpoint. `pattern` and `workspace` are the only
-// non-aspirational fields at v1 — the rest are recorded in meta.json for
-// later replay / analytics but don't drive runtime routing yet.
+// Body accepted by the run endpoint. `pattern` and `workspace` are required;
+// most other fields below now drive runtime routing (teamModels per slot,
+// criticModel/verifierModel/auditorModel for gates, partialMapTolerance,
+// enableSynthesisCritic, roleBudgets, strictRoleRouting, autoStopOnConverge,
+// synthesisModel, etc.). The few that are still meta-only (provenance: source,
+// title, continuationOf) are flagged on their definitions.
 export interface SwarmRunRequest {
   pattern: SwarmPattern;
   workspace: string;          // → opencode ?directory=

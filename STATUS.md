@@ -610,37 +610,20 @@ need a live run to validate before shipping.
   (or a workspace-scoped variant) for the filesystem enumeration,
   gitignore-aware, short cache. ~2-3 h scope.
 
-- **Run-health surfacing (2026-04-24 audit).** User correctly flagged
-  that our app masks the signals opencode already emits. Concrete
-  gaps, all observed on run_mod5dy6n_utsb32 (orch-worker, 0 tokens
-  after 14m) and run_mob31bx6_jzdfs2 (blackboard, 21h idle at 22.33M):
-  1. **`tokens` endpoint per-session `status: 'live'` is fooled by
-     user-post timestamps.** lastActivityTs is set when we POST the
-     prompt, so a silent-assistant session reads as "live" indefinitely.
-     Fix: separate `lastUserPostTs` / `lastAssistantActivityTs`, and
-     have status derive from the latter.
-  2. **`board/ticker` returns `{state:'none'}` once evicted from the
-     in-memory map.** stopReason (opencode-frozen / zen-rate-limit /
-     manual / hard-cap) is lost. Fix: persist the final snapshot in
-     SQLite when `stopAutoTicker` fires so GET can reconstruct
-     "stopped, reason=X, at=Y" after dev-restart.
-  3. **`item.note` renders only in a hover tooltip at 10px italic.**
-     6 retry-maxed items on the blackboard run were invisible in the
-     scannable list. Fix: when any open item has a `[retry:N]` note,
-     surface a chip in the list row itself (amber); add a run-level
-     count ("6 items retry-maxed") to the topbar.
-  4. **No "assistant silent since dispatch" signal anywhere.** A session
-     whose only message is a user prompt with no assistant response is
-     indistinguishable from a healthy one pre-generation. Fix: compute
-     `hasAssistantResponse` per session from message parts, and a
-     run-level "0 assistant activity after T min" banner.
-  5. **Retry-exhausted → ticker stalls without re-kick.** When all
-     open items hit `[retry:2]` and retryOrStale marks them stale,
-     the ratchet never re-sweeps at a higher tier because the
-     work-available check sees them as 'open' pending final stale
-     transition. Audit coordinator.ts:192 + auto-ticker tier
-     escalation for this race.
-  ~4-6 h total scope; surfaces #1 + #3 are smallest wins.
+- **Run-health surfacing (2026-04-24 audit) — 4 of 5 sub-items shipped.**
+  Audit found 5 places the app masked opencode signals. The ones
+  shipped are listed in the "Closed since this section was last
+  revised" block above (lastActivityTs zombie-threshold guard,
+  persistTickerSnapshot, item.note retry chip, deriveSilentSessions).
+  All 5 sub-items are now closed:
+  - **Retry-exhausted → ticker stalls without re-kick** → SHIPPED
+    (audit 2026-04-25). Coordinator picker now filters
+    `[retry:N≥MAX_STALE_RETRIES]` opens out of the candidate queue —
+    matches the predicate the periodic-sweep path (auto-ticker.ts
+    ~L1252) already uses for the ambition-ratchet drained-board
+    check. Before this fix the standard auto-idle path saw twice-
+    refused items as active work and the ratchet stayed dormant
+    indefinitely (run_mob31bx6_jzdfs2 stranded at 22.33M).
 
 - **Nemotron-through-opencode unblock (orch-worker + friends).**
   Pragmatic swap: `NEMOTRON` → `GEMMA` in `lib/swarm-patterns.ts`

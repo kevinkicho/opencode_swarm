@@ -835,10 +835,10 @@ export function useLiveSwarmRun(swarmRunID: string | null): LiveSwarmRunSnapshot
 // slot stays in place so the consumer can still render a spinner or empty
 // lane for it. A thrown refetch surfaces in the shared `error` channel.
 //
-// Not wired into app/page.tsx at S3 — that's S5's job after S4 rekeys the
-// agent transform on sessionID. Call this today from multi-session surfaces
-// (run-provenance drawer, future council lane view) where the per-session
-// partition is the value, not an implementation detail.
+// Wired into app/page.tsx as `liveSlots` and threaded through every
+// per-pattern rail (iterations / debate / council / map / phases / strategy
+// / contracts / roles) plus the run-provenance drawer. Per-session partition
+// is now the canonical view shape for multi-session patterns.
 export interface LiveSwarmSessionSlot {
   sessionID: string;
   // The OpencodeSession for this member, or null if the directory-scoped
