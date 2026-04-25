@@ -18,6 +18,7 @@ import { waitForSessionIdle } from './blackboard/coordinator';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
+import { recordPartialOutcome } from './degraded-completion';
 import type { OpencodeMessage } from '../opencode/types';
 
 const JUDGE_AGENT_NAME = 'judge';
@@ -363,6 +364,13 @@ export async function runDebateJudgeKickoff(
       `[debate-judge] run ${swarmRunID}: initial intro posts failed:`,
       err instanceof Error ? err.message : String(err),
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'debate-judge',
+      phase: 'intro-posts',
+      reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+      summary:
+        'Debate-judge aborted before any round ran — initial intro posts to judge/generator sessions failed.',
+    });
     return;
   }
   console.log(
@@ -392,6 +400,51 @@ export async function runDebateJudgeKickoff(
   let lastReviseBullets: Map<number, string[]> = new Map();
   const I2_ADDRESSED_THRESHOLD = 0.3;
 
+  // #73 — accumulate per-round summary so a partial-outcome record
+  // can capture which rounds completed and what survived if the
+  // orchestrator aborts mid-debate.
+  type RoundRecord = {
+    round: number;
+    drafts: number;
+    judgeVerdict?: string;
+  };
+  const roundsCompleted: RoundRecord[] = [];
+  let lastDrafts: Array<{ index: number; text: string | null }> = [];
+  let lastJudgeReply: string | null = null;
+  function buildPartialSummary(round: number): string {
+    const parts: string[] = [];
+    parts.push(
+      `Debate-judge aborted at round ${round}/${maxRounds}.`,
+    );
+    parts.push(`Rounds completed cleanly: ${roundsCompleted.length}`);
+    if (roundsCompleted.length > 0) {
+      parts.push('');
+      parts.push('Round history:');
+      for (const r of roundsCompleted) {
+        parts.push(
+          `  Round ${r.round}: ${r.drafts} draft(s)${r.judgeVerdict ? ` → ${r.judgeVerdict}` : ''}`,
+        );
+      }
+    }
+    if (lastDrafts.length > 0) {
+      parts.push('');
+      parts.push('Latest drafts (this round):');
+      for (const d of lastDrafts) {
+        if (d.text) {
+          parts.push(`--- generator ${d.index} ---`);
+          parts.push(d.text);
+          parts.push('');
+        }
+      }
+    }
+    if (lastJudgeReply) {
+      parts.push('');
+      parts.push('Latest judge reply:');
+      parts.push(lastJudgeReply);
+    }
+    return parts.join('\n');
+  }
+
   for (let round = 1; round <= maxRounds; round += 1) {
     // Wall-clock cap (#85) — log + abort cleanly if elapsed exceeds
     // bounds.minutesCap. Partial debate (drafts + verdicts already
@@ -400,6 +453,12 @@ export async function runDebateJudgeKickoff(
       console.warn(
         `[debate-judge] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at round ${round}/${maxRounds}`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'debate-judge',
+        phase: `round ${round}/${maxRounds} (wall-clock)`,
+        reason: 'wall-clock-cap',
+        summary: buildPartialSummary(round),
+      });
       return;
     }
     // 1. Wait for each generator to produce their round's draft.
@@ -429,11 +488,18 @@ export async function runDebateJudgeKickoff(
       }
       drafts.push({ index: i + 1, text });
     }
+    lastDrafts = drafts;
     const present = drafts.filter((d) => d.text !== null);
     if (present.length < 2) {
       console.warn(
         `[debate-judge] run ${swarmRunID} round ${round}: only ${present.length} proposal(s) — aborting`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'debate-judge',
+        phase: `round ${round}/${maxRounds} generator-fan-in`,
+        reason: 'too-few-drafts',
+        summary: buildPartialSummary(round),
+      });
       return;
     }
 
@@ -458,6 +524,12 @@ export async function runDebateJudgeKickoff(
           console.warn(
             `[debate-judge] run ${swarmRunID} round ${round}: generators addressed only ${(meanFrac * 100).toFixed(0)}% of judge's prior REVISE bullets (${totalGen} gen with bullets) — auto-stopping (PATTERN_DESIGN/debate-judge.md I2)`,
           );
+          recordPartialOutcome(swarmRunID, {
+            pattern: 'debate-judge',
+            phase: `round ${round}/${maxRounds} feedback-not-addressed`,
+            reason: 'I2-auto-stop',
+            summary: buildPartialSummary(round),
+          });
           return;
         } else {
           console.log(
@@ -480,6 +552,12 @@ export async function runDebateJudgeKickoff(
         `[debate-judge] run ${swarmRunID} round ${round}: judgment post failed:`,
         err instanceof Error ? err.message : String(err),
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'debate-judge',
+        phase: `round ${round}/${maxRounds} judgment-post`,
+        reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+        summary: buildPartialSummary(round),
+      });
       return;
     }
 
@@ -495,6 +573,12 @@ export async function runDebateJudgeKickoff(
       console.warn(
         `[debate-judge] run ${swarmRunID} round ${round}: judge wait failed (${judgeWait.reason}) — aborting`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'debate-judge',
+        phase: `round ${round}/${maxRounds} judge-wait`,
+        reason: judgeWait.reason,
+        summary: buildPartialSummary(round),
+      });
       return;
     }
     for (const m of judgeWait.messages) knownJudge.add(m.info.id);
@@ -503,10 +587,22 @@ export async function runDebateJudgeKickoff(
       console.warn(
         `[debate-judge] run ${swarmRunID} round ${round}: judge produced no text — aborting`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'debate-judge',
+        phase: `round ${round}/${maxRounds} judge-no-text`,
+        reason: 'no-text',
+        summary: buildPartialSummary(round),
+      });
       return;
     }
+    lastJudgeReply = judgeReply;
 
     const verdict = classifyJudgeReply(judgeReply);
+    roundsCompleted.push({
+      round,
+      drafts: present.length,
+      judgeVerdict: verdict.verdict,
+    });
     if (verdict.verdict === 'winner' || verdict.verdict === 'merge') {
       console.log(
         `[debate-judge] run ${swarmRunID} round ${round}: ${verdict.verdict.toUpperCase()} — debate complete`,
@@ -544,6 +640,12 @@ export async function runDebateJudgeKickoff(
         `[debate-judge] run ${swarmRunID} round ${round}: revision fan-out failed:`,
         err instanceof Error ? err.message : String(err),
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'debate-judge',
+        phase: `round ${round}/${maxRounds} revision-fanout`,
+        reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+        summary: buildPartialSummary(round),
+      });
       return;
     }
     console.log(

@@ -29,6 +29,7 @@ import { latestTodosFrom, mintItemId } from './blackboard/planner';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { getRun } from './swarm-registry';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
+import { recordPartialOutcome } from './degraded-completion';
 import type { OpencodeMessage } from '../opencode/types';
 
 const SYNTHESIS_WAIT_MS = 15 * 60 * 1000;
@@ -300,6 +301,13 @@ export async function runDeliberateExecuteKickoff(
       `[deliberate-execute] run ${swarmRunID}: deliberation threw:`,
       err instanceof Error ? err.message : String(err),
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'deliberate-execute',
+      phase: 'deliberation',
+      reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+      summary:
+        'Deliberate-execute aborted during phase 1 (council deliberation) — exception thrown before any synthesis ran. Drafts may exist in opencode session transcripts.',
+    });
     return;
   }
 
@@ -310,6 +318,13 @@ export async function runDeliberateExecuteKickoff(
     console.warn(
       `[deliberate-execute] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — synthesis aborted after deliberation`,
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'deliberate-execute',
+      phase: 'post-deliberation (wall-clock)',
+      reason: 'wall-clock-cap',
+      summary:
+        'Deliberation completed but wall-clock cap exceeded before synthesis. Member drafts survive in their respective opencode session transcripts.',
+    });
     return;
   }
 
@@ -333,11 +348,39 @@ export async function runDeliberateExecuteKickoff(
     }
     drafts.push({ sessionID: sid, text });
   }
+
+  // #73 — once we've harvested drafts, build a summary helper that
+  // captures them. Used by every downstream early-return so partial
+  // deliberation isn't lost.
+  function buildDeliberationSummary(): string {
+    const parts: string[] = [];
+    const present = drafts.filter((d) => d.text !== null);
+    parts.push(
+      `Deliberate-execute partial outcome — ${present.length}/${drafts.length} drafts harvested.`,
+    );
+    if (present.length > 0) {
+      parts.push('');
+      parts.push('Member drafts (preserved here for human reconcile):');
+      for (const d of present) {
+        parts.push(`--- session ${d.sessionID.slice(-8)} ---`);
+        parts.push(d.text ?? '');
+        parts.push('');
+      }
+    }
+    return parts.join('\n');
+  }
+
   const present = drafts.filter((d) => d.text !== null);
   if (present.length < 2) {
     console.warn(
       `[deliberate-execute] run ${swarmRunID}: only ${present.length} draft(s) harvested — synthesis skipped`,
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'deliberate-execute',
+      phase: 'draft-harvest',
+      reason: `too-few-drafts (${present.length})`,
+      summary: buildDeliberationSummary(),
+    });
     return;
   }
 
@@ -362,6 +405,12 @@ export async function runDeliberateExecuteKickoff(
       `[deliberate-execute] run ${swarmRunID}: synthesis prompt post failed:`,
       err instanceof Error ? err.message : String(err),
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'deliberate-execute',
+      phase: 'synthesis-post',
+      reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+      summary: buildDeliberationSummary(),
+    });
     return;
   }
 
@@ -376,6 +425,12 @@ export async function runDeliberateExecuteKickoff(
     console.warn(
       `[deliberate-execute] run ${swarmRunID}: synthesis wait failed (${synthWait.reason}) — kickoff aborted`,
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'deliberate-execute',
+      phase: 'synthesis-wait',
+      reason: synthWait.reason,
+      summary: buildDeliberationSummary(),
+    });
     return;
   }
 
@@ -384,6 +439,12 @@ export async function runDeliberateExecuteKickoff(
     console.warn(
       `[deliberate-execute] run ${swarmRunID}: synthesis produced no todowrite — kickoff aborted`,
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'deliberate-execute',
+      phase: 'synthesis-no-todowrite',
+      reason: 'no-todowrite',
+      summary: buildDeliberationSummary(),
+    });
     return;
   }
 
@@ -400,6 +461,12 @@ export async function runDeliberateExecuteKickoff(
     console.warn(
       `[deliberate-execute] run ${swarmRunID}: synthesis emitted 0 non-empty todos — execution skipped`,
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'deliberate-execute',
+      phase: 'synthesis-empty-todos',
+      reason: 'zero-todos',
+      summary: buildDeliberationSummary(),
+    });
     return;
   }
   console.log(

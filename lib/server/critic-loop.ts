@@ -23,6 +23,7 @@ import { waitForSessionIdle } from './blackboard/coordinator';
 import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
+import { recordPartialOutcome } from './degraded-completion';
 import type { OpencodeMessage } from '../opencode/types';
 
 const WORKER_AGENT_NAME = 'worker';
@@ -298,6 +299,12 @@ export async function runCriticLoopKickoff(
       `[critic-loop] run ${swarmRunID}: initial intro post failed:`,
       err instanceof Error ? err.message : String(err),
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'critic-loop',
+      phase: 'intro-post',
+      reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+      summary: 'Critic-loop aborted before any iteration ran — initial intro posts to worker/critic sessions failed.',
+    });
     return;
   }
   console.log(`[critic-loop] run ${swarmRunID}: worker + critic intros posted`);
@@ -333,6 +340,29 @@ export async function runCriticLoopKickoff(
     );
   }
 
+  // #73 — track latest worker draft so a partial-outcome record can
+  // capture what survived if the loop aborts mid-iteration. Updated at
+  // the end of each successful worker wait.
+  let latestDraft: string | null = null;
+  function buildPartialSummary(iter: number): string {
+    const parts: string[] = [];
+    parts.push(`Critic-loop aborted at iteration ${iter}/${maxIterations}.`);
+    parts.push(`Verdicts so far: ${verdictHistory.length}`);
+    if (verdictHistory.length > 0) {
+      parts.push('');
+      parts.push('Verdict history:');
+      verdictHistory.forEach((v, i) => {
+        parts.push(`  ${i + 1}. ${v.verdict.toUpperCase()}${v.scope ? ` (${v.scope})` : ''}${v.confidence ? ` confidence=${v.confidence}` : ''}`);
+      });
+    }
+    if (latestDraft) {
+      parts.push('');
+      parts.push('Latest worker draft:');
+      parts.push(latestDraft);
+    }
+    return parts.join('\n');
+  }
+
   // Main loop.
   for (let iter = 1; iter <= maxIterations; iter += 1) {
     // Wall-clock cap (#85). Stops new iterations from launching once
@@ -342,6 +372,12 @@ export async function runCriticLoopKickoff(
       console.warn(
         `[critic-loop] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at iter ${iter}/${maxIterations}`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} (wall-clock)`,
+        reason: 'wall-clock-cap',
+        summary: buildPartialSummary(iter),
+      });
       return;
     }
     // 1. Wait for the worker's draft.
@@ -356,6 +392,12 @@ export async function runCriticLoopKickoff(
       console.warn(
         `[critic-loop] run ${swarmRunID} iter ${iter}: worker wait failed (${workerWait.reason}) — aborting loop`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} worker-wait`,
+        reason: workerWait.reason,
+        summary: buildPartialSummary(iter),
+      });
       return;
     }
     // Refresh known IDs to include the new worker turn.
@@ -365,8 +407,15 @@ export async function runCriticLoopKickoff(
       console.warn(
         `[critic-loop] run ${swarmRunID} iter ${iter}: worker produced no text — aborting loop`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} worker-no-text`,
+        reason: 'no-text',
+        summary: buildPartialSummary(iter),
+      });
       return;
     }
+    latestDraft = draft;
 
     // 2. Send draft to critic for review.
     try {
@@ -381,6 +430,12 @@ export async function runCriticLoopKickoff(
         `[critic-loop] run ${swarmRunID} iter ${iter}: review-post failed:`,
         err instanceof Error ? err.message : String(err),
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} review-post`,
+        reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+        summary: buildPartialSummary(iter),
+      });
       return;
     }
 
@@ -396,6 +451,12 @@ export async function runCriticLoopKickoff(
       console.warn(
         `[critic-loop] run ${swarmRunID} iter ${iter}: critic wait failed (${criticWait.reason}) — aborting loop`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} critic-wait`,
+        reason: criticWait.reason,
+        summary: buildPartialSummary(iter),
+      });
       return;
     }
     for (const m of criticWait.messages) knownCriticIDs.add(m.info.id);
@@ -404,6 +465,12 @@ export async function runCriticLoopKickoff(
       console.warn(
         `[critic-loop] run ${swarmRunID} iter ${iter}: critic produced no text — aborting loop`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} critic-no-text`,
+        reason: 'no-text',
+        summary: buildPartialSummary(iter),
+      });
       return;
     }
 
@@ -472,6 +539,12 @@ export async function runCriticLoopKickoff(
         `[critic-loop] run ${swarmRunID} iter ${iter}: revision-post to worker failed:`,
         err instanceof Error ? err.message : String(err),
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} revision-post`,
+        reason: err instanceof Error ? err.message.slice(0, 80) : 'unknown',
+        summary: buildPartialSummary(iter),
+      });
       return;
     }
     console.log(

@@ -28,6 +28,7 @@ import { getRun } from './swarm-registry';
 import { finalizeRun } from './finalize-run';
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
+import { recordPartialOutcome } from './degraded-completion';
 import { getBoardItem, insertBoardItem } from './blackboard/store';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '@/lib/opencode/types';
@@ -280,10 +281,35 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
 
   const present = drafts.filter((d) => d.text !== null);
   const failedCount = waitResults.filter((r) => !r.ok || r.text === null).length;
+  const totalSessionCount = meta.sessionIDs.length;
+
+  function buildMapPhaseSummary(): string {
+    const parts: string[] = [];
+    parts.push(
+      `Map-reduce synthesis aborted. ${present.length}/${totalSessionCount} drafts harvested; ${failedCount} member(s) failed.`,
+    );
+    if (present.length > 0) {
+      parts.push('');
+      parts.push('Map drafts that DID complete (preserved here so the human can reconcile manually):');
+      for (const d of present) {
+        parts.push(`--- session ${d.sessionID.slice(-8)} ---`);
+        parts.push(d.text ?? '');
+        parts.push('');
+      }
+    }
+    return parts.join('\n');
+  }
+
   if (present.length === 0) {
     console.warn(
       `[map-reduce] run ${swarmRunID} — no draft texts harvested, synthesis skipped`,
     );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'map-reduce',
+      phase: 'map-fan-in',
+      reason: 'zero-drafts',
+      summary: buildMapPhaseSummary(),
+    });
     return;
   }
 
@@ -298,12 +324,24 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
       console.warn(
         `[map-reduce] run ${swarmRunID} — only ${present.length}/${meta.sessionIDs.length} drafts harvested, below minMembers=${tolerance.minMembers} — synthesis aborted (PATTERN_DESIGN/map-reduce.md I3)`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'map-reduce',
+        phase: 'tolerance-gate (minMembers)',
+        reason: `drafts=${present.length}<minMembers=${tolerance.minMembers}`,
+        summary: buildMapPhaseSummary(),
+      });
       return;
     }
     if (failedCount > tolerance.maxMemberFailures) {
       console.warn(
         `[map-reduce] run ${swarmRunID} — ${failedCount} member(s) failed, above maxMemberFailures=${tolerance.maxMemberFailures} — synthesis aborted (PATTERN_DESIGN/map-reduce.md I3)`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'map-reduce',
+        phase: 'tolerance-gate (maxMemberFailures)',
+        reason: `failed=${failedCount}>max=${tolerance.maxMemberFailures}`,
+        summary: buildMapPhaseSummary(),
+      });
       return;
     }
     if (failedCount > 0) {
@@ -364,6 +402,12 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
       console.warn(
         `[map-reduce] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — synth dispatch aborted before claim`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'map-reduce',
+        phase: 'synthesis-dispatch (wall-clock)',
+        reason: 'wall-clock-cap',
+        summary: buildMapPhaseSummary(),
+      });
       return;
     }
     const outcome = await tickCoordinator(swarmRunID);
@@ -384,6 +428,12 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
       console.warn(
         `[map-reduce] run ${swarmRunID} — synthesis stale: ${outcome.reason}`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'map-reduce',
+        phase: 'synthesis-claim',
+        reason: `stale: ${outcome.reason.slice(0, 60)}`,
+        summary: buildMapPhaseSummary(),
+      });
       return;
     }
     // 'picked'/'stale' for a DIFFERENT item id is possible if the run is
@@ -396,6 +446,12 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   console.warn(
     `[map-reduce] run ${swarmRunID} — synthesis dispatch deadline exceeded; item ${itemID} left for forensics`,
   );
+  recordPartialOutcome(swarmRunID, {
+    pattern: 'map-reduce',
+    phase: 'synthesis-dispatch-deadline',
+    reason: 'deadline-exceeded',
+    summary: buildMapPhaseSummary(),
+  });
   } finally {
     await finalizeRun(swarmRunID, 'map-reduce');
   }

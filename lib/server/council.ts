@@ -31,6 +31,7 @@
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { finalizeRun } from './finalize-run';
+import { recordPartialOutcome } from './degraded-completion';
 import { getRun } from './swarm-registry';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '../opencode/types';
@@ -204,6 +205,29 @@ export async function runCouncilRounds(
     }
   }
 
+  // #73 — track latest drafts so a partial-outcome record can capture
+  // what survived if council aborts mid-rounds (wall-clock cap, fewer
+  // than 2 drafts, etc.).
+  let latestDrafts: Array<{ sessionID: string; text: string | null }> = [];
+  let lastCompletedRound = 1; // Round 1 = initial directive (kicked off by route)
+  function buildPartialSummary(roundNum: number): string {
+    const parts: string[] = [];
+    parts.push(
+      `Council aborted at round ${roundNum}/${maxRounds}. Last completed round: ${lastCompletedRound}.`,
+    );
+    if (latestDrafts.length > 0) {
+      const present = latestDrafts.filter((d) => d.text !== null);
+      parts.push(`Latest drafts: ${present.length}/${latestDrafts.length} members produced text.`);
+      parts.push('');
+      for (const d of present) {
+        parts.push(`--- session ${d.sessionID.slice(-8)} ---`);
+        parts.push(d.text ?? '');
+        parts.push('');
+      }
+    }
+    return parts.join('\n');
+  }
+
   for (let roundNum = 2; roundNum <= maxRounds; roundNum += 1) {
     // Wall-clock cap (#85) — non-ticker patterns previously ignored
     // bounds.minutesCap silently. Check at the top of each round so
@@ -213,6 +237,12 @@ export async function runCouncilRounds(
       console.warn(
         `[council] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at round ${roundNum}/${maxRounds}`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'council',
+        phase: `round ${roundNum}/${maxRounds} (wall-clock)`,
+        reason: 'wall-clock-cap',
+        summary: buildPartialSummary(roundNum),
+      });
       return;
     }
     // PATTERN_DESIGN/council.md I4 — per-member wait runs in parallel
@@ -250,13 +280,21 @@ export async function runCouncilRounds(
       }),
     );
 
+    latestDrafts = drafts;
     const present = drafts.filter((d) => d.text !== null);
     if (present.length < 2) {
       console.warn(
         `[council] run ${swarmRunID} — only ${present.length}/${drafts.length} drafts present before round ${roundNum}, auto-rounds stopping`,
       );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'council',
+        phase: `round ${roundNum}/${maxRounds} draft-fan-in`,
+        reason: `too-few-drafts (${present.length}/${drafts.length})`,
+        summary: buildPartialSummary(roundNum),
+      });
       return;
     }
+    lastCompletedRound = roundNum - 1; // round (roundNum-1) drafts are now in hand
 
     // PATTERN_DESIGN/council.md I1 — convergence-detection auto-stop.
     // The drafts we just harvested are responses to round (roundNum-1)'s
