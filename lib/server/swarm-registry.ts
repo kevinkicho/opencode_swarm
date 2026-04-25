@@ -199,6 +199,9 @@ export async function createRun(
   // Seed the reverse index so the cost-cap gate resolves this run's
   // sessions without a full disk scan on first prompt.
   for (const sid of sessionIDs) sessionIndex().set(sid, swarmRunID);
+  // Invalidate the listRuns cache so the picker sees the new run on its
+  // next poll instead of waiting up to LIST_CACHE_TTL_MS for it to appear.
+  delete listCache()[globalListCacheKey];
   return meta;
 }
 
@@ -278,6 +281,9 @@ export async function updateRunMeta(
   // Replace cache entry with the freshly-written value so subsequent
   // getRun calls within the TTL window see the update without a re-read.
   metaCache().set(swarmRunID, { value: next, fetchedAt: Date.now() });
+  // listRuns cache is keyed on the whole list — invalidate so the
+  // picker reflects this update on its next poll.
+  delete listCache()[globalListCacheKey];
   return next;
 }
 
@@ -292,10 +298,45 @@ export async function updateRunMeta(
 //     edits). A returned list with N-1 entries is better than a throw that
 //     hides every valid run because one is broken.
 //
-// Pagination: not yet. At prototype scale N is small (tens, not thousands).
-// When it starts to hurt, the fix is a cursor-based API — the directory
-// scan itself is cheap, it's the per-file read that adds up.
+// 2026-04-25 — listRuns() result-level TTL cache. Even with the per-id
+// getRun cache, the FIRST call to listRuns has to readdir + read every
+// meta.json — at ~50-200ms per /mnt/c read on WSL2 with 50+ runs
+// accumulated, that's 2-10 seconds blocking the picker. The list as
+// a whole rarely changes (only when runs are created/deleted), so a
+// 2s TTL captures the burst without hurting freshness for any
+// meaningful workflow.
+//
+// Pagination: not yet. At prototype scale N is small (tens, not
+// thousands). When the cache hit-rate drops, the fix is a cursor-based
+// API; the directory scan itself is cheap, it's the per-file read that
+// adds up.
+// 2026-04-25 — bumped from 2s to 15s. With 80+ accumulated runs each
+// triggering a per-session opencode probe, deriveRunRowCached's
+// computation alone takes 2-3s. A 2s TTL means every subsequent
+// poll arrived AFTER expiry, so the cache never hit. 15s captures
+// useSwarmRuns's 30s polling cadence enough that one in two polls
+// returns cached. Status freshness suffers by 15s in worst case,
+// which is fine for the picker (live status flows through SSE
+// elsewhere; this endpoint is the cold-load list view).
+const LIST_CACHE_TTL_MS = 15_000;
+interface ListCacheEntry {
+  value: SwarmRunMeta[];
+  fetchedAt: number;
+}
+const globalListCacheKey = Symbol.for('opencode_swarm.swarmRegistry.listCache');
+type GlobalWithListCache = typeof globalThis & {
+  [globalListCacheKey]?: ListCacheEntry | null;
+};
+function listCache(): GlobalWithListCache {
+  return globalThis as GlobalWithListCache;
+}
+
 export async function listRuns(): Promise<SwarmRunMeta[]> {
+  const cache = listCache();
+  const cached = cache[globalListCacheKey];
+  if (cached && Date.now() - cached.fetchedAt < LIST_CACHE_TTL_MS) {
+    return cached.value;
+  }
   const runsRoot = path.join(ROOT, 'runs');
   let entries: string[];
   try {
@@ -308,20 +349,19 @@ export async function listRuns(): Promise<SwarmRunMeta[]> {
     throw err;
   }
 
+  // Route through getRun so each meta-read hits the per-id cache on
+  // subsequent ticks. The first listRuns call still reads each file
+  // (cache miss for all), but the per-id cache then absorbs follow-on
+  // reads from getRun() callers who target a specific run.
   const metas = await Promise.all(
-    entries.map(async (id) => {
-      try {
-        const raw = await fs.readFile(metaPath(id), 'utf8');
-        return JSON.parse(raw) as SwarmRunMeta;
-      } catch {
-        return null;
-      }
-    })
+    entries.map((id) => getRun(id).catch(() => null)),
   );
 
-  return metas
+  const value = metas
     .filter((m): m is SwarmRunMeta => m !== null)
     .sort((a, b) => b.createdAt - a.createdAt);
+  cache[globalListCacheKey] = { value, fetchedAt: Date.now() };
+  return value;
 }
 
 // A turn with no `completed` timestamp that's older than this is treated as
@@ -627,7 +667,15 @@ interface CachedRow {
   fetchedAt: number;
 }
 
-const CACHE_TTL_MS = 2000;
+// 2026-04-25 — bumped from 2s to 10s. Each derivation costs one
+// opencode message-fetch per session (100-300ms each on WSL2 in
+// dev). Across 80+ runs the list endpoint serializes 250+ probes,
+// taking 2-3s total. A 2s TTL meant the next poll always missed.
+// 10s lets one in three polls (default useSwarmRuns 30s cadence)
+// cached-fall-through. appendEvent still invalidates per-run on
+// state change so the freshness window is "no recent appends"
+// — actively-live runs are still up-to-date when something happens.
+const CACHE_TTL_MS = 10_000;
 
 const globalCacheKey = Symbol.for('opencode_swarm.deriveRowCache');
 type GlobalWithCache = typeof globalThis & {
