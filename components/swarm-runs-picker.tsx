@@ -200,7 +200,7 @@ function PickerPanel({
               <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[52px] shrink-0">
                 status
               </span>
-              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[90px] shrink-0">
+              <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[140px] shrink-0">
                 pat
               </span>
               <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[124px] shrink-0">
@@ -275,7 +275,7 @@ function PickerPanel({
                     </span>
                     <span
                       className={clsx(
-                        'font-mono text-[10px] uppercase tracking-widest2 w-[90px] shrink-0 truncate',
+                        'font-mono text-[10px] uppercase tracking-widest2 w-[140px] shrink-0 truncate',
                         patternAccentText[patternMeta[meta.pattern].accent],
                       )}
                     >
