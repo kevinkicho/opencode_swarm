@@ -157,6 +157,10 @@ export async function createRun(
     enableAuditorGate: req.enableAuditorGate ? true : undefined,
     auditorSessionID: extras.auditorSessionID,
     auditEveryNCommits: req.auditEveryNCommits,
+    // Synthesis-verifier gate — deliberate-execute pattern only.
+    // PATTERN_DESIGN/deliberate-execute.md I1. No dedicated session;
+    // the verifier reuses sessionIDs[1].
+    enableSynthesisVerifier: req.enableSynthesisVerifier ? true : undefined,
     // Per-gate model pins (2026-04-24). Each gate's reviewer module
     // reads meta.<gate>Model and passes it on postSessionMessageServer
     // so the gate runs on a specific provider/model independent of

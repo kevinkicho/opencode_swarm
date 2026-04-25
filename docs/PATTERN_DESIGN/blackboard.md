@@ -159,7 +159,7 @@ again on next sweep.
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
 | contracts-tab | tab | SHIPPED | (next commit) | — | wired into LeftTabs; visible only when `boardSwarmRunID` is set; renders ContractsRail with sticky header chips + sorted item rows. ~3 h actual. To verify: load any blackboard run, switch to "contracts" tab, confirm met/unmet/stale/busy/drift chips reflect actual data. |
-| I1 | improvement | PROPOSED | — | — | backend ~2–4 h |
+| I1 | improvement | SHIPPED | (next commit) | — | scheduleCasDriftReplan in coordinator commit-time drift block: dynamic-imports planner.runPlannerSweep, throttled to CAS_REPLAN_MIN_INTERVAL_MS=60s via plan_revisions ledger lookup; fire-and-forget so coordinator returns to picker immediately |
 | I2 | improvement | SHIPPED | (next commit) | — | runPeriodicSweep activeCount predicate now excludes open items with [retry:N≥2] notes via isRetryExhausted helper — workers-refused-twice items don't block ratchet escalation |
 | I3 | improvement | SHIPPED | (next commit) | — | new ticker_snapshots SQLite table (PRIMARY KEY swarm_run_id) + persistTickerSnapshot in stopAutoTicker + readTickerSnapshot fallback in getTickerSnapshot; UI keeps the original stop reason after dev restart / HMR |
 | I4 | improvement | SHIPPED | (next commit) | — | isViableCriterion preflight in runPlannerSweep: rejects content < 20 chars OR matching `^(make/improve/polish/...) X better/good/...$` shape; logs WARN per drop, planner can re-emit on next sweep |

@@ -136,7 +136,7 @@ Don't auto-skip — keep as human signal.
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
 | phases-tab | tab | SHIPPED | (next commit) | — | three stacked sections: deliberation per-round members/avg-len/convergence/time, synthesis single row → todowrite, execution todo counters; phase-active banner via background tone shift; convergence inline-duplicated from council-rail (shared helper deferred) |
-| I1 | improvement | PROPOSED | — | — | new verifier session + loop ~4 h |
+| I1 | improvement | SHIPPED | (next commit) | — | enableSynthesisVerifier flag (off by default) gates a peer-review loop: sessionIDs[1] reviews seeded todos, returns APPROVED/REVISE; on REVISE deleteBoardItems + re-post synthesis with feedback, capped at MAX_SYNTHESIS_RETRIES=1; reuses existing peer session (no new gate session needed) |
 | I2 | improvement | PROPOSED | — | — | synthesis prompt + parser ~3 h |
 | I3 | improvement | PROPOSED | — | — | shared with council.md I3 |
 | I4 | improvement | PROPOSED | — | — | classifier + WARN ~2 h |

@@ -83,6 +83,14 @@ export interface SwarmRunRequest {
   // Also runs on tier escalation + run-end regardless of counter.
   // Ignored when enableAuditorGate is false.
   auditEveryNCommits?: number;
+  // Synthesis-verifier gate (deliberate-execute pattern only,
+  // PATTERN_DESIGN/deliberate-execute.md I1). When true, after the
+  // synthesis phase seeds todos, a peer session (NOT the synthesizer)
+  // reviews them: "are these concrete, claimable, independent?"
+  // APPROVED → execution starts. REVISE → seeded items are cleared
+  // and synthesis runs once more with the verifier's feedback. Capped
+  // at 1 retry to avoid infinite loops. Default false.
+  enableSynthesisVerifier?: boolean;
   // Per-gate model pins (2026-04-24). Each gate's dedicated opencode
   // session spawns without a model hint (opencode picks default);
   // when set, the session's prompts carry `model: <id>` so the gate
@@ -194,6 +202,11 @@ export interface SwarmRunMeta {
   // Audit cadence (commits between audits). Default 5 when unset and
   // auditor is enabled. See SwarmRunRequest for semantics.
   auditEveryNCommits?: number;
+  // Synthesis-verifier mirror — deliberate-execute pattern only.
+  // PATTERN_DESIGN/deliberate-execute.md I1. No dedicated session;
+  // the verifier reuses sessionIDs[1] (peer member, not the
+  // synthesizer at sessionIDs[0]).
+  enableSynthesisVerifier?: boolean;
   // Per-gate model pins mirrored from the request. See SwarmRunRequest
   // for semantics. Each gate's reviewer module reads these from meta
   // and passes as `model` on its postSessionMessageServer calls.

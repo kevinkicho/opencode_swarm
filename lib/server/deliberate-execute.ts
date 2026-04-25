@@ -24,13 +24,109 @@
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { runCouncilRounds } from './council';
-import { insertBoardItem, listBoardItems } from './blackboard/store';
+import { deleteBoardItems, insertBoardItem, listBoardItems } from './blackboard/store';
 import { latestTodosFrom, mintItemId } from './blackboard/planner';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { getRun } from './swarm-registry';
 import type { OpencodeMessage } from '../opencode/types';
 
 const SYNTHESIS_WAIT_MS = 15 * 60 * 1000;
+
+// PATTERN_DESIGN/deliberate-execute.md I1 — synthesis-verifier gate.
+// Verification runs on a peer session (not the synthesizer) and asks
+// the same model that helped deliberate to critique the seeded todos
+// for concreteness / claimability / independence. Cap retries at 1
+// to avoid loops on a divergent verifier.
+const VERIFIER_WAIT_MS = 5 * 60 * 1000;
+const MAX_SYNTHESIS_RETRIES = 1;
+
+interface SynthesisVerdict {
+  verdict: 'approved' | 'revise' | 'unclear';
+  feedback: string;
+}
+
+function buildSynthesisVerifierPrompt(todos: string[]): string {
+  return [
+    '## Synthesis review',
+    '',
+    'A peer just synthesized our deliberation into the todo list below.',
+    'You are reviewing it before workers (including you) start claiming items.',
+    '',
+    'Reply in EXACTLY this shape:',
+    '',
+    '  APPROVED: <one-line reason>',
+    '',
+    '  -- OR --',
+    '',
+    '  REVISE:',
+    '    - <specific issue 1>',
+    '    - <specific issue 2>',
+    '',
+    'Use REVISE only when the todos have a real problem the synthesizer',
+    "should fix: scope ambiguity, missing dependencies, items that can't",
+    'be independently claimed by a worker, or items that drift from the',
+    'mission. Polish-level rewording is NOT a reason to revise — APPROVE',
+    'and let workers handle wording.',
+    '',
+    '---',
+    '',
+    'Todo list to review:',
+    '',
+    todos.map((t, i) => `${i + 1}. ${t}`).join('\n'),
+  ].join('\n');
+}
+
+function classifySynthesisReply(text: string): SynthesisVerdict {
+  const first = text.split('\n', 1)[0]?.trim() ?? '';
+  if (/^approved\b/i.test(first)) return { verdict: 'approved', feedback: text.trim() };
+  if (/^revise\b/i.test(first)) {
+    const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
+    return { verdict: 'revise', feedback: stripped };
+  }
+  return { verdict: 'unclear', feedback: text.trim() };
+}
+
+function buildSynthesisRetryPrompt(
+  feedback: string,
+): string {
+  return [
+    '## Synthesis verifier rejected the todo list',
+    '',
+    "A peer reviewed your todos and asked for a revision. Their feedback:",
+    '',
+    feedback.trim(),
+    '',
+    'Re-call todowrite with a revised list addressing the feedback above.',
+    'Same constraints: 6-15 concrete actionable todos, mix of sizes,',
+    'BUILDING over VERIFYING. Just todowrite — no preamble.',
+  ].join('\n');
+}
+
+// Seed board items from a todowrite extraction. Returns the IDs of
+// inserted items so the I1 verifier loop can clear-and-retry on
+// REVISE without nuking unrelated rows. Skips empty content. Stable
+// 1ms-spread timestamps preserve list ordering.
+function seedTodosFromExtract(
+  swarmRunID: string,
+  todos: Array<{ content: string }>,
+): string[] {
+  const baseMs = Date.now();
+  const ids: string[] = [];
+  for (const raw of todos) {
+    const content = raw.content.trim();
+    if (!content) continue;
+    const id = mintItemId();
+    insertBoardItem(swarmRunID, {
+      id,
+      kind: 'todo',
+      content,
+      status: 'open',
+      createdAtMs: baseMs + ids.length,
+    });
+    ids.push(id);
+  }
+  return ids;
+}
 
 // How many rounds of deliberation before synthesis. Uses the same
 // default as council — 3 rounds gets to shared conclusions on most
@@ -220,29 +316,141 @@ export async function runDeliberateExecuteKickoff(
       `[deliberate-execute] run ${swarmRunID}: board already has ${existing} items before synthesis — appending anyway`,
     );
   }
-  const baseMs = Date.now();
-  let added = 0;
-  for (const raw of latest.todos) {
-    const content = raw.content.trim();
-    if (!content) continue;
-    insertBoardItem(swarmRunID, {
-      id: mintItemId(),
-      kind: 'todo',
-      content,
-      status: 'open',
-      createdAtMs: baseMs + added,
-    });
-    added += 1;
-  }
-  if (added === 0) {
+  let seededIds = seedTodosFromExtract(swarmRunID, latest.todos);
+  if (seededIds.length === 0) {
     console.warn(
       `[deliberate-execute] run ${swarmRunID}: synthesis emitted 0 non-empty todos — execution skipped`,
     );
     return;
   }
   console.log(
-    `[deliberate-execute] run ${swarmRunID}: synthesis seeded ${added} todos`,
+    `[deliberate-execute] run ${swarmRunID}: synthesis seeded ${seededIds.length} todos`,
   );
+
+  // PATTERN_DESIGN/deliberate-execute.md I1 — synthesis-verifier gate.
+  // Optional. Uses a peer session (sessionIDs[1]) to review the seeded
+  // todos. APPROVED → proceed. REVISE → clear seeded items, post the
+  // verifier feedback to the synthesizer, re-run synthesis, re-seed.
+  // Capped at MAX_SYNTHESIS_RETRIES to avoid infinite verify→revise→
+  // verify→revise loops.
+  if (meta.enableSynthesisVerifier && meta.sessionIDs.length >= 2) {
+    let retriesLeft = MAX_SYNTHESIS_RETRIES;
+    while (retriesLeft > 0) {
+      const verifierSID = meta.sessionIDs[1];
+      const verifierModel = meta.teamModels?.[1];
+      const todosForReview = latest.todos
+        .map((t) => t.content.trim())
+        .filter(Boolean);
+      console.log(
+        `[deliberate-execute] run ${swarmRunID}: synthesis-verifier review on session ${verifierSID.slice(-8)} (PATTERN_DESIGN/deliberate-execute.md I1)`,
+      );
+      const verifierKnownIDs = new Set(
+        (
+          await getSessionMessagesServer(verifierSID, meta.workspace).catch(
+            () => [],
+          )
+        ).map((m) => m.info.id),
+      );
+      try {
+        await postSessionMessageServer(
+          verifierSID,
+          meta.workspace,
+          buildSynthesisVerifierPrompt(todosForReview),
+          { model: verifierModel },
+        );
+      } catch (err) {
+        console.warn(
+          `[deliberate-execute] run ${swarmRunID}: verifier prompt post failed:`,
+          err instanceof Error ? err.message : String(err),
+        );
+        break; // proceed without verification
+      }
+      const verifierWait = await waitForSessionIdle(
+        verifierSID,
+        meta.workspace,
+        verifierKnownIDs,
+        Date.now() + VERIFIER_WAIT_MS,
+      );
+      if (!verifierWait.ok) {
+        console.warn(
+          `[deliberate-execute] run ${swarmRunID}: verifier wait failed (${verifierWait.reason}) — proceeding without revision`,
+        );
+        break;
+      }
+      const verifierReply = extractLatestAssistantText(verifierWait.messages);
+      if (!verifierReply) {
+        console.warn(
+          `[deliberate-execute] run ${swarmRunID}: verifier produced no text — proceeding`,
+        );
+        break;
+      }
+      const verdict = classifySynthesisReply(verifierReply);
+      if (verdict.verdict === 'approved' || verdict.verdict === 'unclear') {
+        console.log(
+          `[deliberate-execute] run ${swarmRunID}: synthesis-verifier ${verdict.verdict.toUpperCase()} — proceeding to execution`,
+        );
+        break;
+      }
+      // REVISE — clear seeded items, retry synthesis with the verifier's
+      // feedback as additional context.
+      console.warn(
+        `[deliberate-execute] run ${swarmRunID}: synthesis-verifier REVISE — clearing ${seededIds.length} seeded todos and re-synthesizing (retries left ${retriesLeft - 1})`,
+      );
+      const cleared = deleteBoardItems(swarmRunID, seededIds);
+      console.log(
+        `[deliberate-execute] run ${swarmRunID}: cleared ${cleared} board items for synthesis retry`,
+      );
+      // Capture pre-retry known IDs so the retry's wait isolates the
+      // new todowrite turn. Use the existing knownIDs object — it
+      // captures everything up through the prior synthesis.
+      const retryKnownIDs = new Set(
+        (
+          await getSessionMessagesServer(synthSID, meta.workspace).catch(
+            () => [],
+          )
+        ).map((m) => m.info.id),
+      );
+      try {
+        await postSessionMessageServer(
+          synthSID,
+          meta.workspace,
+          buildSynthesisRetryPrompt(verdict.feedback),
+          { model: meta.teamModels?.[0] },
+        );
+      } catch (err) {
+        console.warn(
+          `[deliberate-execute] run ${swarmRunID}: synthesis retry post failed:`,
+          err instanceof Error ? err.message : String(err),
+        );
+        break;
+      }
+      const retryWait = await waitForSessionIdle(
+        synthSID,
+        meta.workspace,
+        retryKnownIDs,
+        Date.now() + SYNTHESIS_WAIT_MS,
+      );
+      if (!retryWait.ok) {
+        console.warn(
+          `[deliberate-execute] run ${swarmRunID}: synthesis retry wait failed (${retryWait.reason}) — proceeding with cleared board`,
+        );
+        break;
+      }
+      const retryLatest = latestTodosFrom(retryWait.messages, retryWait.newIDs);
+      if (!retryLatest) {
+        console.warn(
+          `[deliberate-execute] run ${swarmRunID}: synthesis retry produced no todowrite — proceeding with cleared board`,
+        );
+        break;
+      }
+      seededIds = seedTodosFromExtract(swarmRunID, retryLatest.todos);
+      latest.todos = retryLatest.todos;
+      console.log(
+        `[deliberate-execute] run ${swarmRunID}: synthesis retry seeded ${seededIds.length} todos`,
+      );
+      retriesLeft -= 1;
+    }
+  }
 
   // ─── Phase 3: execution ─────────────────────────────────────────────
   // Every session (including synthesizer) is now a worker. Auto-ticker

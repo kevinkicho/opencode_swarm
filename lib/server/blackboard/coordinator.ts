@@ -179,6 +179,49 @@ async function probeOllamaPs(): Promise<{ ok: boolean; detail?: string }> {
   }
 }
 
+// PATTERN_DESIGN/blackboard.md I1 — auto-replan on CAS drift.
+// Fired from the commit-time drift check above. Schedules a fresh
+// planner sweep so a replacement todo lands within seconds of drift,
+// rather than waiting for the next periodic sweep cadence.
+//
+// Throttle: read the run's plan_revisions ledger; skip the call if a
+// sweep landed in the last CAS_REPLAN_MIN_INTERVAL_MS window. Several
+// concurrent workers hitting drift on adjacent files all schedule a
+// replan but only the first one gets through; the rest no-op.
+//
+// Dynamic import of './planner' breaks the otherwise-circular dep
+// (planner imports waitForSessionIdle from this module).
+const CAS_REPLAN_MIN_INTERVAL_MS = 60 * 1000;
+async function scheduleCasDriftReplan(
+  swarmRunID: string,
+  driftedPaths: string[],
+): Promise<void> {
+  try {
+    const { listPlanRevisions } = await import('./plan-revisions');
+    const revisions = listPlanRevisions(swarmRunID);
+    const last = revisions[0]; // newest-first
+    if (last && Date.now() - last.createdAt < CAS_REPLAN_MIN_INTERVAL_MS) {
+      console.log(
+        `[coordinator] CAS-drift replan throttled (${swarmRunID}): last sweep ${Math.round((Date.now() - last.createdAt) / 1000)}s ago — skipping`,
+      );
+      return;
+    }
+    const { runPlannerSweep } = await import('./planner');
+    console.log(
+      `[coordinator] CAS-drift replan firing for ${swarmRunID} on ${driftedPaths.length} drifted file(s) (PATTERN_DESIGN/blackboard.md I1)`,
+    );
+    await runPlannerSweep(swarmRunID, {
+      overwrite: true,
+      includeBoardContext: true,
+    });
+  } catch (err) {
+    console.warn(
+      `[coordinator] CAS-drift replan failed for ${swarmRunID}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 // Owner-id convention for the coordinator: ag_ses_<last8>. Keeps the id
 // short for UI columns while remaining unambiguous per session. Matches the
 // "board ownerAgentId is whatever the writer posts" contract in
@@ -955,6 +998,13 @@ export async function tickCoordinator(
         staleSinceSha: driftedPaths[0],
       });
       if (rolled.ok) {
+        // PATTERN_DESIGN/blackboard.md I1 — auto-replan on CAS drift.
+        // Fire-and-forget a focused planner sweep so a replacement
+        // todo lands in seconds rather than waiting for the next
+        // periodic sweep (often minutes away). Throttled by
+        // CAS_REPLAN_MIN_INTERVAL_MS to avoid thrash when N concurrent
+        // workers all hit drift on adjacent files.
+        void scheduleCasDriftReplan(swarmRunID, driftedPaths);
         return {
           status: 'stale',
           sessionID,

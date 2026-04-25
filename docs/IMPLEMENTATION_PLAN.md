@@ -121,12 +121,12 @@ first.
 
 | Pattern | Item | Effort |
 |---|---|---|
-| blackboard | I1 — auto-replan on CAS drift | 3h |
+| blackboard | I1 — auto-replan on CAS drift | 3h — **SHIPPED** |
 | orchestrator-worker | I2 — plan-delta logging | 3h — **SHIPPED** with 2.3 |
 | map-reduce | I1 — synthesis-critic gate | 4h |
 | critic-loop | I1+I2 — structured verdict + auto-terminate on nitpick loop | 4h — **SHIPPED** |
 | debate-judge | I1+I2 — structured REVISE feedback + addressed-detection | 5h — **SHIPPED** |
-| deliberate-execute | I1 — synthesis-verifier gate | 4h |
+| deliberate-execute | I1 — synthesis-verifier gate | 4h — **SHIPPED** |
 | stigmergy | I2 — per-session heat | 3h — **SHIPPED** |
 
 ### Tier 3 (deeper)

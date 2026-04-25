@@ -255,3 +255,27 @@ export function _dangerouslyClearRun(swarmRunID: string): number {
     .run(swarmRunID);
   return result.changes;
 }
+
+// Delete a list of board items in a single transaction. Used by
+// PATTERN_DESIGN/deliberate-execute.md I1's synthesis-verifier gate
+// when a verifier rejection means the seeded todos need to be cleared
+// before a retry. Skips emitting per-item events — clear-and-reseed
+// is a coarse op the UI handles via the next snapshot frame.
+export function deleteBoardItems(
+  swarmRunID: string,
+  itemIds: string[],
+): number {
+  if (itemIds.length === 0) return 0;
+  const stmt = blackboardDb().prepare(
+    'DELETE FROM board_items WHERE swarm_run_id = ? AND id = ?',
+  );
+  let deleted = 0;
+  const tx = blackboardDb().transaction((ids: string[]) => {
+    for (const id of ids) {
+      const r = stmt.run(swarmRunID, id);
+      deleted += r.changes;
+    }
+  });
+  tx(itemIds);
+  return deleted;
+}
