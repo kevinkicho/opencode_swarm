@@ -212,6 +212,37 @@ interface SwarmView {
   fileHeat: FileHeat[];
 }
 
+// runView gates — single source of truth for which main-panel views
+// are available given the active run's pattern + board state. Three
+// surfaces consume this:
+//   - the runView state union type (derived via keyof typeof)
+//   - the toolbar render (filter visible buttons by gate(ctx)===true)
+//   - the auto-reset effect (snap back to 'timeline' when the current
+//     view's gate flips false, e.g. user navigates from critic-loop
+//     with `iterations` to a council run)
+// Pre-2026-04-25 each surface had its own copy of the conditional
+// logic; drift would silently render dead tabs or auto-reset away
+// from a valid view.
+type ViewGateContext = {
+  pattern: SwarmRunMeta['pattern'] | undefined;
+  boardSwarmRunID: string | null;
+};
+const VIEW_PATTERN_GATES = {
+  timeline: () => true,
+  cards: () => true,
+  board: (ctx: ViewGateContext) => !!ctx.boardSwarmRunID,
+  contracts: (ctx: ViewGateContext) => !!ctx.boardSwarmRunID,
+  iterations: (ctx: ViewGateContext) => ctx.pattern === 'critic-loop',
+  debate: (ctx: ViewGateContext) => ctx.pattern === 'debate-judge',
+  roles: (ctx: ViewGateContext) => ctx.pattern === 'role-differentiated',
+  map: (ctx: ViewGateContext) => ctx.pattern === 'map-reduce',
+  council: (ctx: ViewGateContext) => ctx.pattern === 'council',
+  phases: (ctx: ViewGateContext) => ctx.pattern === 'deliberate-execute',
+  strategy: (ctx: ViewGateContext) => ctx.pattern === 'orchestrator-worker',
+} as const;
+type RunView = keyof typeof VIEW_PATTERN_GATES;
+const RUN_VIEW_KEYS = Object.keys(VIEW_PATTERN_GATES) as RunView[];
+
 // Zero-state view for "no run active" — topbar chips render as 0/placeholder,
 // all live-data panels collapse to their empty states. Budget defaults match
 // the routing-modal defaults so the topbar chip doesn't read 0/0.
@@ -558,54 +589,19 @@ function PageBody({
   // view is a complement to the timeline — it collapses tool calls into
   // chip rows but loses the wire/A2A topology the timeline exists to
   // show. See DESIGN.md §2.
-  const [runView, setRunView] = useState<
-    | 'timeline'
-    | 'cards'
-    | 'board'
-    | 'contracts'
-    | 'iterations'
-    | 'debate'
-    | 'roles'
-    | 'map'
-    | 'council'
-    | 'phases'
-    | 'strategy'
-  >('timeline');
+  const [runView, setRunView] = useState<RunView>('timeline');
 
   // Auto-reset runView when its enabling condition disappears (e.g.,
   // user navigates from a critic-loop run with `iterations` selected
   // to a council run where `iterations` is no longer in the toggle).
-  // Without this, the main view goes blank because the switch
-  // statement returns null for the now-disabled key.
+  // Without this, the main view goes blank because the dispatch
+  // returns null for the now-disabled key.
   useEffect(() => {
-    const pat = swarmRunMeta?.pattern;
-    const enabled = (() => {
-      switch (runView) {
-        case 'timeline':
-        case 'cards':
-          return true;
-        case 'board':
-        case 'contracts':
-          return !!boardSwarmRunID;
-        case 'iterations':
-          return pat === 'critic-loop';
-        case 'debate':
-          return pat === 'debate-judge';
-        case 'roles':
-          return pat === 'role-differentiated';
-        case 'map':
-          return pat === 'map-reduce';
-        case 'council':
-          return pat === 'council';
-        case 'phases':
-          return pat === 'deliberate-execute';
-        case 'strategy':
-          return pat === 'orchestrator-worker';
-        default:
-          return false;
-      }
-    })();
-    if (!enabled) setRunView('timeline');
+    const ok = VIEW_PATTERN_GATES[runView]({
+      pattern: swarmRunMeta?.pattern,
+      boardSwarmRunID,
+    });
+    if (!ok) setRunView('timeline');
   }, [runView, swarmRunMeta?.pattern, boardSwarmRunID]);
 
   const jumpToTodo = useCallback((todoId: string) => {
@@ -963,65 +959,30 @@ function PageBody({
           <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">view</span>
             <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
-              {(
-                [
-                  { key: 'timeline', enabled: true },
-                  { key: 'cards', enabled: true },
-                  // `board` shows the full board grid, only meaningful
-                  // when the run uses a blackboard-derived store.
-                  { key: 'board', enabled: !!boardSwarmRunID },
-                  // Pattern-specific deep views (2026-04-24): each
-                  // gated on the active boardPattern. Contracts is
-                  // shown for any board-using pattern (verdict
-                  // surface, not pattern-exclusive). The other 7 are
-                  // pinned per-pattern.
-                  { key: 'contracts', enabled: !!boardSwarmRunID },
-                  {
-                    key: 'iterations',
-                    enabled: swarmRunMeta?.pattern === 'critic-loop',
-                  },
-                  {
-                    key: 'debate',
-                    enabled: swarmRunMeta?.pattern === 'debate-judge',
-                  },
-                  {
-                    key: 'roles',
-                    enabled: swarmRunMeta?.pattern === 'role-differentiated',
-                  },
-                  {
-                    key: 'map',
-                    enabled: swarmRunMeta?.pattern === 'map-reduce',
-                  },
-                  {
-                    key: 'council',
-                    enabled: swarmRunMeta?.pattern === 'council',
-                  },
-                  {
-                    key: 'phases',
-                    enabled: swarmRunMeta?.pattern === 'deliberate-execute',
-                  },
-                  {
-                    key: 'strategy',
-                    enabled: swarmRunMeta?.pattern === 'orchestrator-worker',
-                  },
-                ] as const
-              )
-                .filter((v) => v.enabled)
-                .map((v) => (
-                  <button
-                    key={v.key}
-                    type="button"
-                    onClick={() => setRunView(v.key)}
-                    className={clsx(
-                      'h-5 px-2 rounded-sm transition-colors cursor-pointer',
-                      runView === v.key
-                        ? 'bg-molten/15 text-molten'
-                        : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
-                    )}
-                  >
-                    {v.key}
-                  </button>
-                ))}
+              {/* Toolbar visibility gate: each view's button is shown only
+                  when its VIEW_PATTERN_GATES entry passes for the active
+                  run. Single source of truth shared with the auto-reset
+                  effect above so the two never drift. */}
+              {RUN_VIEW_KEYS.filter((k) =>
+                VIEW_PATTERN_GATES[k]({
+                  pattern: swarmRunMeta?.pattern,
+                  boardSwarmRunID,
+                }),
+              ).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setRunView(k)}
+                  className={clsx(
+                    'h-5 px-2 rounded-sm transition-colors cursor-pointer',
+                    runView === k
+                      ? 'bg-molten/15 text-molten'
+                      : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
+                  )}
+                >
+                  {k}
+                </button>
+              ))}
             </div>
             <div className="flex-1" />
             <span className="font-mono text-micro tabular-nums text-fog-700">
