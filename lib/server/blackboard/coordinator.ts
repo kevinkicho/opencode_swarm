@@ -864,6 +864,42 @@ export async function tickCoordinator(
   const sessionRole = pickedSession
     ? roleNamesBySessionID(meta).get(pickedSession)
     : undefined;
+
+  // PATTERN_DESIGN/role-differentiated.md I4 — per-role token budgets.
+  // Soft cutoff: when meta.roleBudgets[<role>] is set AND the picked
+  // session's role has accumulated tokens at or above the ceiling,
+  // refuse to dispatch new work to that session. Already-claimed items
+  // run to completion; we only block FUTURE claims.
+  // Tokens are summed across the session(s) holding the role from
+  // assistant messages already loaded in messagesByCandidate (no
+  // extra fetch). For role-differentiated this is one session per
+  // role; the loop generalises if other patterns ever opt in.
+  if (
+    meta.roleBudgets &&
+    sessionRole &&
+    typeof meta.roleBudgets[sessionRole] === 'number'
+  ) {
+    const cap = meta.roleBudgets[sessionRole];
+    const sidByRole = roleNamesBySessionID(meta);
+    let spent = 0;
+    for (const [sid, role] of sidByRole.entries()) {
+      if (role !== sessionRole) continue;
+      const msgs = messagesByCandidate.get(sid) ?? [];
+      for (const m of msgs) {
+        if (m.info.role !== 'assistant') continue;
+        spent += m.info.tokens?.total ?? 0;
+      }
+    }
+    if (spent >= cap) {
+      console.log(
+        `[coordinator] role-budget: ${sessionRole} hit ${spent}/${cap} tokens — denying claim (PATTERN_DESIGN/role-differentiated.md I4)`,
+      );
+      return {
+        status: 'skipped',
+        reason: `role-budget: ${sessionRole} hit ${spent}/${cap} tokens`,
+      };
+    }
+  }
   const scored = openTodos.map((t) => {
     let roleAffinity = 0;
     if (sessionRole && t.preferredRole) {

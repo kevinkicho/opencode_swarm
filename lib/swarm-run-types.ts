@@ -118,6 +118,17 @@ export interface SwarmRunRequest {
   // "only the security role should touch authentication code."
   // Role-differentiated pattern only.
   strictRoleRouting?: boolean;
+  // PATTERN_DESIGN/role-differentiated.md I4 — per-role token budgets.
+  // Map of role-name → total-token ceiling. When a role's accumulated
+  // assistant-message tokens reach the ceiling, the coordinator picker
+  // refuses to dispatch new work to that role's session(s). Other
+  // roles continue. Useful with mixed-model teams (e.g. an architect
+  // on a premium model + builders on cheaper ones — cap the architect
+  // at a fraction of the run budget so a verbose planner can't soak
+  // the run). Soft cutoff — already-claimed work runs to completion;
+  // only future claims are denied. Default undefined → no caps.
+  // Role-differentiated pattern only (other patterns ignore).
+  roleBudgets?: Record<string, number>;
   // PATTERN_DESIGN/map-reduce.md I3 — partial-map tolerance knob.
   // When set, the synthesis-wait stage tolerates per-member failures
   // by proceeding with whatever drafts arrived as long as at least
@@ -258,6 +269,8 @@ export interface SwarmRunMeta {
   autoStopOnConverge?: boolean;
   // Strict role routing mirror — PATTERN_DESIGN/role-differentiated.md I1.
   strictRoleRouting?: boolean;
+  // Per-role token-budget caps mirror — PATTERN_DESIGN/role-differentiated.md I4.
+  roleBudgets?: Record<string, number>;
   // Partial-map tolerance mirror — PATTERN_DESIGN/map-reduce.md I3.
   partialMapTolerance?: {
     minMembers: number;

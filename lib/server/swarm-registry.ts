@@ -165,6 +165,8 @@ export async function createRun(
     autoStopOnConverge: req.autoStopOnConverge ? true : undefined,
     // Strict role routing — PATTERN_DESIGN/role-differentiated.md I1.
     strictRoleRouting: req.strictRoleRouting ? true : undefined,
+    // Per-role budgets — PATTERN_DESIGN/role-differentiated.md I4.
+    roleBudgets: req.roleBudgets,
     // Partial-map tolerance — PATTERN_DESIGN/map-reduce.md I3.
     partialMapTolerance: req.partialMapTolerance,
     // Synthesis-critic — PATTERN_DESIGN/map-reduce.md I1.
