@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentMessage, PartType, TodoItem, ToolName } from '@/lib/swarm-types';
 import { IconSearch, IconFilter } from './icons';
 import { ProviderBadge } from './provider-badge';
@@ -113,22 +113,26 @@ export function SwarmTimeline({
   // status circles should stop pulsing — their "live" animation is
   // stale data after the SSE feed drops. See useBackendStale docs.
   const backendStale = useBackendStale();
-  // Anchor-tracking refs for stick-to-bottom: `firstIdRef` distinguishes a
-  // fresh session (forces a jump), `lastIdRef` triggers follow-on auto-scroll
-  // only when the user was already near the bottom.
+  // Stick-to-bottom state machine (replaces 2026-04-24 timing-based
+  // approach). The earlier grace-window + interval-ticker fix was
+  // chasing timing — it would snap to bottom for the first N seconds
+  // and then give up, but Playwright probe showed messages keep
+  // arriving in chunks for 10+ seconds and we'd disengage before the
+  // tail landed (scrollHeight 12040 at t+3s grew to 35448 at t+8s).
+  //
+  // The right model: track whether the user IS at bottom. Initially
+  // true (we always land at bottom). Stays true until the user
+  // manually scrolls up past STICK_DISENGAGE_PX. Goes back to true
+  // when the user scrolls back to within STICK_REENGAGE_PX of the
+  // bottom. While true, every content change auto-snaps. While false,
+  // we leave the user wherever they are.
+  //
+  // `firstIdRef` still distinguishes a fresh session for the initial
+  // multi-pass snap. After that, the at-bottom flag governs everything.
   const firstIdRef = useRef<string | null>(null);
-  const lastIdRef = useRef<string | null>(null);
-  // Mount-time stamp for the early-load auto-stick window. For the first
-  // STICK_GRACE_MS after mount we auto-snap to bottom on every message
-  // change regardless of distance — covers the "messages stream in over
-  // time after page load" case where a strict 48-px threshold would
-  // disengage the moment the first chunk lands. After the grace window,
-  // the strict follow-only-if-near-bottom logic takes over so a
-  // user-initiated scroll-up isn't fought.
-  const mountTsRef = useRef<number>(0);
-  if (mountTsRef.current === 0) mountTsRef.current = Date.now();
-  const STICK_GRACE_MS = 8000;
-  const STICK_DISTANCE_PX = 200;
+  const stickToBottomRef = useRef<boolean>(true);
+  const STICK_DISENGAGE_PX = 80;  // user scrolled away from bottom by more than this → disengage
+  const STICK_REENGAGE_PX = 24;   // user scrolled back within this of the bottom → re-engage
 
   const agentIndex = useMemo(() => {
     const m = new Map<string, number>();
@@ -209,54 +213,66 @@ export function SwarmTimeline({
   // the user was effectively AT the bottom (tight threshold so a manual
   // scroll-up reliably disengages auto-follow). 48 px tolerance covers
   // rounding + the floating "latest" button that anchors to bottom-3.
+  // Snap-to-bottom when the at-bottom flag is set. Runs on every
+  // [messages, totalHeight] change. The flag flips off when the user
+  // scrolls up; the scroll listener (separate effect below) governs
+  // that.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el || messages.length === 0) return;
     const firstId = messages[0].id;
-    const lastId = messages[messages.length - 1].id;
 
+    // First-render snap: brand-new run anchor → multi-pass snap to land
+    // at bottom even if scrollHeight grows over the next few rAFs as
+    // late row heights settle. After the initial pass the at-bottom
+    // flag governs everything.
     if (firstId !== firstIdRef.current) {
-      // Aggressive multi-pass snap: synchronous, then rAF, then a
-      // 200 ms-interval ticker for 3 s. Covers every layout-settle
-      // scenario seen against `run_modm7vsw_uxxy6b`:
-      //   * synchronous + rAF — content already in DOM, instant snap
-      //   * timed passes — late-resolving row heights, lazy panels,
-      //     SSE chunks streaming in over the first second
-      //   * 200 ms cadence for 3 s — covers backend slow-load where
-      //     the page hydrates with one batch and a second arrives
-      //     1-2 s later, growing scrollHeight after our snap landed
-      // Earlier fixed 120/400 ms passes weren't enough — user
-      // reported the page still loaded mid-scroll on hard refresh.
+      firstIdRef.current = firstId;
+      stickToBottomRef.current = true;
       const snap = () => {
         const cur = scrollRef.current;
         if (cur) cur.scrollTop = cur.scrollHeight;
       };
       snap();
       requestAnimationFrame(snap);
-      const interval = window.setInterval(snap, 200);
-      const stop = window.setTimeout(() => window.clearInterval(interval), 3000);
-      firstIdRef.current = firstId;
-      lastIdRef.current = lastId;
+      const t1 = window.setTimeout(snap, 120);
+      const t2 = window.setTimeout(snap, 400);
       return () => {
-        window.clearInterval(interval);
-        window.clearTimeout(stop);
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
       };
     }
 
-    if (lastId !== lastIdRef.current) {
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      // During the grace window after mount, follow regardless of
-      // distance — keeps the user pinned to the latest while the page
-      // is still receiving its initial burst. After the window closes,
-      // require near-bottom (200 px tolerance, more generous than the
-      // earlier 48 px which spuriously disengaged on tall rows).
-      const inGraceWindow = Date.now() - mountTsRef.current < STICK_GRACE_MS;
-      if (inGraceWindow || distance < STICK_DISTANCE_PX) {
-        el.scrollTop = el.scrollHeight;
-      }
-      lastIdRef.current = lastId;
+    // Subsequent updates: as long as the user hasn't scrolled away from
+    // the bottom, follow new content. No time-window cutoff — sticking
+    // is a state, not a deadline. This survives long-tail SSE chunking
+    // where messages arrive over 10+ seconds after first paint.
+    if (stickToBottomRef.current) {
+      el.scrollTop = el.scrollHeight;
     }
-  }, [messages, totalHeight, STICK_GRACE_MS, STICK_DISTANCE_PX]);
+  }, [messages, totalHeight]);
+
+  // Scroll listener: flip the at-bottom flag based on user movement.
+  // Disengages when the user scrolls away by > STICK_DISENGAGE_PX;
+  // re-engages when they come back within STICK_REENGAGE_PX. The
+  // hysteresis prevents flicker at the boundary. Note: scrollTop
+  // changes WE make (the snap above) also fire this event — but
+  // because the snap lands within REENGAGE_PX of the bottom, it
+  // reaffirms the at-bottom state rather than disengaging.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (stickToBottomRef.current && distance > STICK_DISENGAGE_PX) {
+        stickToBottomRef.current = false;
+      } else if (!stickToBottomRef.current && distance <= STICK_REENGAGE_PX) {
+        stickToBottomRef.current = true;
+      }
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [STICK_DISENGAGE_PX, STICK_REENGAGE_PX]);
 
   return (
     <section className="relative flex-1 flex flex-col min-w-0 min-h-0 bg-ink-800">
@@ -487,9 +503,20 @@ export function SwarmTimeline({
                             assigns one. Falls back to the provider name
                             for `none` pattern or unmapped sessions. The
                             full provider label still lives in the lane's
-                            hover tooltip above (line 362). */}
+                            hover tooltip above (line 362).
+
+                            Bugfix 2026-04-24 evening: roleNames is keyed
+                            by `ownerIdForSession(sid)` = `ag_ses_<sid8>`
+                            (the coordinator's owner-id convention), but
+                            `a.id` is `ag_<agentName>_<sid8>` (the
+                            display-id convention from agentIdFor). The
+                            two never matched. We derive the owner-id
+                            inline from `a.sessionID` to bridge them. */}
                         {(() => {
-                          const role = roleNames?.get(a.id);
+                          const ownerId = a.sessionID
+                            ? `ag_ses_${a.sessionID.slice(-8)}`
+                            : '';
+                          const role = roleNames?.get(ownerId);
                           if (role) {
                             return (
                               <span
