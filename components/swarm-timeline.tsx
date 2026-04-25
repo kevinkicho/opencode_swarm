@@ -101,7 +101,12 @@ export function SwarmTimeline({
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
-  const [partFilter, setPartFilter] = useState<PartType | 'all'>('all');
+  // Multi-select part filter (2026-04-24): empty Set means "all parts
+  // visible", otherwise only the selected parts pass the filter.
+  // Migrated from `PartType | 'all'` so users can isolate (e.g.)
+  // text + reasoning + tool simultaneously without round-tripping
+  // through the dropdown.
+  const [partFilter, setPartFilter] = useState<Set<PartType>>(() => new Set());
   const { clockSec } = usePlayback();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // When the dev backend has been unreachable long enough, the lane
@@ -153,7 +158,7 @@ export function SwarmTimeline({
     () =>
       messages.filter((m) => {
         if (!matches(m, filter)) return false;
-        if (partFilter !== 'all' && m.part !== partFilter) return false;
+        if (partFilter.size > 0 && !partFilter.has(m.part)) return false;
         if (phaseFor(m, clockSec) === 'hidden') return false;
         if (!query) return true;
         const hay = `${m.title} ${m.body ?? ''} ${m.toolSubtitle ?? ''}`.toLowerCase();
@@ -211,25 +216,30 @@ export function SwarmTimeline({
     const lastId = messages[messages.length - 1].id;
 
     if (firstId !== firstIdRef.current) {
-      // Two-phase snap: scrollTop=scrollHeight first (synchronous, before
-      // paint), then rAF a second pass so any content the React commit is
-      // still settling (sticky headers, lazy rows) can't leave us a few
-      // px short of truly-bottom. Plus a settled-layout pass ~120ms later
-      // for the "messages stream in chunks" case where row heights settle
-      // after the initial commit.
+      // Aggressive multi-pass snap: synchronous, then rAF, then a
+      // 200 ms-interval ticker for 3 s. Covers every layout-settle
+      // scenario seen against `run_modm7vsw_uxxy6b`:
+      //   * synchronous + rAF — content already in DOM, instant snap
+      //   * timed passes — late-resolving row heights, lazy panels,
+      //     SSE chunks streaming in over the first second
+      //   * 200 ms cadence for 3 s — covers backend slow-load where
+      //     the page hydrates with one batch and a second arrives
+      //     1-2 s later, growing scrollHeight after our snap landed
+      // Earlier fixed 120/400 ms passes weren't enough — user
+      // reported the page still loaded mid-scroll on hard refresh.
       const snap = () => {
         const cur = scrollRef.current;
         if (cur) cur.scrollTop = cur.scrollHeight;
       };
       snap();
       requestAnimationFrame(snap);
-      const t1 = window.setTimeout(snap, 120);
-      const t2 = window.setTimeout(snap, 400);
+      const interval = window.setInterval(snap, 200);
+      const stop = window.setTimeout(() => window.clearInterval(interval), 3000);
       firstIdRef.current = firstId;
       lastIdRef.current = lastId;
       return () => {
-        window.clearTimeout(t1);
-        window.clearTimeout(t2);
+        window.clearInterval(interval);
+        window.clearTimeout(stop);
       };
     }
 
@@ -656,13 +666,15 @@ function PartLegend({
   onChange,
   counts,
 }: {
-  partFilter: PartType | 'all';
-  onChange: (v: PartType | 'all') => void;
+  partFilter: Set<PartType>;
+  onChange: (v: Set<PartType>) => void;
   counts: Map<PartType, number>;
 }) {
-  const active = partFilter !== 'all';
+  // Multi-select: empty Set = "all visible", otherwise = "isolate
+  // these N part types". Click toggles each row in/out of the set.
+  const active = partFilter.size > 0;
   // Popover (click-pin), not Tooltip: the rows inside are interactive —
-  // click a label to isolate that part in the main view. Tooltip would
+  // click a label to toggle that part in the main view. Tooltip would
   // collapse the moment the mouse moved onto a row and the click would
   // never register. See the interactive_tooltip project memory.
   return (
@@ -670,21 +682,21 @@ function PartLegend({
       side="bottom"
       align="end"
       wide
-      content={(close) => (
-        <div className="space-y-2 min-w-[320px]">
+      content={() => (
+        <div className="space-y-2 min-w-[340px]">
           <div className="flex items-center gap-2">
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
               part types
             </span>
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700">
-              opencode sdk
+              multi-select
             </span>
             <button
               type="button"
-              onClick={() => onChange('all')}
+              onClick={() => onChange(new Set())}
               className={clsx(
                 'ml-auto font-mono text-micro uppercase tracking-wider transition cursor-pointer',
-                partFilter === 'all' ? 'text-molten' : 'text-fog-600 hover:text-fog-200',
+                !active ? 'text-molten' : 'text-fog-600 hover:text-fog-200',
               )}
             >
               show all
@@ -692,7 +704,10 @@ function PartLegend({
           </div>
 
           {/* Grid: label | blurb | count. tabular-nums on the count column
-              so digits align vertically across rows. */}
+              so digits align vertically across rows. All 12 part types are
+              listed regardless of count — zero-count rows are dimmed but
+              clickable so a user can pre-select a filter for parts they
+              expect to arrive later in the run. */}
           <ul
             className="list-none"
             style={{
@@ -703,29 +718,44 @@ function PartLegend({
             }}
           >
             {partOrder.map((p) => {
-              const selected = partFilter === p;
+              const selected = partFilter.has(p);
               const count = counts.get(p) ?? 0;
-              if (count === 0) return null;
+              const dim = count === 0 && !selected;
               return (
                 <li key={p} className="contents">
                   <button
                     type="button"
                     onClick={() => {
-                      onChange(selected ? 'all' : p);
-                      close();
+                      const next = new Set(partFilter);
+                      if (next.has(p)) next.delete(p);
+                      else next.add(p);
+                      onChange(next);
+                      // Don't auto-close — multi-select implies the user
+                      // may want to toggle several before dismissing.
                     }}
                     className={clsx(
                       'contents font-mono text-micro uppercase tracking-wider cursor-pointer group',
+                      dim && 'opacity-40',
                     )}
-                    aria-label={`isolate ${partMeta[p].label}`}
+                    aria-pressed={selected}
+                    aria-label={`toggle ${partMeta[p].label}`}
                   >
                     <span
                       className={clsx(
-                        'h-6 px-2 flex items-center rounded-l',
+                        'h-6 px-2 flex items-center rounded-l gap-1.5',
                         selected ? 'bg-ink-700' : 'group-hover:bg-ink-800',
                       )}
                       style={{ color: partHex[p] }}
                     >
+                      <span
+                        className={clsx(
+                          'w-2.5 h-2.5 rounded-sm border shrink-0',
+                          selected
+                            ? 'border-molten bg-molten/40'
+                            : 'border-fog-700',
+                        )}
+                        aria-hidden
+                      />
                       {partMeta[p].label}
                     </span>
                     <span
@@ -750,7 +780,7 @@ function PartLegend({
             })}
           </ul>
           <div className="hairline-t pt-1 font-mono text-[10.5px] text-fog-600 opacity-40">
-            click a label to isolate that part type in the main view
+            click each label to toggle (multi-select); empty = show all
           </div>
         </div>
       )}
@@ -768,11 +798,11 @@ function PartLegend({
             active ? 'text-molten' : 'text-fog-400',
           )}
         >
-          {active ? partMeta[partFilter as PartType].label : 'parts'}
+          {active ? `parts · ${partFilter.size}` : 'parts'}
         </span>
         {active && (
           <span className="font-mono text-[9px] text-fog-600 tabular-nums">
-            {counts.get(partFilter as PartType) ?? 0}
+            {Array.from(partFilter).reduce((sum, p) => sum + (counts.get(p) ?? 0), 0)}
           </span>
         )}
       </button>
