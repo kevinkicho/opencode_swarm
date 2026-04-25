@@ -44,6 +44,11 @@ interface IterationRow {
   // line-LCS counts (proper diff, not set-symmetric difference) and
   // gives a future inspector drawer a place to fetch hunks from.
   diff: DraftDiff | null;
+  // Session that produced this row, used for inspector wiring
+  // (IMPLEMENTATION_PLAN.md 6.9). Worker rows carry the worker's
+  // sessionID; critic rows carry the critic's. Null when the slot
+  // wasn't classified (mock data / older runs).
+  sessionID: string | null;
 }
 
 // Extract assistant turn body as plain text. Walks parts, concatenates
@@ -107,9 +112,11 @@ function classifySlots(slots: LiveSwarmSessionSlot[]): {
 export function IterationsRail({
   slots,
   embedded = false,
+  onInspectSession,
 }: {
   slots: LiveSwarmSessionSlot[];
   embedded?: boolean;
+  onInspectSession?: (sessionID: string) => void;
 }) {
   const rows = useMemo<IterationRow[]>(() => {
     const { worker, critic } = classifySlots(slots);
@@ -154,6 +161,7 @@ export function IterationsRail({
           keyTone,
           ts: draft.info.time.completed ?? draft.info.time.created ?? null,
           diff,
+          sessionID: worker?.sessionID ?? null,
         });
         prevDraftText = text;
       }
@@ -187,6 +195,7 @@ export function IterationsRail({
           keyTone: completed ? verdictTone : null,
           ts: review.info.time.completed ?? review.info.time.created ?? null,
           diff: null,
+          sessionID: critic?.sessionID ?? null,
         });
       }
     }
@@ -228,9 +237,11 @@ export function IterationsRail({
 function IterationsListBody({
   rows,
   finalApproved,
+  onInspectSession,
 }: {
   rows: IterationRow[];
   finalApproved: number;
+  onInspectSession?: (sessionID: string) => void;
 }) {
   const scrollRef = useRef<HTMLUListElement>(null);
   useStickToBottom(scrollRef, rows.length);
@@ -241,7 +252,12 @@ function IterationsListBody({
         className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0"
       >
         {rows.map((r, i) => (
-          <IterationRowEl key={i} row={r} approved={i === finalApproved} />
+          <IterationRowEl
+            key={i}
+            row={r}
+            approved={i === finalApproved}
+            onInspectSession={onInspectSession}
+          />
         ))}
       </ul>
       <ScrollToBottomButton scrollRef={scrollRef} />
@@ -317,21 +333,37 @@ function compactNum(n: number): string {
 function IterationRowEl({
   row,
   approved,
+  onInspectSession,
 }: {
   row: IterationRow;
   approved: boolean;
+  onInspectSession?: (sessionID: string) => void;
 }) {
+  const clickable = !!(onInspectSession && row.sessionID);
+  const onClick = clickable
+    ? () => onInspectSession!(row.sessionID!)
+    : undefined;
   return (
     <li
       className={clsx(
-        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono cursor-default hover:bg-ink-800/40 transition',
+        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono transition',
+        clickable
+          ? 'cursor-pointer hover:bg-ink-800/60'
+          : 'cursor-default hover:bg-ink-800/40',
         approved && 'bg-mint/[0.08]',
       )}
       style={{
         // iter 28 · actor 48 · status 64 · length 40 · key flex · time 40
         gridTemplateColumns: '28px 48px 64px 40px minmax(0, 1fr) 40px',
       }}
-      title={row.keySummary ?? undefined}
+      title={
+        row.keySummary
+          ? `${row.keySummary}${clickable ? ' · click to inspect session' : ''}`
+          : clickable
+            ? 'click to inspect session'
+            : undefined
+      }
+      onClick={onClick}
     >
       <span className="text-fog-400 tabular-nums">{row.label}</span>
       <span

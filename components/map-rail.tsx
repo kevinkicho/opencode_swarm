@@ -127,11 +127,13 @@ export function MapRail({
   live,
   sessionIDs,
   embedded = false,
+  onInspectSession,
 }: {
   slots: LiveSwarmSessionSlot[];
   live: LiveBoard;
   sessionIDs: string[];
   embedded?: boolean;
+  onInspectSession?: (sessionID: string) => void;
 }) {
   const { mapRows, reduce, mapSummary, hasMapPhaseDone } = useMemo(() => {
     const mapRows: MapRow[] = slots.map((slot, idx) => {
@@ -231,6 +233,8 @@ export function MapRail({
       mapRows={mapRows}
       reduce={reduce}
       showBanner={showBanner}
+      sessionIDs={sessionIDs}
+      onInspectSession={onInspectSession}
     />,
   );
 }
@@ -243,10 +247,14 @@ function MapScrollBody({
   mapRows,
   reduce,
   showBanner,
+  sessionIDs,
+  onInspectSession,
 }: {
   mapRows: MapRow[];
   reduce: ReduceRow | null;
   showBanner: boolean;
+  sessionIDs: string[];
+  onInspectSession?: (sessionID: string) => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const sig = `${mapRows.length}:${reduce ? reduce.status : 'none'}`;
@@ -264,7 +272,11 @@ function MapScrollBody({
         )}
         <ul className="list-none">
           {mapRows.map((r) => (
-            <MapRowEl key={r.slotIndex} row={r} />
+            <MapRowEl
+              key={r.slotIndex}
+              row={r}
+              onInspectSession={onInspectSession}
+            />
           ))}
         </ul>
         {reduce && (
@@ -273,7 +285,15 @@ function MapScrollBody({
               reduce
             </div>
             <ul className="list-none">
-              <ReduceRowEl row={reduce} />
+              <ReduceRowEl
+                row={reduce}
+                ownerSessionID={
+                  reduce.ownerSlot !== null
+                    ? sessionIDs[reduce.ownerSlot] ?? null
+                    : null
+                }
+                onInspectSession={onInspectSession}
+              />
             </ul>
           </>
         )}
@@ -329,15 +349,32 @@ function compactNum(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-function MapRowEl({ row }: { row: MapRow }) {
+function MapRowEl({
+  row,
+  onInspectSession,
+}: {
+  row: MapRow;
+  onInspectSession?: (sessionID: string) => void;
+}) {
+  const clickable = !!(onInspectSession && row.sessionID);
+  const onClick = clickable ? () => onInspectSession!(row.sessionID) : undefined;
   return (
     <li
-      className="h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono cursor-default hover:bg-ink-800/40 transition"
+      onClick={onClick}
+      className={clsx(
+        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono transition',
+        clickable
+          ? 'cursor-pointer hover:bg-ink-800/60'
+          : 'cursor-default hover:bg-ink-800/40',
+      )}
       style={{
         // glyph 40 · scope flex · status 60 · output 48 · files 32 · tokens 48
         gridTemplateColumns: '40px minmax(0, 1fr) 60px 48px 32px 48px',
       }}
-      title={row.scopeFull || `slot s${row.slotIndex} · ${row.sessionID.slice(-8)}`}
+      title={
+        (row.scopeFull || `slot s${row.slotIndex} · ${row.sessionID.slice(-8)}`) +
+        (clickable ? ' · click to inspect session' : '')
+      }
     >
       <span className="text-iris font-mono text-[10px] tabular-nums">
         s{row.slotIndex}
@@ -381,16 +418,37 @@ function MapRowEl({ row }: { row: MapRow }) {
   );
 }
 
-function ReduceRowEl({ row }: { row: ReduceRow }) {
+function ReduceRowEl({
+  row,
+  ownerSessionID,
+  onInspectSession,
+}: {
+  row: ReduceRow;
+  ownerSessionID: string | null;
+  onInspectSession?: (sessionID: string) => void;
+}) {
   const idShort = row.itemID.length > 12 ? `${row.itemID.slice(0, 8)}…` : row.itemID;
+  const clickable = !!(onInspectSession && ownerSessionID);
+  const onClick = clickable
+    ? () => onInspectSession!(ownerSessionID!)
+    : undefined;
   return (
     <li
-      className="h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono cursor-default hover:bg-ink-800/40 transition"
+      onClick={onClick}
+      className={clsx(
+        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono transition',
+        clickable
+          ? 'cursor-pointer hover:bg-ink-800/60'
+          : 'cursor-default hover:bg-ink-800/40',
+      )}
       style={{
         // glyph 16 · item 80 · status 80 · owner 32 · elapsed 48 · output 48
         gridTemplateColumns: '16px 80px 80px 32px 48px 48px',
       }}
-      title={`synthesize ${row.itemID}`}
+      title={
+        `synthesize ${row.itemID}` +
+        (clickable ? ' · click to inspect synthesizer' : '')
+      }
     >
       <span className="text-iris">⬢</span>
       <span className="font-mono text-[9px] text-fog-500 tabular-nums truncate">

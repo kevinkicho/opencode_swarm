@@ -178,10 +178,18 @@ const STANCE_TONE: Record<NonNullable<StanceBucket>, string> = {
 export function CouncilRail({
   slots,
   embedded = false,
+  // Accepted but not wired in v1 — council rows are rounds, not sessions,
+  // so inspector wiring needs cell-level (per-member) clicks which
+  // require restructuring the row component. Page passes this so a
+  // future cell-level enhancement is non-breaking. IMPLEMENTATION_PLAN
+  // 6.9 v2.
+  onInspectSession: _onInspectSession,
 }: {
   slots: LiveSwarmSessionSlot[];
   embedded?: boolean;
+  onInspectSession?: (sessionID: string) => void;
 }) {
+  void _onInspectSession;
   const { rows, trend } = useMemo(() => {
     if (slots.length < 2) return { rows: [] as RoundRow[], trend: null as 'up' | 'flat' | 'down' | null };
 

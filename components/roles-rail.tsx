@@ -40,6 +40,8 @@ interface RoleRow {
   avgMinutes: number | null;
   // Current activity inferred from the role's most-recent claim status.
   status: 'idle' | 'claiming' | 'working' | 'error';
+  // Session that holds this role, used by the inspector wiring.
+  sessionID: string;
 }
 
 // Reserved accent per canonical role. The stigmergy of the kept palette:
@@ -97,6 +99,7 @@ export function RolesRail({
   roleNames,
   sessionIDs,
   embedded = false,
+  onInspectSession,
 }: {
   live: LiveBoard;
   // sessionID → role name (from run meta + teamRoles preset). Pass an
@@ -106,6 +109,7 @@ export function RolesRail({
   // session labels per role.
   sessionIDs: string[];
   embedded?: boolean;
+  onInspectSession?: (sessionID: string) => void;
 }) {
   const rows = useMemo<RoleRow[]>(() => {
     const items = live.items ?? [];
@@ -203,6 +207,7 @@ export function RolesRail({
           matchTotal: acc.matchTotal,
           avgMinutes: avgMs ? avgMs / 60_000 : null,
           status,
+          sessionID: sessionIDs[acc.slotIndex] ?? '',
         };
       });
   }, [live.items, roleNames, sessionIDs]);
@@ -242,7 +247,7 @@ export function RolesRail({
         : ''),
     <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0">
       {rows.map((r) => (
-        <RoleRowEl key={r.role} row={r} />
+        <RoleRowEl key={r.role} row={r} onInspectSession={onInspectSession} />
       ))}
     </ul>,
   );
@@ -279,15 +284,29 @@ const STATUS_TONE: Record<RoleRow['status'], string> = {
   error: 'text-rust',
 };
 
-function RoleRowEl({ row }: { row: RoleRow }) {
+function RoleRowEl({
+  row,
+  onInspectSession,
+}: {
+  row: RoleRow;
+  onInspectSession?: (sessionID: string) => void;
+}) {
   const accentBg = ROLE_ACCENT[row.role] ?? fallbackAccent(row.role);
   const accentText = ROLE_TEXT[row.role] ?? fallbackText(row.role);
   const matchPct =
     row.matchRate !== null ? Math.round(row.matchRate * 100) : null;
+  const clickable = !!(onInspectSession && row.sessionID);
+  const onClick = clickable ? () => onInspectSession!(row.sessionID) : undefined;
 
   return (
     <li
-      className="h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono cursor-default hover:bg-ink-800/40 transition relative"
+      onClick={onClick}
+      className={clsx(
+        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono transition relative',
+        clickable
+          ? 'cursor-pointer hover:bg-ink-800/60'
+          : 'cursor-default hover:bg-ink-800/40',
+      )}
       style={{
         // stripe 4 · role 88 · session 32 · claimed 40 · done 40 · stale 40
         // · match 64 · avg 40 · status 64

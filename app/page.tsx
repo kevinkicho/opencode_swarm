@@ -713,6 +713,25 @@ function PageBody({
     setDrawerOpen(true);
   }, []);
 
+  // IMPLEMENTATION_PLAN.md 6.9 — pattern-tab row clicks need to wire
+  // into the inspector. Pattern rails carry raw `sessionID` from
+  // opencode; the inspector keys on `ag_<name>_<sid8>` agent IDs.
+  // Bridge by walking the agents array. No-op when no agent has been
+  // synthesised yet for that session (rare — happens only between
+  // session spawn and first intro post).
+  const selectSession = useCallback(
+    (sessionID: string) => {
+      if (!sessionID) return;
+      const agent = agents.find((a) => a.sessionID === sessionID);
+      if (!agent) return;
+      setSelectedAgentId(agent.id);
+      setFocusedMsgId(null);
+      setSelectedFileHeat(null);
+      setDrawerOpen(true);
+    },
+    [agents],
+  );
+
   const rosterSelect = useCallback((id: string) => {
     setSelectedAgentId(id);
     setFocusedMsgId(null);
@@ -983,13 +1002,13 @@ function PageBody({
               case 'iterations':
                 return (
                   <ProfileBoundary id="iterations-rail">
-                    <IterationsRail slots={liveSlots} embedded />
+                    <IterationsRail slots={liveSlots} embedded onInspectSession={selectSession} />
                   </ProfileBoundary>
                 );
               case 'debate':
                 return (
                   <ProfileBoundary id="debate-rail">
-                    <DebateRail slots={liveSlots} embedded />
+                    <DebateRail slots={liveSlots} embedded onInspectSession={selectSession} />
                   </ProfileBoundary>
                 );
               case 'roles':
@@ -1000,6 +1019,7 @@ function PageBody({
                       roleNames={boardRoleNames ?? new Map()}
                       sessionIDs={swarmRunMeta?.sessionIDs ?? []}
                       embedded
+                      onInspectSession={selectSession}
                     />
                   </ProfileBoundary>
                 );
@@ -1011,13 +1031,14 @@ function PageBody({
                       live={liveBoard}
                       sessionIDs={swarmRunMeta?.sessionIDs ?? []}
                       embedded
+                      onInspectSession={selectSession}
                     />
                   </ProfileBoundary>
                 );
               case 'council':
                 return (
                   <ProfileBoundary id="council-rail">
-                    <CouncilRail slots={liveSlots} embedded />
+                    <CouncilRail slots={liveSlots} embedded onInspectSession={selectSession} />
                   </ProfileBoundary>
                 );
               case 'phases':

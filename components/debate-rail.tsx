@@ -132,10 +132,18 @@ function classifySlots(slots: LiveSwarmSessionSlot[]): {
 export function DebateRail({
   slots,
   embedded = false,
+  // Accepted but not wired in v1 — debate rows are rounds, not sessions,
+  // so inspector wiring needs cell-level (per-generator / judge) clicks
+  // which require restructuring the row component. Page passes this so
+  // a future cell-level enhancement is non-breaking. IMPLEMENTATION_PLAN
+  // 6.9 v2.
+  onInspectSession: _onInspectSession,
 }: {
   slots: LiveSwarmSessionSlot[];
   embedded?: boolean;
+  onInspectSession?: (sessionID: string) => void;
 }) {
+  void _onInspectSession;
   const { judge, generators, rows } = useMemo(() => {
     const { judge, generators } = classifySlots(slots);
 
