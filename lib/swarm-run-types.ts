@@ -129,6 +129,15 @@ export interface SwarmRunRequest {
     minMembers: number;
     maxMemberFailures: number;
   };
+  // PATTERN_DESIGN/map-reduce.md I1 — synthesis-critic gate.
+  // When true, after the synthesizer completes, a peer session
+  // (any non-synthesizer member) reviews the synthesis against the
+  // original member drafts and returns APPROVED or REVISE + feedback.
+  // On REVISE the synthesizer is re-prompted with the feedback;
+  // capped at 2 revisions. No new session spawn — reuses an idle
+  // peer to keep the infrastructure simple (matches deliberate-
+  // execute I1 pattern). Default false. Map-reduce pattern only.
+  enableSynthesisCritic?: boolean;
   // Per-gate model pins (2026-04-24). Each gate's dedicated opencode
   // session spawns without a model hint (opencode picks default);
   // when set, the session's prompts carry `model: <id>` so the gate
@@ -254,6 +263,8 @@ export interface SwarmRunMeta {
     minMembers: number;
     maxMemberFailures: number;
   };
+  // Synthesis-critic mirror — PATTERN_DESIGN/map-reduce.md I1.
+  enableSynthesisCritic?: boolean;
   // Synthesis-model pin mirror — PATTERN_DESIGN/map-reduce.md I4.
   synthesisModel?: string;
   // Per-gate model pins mirrored from the request. See SwarmRunRequest

@@ -26,7 +26,7 @@ import path from 'node:path';
 
 import { getRun } from './swarm-registry';
 import { finalizeRun } from './finalize-run';
-import { getSessionMessagesServer } from './opencode-server';
+import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
 import { getBoardItem, insertBoardItem } from './blackboard/store';
 import type { OpencodeMessage } from '@/lib/opencode/types';
@@ -360,6 +360,13 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
       console.log(
         `[map-reduce] run ${swarmRunID} — synthesis claimed by ${outcome.sessionID} and completed`,
       );
+      // PATTERN_DESIGN/map-reduce.md I1 — synthesis-critic gate. Opt-in
+      // peer review of the synthesis against the original drafts. Loop
+      // the synthesizer back on REVISE, capped at MAX_REVISIONS so a
+      // disagreeable critic can't burn unbounded tokens.
+      if (meta.enableSynthesisCritic) {
+        await runSynthesisCriticGate(meta, drafts, outcome.sessionID);
+      }
       return;
     }
     if (outcome.status === 'stale' && outcome.itemID === itemID) {
@@ -450,4 +457,265 @@ function buildSynthesisPrompt(
     '',
     blocks.join('\n\n---\n\n'),
   ].join('\n');
+}
+
+// PATTERN_DESIGN/map-reduce.md I1 — synthesis-critic gate.
+//
+// Reuses an idle peer session (any non-synthesizer in meta.sessionIDs)
+// as the critic — keeps the infra simple, matches deliberate-execute I1.
+// On REVISE the synthesizer is re-prompted with the feedback; cap at
+// MAX_REVISIONS revisions so a disagreeable critic can't burn unbounded
+// tokens. Critic verdict format: first line APPROVED or REVISE; rest of
+// the body is feedback (passed to the synthesizer when REVISE).
+const SYNTHESIS_CRITIC_WAIT_MS = 5 * 60 * 1000;
+const MAX_SYNTHESIS_CRITIC_REVISIONS = 2;
+
+function pickCriticSession(
+  sessionIDs: readonly string[],
+  synthesizerSessionID: string,
+): string | null {
+  for (const sid of sessionIDs) {
+    if (sid !== synthesizerSessionID) return sid;
+  }
+  return null;
+}
+
+function buildCriticPrompt(
+  synthesisText: string,
+  drafts: Array<{ sessionID: string; text: string | null }>,
+): string {
+  const draftBlocks = drafts
+    .filter((d) => d.text !== null)
+    .map((d, i) => `### Draft from member ${i + 1}\n\n${(d.text ?? '').trim()}`)
+    .join('\n\n---\n\n');
+  return [
+    '## Synthesis review',
+    '',
+    'Another member of this map-reduce just produced the synthesis below',
+    'from the per-member drafts. Your job: judge whether the synthesis',
+    'faithfully merges the drafts without dropping critical findings,',
+    'and whether genuine disagreements between members are surfaced',
+    'instead of papered over.',
+    '',
+    'Reply format (strict):',
+    '- First line: exactly `APPROVED` or `REVISE`.',
+    '- If REVISE: the rest of your reply is concrete, actionable feedback',
+    '  the synthesizer should apply (specific findings missed, claims that',
+    '  need attribution, sections that strip anchors, etc.). 2–6 bullets.',
+    '- If APPROVED: no further text needed.',
+    '',
+    'Do NOT edit any files. This is a verdict, not a rewrite.',
+    '',
+    '---',
+    '',
+    '## Synthesis under review',
+    '',
+    synthesisText.trim(),
+    '',
+    '---',
+    '',
+    `## Original member drafts (${drafts.length} total)`,
+    '',
+    draftBlocks,
+  ].join('\n');
+}
+
+function parseCriticVerdict(
+  text: string,
+): { verdict: 'approved' | 'revise' | 'unclear'; feedback: string } {
+  const head = text.trimStart().slice(0, 64).toUpperCase();
+  if (head.startsWith('APPROVED')) {
+    return { verdict: 'approved', feedback: '' };
+  }
+  if (head.startsWith('REVISE')) {
+    // Body of the reply (after the REVISE keyword line) is the feedback.
+    const idx = text.indexOf('\n');
+    const feedback = idx >= 0 ? text.slice(idx + 1).trim() : '';
+    return { verdict: 'revise', feedback };
+  }
+  return { verdict: 'unclear', feedback: '' };
+}
+
+function buildSynthesisRevisePrompt(
+  feedback: string,
+  attempt: number,
+  maxAttempts: number,
+): string {
+  return [
+    `## Revision ${attempt} of ${maxAttempts} — synthesis-critic feedback`,
+    '',
+    'A peer reviewed your synthesis and asked for revisions. Apply the',
+    'feedback below and re-emit the full synthesis as your next assistant',
+    'turn. Keep what worked; only adjust what the critic flagged. Do NOT',
+    'edit any files.',
+    '',
+    '---',
+    '',
+    feedback || '(no specific feedback provided — judge what to refine)',
+  ].join('\n');
+}
+
+async function runSynthesisCriticGate(
+  meta: import('@/lib/swarm-run-types').SwarmRunMeta,
+  drafts: Array<{ sessionID: string; text: string | null }>,
+  synthesizerSessionID: string,
+): Promise<void> {
+  const swarmRunID = meta.swarmRunID;
+  const criticSID = pickCriticSession(meta.sessionIDs, synthesizerSessionID);
+  if (!criticSID) {
+    console.warn(
+      `[map-reduce] run ${swarmRunID} — no peer session available for synthesis-critic gate (only synthesizer in pool); skipping`,
+    );
+    return;
+  }
+
+  for (let attempt = 1; attempt <= MAX_SYNTHESIS_CRITIC_REVISIONS; attempt += 1) {
+    // Pull the synthesizer's latest assistant text — that's the
+    // synthesis under review (re-fetch each iteration so revisions
+    // are picked up).
+    let synthesisText: string | null = null;
+    try {
+      const msgs = await getSessionMessagesServer(
+        synthesizerSessionID,
+        meta.workspace,
+      );
+      synthesisText = extractLatestAssistantText(msgs);
+    } catch (err) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — synthesis fetch for critic failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+    if (!synthesisText) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — synthesizer produced no text; critic gate aborted`,
+      );
+      return;
+    }
+
+    // Snapshot critic's known IDs before posting.
+    let criticKnownIDs = new Set<string>();
+    try {
+      const before = await getSessionMessagesServer(criticSID, meta.workspace);
+      criticKnownIDs = new Set(before.map((m) => m.info.id));
+    } catch {
+      // Empty set means we'll consider every message new — safe default.
+    }
+
+    const criticPrompt = buildCriticPrompt(synthesisText, drafts);
+    try {
+      await postSessionMessageServer(criticSID, meta.workspace, criticPrompt);
+    } catch (err) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — critic prompt post failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+
+    const criticDeadline = Date.now() + SYNTHESIS_CRITIC_WAIT_MS;
+    const criticWait = await waitForSessionIdle(
+      criticSID,
+      meta.workspace,
+      criticKnownIDs,
+      criticDeadline,
+    );
+    if (!criticWait.ok) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — critic wait failed (${criticWait.reason}); shipping current synthesis as final`,
+      );
+      return;
+    }
+
+    // Read the critic's verdict from the freshly-completed turn.
+    let criticText: string | null = null;
+    try {
+      const after = await getSessionMessagesServer(criticSID, meta.workspace);
+      criticText = extractLatestAssistantText(after);
+    } catch (err) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — critic fetch failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+    if (!criticText) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — critic produced no text; shipping synthesis as final`,
+      );
+      return;
+    }
+
+    const { verdict, feedback } = parseCriticVerdict(criticText);
+    if (verdict === 'approved') {
+      console.log(
+        `[map-reduce] run ${swarmRunID} — synthesis APPROVED by critic on attempt ${attempt} (PATTERN_DESIGN/map-reduce.md I1)`,
+      );
+      return;
+    }
+    if (verdict === 'unclear') {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — critic verdict unparseable (no APPROVED/REVISE keyword); shipping synthesis as final`,
+      );
+      return;
+    }
+
+    // REVISE — re-prompt the synthesizer with the feedback.
+    console.log(
+      `[map-reduce] run ${swarmRunID} — synthesis REVISE on attempt ${attempt} (PATTERN_DESIGN/map-reduce.md I1)`,
+    );
+    if (attempt >= MAX_SYNTHESIS_CRITIC_REVISIONS) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — max ${MAX_SYNTHESIS_CRITIC_REVISIONS} revisions reached; shipping current synthesis as final`,
+      );
+      return;
+    }
+
+    let synthKnownIDs = new Set<string>();
+    try {
+      const before = await getSessionMessagesServer(
+        synthesizerSessionID,
+        meta.workspace,
+      );
+      synthKnownIDs = new Set(before.map((m) => m.info.id));
+    } catch {
+      // Empty set is a safe default for the wait below.
+    }
+
+    const revisePrompt = buildSynthesisRevisePrompt(
+      feedback,
+      attempt,
+      MAX_SYNTHESIS_CRITIC_REVISIONS,
+    );
+    try {
+      await postSessionMessageServer(
+        synthesizerSessionID,
+        meta.workspace,
+        revisePrompt,
+        meta.synthesisModel ? { model: meta.synthesisModel } : {},
+      );
+    } catch (err) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — synthesizer revise-post failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return;
+    }
+
+    const synthDeadline = Date.now() + SYNTHESIS_CRITIC_WAIT_MS;
+    const synthWait = await waitForSessionIdle(
+      synthesizerSessionID,
+      meta.workspace,
+      synthKnownIDs,
+      synthDeadline,
+    );
+    if (!synthWait.ok) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — synthesizer revise wait failed (${synthWait.reason}); shipping prior synthesis as final`,
+      );
+      return;
+    }
+    // Loop back to top — critic re-reviews the new synthesis.
+  }
 }

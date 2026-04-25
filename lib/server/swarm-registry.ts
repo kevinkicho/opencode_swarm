@@ -167,6 +167,8 @@ export async function createRun(
     strictRoleRouting: req.strictRoleRouting ? true : undefined,
     // Partial-map tolerance — PATTERN_DESIGN/map-reduce.md I3.
     partialMapTolerance: req.partialMapTolerance,
+    // Synthesis-critic — PATTERN_DESIGN/map-reduce.md I1.
+    enableSynthesisCritic: req.enableSynthesisCritic ? true : undefined,
     // Synthesis-model pin — PATTERN_DESIGN/map-reduce.md I4.
     synthesisModel: req.synthesisModel,
     // Per-gate model pins (2026-04-24). Each gate's reviewer module
