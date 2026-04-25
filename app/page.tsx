@@ -173,8 +173,8 @@ import {
   useOpencodeHealth,
   useLiveSession,
   useLivePermissions,
-  useLiveSwarmRun,
   useLiveSwarmRunMessages,
+  useSwarmRunSnapshot,
   useSessionDiff,
   useSwarmRuns,
   postSessionMessageBrowser,
@@ -344,7 +344,18 @@ function PageInner() {
   // source) that future patterns will consume here.
   const swarmRunID = params.get('swarmRun');
   const directSessionId = params.get('session');
-  const swarmRun = useLiveSwarmRun(swarmRunID);
+  // 2026-04-25 IMPL 6.6 follow-up — migrated from useLiveSwarmRun
+  // (single-endpoint /api/swarm/run/:id meta fetch) to
+  // useSwarmRunSnapshot (aggregator endpoint that bundles meta + board
+  // + ticker + tokens + planRevisions in one fetch). Backend measured
+  // 4.5x cold-load speedup on the aggregator vs the prior 5-call
+  // fan-out. Live updates continue to flow through the existing SSE
+  // channels (useLiveBoard subscribes to /board/events, useLiveTicker
+  // polls every 5s) — this hook only owns the cold-load seed.
+  const swarmRunSnap = useSwarmRunSnapshot(swarmRunID);
+  const swarmRunMeta_ = swarmRunSnap.snapshot?.meta ?? null;
+  const swarmRunNotFound = swarmRunSnap.notFound;
+  const swarmRunPrimarySessionID = swarmRunMeta_?.sessionIDs[0] ?? null;
   // Ledger poll re-enabled at slow cadence (2026-04-24 evening): the
   // earlier `enabled: false` saved cold-load fetches but had two
   // failure modes: (1) topbar status went permanently stale after a
@@ -367,19 +378,19 @@ function PageInner() {
   // through the downstream session/permission hooks rather than branching
   // early — rules-of-hooks requires a stable call order across renders.
   // The dead-link screen is rendered conditionally in JSX below.
-  const swarmRunMissing = Boolean(swarmRunID) && swarmRun.notFound;
+  const swarmRunMissing = Boolean(swarmRunID) && swarmRunNotFound;
   const sessionId = swarmRunMissing
     ? null
     : swarmRunID
-      ? swarmRun.primarySessionID
+      ? swarmRunPrimarySessionID
       : directSessionId;
   const { data: liveData } = useLiveSession(sessionId);
   // Multi-session fan-out for council / future N-member patterns. The hook
   // collapses to a one-slot no-op when meta is null or carries a single
   // sessionID, so we can call it unconditionally and let the view decide
   // which channel to consume.
-  const liveSwarmRun = useLiveSwarmRunMessages(swarmRun.meta);
-  const isMultiSession = (swarmRun.meta?.sessionIDs.length ?? 0) > 1;
+  const liveSwarmRun = useLiveSwarmRunMessages(swarmRunMeta_);
+  const isMultiSession = (swarmRunMeta_?.sessionIDs.length ?? 0) > 1;
   const liveDirectory = liveData?.session?.directory ?? null;
   const permissions = useLivePermissions(sessionId, liveDirectory);
 
@@ -410,8 +421,8 @@ function PageInner() {
         messages: toMessages(merged),
         runMeta: {
           ...baseMeta,
-          id: swarmRun.meta?.swarmRunID ?? baseMeta.id,
-          title: swarmRun.meta?.title ?? baseMeta.title,
+          id: swarmRunMeta_?.swarmRunID ?? baseMeta.id,
+          title: swarmRunMeta_?.title ?? baseMeta.title,
         },
         providerSummary: toProviderSummary(agents, merged),
         runPlan: toRunPlan(merged),
@@ -436,7 +447,7 @@ function PageInner() {
       };
     }
     return EMPTY_VIEW;
-  }, [isMultiSession, liveSwarmRun.slots, swarmRun.meta, sessionId, liveData]);
+  }, [isMultiSession, liveSwarmRun.slots, swarmRunMeta_, sessionId, liveData]);
 
   // Layer `waiting` on top of toAgents' status: a pending permission on the
   // session means whichever agent is mid-turn is actually blocked on human
@@ -510,7 +521,7 @@ function PageInner() {
         liveLastUpdated={liveSwarmRun.lastUpdated ?? liveData?.lastUpdated ?? null}
         liveSlots={liveSwarmRun.slots}
         swarmRunID={swarmRunID}
-        swarmRunMeta={swarmRun.meta}
+        swarmRunMeta={swarmRunMeta_}
         swarmRunStatus={currentRunStatus}
         swarmRuns={runsSnapshot.rows}
       />

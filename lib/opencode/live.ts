@@ -1374,3 +1374,89 @@ async function swarmRunsFetcher(): Promise<SwarmRunListRow[]> {
   const body = (await res.json()) as { runs?: SwarmRunListRow[] };
   return body.runs ?? [];
 }
+
+// useSwarmRunSnapshot — IMPLEMENTATION_PLAN 6.6 follow-up. Single
+// aggregator-endpoint fetch that replaces the cold-load fan-out
+// (useLiveSwarmRun + useLiveTicker initial + useLiveBoard initial +
+// derivedRow lookup against useSwarmRuns). Backend endpoint at
+// /api/swarm/run/:id/snapshot was measured at 4.5x cold-load
+// speedup vs the 5-call fan-out (commit c85724a). Live updates
+// continue to flow through the existing SSE channels — this hook
+// only owns the cold-load seed.
+//
+// Shape mirrors the snapshot endpoint's response. Consumers can
+// either use this directly or pass the snapshot's sub-fields as
+// initialData to the existing live hooks (useLiveBoard /
+// useLiveTicker) so SSE picks up from a warm baseline.
+
+export interface SwarmRunSnapshot {
+  meta: SwarmRunMeta;
+  status: import('../swarm-run-types').SwarmRunStatus;
+  derivedRow: {
+    status: import('../swarm-run-types').SwarmRunStatus;
+    lastActivityTs: number | null;
+    costTotal: number;
+    tokensTotal: number;
+  };
+  tokens: {
+    totals: {
+      tokens: number;
+      cost: number;
+      lastActivityTs: number | null;
+      status: import('../swarm-run-types').SwarmRunStatus;
+    };
+    sessions: Array<unknown>;
+  };
+  board: { items: Array<unknown> };
+  ticker: { state: 'none' } | (import('../blackboard/live').TickerSnapshot);
+  planRevisions: { count: number };
+}
+
+export interface SwarmRunSnapshotResult {
+  snapshot: SwarmRunSnapshot | null;
+  error: string | null;
+  loading: boolean;
+  notFound: boolean;
+  lastUpdated: number | null;
+}
+
+export const SWARM_RUN_SNAPSHOT_QUERY_KEY = (swarmRunID: string) =>
+  ['swarm', 'run', 'snapshot', swarmRunID] as const;
+
+async function swarmRunSnapshotFetcher(
+  swarmRunID: string,
+): Promise<SwarmRunSnapshot | null> {
+  const res = await fetch(
+    `/api/swarm/run/${encodeURIComponent(swarmRunID)}/snapshot`,
+    { cache: 'no-store' },
+  );
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `swarm run snapshot -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`,
+    );
+  }
+  return (await res.json()) as SwarmRunSnapshot;
+}
+
+export function useSwarmRunSnapshot(
+  swarmRunID: string | null,
+): SwarmRunSnapshotResult {
+  const q = useQuery({
+    queryKey: SWARM_RUN_SNAPSHOT_QUERY_KEY(swarmRunID ?? ''),
+    queryFn: () => swarmRunSnapshotFetcher(swarmRunID!),
+    enabled: !!swarmRunID,
+    // Snapshot is the cold-load seed; SSE keeps the page fresh after.
+    // 30s staleTime is generous — the live channels do the heavy lifting.
+    staleTime: 30_000,
+  });
+
+  return {
+    snapshot: q.data ?? null,
+    error: q.error ? (q.error as Error).message : null,
+    loading: q.isLoading,
+    notFound: q.data === null && !q.isLoading && !q.isError,
+    lastUpdated: q.dataUpdatedAt || null,
+  };
+}
