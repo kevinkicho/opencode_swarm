@@ -168,9 +168,17 @@ export async function runCouncilRounds(
     console.warn(`[council] run ${swarmRunID} not found — auto-rounds aborted`);
     return;
   }
-  if (meta.pattern !== 'council') {
+  // Pattern guard. Council itself uses this orchestrator directly;
+  // deliberate-execute calls it as its phase-1 deliberation.
+  // 2026-04-25 fix: previously rejected any non-'council' pattern,
+  // which silently no-op'd every deliberate-execute kickoff —
+  // sessions sat at msgs=2/done=0/inflight=1 forever because the
+  // orchestrator that should have waited + dispatched rounds
+  // returned immediately without doing anything. POSTMORTEM cross-
+  // ref: 2026-04-25-agent-name-silent-drop.md (sibling failure).
+  if (meta.pattern !== 'council' && meta.pattern !== 'deliberate-execute') {
     console.warn(
-      `[council] run ${swarmRunID} has pattern '${meta.pattern}', not council — auto-rounds aborted`,
+      `[council] run ${swarmRunID} has pattern '${meta.pattern}' — runCouncilRounds expected 'council' or 'deliberate-execute'; aborted`,
     );
     return;
   }
