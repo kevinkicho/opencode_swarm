@@ -129,7 +129,7 @@ at run creation.
 | roles-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=role-differentiated; per-role row w/ claimed/done/stale + preferredRole match-rate + avg-time + accent stripe |
 | I1 | improvement | SHIPPED | (next commit) | — | meta.strictRoleRouting flag (default false): coordinator picker filters out items with non-matching preferredRole when the picked session has a role; on empty filtered queue, returns skipped with reason 'strict-role: no matches for session role X' (waits for matching item or another session) |
 | I2 | improvement | SHIPPED | (next commit) | — | `checkRoleImbalance` fires inside auto-ticker fanout once per ROLE_IMBALANCE_REPEAT_MS=30 min, after a 15-min run-age grace. Aggregates non-open todos by `preferredRole`; logs WARN naming idle role(s) (claimed=0) when at least one busy role (claimed≥5) exists. Pattern-gated to role-differentiated only. |
-| I3 | improvement | PROPOSED | — | — | planner + coordinator ~3 h |
+| I3 | improvement | SHIPPED | (next commit) | — | planner can emit a `[rolenote:<role>] <text>` todowrite entry; `stripRoleNoteTag` extracts (normalized like stripRoleTag), `runPlannerSweep` collects them out of the board-insert path and posts each to the matching role's session via `postSessionMessageServer`. Planner prompt extended on role-differentiated runs to instruct sparing use. Smoke test covers tag match, normalization, no-prefix passthrough, empty-role non-match. |
 | I4 | improvement | PROPOSED | — | — | store + enforcement ~3 h |
 
 ## 6 · Cross-references

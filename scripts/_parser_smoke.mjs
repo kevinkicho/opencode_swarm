@@ -18,7 +18,7 @@ const plannerPath = pathToFileURL(
   path.resolve('lib/server/blackboard/planner.ts'),
 ).href;
 
-const { stripVerifyTag, stripRoleTag, stripFilesTag, stripCriterionTag, stripFromTag } = await import(plannerPath);
+const { stripVerifyTag, stripRoleTag, stripFilesTag, stripCriterionTag, stripFromTag, stripRoleNoteTag } = await import(plannerPath);
 
 let failed = 0;
 let passed = 0;
@@ -332,6 +332,32 @@ eq(
     'compose: verify + role + files + from',
   );
 }
+
+// ── stripRoleNoteTag cases (role-differentiated I3) ──────────────────
+
+eq(
+  stripRoleNoteTag('[rolenote:tester] Focus on Playwright not unit tests'),
+  { content: 'Focus on Playwright not unit tests', roleNote: 'tester' },
+  'rolenote: simple match',
+);
+
+eq(
+  stripRoleNoteTag('[ROLENOTE: Architect ] Stay close to data flow'),
+  { content: 'Stay close to data flow', roleNote: 'architect' },
+  'rolenote: case + whitespace + normalization',
+);
+
+eq(
+  stripRoleNoteTag('Untagged'),
+  { content: 'Untagged', roleNote: undefined },
+  'rolenote: no prefix',
+);
+
+eq(
+  stripRoleNoteTag('[rolenote:] Empty role'),
+  { content: '[rolenote:] Empty role', roleNote: undefined },
+  'rolenote: empty role does not match — prefix preserved (regex needs ≥1 alnum)',
+);
 
 // ── Report ────────────────────────────────────────────────────────────
 

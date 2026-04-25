@@ -25,6 +25,7 @@ import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
+import { roleNamesBySessionID } from '@/lib/blackboard/roles';
 import { getRun } from '../swarm-registry';
 import {
   abortSessionServer,
@@ -315,6 +316,16 @@ function buildPlannerPrompt(
           'worker, which is the right default — reserve the prefix for',
           'work that would be meaningfully lower-quality outside that',
           'role. Unknown role names are treated as no-prefix.',
+          '',
+          '**Refining a role on the fly.** If you observe the workload',
+          "drifting and a role's self-concept needs sharpening (e.g. the",
+          'tester should specialize in Playwright not unit tests for this',
+          'mission), emit ONE todowrite entry whose content is',
+          '`[rolenote:<role>] <one or two sentences of clarification>`.',
+          'These are NOT todos — they get routed to that role\'s session',
+          'as a clarification message instead of landing on the board.',
+          'Use sparingly (zero or one per sweep), only when the role',
+          'would meaningfully misallocate effort without the nudge.',
         ]
       : []),
     '',
@@ -446,6 +457,13 @@ interface RawTodo {
   // Undefined for non-deliberate-execute paths and for synthesis runs
   // where the model didn't tag.
   sourceDrafts?: number[];
+  // PATTERN_DESIGN/role-differentiated.md I3 — per-sweep role-intro
+  // append. When the planner emits `[rolenote:<role>] <text>`, the
+  // entry is NOT a todo — it's a side-channel clarification message
+  // that runPlannerSweep routes to the matching role's session and
+  // does not insert on the board. Other tags (verify/role/files/from)
+  // become irrelevant for these entries.
+  roleNote?: string;
 }
 
 // Strips the `[verify]` opt-in prefix from a todo's content and
@@ -527,6 +545,33 @@ export function stripFilesTag(content: string): {
   return { content: stripped, expectedFiles: paths };
 }
 
+// Strips the `[rolenote:<name>]` prefix — per-sweep role-intro append
+// (PATTERN_DESIGN/role-differentiated.md I3). Returns the role name on
+// match (normalized like stripRoleTag); the consumer treats the entry
+// as a side-channel clarification rather than a todo. Same kebab/length
+// normalization so a typo like `[rolenote: Tester ]` still routes to
+// `tester`. Empty/unknown role → caller treats as a normal todo.
+const ROLE_NOTE_TAG_RE = /^\s*\[rolenote:\s*([a-z0-9][a-z0-9\s\-_]{0,31})\s*\]\s*/i;
+export function stripRoleNoteTag(content: string): {
+  content: string;
+  roleNote: string | undefined;
+} {
+  const m = ROLE_NOTE_TAG_RE.exec(content);
+  if (!m) return { content, roleNote: undefined };
+  const raw = m[1].toLowerCase();
+  const normalized = raw
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 24);
+  if (!normalized) {
+    return { content: content.slice(m[0].length).trim(), roleNote: undefined };
+  }
+  return {
+    content: content.slice(m[0].length).trim(),
+    roleNote: normalized,
+  };
+}
+
 // Strips the `[from:1,3]` prefix — synthesis traceability for
 // deliberate-execute (PATTERN_DESIGN/deliberate-execute.md I2). Source
 // indices are 1-based (matches "Draft from member 1" labels in the
@@ -606,12 +651,23 @@ export function latestTodosFrom(
             (t as RawTodo).content.trim().length > 0,
         )
         .map((t) => {
-          // Strip in composition order: criterion → verify → role →
-          // files. Criterion goes first because when present the other
-          // flags become irrelevant (criteria don't dispatch to workers).
-          // Each stripper re-trims leading whitespace so mixed-order
-          // tags are tolerated.
-          const afterCriterion = stripCriterionTag(t.content);
+          // Strip in composition order: rolenote → criterion → verify
+          // → role → files → from. Rolenote goes first because when
+          // present, the entry is a side-channel clarification — every
+          // other flag becomes irrelevant (no board insert, no claim,
+          // no verifier gate). Criterion is next for the same reason
+          // (auditor target, not a worker dispatch). Each stripper
+          // re-trims leading whitespace so mixed-order tags are
+          // tolerated.
+          const afterRoleNote = stripRoleNoteTag(t.content);
+          if (afterRoleNote.roleNote) {
+            return {
+              ...t,
+              content: afterRoleNote.content,
+              roleNote: afterRoleNote.roleNote,
+            };
+          }
+          const afterCriterion = stripCriterionTag(afterRoleNote.content);
           if (afterCriterion.isCriterion) {
             return {
               ...t,
@@ -828,7 +884,15 @@ export async function runPlannerSweep(
   const items: BoardItem[] = [];
   let offset = 0;
   let droppedCriteria = 0;
+  // PATTERN_DESIGN/role-differentiated.md I3 — collect role-notes for
+  // dispatch after the board-insert loop so they don't get tangled up
+  // with createdAtMs offsets or revision logging.
+  const roleNotes: Array<{ role: string; text: string }> = [];
   for (const raw of latest.todos) {
+    if (raw.roleNote && raw.content.trim()) {
+      roleNotes.push({ role: raw.roleNote, text: raw.content.trim() });
+      continue;
+    }
     const content = raw.content.trim();
     if (!content) continue;
     // PATTERN_DESIGN/blackboard.md I4 — criterion authoring preflight.
@@ -866,6 +930,52 @@ export async function runPlannerSweep(
         });
     offset += 1;
     items.push(item);
+  }
+
+  // PATTERN_DESIGN/role-differentiated.md I3 — dispatch role-notes
+  // after the board insert. Each note is posted to the matching
+  // role's session as a clarification message. Failures log and
+  // continue — a missed note doesn't justify aborting the sweep.
+  if (roleNotes.length > 0) {
+    const sidByRole = new Map<string, string>();
+    for (const [sid, role] of roleNamesBySessionID(meta).entries()) {
+      if (!sidByRole.has(role)) sidByRole.set(role, sid);
+    }
+    await Promise.allSettled(
+      roleNotes.map(async (note) => {
+        const sid = sidByRole.get(note.role);
+        if (!sid) {
+          console.warn(
+            `[planner] role-note for unknown role '${note.role}' dropped (PATTERN_DESIGN/role-differentiated.md I3)`,
+          );
+          return;
+        }
+        const prompt = [
+          `## Role-clarification from the planner`,
+          ``,
+          `The planner has refined your role's focus for this run. Apply`,
+          `this guidance to the next todo you claim:`,
+          ``,
+          note.text,
+          ``,
+          `(This is a clarification message, not a todo — keep working`,
+          `from the board as usual.)`,
+        ].join('\n');
+        try {
+          await postSessionMessageServer(sid, meta.workspace, prompt, {
+            agent: note.role,
+          });
+          console.log(
+            `[planner] dispatched role-note to ${note.role} (${sid.slice(-8)}): "${note.text.slice(0, 80)}${note.text.length > 80 ? '…' : ''}"`,
+          );
+        } catch (err) {
+          console.warn(
+            `[planner] role-note post to ${note.role} (${sid.slice(-8)}) failed:`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
+      }),
+    );
   }
 
   // Log the plan-revision delta. Compares the new sweep's content list
