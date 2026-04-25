@@ -168,6 +168,42 @@ first.
 
 ---
 
+## Phase 7 — Live-test backlog (2026-04-24 multi-pattern run) · ~12h
+
+Observations from the live run against `run_modm7vsw_uxxy6b` and the
+ongoing `run_modn6mrg_hxvssz`. Many of these had quick fixes shipped
+during the live test BUT WERE NOT VERIFIED via Playwright before
+"shipped" was claimed. Per user feedback 2026-04-24, the new
+discipline is: each item gets a Playwright probe via
+`scripts/_preview-screenshot.mjs` before promoting from
+**SHIPPED-UNVERIFIED** → **VERIFIED**.
+
+Some items are diagnoses (no code action) or product-validation
+moments (F1 watchdog firing). Marked accordingly.
+
+| # | Observation | Status | Verification |
+|---|---|---|---|
+| 7.Q1 | Auto-stick-to-bottom on entry (timeline) | SHIPPED-UNVERIFIED (`f2733a2` + `c0629fe`) | Playwright: scroll to bottom of timeline page, assert `scrollTop === scrollHeight - clientHeight`. User reported still broken after first fix; second-attempt 3-second 200ms-ticker shipped but unconfirmed. |
+| 7.Q2 | `latest ↓` button visibility | SHIPPED-UNVERIFIED (`f2733a2`) — threshold lowered 200→80px | Playwright: scroll to top, assert button is visible in DOM. |
+| 7.Q3 | Inspector right panel empty for new tab rows | DIAGNOSED + queued as 6.9 | — |
+| 7.Q4 | Roster badge 0/5 1/5 | DIAGNOSED (intentional: 1 dispatch/tick + critic gate) | — |
+| 7.Q5 | Worker session 101 `edit` errors | DIAGNOSED + queued as 6.12 | — |
+| 7.Q6 | Status chip in roster rows | SHIPPED-UNVERIFIED (`f2733a2`) | Playwright: assert each `.roster-row` contains text matching `idle\|working\|error\|...` |
+| 7.Q7 | Directive width in topbar | SHIPPED-NOT-LANDED (`f2733a2`) — Playwright found full directive still rendered. Fix didn't take effect. | Re-investigate: Popover wrapper may be overriding the `truncate max-w-[240px]` cap. |
+| 7.Q8 | Hard refresh stick-to-bottom (re-reported) | SHIPPED-UNVERIFIED (`c0629fe`) | Playwright on fresh load |
+| 7.Q9 | Parts filter multi-select + show all 12 | SHIPPED-UNVERIFIED (`c0629fe`) | Playwright: open parts dropdown, count visible part-type rows = 12 |
+| 7.Q10 | react-scan default-on annoying | SHIPPED-UNVERIFIED (`c8db06c`) | Playwright on fresh load — assert no rerender outlines visible |
+| 7.Q11 | Lane meter swap to in-first | SHIPPED-UNVERIFIED (`ba58d05`) | Playwright: rendered text contains `in <X>` BEFORE `out <Y>` per lane |
+| 7.Q12 | Run-anchor: status-only | SHIPPED-VERIFIED (`790d2d3`) — Playwright found "ERROR" rendered ✓ | — |
+| 7.Q13 | Picker 5s latency | SHIPPED-UNVERIFIED (`135ce9b` — 30s page poll re-enabled) | Playwright: open picker, time-to-first-row should be under 1s after page warm |
+| 7.Q14 | Run shows live but actually error | SHIPPED-VERIFIED (`135ce9b`) — Playwright found "ERROR" ✓ | — |
+| 7.Q15 | Remove status dot from picker rows | SHIPPED-UNVERIFIED (`135ce9b`) | Playwright: open picker, assert no `.rounded-full` color dot inside row's status column |
+| 7.Q16 | Run not in listview after hard refresh | OPEN — needs investigation. API returns it as 2nd entry; not yet probed in UI. | Playwright: open picker, search rendered text for `run_modm7vsw_uxxy6b`. |
+| 7.Q17 | F1 watchdog firing | PRODUCT VALIDATION — F1 worked: WARN at 90s + abort at 240s on 3+ separate sessions during pattern 2. No code action. Update POSTMORTEMS ledger to VERIFIED. | Confirmed in `/tmp/dev-server.log` |
+| 7.Q18 | Test-run hygiene (track + tear down dev/opencode/monitor) | OPEN — see `memory/feedback_test_run_hygiene.md`. Recurring failure across 5+ runs. Need: pre-flight teardown checklist, end-of-run TaskStop discipline, never-`disown`-tracked-procs rule. | Operational; verify by `ss -tlnp` showing only intended ports + matching `1 shell` indicator in user UI. |
+
+---
+
 ## Total Estimate
 
 | Phase | Items | Effort |
@@ -179,7 +215,8 @@ first.
 | 4 — Pattern mechanics | ~20 | ~50h |
 | 5 — Ad-hoc UI | 2 | ~5h |
 | 6 — Perf + UX | 9 | ~18h |
-| **Total** | **~53** | **~115 hours** |
+| 7 — Live-test backlog | 18 | ~12h (verify-or-fix cycles, mostly small) |
+| **Total** | **~71** | **~127 hours** |
 
 That's roughly 2.5-3 weeks of focused work. We can ship in increments — every Phase-0 fix and every Phase-1 tab is independently mergeable.
 
