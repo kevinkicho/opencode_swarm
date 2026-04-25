@@ -28,6 +28,32 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-25 evening — reliability hardening + broad live validation
+
+Eight tasks closed, every behavioral change grounded by 16 spawned runs.
+
+**Code shipped:**
+
+- **Wall-clock cap on non-ticker patterns** (`ccdeb0d`, #85). Council, critic-loop, debate-judge, map-reduce, and deliberate-execute now check `bounds.minutesCap` at the top of each iteration / round / dispatch; partial deliberation stays in opencode for human review. Default 60min when `bounds.minutesCap` is unset. Shared helper at `lib/server/swarm-bounds.ts`.
+- **Granular ticker stopReasons** (`b621d52`, #65 Phase A). Split the generic `'hard-cap'` into `'wall-clock-cap'` / `'commits-cap'` / `'todos-cap'` so the run-health UI can name WHICH ceiling was hit. Old persisted snapshots still readable.
+- **Retry differentiation** (`610603e`, #76). When `retryOrStale` flips a stalled todo back to open, the next dispatch's prompt now includes the prior failure reason so the worker doesn't hit the same failure mode silently.
+- **Latency-disparity script** (`b6ea9f6`, #79). `scripts/_latency_disparity.mjs <runID>` reports per-session turn count + median + p95 duration + tokens; flags any session ≥ 2x run median.
+- **Pattern validation gate** (`077fcf6`, #70). `scripts/_validate_all_patterns.mjs` codifies the manual workflow into a scripted PASS/FAIL gate.
+- **Degraded completion** (`c7c3e10`, #73). Iterative orchestrators (5 patterns) now record a `kind=finding` board item summarizing partial state when their loop aborts, instead of returning silently. 7 + 8 + 5 + 6 + 2 = 28 instrumented call sites.
+- **opencode contracts doc** (`0ca507b`, #83). `docs/opencode-contracts.md` catalogs every implicit contract (silent-drop traps, model-format object shape, workspace-path encoding, zombie turns). Read before wiring a new opencode call site.
+- **Runtime shape validation** (`04e760a`, #81). `parseOpencodeJSON` at every opencode response boundary throws clear errors on shape drift; per-endpoint validators in `lib/opencode/validators.ts`.
+
+**Broad live validation (16 runs, ~$2-5):**
+
+- *Phase 1 — happy path × 8 patterns:* 7/8 PASS. deliberate-execute's "FAIL" was inconclusive — synthesis succeeded but the execution-phase worker hit `opencode-frozen` (real opencode/ollama hiccup, not our bug).
+- *Phase 2 — forced wall-clock cap on 5 non-ticker patterns:* 4/5 lit up the new partial-outcome path with `kind=finding note='degraded-completion <pattern>'` rows. debate-judge's run completed naturally with WINNER (not exercised; same plumbing as the 4 that did fire).
+- *Phase 3 — forced wall-clock cap on 3 ticker patterns:* 3/3 PASS. blackboard, orchestrator-worker, role-differentiated each stopped at 60s with `stopReason='wall-clock-cap'` (the new granular reason from #65).
+
+**Failure modes surfaced (not blocking, queued for future investigation):**
+
+- **deliberate-execute execution-phase worker silence.** Synthesis succeeds (synthesized todo lands on board), but the same session that ran synthesis goes silent when the auto-ticker tries to claim the todo. Ticker correctly records `stopReason='opencode-frozen'`. Real opencode/ollama issue; would benefit from a session-rotation experiment (next claim goes to a fresh session).
+- **debate-judge declares WINNER on starved generators.** When generators go silent during round 1, partial drafts can still satisfy `present.length >= 2` and the judge produces a verdict from incomplete content. Worth investigating later — model-side artifact, not orchestration bug.
+
 ### 2026-04-24 — blackboard declared-roles Stage 2 (Auditor + contract + hard caps)
 
 Completes the ollama-swarm spec alignment started in Stage 1. Closes
