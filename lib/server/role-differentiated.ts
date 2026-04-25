@@ -137,6 +137,14 @@ export async function runRoleDifferentiatedKickoff(
   // Sessions 1..N get a simple role intro; session 0 (by convention, the
   // first role = architect) gets NO intro here — the planner sweep below
   // serves as its first prompt and naturally kicks off the todowrite.
+  // 2026-04-25 fix: dropped `agent: roles[i]`. Custom role names like
+  // 'tester', 'builder', 'reviewer', 'security' aren't in opencode's
+  // built-in agent list (build/compaction/explore/general/plan/summary
+  // /title) and cause prompt_async to silently drop the user message.
+  // Only 'architect' empirically dispatched correctly before this fix —
+  // all other role intros were silently lost. Same root cause as the
+  // POSTMORTEMS/2026-04-25-agent-name-silent-drop.md F1+F2 fixes.
+  // Role display in our UI continues to work via roleNamesBySessionID.
   const results = await Promise.allSettled(
     meta.sessionIDs.slice(1).map((sid, idx) => {
       const i = idx + 1;
@@ -144,7 +152,7 @@ export async function runRoleDifferentiatedKickoff(
         sid,
         meta.workspace,
         buildRoleIntroPrompt(roles[i], roles, meta.directive),
-        { agent: roles[i], model: meta.teamModels?.[i] },
+        { model: meta.teamModels?.[i] },
       );
     }),
   );

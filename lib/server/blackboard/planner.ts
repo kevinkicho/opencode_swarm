@@ -962,9 +962,12 @@ export async function runPlannerSweep(
           `from the board as usual.)`,
         ].join('\n');
         try {
-          await postSessionMessageServer(sid, meta.workspace, prompt, {
-            agent: note.role,
-          });
+          // 2026-04-25 fix: dropped `agent: note.role`. Same silent-drop
+          // root cause as POSTMORTEMS/2026-04-25-agent-name-silent-drop.md.
+          // Role-note dispatches were unreachable for any role outside
+          // opencode's built-in agent list — basically everything except
+          // 'plan'. Now they land reliably.
+          await postSessionMessageServer(sid, meta.workspace, prompt, {});
           console.log(
             `[planner] dispatched role-note to ${note.role} (${sid.slice(-8)}): "${note.text.slice(0, 80)}${note.text.length > 80 ? '…' : ''}"`,
           );
