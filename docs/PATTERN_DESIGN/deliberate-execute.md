@@ -139,7 +139,7 @@ Don't auto-skip — keep as human signal.
 | I1 | improvement | SHIPPED | (next commit) | — | enableSynthesisVerifier flag (off by default) gates a peer-review loop: sessionIDs[1] reviews seeded todos, returns APPROVED/REVISE; on REVISE deleteBoardItems + re-post synthesis with feedback, capped at MAX_SYNTHESIS_RETRIES=1; reuses existing peer session (no new gate session needed) |
 | I2 | improvement | PROPOSED | — | — | synthesis prompt + parser ~3 h |
 | I3 | improvement | PROPOSED | — | — | shared with council.md I3 |
-| I4 | improvement | PROPOSED | — | — | classifier + WARN ~2 h |
+| I4 | improvement | SHIPPED | (next commit) | — | `classifyDirectiveComplexity` checks charCount < 200 AND distinct action verbs ≤ 2 (canonical 56-verb set); on small directives, kickoff logs a single WARN suggesting `blackboard` instead. Inform-only — operator's pattern choice stands. |
 
 ## 6 · Cross-references
 

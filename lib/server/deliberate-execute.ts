@@ -32,6 +32,54 @@ import type { OpencodeMessage } from '../opencode/types';
 
 const SYNTHESIS_WAIT_MS = 15 * 60 * 1000;
 
+// PATTERN_DESIGN/deliberate-execute.md I4 — directive-complexity classifier.
+// Deliberation-then-execute pays for its richer framing in tokens (N sessions
+// × N rounds of peer-revise before any code lands). For trivial directives
+// the cost outweighs the benefit — the user picked the wrong pattern.
+//
+// Cheap heuristic at kickoff: small char count AND few distinct action verbs
+// from a canonical list. We don't auto-redirect to blackboard (operator's
+// pattern choice is intentional); just WARN so they can rethink next time.
+const DIRECTIVE_SMALL_CHARS = 200;
+const DIRECTIVE_SMALL_VERB_COUNT = 2;
+const DIRECTIVE_ACTION_VERBS = new Set<string>([
+  'add', 'audit', 'build', 'change', 'check', 'clean',
+  'create', 'debug', 'delete', 'deploy', 'deprecate', 'design',
+  'document', 'enable', 'expose', 'extract', 'find', 'fix',
+  'flag', 'generate', 'implement', 'improve', 'inspect', 'integrate',
+  'investigate', 'lint', 'merge', 'migrate', 'mock', 'move',
+  'optimize', 'parse', 'patch', 'port', 'refactor', 'remove',
+  'rename', 'replace', 'report', 'research', 'review', 'rewrite',
+  'rollback', 'run', 'scan', 'seed', 'split', 'stub',
+  'sync', 'test', 'trace', 'update', 'upgrade', 'validate',
+  'verify', 'wire', 'write',
+]);
+
+interface DirectiveComplexity {
+  small: boolean;
+  charCount: number;
+  verbCount: number;
+  verbs: string[];
+}
+
+export function classifyDirectiveComplexity(directive: string): DirectiveComplexity {
+  const trimmed = directive.trim();
+  const tokens = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  const verbs = new Set<string>();
+  for (const t of tokens) {
+    if (DIRECTIVE_ACTION_VERBS.has(t)) verbs.add(t);
+  }
+  const verbCount = verbs.size;
+  const charCount = trimmed.length;
+  const small =
+    charCount < DIRECTIVE_SMALL_CHARS && verbCount <= DIRECTIVE_SMALL_VERB_COUNT;
+  return { small, charCount, verbCount, verbs: [...verbs] };
+}
+
 // PATTERN_DESIGN/deliberate-execute.md I1 — synthesis-verifier gate.
 // Verification runs on a peer session (not the synthesizer) and asks
 // the same model that helped deliberate to critique the seeded todos
@@ -213,6 +261,18 @@ export async function runDeliberateExecuteKickoff(
     return;
   }
   if (meta.sessionIDs.length < 2) return;
+
+  // PATTERN_DESIGN/deliberate-execute.md I4 — directive-complexity WARN.
+  // Inform-only: operator's pattern choice stands; we just surface a
+  // signal that this run might be paying deliberation cost for nothing.
+  if (meta.directive) {
+    const complexity = classifyDirectiveComplexity(meta.directive);
+    if (complexity.small) {
+      console.warn(
+        `[deliberate-execute] run ${swarmRunID} — directive looks small (${complexity.charCount} chars, ${complexity.verbCount} action verbs: ${complexity.verbs.join(', ') || '∅'}). The deliberation phase may not pay for itself; consider 'blackboard' pattern next time. (PATTERN_DESIGN/deliberate-execute.md I4)`,
+      );
+    }
+  }
 
   // ─── Phase 1: deliberation ─────────────────────────────────────────
   // The swarm-run POST handler already broadcast the directive to every
