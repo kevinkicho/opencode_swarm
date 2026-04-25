@@ -161,22 +161,28 @@ export function roleNamesBySessionID(
   return out;
 }
 
-// Role to pass as opencode's `agent` field at dispatch time. Only
-// hierarchical patterns (orchestrator-worker, role-differentiated,
-// debate-judge, critic-loop) use opencode agent-configs for routing;
-// blackboard's planner/worker labels are display-only, so we return
-// undefined for it. Keeps user's opencode.json free of synthetic
-// `planner`/`worker-N` entries they never asked for.
+// Role to pass as opencode's `agent` field at dispatch time.
 //
-// Hierarchical patterns: the role name IS the opencode agent-config
-// name the user set up (e.g. `orchestrator`, `judge`, `architect`).
-// Passing these as `agent` on postSessionMessageServer routes to
-// those configs; missing entries fall through to opencode's default.
+// HISTORY: returned role names for hierarchical patterns until
+// 2026-04-25 live validation (run_mody4whw_bp0o4o, run_mody4z4g_fhvd7a)
+// surfaced a silent-drop bug — opencode's `prompt_async` returns HTTP
+// 204 success but never persists the user message OR starts an
+// assistant turn when given an `agent` name that isn't in
+// opencode.json. The earlier comment claiming "missing entries fall
+// through to opencode's default" was wrong. Empirically: 'worker-1',
+// 'worker-2', 'architect', 'tester' — all dropped silently. Workers
+// got msgs=0 and the F1 watchdog tripped at 240s with retry-stale.
+//
+// FIX: return undefined for ALL patterns. Role display in our UI
+// already comes from `roleNamesBySessionID(meta)` (a client-side
+// derivation), not from opencode's agent metadata, so this is a
+// no-op for users. If a user later defines real agent configs in
+// opencode.json and wants them honored, that's a separate opt-in
+// path — for the default case where opencode.json has no custom
+// agents, NEVER passing the param is the only reliable behavior.
 export function opencodeAgentForSession(
-  meta: RoleMetaLite | null | undefined,
-  sessionID: string,
+  _meta: RoleMetaLite | null | undefined,
+  _sessionID: string,
 ): string | undefined {
-  if (!meta) return undefined;
-  if (meta.pattern === 'blackboard') return undefined;
-  return roleNamesBySessionID(meta).get(sessionID);
+  return undefined;
 }
