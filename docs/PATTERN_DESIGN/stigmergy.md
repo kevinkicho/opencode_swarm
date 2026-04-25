@@ -144,7 +144,7 @@ with exploitation (per-worker warmth).
 | heat-picked-timeline-chip | tab-eq | PROPOSED | — | — | ~2 h; optional |
 | I1 | improvement | SHIPPED | (next commit) | — | decayFactor = 0.5^(Δt / HEAT_HALF_LIFE_MS) applied in coordinator.scoreTodoByHeat AND mirrored client-side in board-rail.heatScoreForItem; default half-life 30 min, env override OPENCODE_HEAT_HALF_LIFE_S (server only) |
 | I2 | improvement | SHIPPED | (next commit) | — | FileHeat now carries editsBySession: Record<sessionID, number> alongside the global count; toFileHeat aggregates per-session in a Map<string, number> bucket and emits via Object.fromEntries |
-| I3 | improvement | PROPOSED | — | — | planner seed logic ~3 h |
+| I3 | improvement | SHIPPED | (next commit) | — | `lib/server/blackboard/cold-file-seed.ts` walks the workspace for code-extension files (skips dotfiles + COLD_EXCLUDE_DIRS, capped at 8000 files), subtracts any path in any session's accumulated FileHeat, and seeds up to 5 "Investigate <file>; report findings" todos when the result has any cold candidates. Hooked into auto-ticker's `attemptTierEscalation` "produced no work" branch — fires AFTER the LLM-driven tier sweep returns 0 new items. Idempotent against existing board content. Deterministic, no LLM cost. |
 | I4 | improvement | SHIPPED | (next commit) | — | scoreTodoByHeat takes optional `pickedSessionID`; subtracts `0.5 * editsBySession[sid] * decay * weight` from score for files this session has touched. Coefficient keeps global exploratory bias dominant; sole-touchers tip toward continuing. Tickercoordinator passes `pickedSession` through. |
 
 ## 6 · Cross-references

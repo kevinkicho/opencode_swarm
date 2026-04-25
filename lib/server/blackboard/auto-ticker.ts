@@ -61,6 +61,7 @@ import {
   TIER_LADDER,
   type PlannerExports,
 } from './planner';
+import { attemptColdFileSeeding } from './cold-file-seed';
 import { listBoardItems, transitionStatus } from './store';
 import { listPlanRevisions } from './plan-revisions';
 import {
@@ -825,15 +826,34 @@ async function attemptTierEscalation(state: TickerState): Promise<void> {
       state.currentTier = clampedNextTier;
       for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
     } else {
-      // This tier had nothing to propose. Bump current tier so the next
-      // cascade attempts the tier above. If we just attempted MAX_TIER
-      // and got nothing, there's nowhere higher — mark exhausted.
-      console.log(
-        `[board/auto-ticker] ${swarmRunID}: tier-${clampedNextTier} escalation produced no work (planner returned ${result.items.length} item(s) total)`,
-      );
-      state.currentTier = clampedNextTier;
-      if (clampedNextTier >= MAX_TIER) {
-        state.tierExhausted = true;
+      // This tier had nothing to propose. Before bumping or exhausting,
+      // try cold-file seeding (PATTERN_DESIGN/stigmergy.md I3) — there
+      // may be untouched workspace files the swarm hasn't explored.
+      // If that seeds work, keep the run alive at the current tier.
+      let coldSeeded = 0;
+      try {
+        coldSeeded = await attemptColdFileSeeding(swarmRunID);
+      } catch (err) {
+        console.warn(
+          `[board/auto-ticker] ${swarmRunID}: cold-file seeding threw:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+      if (coldSeeded > 0) {
+        console.log(
+          `[board/auto-ticker] ${swarmRunID}: tier-${clampedNextTier} produced no work but cold-file seeder added ${coldSeeded} exploration todo(s) — resetting idle counters`,
+        );
+        for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
+      } else {
+        // No tier proposal AND no cold files left. Bump tier to retry
+        // higher; at MAX_TIER mark exhausted so the next cascade stops.
+        console.log(
+          `[board/auto-ticker] ${swarmRunID}: tier-${clampedNextTier} escalation produced no work (planner returned ${result.items.length} item(s) total); cold-file seeder also produced 0`,
+        );
+        state.currentTier = clampedNextTier;
+        if (clampedNextTier >= MAX_TIER) {
+          state.tierExhausted = true;
+        }
       }
     }
     // Persist the new tier to meta.json so a ticker restart can resume
