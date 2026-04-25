@@ -460,9 +460,26 @@ export function useLiveSession(
   return { data, error, loading };
 }
 
-// Lazy diff fetch: only runs when `enabled` flips true (e.g. when the drawer
-// opens). Refetches when the session's lastUpdated changes so edits from a
-// newly-finished turn appear without a manual refresh.
+// Per-session diff query key. Includes lastUpdated so each new turn
+// produces a fresh cache entry — the upstream session diff is
+// immutable for a given turn-completion timestamp, so a stale-time
+// of effectively-forever per (session, lastUpdated) is correct.
+export function sessionDiffQueryKey(
+  sessionId: string,
+  lastUpdated: number,
+): readonly unknown[] {
+  return ['opencode', 'session', sessionId, 'diff', lastUpdated];
+}
+
+// Lazy diff fetch: only runs when `enabled` flips true (e.g. when the
+// drawer opens). Refetches when the session's lastUpdated changes so
+// edits from a newly-finished turn appear without a manual refresh.
+//
+// Migrated to TanStack Query (IMPLEMENTATION_PLAN 6.3) — gives free
+// cross-component dedup (multiple drawers / inspectors asking for the
+// same diff share one cache entry) and automatic cache hits across
+// drawer open/close cycles. Earlier custom implementation re-fetched
+// on every effect re-run.
 export function useSessionDiff(
   sessionId: string | null,
   enabled: boolean,
@@ -472,40 +489,25 @@ export function useSessionDiff(
   error: string | null;
   loading: boolean;
 } {
-  const [diffs, setDiffs] = useState<Array<{ file: string; patch: string }> | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!sessionId || !enabled) {
-      setDiffs(null);
-      setError(null);
-      setLoading(false);
-      return;
-    }
-    let cancelled = false;
-    const controller = new AbortController();
-    setLoading(true);
-    getSessionDiffBrowser(sessionId, { signal: controller.signal })
-      .then((rows) => {
-        if (cancelled) return;
-        setDiffs(rows);
-        setError(null);
-      })
-      .catch((err) => {
-        if (cancelled || (err as Error).name === 'AbortError') return;
-        setError((err as Error).message);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [sessionId, enabled, lastUpdated]);
-
-  return { diffs, error, loading };
+  const q = useQuery({
+    queryKey: sessionDiffQueryKey(sessionId ?? '', lastUpdated ?? 0),
+    queryFn: ({ signal }) =>
+      getSessionDiffBrowser(sessionId!, { signal }),
+    // Two gates: caller-driven `enabled` (drawer open) AND a non-null
+    // sessionId. lastUpdated null is acceptable — represents "no turns
+    // yet completed"; the queryKey just folds those into the same
+    // cache slot ('diff', 0).
+    enabled: enabled && !!sessionId,
+    // Diffs for a (session, lastUpdated) pair are immutable. Long
+    // staleTime → no spurious refetches when the same drawer reopens.
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  return {
+    diffs: q.data ?? null,
+    error: q.error ? (q.error as Error).message : null,
+    loading: q.isLoading,
+  };
 }
 
 // Polling hook — fires immediately, then every `intervalMs`. Aborts the in-flight

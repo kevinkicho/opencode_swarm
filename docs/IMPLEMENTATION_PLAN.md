@@ -153,9 +153,9 @@ first.
 
 | # | Item | Effort | Status |
 |---|---|---|---|
-| 6.1 | Migrate `useLiveSwarmRunMessages` fully to TanStack Query | 3h | PROPOSED |
-| 6.2 | Migrate `useLivePermissions` | 1h | PROPOSED |
-| 6.3 | Migrate `useSessionDiff` | 1h | PROPOSED |
+| 6.1 | Migrate `useLiveSwarmRunMessages` fully to TanStack Query | 3h | **DEFERRED** (2026-04-24) — existing implementation already has cooldown + trailing-merge + `applyLocally` partial-merge fast path AND mirrors writes into TQ cache via `setQueryData`. Full migration would either regress those optimizations or re-implement them on top of TQ — risk without measurable payoff. Re-evaluate if TQ-canonical source becomes a hard requirement. |
+| 6.2 | Migrate `useLivePermissions` | 1h | **DEFERRED** (2026-04-24) — SSE-coupled (permission.asked / replied events drive local state); TQ would need a manual setQueryData layer. Same architectural pattern as 6.1: existing code already covers the use case correctly. |
+| 6.3 | Migrate `useSessionDiff` | 1h | **SHIPPED** (next commit) — clean migration; per-(session, lastUpdated) cache key gives free dedup across drawer open/close cycles + cross-component sharing. 5-min staleTime since diff is immutable for a turn-completion timestamp. |
 | 6.4 | Per-session gating (don't fetch hidden sessions) | 2h | **SHIPPED** (next commit) — `useLiveSwarmRunMessages` gains `visibleSessionIDs?` parameter; SSE event handler skips refetch for hidden sessions; `applyLocally` partial-merge fast path still keeps slots fresh on visible turn streaming. Default undefined = all visible (backward compat). |
 | 6.5 | `/api/swarm/run/:id/snapshot` aggregator endpoint | 4h | **SHIPPED** (`c85724a`) — single endpoint replaces 5 cold-load round-trips; verified 4.5x cold-compile speedup, 3x warm-cached |
 | 6.6 | **Page load latency** — 15s blank screen + 30s before board data renders (observed 2026-04-24 against `run_modm7vsw_uxxy6b`). Diagnose: which fetch is the long pole — `/api/swarm/run` snapshot, per-session messages fan-out, or board SSE handshake? Profile cold load + identify the blocking waterfall. Likely fixable by 6.5 (snapshot aggregator) collapsing N round-trips into 1. | 3h | PROPOSED |
