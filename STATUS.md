@@ -28,6 +28,85 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — pending-validations sweep + perf wiring + log-tail HMR fix
+
+User asked to clear the backlog of "shipped but unvalidated" items
+that had accumulated across sessions. Five candidate items audited
+from `STATUS.md`, `IMPLEMENTATION_PLAN.md`, and
+`memory/project_pending_validation_run.md`. 4 of 5 closed; #91 left
+for human-in-loop because it requires the user to start a target
+repo's dev server.
+
+**Code shipped:**
+
+- **`useSwarmRunSnapshot` hook + page wiring** (`efbbd0a`, #89, IMPL
+  6.6 follow-up) — TanStack-Query-backed aggregator hook that fetches
+  `/api/swarm/run/:id/snapshot` once on cold load, replacing the
+  previous separate `useLiveSwarmRun` round-trip. Snapshot bundles
+  meta + status + derivedRow + tokens + board + ticker +
+  planRevisions count. Live updates continue to flow through the
+  existing SSE channels (`/board/events`, `/event` proxy) — this
+  hook only owns the cold-load seed. Backend was previously measured
+  for 4.5x cold / 3x warm-cached speedup vs the prior 5-call fan-out
+  (commit c85724a); page now actually consumes that endpoint.
+  30s staleTime; SSE keeps page fresh after.
+
+- **opencode-log-tail globalThis-keyed state** (`0497417`, #90) —
+  state was module-scoped, so Next.js HMR module reloads created
+  fresh state=null on every reload. The idempotency check
+  `if (state?.timer) return;` then incorrectly treated every reload
+  as "first run" and started ANOTHER setInterval; the previous
+  module's timer kept running too. Net effect: dozens of
+  "[opencode-log-tail] starting (F2)" log lines per dev session
+  and N concurrent tails reading the same file in parallel. Fix:
+  stash state on globalThis with a `Symbol.for` key (matches the
+  same HMR-survival pattern used by metaCache, listCache,
+  baselineCache, deriveRowCache, publishExports). One tail per dev
+  process now.
+
+**Live validations:**
+
+- **#92 ambition-ratchet** — VALIDATED. Spawned a tiny-directive
+  blackboard run (`run_moex95aq_dihkz4`, "add a single comment line
+  to README.md") with `bounds.minutesCap: 15, todosCap: 20`. The
+  board drained naturally to 0; ticker idled 76 consecutive cycles;
+  ambition-ratchet escalated **tier 1 → 2 → 3 → 4 → 5 ("Vision",
+  MAX_TIER)**. Final state: 7 todos done, 8 items, currentTier=5,
+  tierExhausted=true, stopReason=`wall-clock-cap`. First time tier
+  escalation has fired in anger; the path works end-to-end across
+  all tier transitions. Dev log captured each step:
+    - `attempting tier escalation 1 → 2 (Reach)`
+    - `attempting tier escalation 2 → 3 (Substantive)`
+    - `attempting tier escalation 3 → 4 (Architectural)`
+    - `attempting tier escalation 4 → 5 (Vision)`
+    - `at MAX_TIER=5 — re-sweeping at tier 5 instead of escalating`
+
+- **Bonus: #88 planner-sweep degraded-completion** — VALIDATED in
+  production during the ratchet run above. When the tier-5 planner
+  sweep errored (`tier-5 escalation threw: planner sweep failed:
+  assistant turn errored`), today's #88 plumbing landed a finding:
+  `note: degraded-completion blackboard error`,
+  `content: [blackboard] partial outcome — orchestrator stopped at:
+  planner-sweep (reason: error)`. Exactly the gap that bit
+  role-differentiated earlier this calendar day; now closed AND
+  verified end-to-end.
+
+- **#93 pattern benchmark script** — VALIDATED. Invoked
+  `scripts/_pattern_benchmark.mjs --workspace ... --patterns
+  blackboard --max-done 1 --max-minutes 3`. Script ran end-to-end:
+  spawned a swarm run, polled progress with timestamps every ~15s,
+  hit max-minutes terminal correctly, produced the comparison table,
+  persisted JSON to `/tmp/pattern-benchmark-<ts>.json`. The 0-done
+  result is expected for the tight 3-minute cap; the script
+  MACHINERY works.
+
+**Deferred:**
+
+- **#91 Playwright verifier gate** — requires user to start
+  `kyahoofinance032926` dev server first (the verifier needs a real
+  dev URL to hit). Spawn body documented in
+  `memory/project_pending_validation_run.md`.
+
 ### 2026-04-25 night — UX polish, test coverage push, autonomous validation
 
 Continuation of the same calendar day's work. Capabilities and test
