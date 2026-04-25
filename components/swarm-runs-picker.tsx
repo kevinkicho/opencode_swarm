@@ -258,8 +258,12 @@ function PickerPanel({
                       meta.directive ? `\n${meta.directive}` : '',
                     ].filter(Boolean).join('\n')}
                   >
-                    <span className="flex items-center gap-1.5 w-[52px] shrink-0">
-                      <span className={clsx('w-1.5 h-1.5 rounded-full', visual.dot)} />
+                    {/* Status column 2026-04-24: dropped the status
+                        dot per user request — the colored label alone
+                        carries the same severity signal in less
+                        visual real estate. Width unchanged so the
+                        rest of the row keeps its grid alignment. */}
+                    <span className="flex items-center w-[52px] shrink-0">
                       <span
                         className={clsx(
                           'font-mono text-[9.5px] uppercase tracking-widest2',

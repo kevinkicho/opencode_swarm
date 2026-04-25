@@ -204,16 +204,19 @@ function PageInner() {
   const swarmRunID = params.get('swarmRun');
   const directSessionId = params.get('session');
   const swarmRun = useLiveSwarmRun(swarmRunID);
-  // Ledger-wide poll DISABLED at page level — the runs picker owns its
-  // own fetch (gated on popover open), and the palette's recent-retros
-  // list is a convenience that tolerates missing data on first open.
-  // Before this gate the PageInner-level poll + picker duplicate-hook
-  // together fired 28+ calls to /api/swarm/run in a 40s cold load,
-  // consuming ~61s of browser connection-queue time (HTTP/1.1 limits
-  // to 6 connections per origin; 2 are permanently held by SSE long-
-  // polls). Topbar status dot reads as `null` until the palette/picker
-  // is opened — acceptable tradeoff per 2026-04-24 perf:cold audit.
-  const runsSnapshot = useSwarmRuns({ intervalMs: 4000, enabled: false });
+  // Ledger poll re-enabled at slow cadence (2026-04-24 evening): the
+  // earlier `enabled: false` saved cold-load fetches but had two
+  // failure modes: (1) topbar status went permanently stale after a
+  // run ended (no refresh source), so a "live" cache from earlier
+  // could persist indefinitely until the user re-opened the picker;
+  // (2) opening the picker took ~5 s while the cold fetch landed.
+  // 30 s cadence is the compromise: ledger refreshes once per 30 s
+  // (vs 4 s previously), populates the topbar status reliably, and
+  // pre-warms the picker so it opens with data already cached.
+  // TanStack Query dedups the picker's hook against this one via
+  // shared queryKey, so opening the picker doesn't trigger an
+  // additional cold flight.
+  const runsSnapshot = useSwarmRuns({ intervalMs: 30000, enabled: true });
   const currentRunStatus: SwarmRunStatus | null = useMemo(() => {
     if (!swarmRunID) return null;
     const row = runsSnapshot.rows.find((r) => r.meta.swarmRunID === swarmRunID);
