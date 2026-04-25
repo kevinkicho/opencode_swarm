@@ -22,6 +22,7 @@ import { useMemo, useRef } from 'react';
 
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
+import { computeDraftDiff, summariseDiff, type DraftDiff } from '@/lib/draft-diff';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
@@ -38,6 +39,11 @@ interface IterationRow {
   keyTone: 'mint' | 'amber' | 'rust' | 'fog' | null;
   // ms timestamp of message creation, used for sort + display.
   ts: number | null;
+  // Structured diff snapshot for drafts past iteration 1; reviews carry
+  // null. PATTERN_DESIGN/critic-loop.md I3 — backs the `key` column with
+  // line-LCS counts (proper diff, not set-symmetric difference) and
+  // gives a future inspector drawer a place to fetch hunks from.
+  diff: DraftDiff | null;
 }
 
 // Extract assistant turn body as plain text. Walks parts, concatenates
@@ -61,21 +67,9 @@ function countLines(s: string): number {
   return s.split('\n').length;
 }
 
-// Diff summary: cheap symmetric-difference of line sets, not a real
-// edit script. Captures "approximately how many lines moved" with one
-// pass, which is what the scan-density column needs. A real Myers
-// diff would be overkill for a single-line summary glyph.
-function diffSummary(prev: string, next: string): string {
-  if (!prev && !next) return '';
-  const prevSet = new Set(prev.split('\n').map((l) => l.trim()).filter(Boolean));
-  const nextSet = new Set(next.split('\n').map((l) => l.trim()).filter(Boolean));
-  let added = 0;
-  let removed = 0;
-  for (const l of nextSet) if (!prevSet.has(l)) added += 1;
-  for (const l of prevSet) if (!nextSet.has(l)) removed += 1;
-  if (added === 0 && removed === 0) return 'no change';
-  return `+${added} / -${removed}`;
-}
+// Diff against the previous draft via shared LCS helper. PATTERN_DESIGN
+// /critic-loop.md I3 — kept in lib/draft-diff.ts so the inspector drawer
+// (and any future surface) can compute the same numbers.
 
 // Parse the critic verdict from review text. critic-loop's prompt
 // contract (buildCriticIntroPrompt, lib/server/critic-loop.ts) asks
@@ -144,10 +138,12 @@ export function IterationsRail({
             : 'drafting';
         let keySummary: string | null = null;
         let keyTone: IterationRow['keyTone'] = null;
+        let diff: DraftDiff | null = null;
         if (i > 0 && prevDraftText) {
-          const summary = diffSummary(prevDraftText, text);
-          keySummary = summary;
-          keyTone = summary === 'no change' ? 'amber' : 'fog';
+          diff = computeDraftDiff(prevDraftText, text);
+          keySummary = summariseDiff(diff);
+          keyTone =
+            diff.added === 0 && diff.removed === 0 ? 'amber' : 'fog';
         }
         out.push({
           label: `#${i + 1}`,
@@ -157,6 +153,7 @@ export function IterationsRail({
           keySummary,
           keyTone,
           ts: draft.info.time.completed ?? draft.info.time.created ?? null,
+          diff,
         });
         prevDraftText = text;
       }
@@ -189,6 +186,7 @@ export function IterationsRail({
           keySummary: completed ? verdictText : null,
           keyTone: completed ? verdictTone : null,
           ts: review.info.time.completed ?? review.info.time.created ?? null,
+          diff: null,
         });
       }
     }
