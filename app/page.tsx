@@ -12,6 +12,7 @@ import { SwarmTimeline } from '@/components/swarm-timeline';
 import { TurnCardsView } from '@/components/turn-cards-view';
 import { BoardFullView } from '@/components/board-full-view';
 import { roleNamesFromMeta, useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
+import { deriveSilentSessions } from '@/lib/silent-session';
 import { deliberationRoundInfo } from '@/lib/deliberate-progress';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 // Modals and drawers below are gated by `open={...}` state that defaults to
@@ -779,6 +780,14 @@ function PageBody({
         ? 'file heat'
         : undefined;
 
+  // STATUS.md "silent since dispatch" — derive client-side so the
+  // chip surfaces during the 90s window before F1 watchdog WARNs.
+  // Memoised on the slots reference; recomputes when messages tick.
+  const silentSessions = useMemo(
+    () => deriveSilentSessions(liveSlots),
+    [liveSlots],
+  );
+
   return (
     <PlaybackProvider runDuration={runDuration}>
     <ProviderStatsProvider
@@ -802,6 +811,7 @@ function PageBody({
         swarmRunStatus={swarmRunStatus}
         tickerState={liveTicker.state}
         boardItems={liveBoard.items ?? null}
+        silentSessions={silentSessions}
       />
       </ProfileBoundary>
 

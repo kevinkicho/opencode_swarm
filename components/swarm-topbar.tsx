@@ -34,6 +34,7 @@ export function SwarmTopbar({
   swarmRunStatus,
   tickerState,
   boardItems,
+  silentSessions,
 }: {
   run: RunMeta;
   providers: ProviderSummary[];
@@ -47,6 +48,13 @@ export function SwarmTopbar({
   // map-reduce, critic-loop without board phase) — chip falls back to
   // ticker-only health.
   boardItems?: BoardItem[] | null;
+  // Sessions whose last user prompt has no following assistant message
+  // and exceeds SILENT_SESSION_THRESHOLD_MS (90s, matching F1 watchdog
+  // WARN). Empty when no sessions are silent. Run-health chip surfaces
+  // each one as a warn-level reason so the user sees the silence
+  // BEFORE F1 watchdog gives up at 240s. STATUS.md "Run-health
+  // surfacing #4".
+  silentSessions?: import('@/lib/silent-session').SilentSession[];
   // Present only on `?swarmRun=<id>`. Read-only snapshot of how the run was
   // launched — directive text + bounds at dispatch time. NOT the same as
   // `run.budgetCap` (which reflects the *current* routing cost cap). Keeping
@@ -133,6 +141,7 @@ export function SwarmTopbar({
           <RunHealthChip
             tickerState={tickerState}
             boardItems={boardItems ?? null}
+            silentSessions={silentSessions ?? []}
             stale={backendStale}
           />
         )}
@@ -678,10 +687,12 @@ function RetryAfterChip({ endsAtMs }: { endsAtMs: number }) {
 function RunHealthChip({
   tickerState,
   boardItems,
+  silentSessions,
   stale = false,
 }: {
   tickerState: TickerState;
   boardItems: BoardItem[] | null;
+  silentSessions: import('@/lib/silent-session').SilentSession[];
   stale?: boolean;
 }) {
   // Severity ladder. Highest applies.
@@ -735,6 +746,22 @@ function RunHealthChip({
     reasons.push({
       label: `${retryExhausted.length} retry-exhausted`,
       detail: `${retryExhausted.length} board item${retryExhausted.length === 1 ? '' : 's'} marked stale after ≥2 worker failures — investigation needed`,
+      severity: 'warn',
+    });
+    if (severity === 'ok') severity = 'warn';
+  }
+  if (silentSessions.length > 0) {
+    // STATUS.md run-health #4 — surface "silent since dispatch" before
+    // F1 watchdog aborts at 240s. Use the maximum age across silent
+    // sessions for the label so the most-concerning one drives the
+    // signal. Per-session breakdown lives in the tooltip.
+    const maxSilentMs = Math.max(...silentSessions.map((s) => s.silentMs));
+    const maxSilentS = Math.round(maxSilentMs / 1000);
+    reasons.push({
+      label: `${silentSessions.length} silent ${maxSilentS}s+`,
+      detail:
+        `${silentSessions.length} session${silentSessions.length === 1 ? '' : 's'} have a user prompt with no assistant response yet ` +
+        `(longest: ${maxSilentS}s). F1 watchdog aborts at 240s if no progress.`,
       severity: 'warn',
     });
     if (severity === 'ok') severity = 'warn';
