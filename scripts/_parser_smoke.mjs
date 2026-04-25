@@ -18,7 +18,7 @@ const plannerPath = pathToFileURL(
   path.resolve('lib/server/blackboard/planner.ts'),
 ).href;
 
-const { stripVerifyTag, stripRoleTag, stripFilesTag, stripCriterionTag } = await import(plannerPath);
+const { stripVerifyTag, stripRoleTag, stripFilesTag, stripCriterionTag, stripFromTag } = await import(plannerPath);
 
 let failed = 0;
 let passed = 0;
@@ -267,6 +267,69 @@ eq(
       files: ['lib/x.ts'],
     },
     'compose: files only',
+  );
+}
+
+// ── stripFromTag cases (deliberate-execute I2) ───────────────────────
+
+eq(
+  stripFromTag('[from:1,3] Wire watchdog'),
+  { content: 'Wire watchdog', sourceDrafts: [1, 3] },
+  'from: comma-list',
+);
+
+eq(
+  stripFromTag('[FROM: 2 ] Single member'),
+  { content: 'Single member', sourceDrafts: [2] },
+  'from: single + whitespace + uppercase',
+);
+
+eq(
+  stripFromTag('Untagged'),
+  { content: 'Untagged', sourceDrafts: undefined },
+  'from: no prefix',
+);
+
+eq(
+  stripFromTag('[from:abc, 0, 4] Drops bad tokens'),
+  { content: 'Drops bad tokens', sourceDrafts: [4] },
+  'from: skips non-positive + non-numeric',
+);
+
+eq(
+  stripFromTag('[from:3,3,3] Dedup'),
+  { content: 'Dedup', sourceDrafts: [3] },
+  'from: dedup duplicates',
+);
+
+eq(
+  stripFromTag('[from:] Empty list'),
+  { content: 'Empty list', sourceDrafts: undefined },
+  'from: empty list strips prefix, leaves drafts unset',
+);
+
+{
+  // Composition: full chain in expected order.
+  const a = stripVerifyTag('[verify] [role:tester] [files:a.ts] [from:1,2] Build it');
+  const b = stripRoleTag(a.content);
+  const c = stripFilesTag(b.content);
+  const d = stripFromTag(c.content);
+  eq(
+    {
+      content: d.content,
+      verify: a.requiresVerification,
+      role: b.preferredRole,
+      files: c.expectedFiles,
+      drafts: d.sourceDrafts,
+    },
+    {
+      content: 'Build it',
+      verify: true,
+      role: 'tester',
+      files: ['a.ts'],
+      drafts: [1, 2],
+    },
+    'compose: verify + role + files + from',
   );
 }
 

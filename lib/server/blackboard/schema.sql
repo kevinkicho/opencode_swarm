@@ -60,6 +60,15 @@ CREATE TABLE IF NOT EXISTS board_items (
   -- lib/blackboard/types.ts BoardItem.expectedFiles.
   expected_files_json TEXT,
 
+  -- Synthesis traceability for deliberate-execute runs
+  -- (PATTERN_DESIGN/deliberate-execute.md I2). JSON array of 1-based
+  -- member-draft indices; the planner extracts these from a
+  -- [from:1,3] content prefix the synthesizer emits. NULL for runs
+  -- where the synthesizer didn't tag, and for non-deliberate-execute
+  -- patterns. Lets a future inspector drawer link back to the
+  -- deliberation drafts that motivated each todo.
+  source_drafts_json TEXT,
+
   PRIMARY KEY (swarm_run_id, id)
 );
 

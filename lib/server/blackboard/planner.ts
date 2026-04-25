@@ -440,6 +440,12 @@ interface RawTodo {
   // dropped when this is true — criteria are auditor-verdict targets,
   // not worker-dispatch targets.
   isCriterion?: boolean;
+  // PATTERN_DESIGN/deliberate-execute.md I2 — synthesis traceability.
+  // Computed by latestTodosFrom from a `[from:1,3]` content prefix the
+  // synthesizer emits during phase 2. 1-based, deduped, max 8 entries.
+  // Undefined for non-deliberate-execute paths and for synthesis runs
+  // where the model didn't tag.
+  sourceDrafts?: number[];
 }
 
 // Strips the `[verify]` opt-in prefix from a todo's content and
@@ -521,6 +527,37 @@ export function stripFilesTag(content: string): {
   return { content: stripped, expectedFiles: paths };
 }
 
+// Strips the `[from:1,3]` prefix — synthesis traceability for
+// deliberate-execute (PATTERN_DESIGN/deliberate-execute.md I2). Source
+// indices are 1-based (matches "Draft from member 1" labels in the
+// synthesizer's prompt input). Caps at 8 entries to bound storage and
+// rejects non-positive integers, so a malformed `[from:0,abc,3]` parses
+// as `[3]` rather than failing the whole todo.
+const FROM_TAG_RE = /^\s*\[from:\s*([^\]]*)\s*\]\s*/i;
+const SOURCE_DRAFTS_MAX = 8;
+export function stripFromTag(content: string): {
+  content: string;
+  sourceDrafts: number[] | undefined;
+} {
+  const m = FROM_TAG_RE.exec(content);
+  if (!m) return { content, sourceDrafts: undefined };
+  const seen = new Set<number>();
+  for (const tok of m[1].split(',')) {
+    const n = parseInt(tok.trim(), 10);
+    if (!Number.isFinite(n) || n <= 0) continue;
+    seen.add(n);
+    if (seen.size >= SOURCE_DRAFTS_MAX) break;
+  }
+  const stripped = content.slice(m[0].length).trim();
+  if (seen.size === 0) {
+    return { content: stripped, sourceDrafts: undefined };
+  }
+  return {
+    content: stripped,
+    sourceDrafts: [...seen].sort((a, b) => a - b),
+  };
+}
+
 // Strips the `[criterion]` prefix — marks the todowrite entry as a
 // contract acceptance criterion rather than a work todo (2026-04-24
 // Stage 2 declared-roles alignment). Criteria land on the board with
@@ -585,12 +622,14 @@ export function latestTodosFrom(
           const afterVerify = stripVerifyTag(afterCriterion.content);
           const afterRole = stripRoleTag(afterVerify.content);
           const afterFiles = stripFilesTag(afterRole.content);
+          const afterFrom = stripFromTag(afterFiles.content);
           return {
             ...t,
-            content: afterFiles.content,
+            content: afterFrom.content,
             requiresVerification: afterVerify.requiresVerification,
             preferredRole: afterRole.preferredRole,
             expectedFiles: afterFiles.expectedFiles,
+            sourceDrafts: afterFrom.sourceDrafts,
           };
         });
       if (todos.length > 0) latest = { todos, messageId: m.info.id };
@@ -822,6 +861,7 @@ export async function runPlannerSweep(
           requiresVerification: raw.requiresVerification === true,
           preferredRole: raw.preferredRole,
           expectedFiles: raw.expectedFiles,
+          sourceDrafts: raw.sourceDrafts,
           createdAtMs: baseMs + offset,
         });
     offset += 1;

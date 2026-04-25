@@ -99,4 +99,11 @@ export interface BoardItem {
   // Undefined → worker unconstrained, no CAS protection (pre-Stage-1
   // behavior; kept working so legacy runs + un-tagged todos still move).
   expectedFiles?: string[];
+  // PATTERN_DESIGN/deliberate-execute.md I2 — synthesis traceability.
+  // 1-based member-draft indices that contributed to this todo, parsed
+  // from a `[from:1,3]` content prefix the synthesizer emits. Only set
+  // on deliberate-execute runs; other patterns leave it undefined.
+  // Lets a future inspector drawer answer "why does this todo exist?"
+  // by linking back to the member drafts that motivated it.
+  sourceDrafts?: number[];
 }

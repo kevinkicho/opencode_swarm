@@ -94,6 +94,12 @@ function migrate(db: DB): void {
        ADD COLUMN expected_files_json TEXT`,
     );
   }
+  if (!have.has('source_drafts_json')) {
+    db.exec(
+      `ALTER TABLE board_items
+       ADD COLUMN source_drafts_json TEXT`,
+    );
+  }
 }
 
 function resolveSchema(): string {

@@ -34,6 +34,7 @@ interface BoardRow {
   requires_verification: number;
   preferred_role: string | null;
   expected_files_json: string | null;
+  source_drafts_json: string | null;
 }
 
 function hydrate(row: BoardRow): BoardItem {
@@ -58,6 +59,19 @@ function hydrate(row: BoardRow): BoardItem {
       }
     } catch {
       // Malformed JSON — drop the field silently, matches fileHashes behavior.
+    }
+  }
+  if (row.source_drafts_json) {
+    try {
+      const parsed = JSON.parse(row.source_drafts_json) as unknown;
+      if (
+        Array.isArray(parsed) &&
+        parsed.every((n) => typeof n === 'number' && Number.isFinite(n) && n > 0)
+      ) {
+        item.sourceDrafts = parsed as number[];
+      }
+    } catch {
+      // Malformed JSON — drop silently, matches expected_files behavior.
     }
   }
   if (row.file_hashes_json) {
@@ -124,8 +138,9 @@ export function insertBoardItem(
       `INSERT INTO board_items
        (id, swarm_run_id, kind, status, content, owner_agent_id, note,
         file_hashes_json, stale_since_sha, created_ms, completed_ms,
-        requires_verification, preferred_role, expected_files_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+        requires_verification, preferred_role, expected_files_json,
+        source_drafts_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       input.id,
@@ -142,6 +157,9 @@ export function insertBoardItem(
       input.preferredRole ?? null,
       input.expectedFiles && input.expectedFiles.length > 0
         ? JSON.stringify(input.expectedFiles)
+        : null,
+      input.sourceDrafts && input.sourceDrafts.length > 0
+        ? JSON.stringify(input.sourceDrafts)
         : null,
     );
   const item = getBoardItem(swarmRunID, input.id);
