@@ -157,7 +157,23 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
   'orchestrator-worker': {
     // session[0] = orchestrator (owns strategy for long runs);
     // sessions[1..N-1] = workers.
-    teamModels: (n) => [NEMOTRON, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
+    //
+    // Swapped 2026-04-25: orchestrator was NEMOTRON, now GEMMA.
+    // Retest with --log-level DEBUG (run_modx3mv5_cpwh93) reproduced
+    // a fail mode where nemotron-through-opencode loops on todowrite
+    // — 18 successful assistant turns in 200s, each re-emitting the
+    // same 10 todo items, board never seeded. Functionally equivalent
+    // to the original "silent 14m" symptom (run_mod5dy6n_utsb32) for
+    // this pattern's purposes. Direct ollama API works fine for
+    // nemotron, so the issue is opencode's wrapper handling of
+    // step-tool-step loops on this specific model. GEMMA fills the
+    // orchestrator seat without the loop. Other patterns that put
+    // nemotron in non-planner seats (council drafters, map-reduce
+    // synthesizer, debate judge, role-differentiated architect)
+    // were NOT changed — those seats don't use todowrite, so the
+    // observed failure mode wouldn't apply. Each gated on its own
+    // retest if a problem surfaces.
+    teamModels: (n) => Array(n).fill(GEMMA),
   },
   'role-differentiated': {
     // Role-indexed defaults. Architect / reviewer / security carry

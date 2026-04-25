@@ -12,7 +12,7 @@
 // not via this panel.
 
 import clsx from 'clsx';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { Agent } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
@@ -70,6 +70,7 @@ export function HeatRail({
   diffStatsByPath,
   onSelect,
   embedded = false,
+  swarmRunID,
 }: {
   heat: FileHeat[];
   agents: Agent[];
@@ -85,6 +86,11 @@ export function HeatRail({
   // contexts (e.g. a future retro view).
   onSelect?: (heat: FileHeat) => void;
   embedded?: boolean;
+  // Required for the `all` view mode — `GET /api/swarm/run/:id/tree`
+  // returns the gitignore-aware workspace file list so cold (un-edited)
+  // files can be overlaid on the heat tree. Mode falls back to
+  // hot-only tree when not provided.
+  swarmRunID?: string;
 }) {
   // Heat entries carry raw opencode sessionIDs; agents are keyed by a
   // derived `ag_<name>_<last8>` id. Build a reverse map via agent.sessionID
@@ -95,14 +101,56 @@ export function HeatRail({
   const maxCount = Math.max(1, ...heat.map((h) => h.editCount));
 
   // Phase 5.1 — view toggle between flat hot-first list and a
-  // VSCode-style file tree grouped by directory. Tree mode preserves
-  // the same heat data per leaf row; folder rows aggregate child
-  // edits + recency. Default = list (existing behavior, keeps
-  // muscle-memory for users on the previous build).
-  const [view, setView] = useState<'list' | 'tree'>('list');
+  // VSCode-style file tree grouped by directory. STATUS heat-tab
+  // file-tree task added a third mode (`all`) that overlays cold
+  // (un-edited) workspace files on the tree, sourced from the
+  // gitignore-aware /tree endpoint. Default = list — keeps muscle
+  // memory for users on the previous build.
+  const [view, setView] = useState<'list' | 'tree' | 'all'>('list');
+
+  // Lazy-fetch the workspace file list for `all` mode. We only fire
+  // when the user actually selects that view AND a swarmRunID is
+  // available. The endpoint caches 30s server-side, so polling is
+  // cheap; we cache the latest payload in component state and only
+  // refetch on swarmRunID change.
+  const [workspaceFiles, setWorkspaceFiles] = useState<string[] | null>(null);
+  const [workspaceFilesError, setWorkspaceFilesError] = useState<string | null>(null);
+  useEffect(() => {
+    if (view !== 'all' || !swarmRunID) return;
+    if (workspaceFiles !== null) return; // already loaded for this run
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/swarm/run/${encodeURIComponent(swarmRunID)}/tree`,
+          { cache: 'no-store' },
+        );
+        if (!res.ok) {
+          if (!cancelled) setWorkspaceFilesError(`tree fetch failed (${res.status})`);
+          return;
+        }
+        const json = (await res.json()) as { paths?: string[] };
+        if (cancelled) return;
+        setWorkspaceFiles(json.paths ?? []);
+        setWorkspaceFilesError(null);
+      } catch (err) {
+        if (cancelled) return;
+        setWorkspaceFilesError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, swarmRunID, workspaceFiles]);
+  // Reset cached file list when swarmRunID changes — different run,
+  // different workspace, different files.
+  useEffect(() => {
+    setWorkspaceFiles(null);
+    setWorkspaceFilesError(null);
+  }, [swarmRunID]);
 
   const body =
-    view === 'tree' ? (
+    view === 'tree' || view === 'all' ? (
       <HeatTreeView
         heat={heat}
         workspace={workspace}
@@ -110,6 +158,9 @@ export function HeatRail({
         agentBySession={agentBySession}
         diffStatsByPath={diffStatsByPath}
         onSelect={onSelect}
+        coldPaths={view === 'all' ? workspaceFiles ?? [] : null}
+        coldLoading={view === 'all' && workspaceFiles === null && !workspaceFilesError}
+        coldError={view === 'all' ? workspaceFilesError : null}
       />
     ) : (
       <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
@@ -152,8 +203,16 @@ export function HeatRail({
           active={view === 'tree'}
           onClick={() => setView('tree')}
           label="tree"
-          tooltip="grouped by directory"
+          tooltip="grouped by directory · hot files only"
         />
+        {swarmRunID && (
+          <ViewToggleButton
+            active={view === 'all'}
+            onClick={() => setView('all')}
+            label="all"
+            tooltip="full workspace tree · cold files muted (gitignore-aware)"
+          />
+        )}
       </div>
     </div>
   );
@@ -388,7 +447,11 @@ interface TreeNode {
   heat?: FileHeat;
 }
 
-function buildTree(heat: FileHeat[], workspace: string): TreeNode {
+function buildTree(
+  heat: FileHeat[],
+  workspace: string,
+  coldPaths: readonly string[] | null = null,
+): TreeNode {
   const root: TreeNode = {
     type: 'dir',
     name: '/',
@@ -423,6 +486,46 @@ function buildTree(heat: FileHeat[], workspace: string): TreeNode {
         cursor.children.set(seg, next);
       }
       cursor = next;
+    }
+  }
+
+  // STATUS heat-tab file-tree — overlay cold (un-edited) workspace
+  // files. Add file nodes for paths NOT already in the heat tree. Hot
+  // files keep their heat record (rendered with intensity bar);
+  // cold leaves carry undefined heat so HeatTreeRow renders the muted
+  // tone. Directory aggregates pick up the cold leaves via fileCount
+  // even though their editCount stays zero.
+  if (coldPaths) {
+    for (const rel of coldPaths) {
+      const segments = rel.split('/').filter(Boolean);
+      if (segments.length === 0) continue;
+      let cursor = root;
+      let alreadyHot = false;
+      for (let i = 0; i < segments.length; i += 1) {
+        const isLeaf = i === segments.length - 1;
+        const seg = segments[i];
+        let next = cursor.children.get(seg);
+        if (!next) {
+          next = {
+            type: isLeaf ? 'file' : 'dir',
+            name: seg,
+            fullPath: segments.slice(0, i + 1).join('/'),
+            children: new Map(),
+            editCount: 0,
+            lastTouchedMs: 0,
+            fileCount: 0,
+            // No heat — leaf renders as cold. Folder ancestor stays
+            // dir-typed because we never overwrite a dir to a file.
+          };
+          cursor.children.set(seg, next);
+        } else if (isLeaf && next.heat) {
+          // Already added by the heat loop above — skip rather than
+          // overwrite the heat data with a cold marker.
+          alreadyHot = true;
+        }
+        cursor = next;
+        if (alreadyHot) break;
+      }
     }
   }
 
@@ -488,6 +591,9 @@ function HeatTreeView({
   agentBySession,
   diffStatsByPath,
   onSelect,
+  coldPaths,
+  coldLoading,
+  coldError,
 }: {
   heat: FileHeat[];
   workspace: string;
@@ -495,8 +601,17 @@ function HeatTreeView({
   agentBySession: Map<string, Agent>;
   diffStatsByPath: DiffStatsByPath;
   onSelect?: (heat: FileHeat) => void;
+  // STATUS heat-tab file-tree — when non-null, overlay these paths
+  // (relative to workspace) on the tree as cold leaves. When null,
+  // tree shows hot files only (existing behavior).
+  coldPaths: readonly string[] | null;
+  coldLoading: boolean;
+  coldError: string | null;
 }) {
-  const root = useMemo(() => buildTree(heat, workspace), [heat, workspace]);
+  const root = useMemo(
+    () => buildTree(heat, workspace, coldPaths),
+    [heat, workspace, coldPaths],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     // Default expansion: top-level dirs with the highest aggregate
     // edit counts. Avoids forcing the user to click N times to find
@@ -512,11 +627,15 @@ function HeatTreeView({
 
   const rows = useMemo(() => flattenTree(root, expanded), [root, expanded]);
 
-  if (heat.length === 0) {
+  if (heat.length === 0 && (!coldPaths || coldPaths.length === 0)) {
     return (
       <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
         <li className="px-3 py-2 font-mono text-micro uppercase tracking-widest2 text-fog-700">
-          no file edits yet
+          {coldLoading
+            ? 'loading workspace tree…'
+            : coldError
+              ? `tree fetch failed: ${coldError}`
+              : 'no file edits yet'}
         </li>
       </ul>
     );

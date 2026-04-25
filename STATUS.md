@@ -625,16 +625,20 @@ need a live run to validate before shipping.
     refused items as active work and the ratchet stayed dormant
     indefinitely (run_mob31bx6_jzdfs2 stranded at 22.33M).
 
-- **Nemotron-through-opencode unblock (orch-worker + friends).**
-  Pragmatic swap: `NEMOTRON` → `GEMMA` in `lib/swarm-patterns.ts`
-  `patternDefaults` for orchestrator-worker / role-differentiated /
-  map-reduce / council / debate-judge / deliberate-execute. Direct
-  ollama API works for nemotron (0.5–3s on both `/api/generate` and
-  `/v1/chat/completions`), but opencode's wrapper consistently yields
-  0-assistant-response for 14+ min (observed on run_mod5dy6n_utsb32).
-  Root cause still unknown — the above run-health surfacing work
-  might expose it. Until then, gemma fills the same role seat.
-  ~10 min code + relaunch.
+- **Nemotron-through-opencode (orchestrator-worker swapped).**
+  Retest 2026-04-25 with `--log-level DEBUG` (run_modx3mv5_cpwh93)
+  found a different failure mode than the original 0-response
+  symptom: nemotron-through-opencode IS responding (18 successful
+  assistant turns in 200s) but loops on `todowrite`, re-emitting
+  the same 10 items every turn while the board never gets seeded.
+  Functionally equivalent end-state for orchestrator-worker, so
+  swapped that seat to GEMMA in `lib/swarm-patterns.ts`. Council
+  drafters / map-reduce synthesizer / debate judge / role-
+  differentiated architect were NOT changed — those seats don't
+  use todowrite, so the observed loop failure wouldn't apply.
+  Each gated on its own retest if a real failure surfaces. Direct
+  ollama API still works fine for nemotron; the issue is opencode's
+  wrapper handling of step-tool-step loops on this specific model.
 
 ### Designed but deprioritized
 

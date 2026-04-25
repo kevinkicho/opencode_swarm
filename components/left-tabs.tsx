@@ -271,6 +271,7 @@ export function LeftTabs({
             diffStatsByPath={diffStatsByPath}
             onSelect={onSelectFileHeat}
             embedded
+            swarmRunID={boardSwarmRunID ?? undefined}
           />
         )}
       </div>
