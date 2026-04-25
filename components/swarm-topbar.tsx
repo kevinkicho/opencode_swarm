@@ -244,15 +244,10 @@ function RunAnchorChip({
   const minutesCap = meta.bounds?.minutesCap;
   const hasBounds = costCap != null || minutesCap != null;
   const visual = status ? STATUS_VISUAL[status] : null;
-
-  // Truncate the directive in the collapsed state but keep the newline
-  // structure readable in the popover. The popover is the authoritative
-  // surface; the chip is just the teaser.
-  const teaser = directive
-    ? directive.length > 56
-      ? directive.slice(0, 56).replace(/\s+$/, '') + '…'
-      : directive
-    : '(no directive)';
+  // Directive moved to the popover only (2026-04-24); collapsed-chip
+  // teaser was deemed redundant with the run-title text directly to
+  // the chip's left. The full directive renders inside the popover
+  // body below.
 
   return (
     <Popover
@@ -395,15 +390,21 @@ function RunAnchorChip({
     >
       <button
         className={clsx(
-          'fluent-btn gap-1.5 min-w-0 max-w-[320px] transition-opacity',
+          'fluent-btn gap-1.5 shrink-0 transition-opacity',
           stale && 'opacity-50 grayscale',
         )}
         title={
           stale
             ? 'backend unreachable — status shown is pre-disconnect cache'
-            : directive || meta.swarmRunID
+            : `${visual?.label ?? 'unknown'} · click for run details`
         }
       >
+        {/* Run-anchor chip is now status-only (2026-04-24): dot +
+            status label (live / stale / error / done / queued / etc.).
+            The directive teaser was demoted to the click-pin Popover —
+            it's the authoritative surface for full directive text +
+            pattern + caps + run-id. The chip's job is just "is this
+            run still going?" at a glance. */}
         <span
           className={clsx(
             'w-1.5 h-1.5 rounded-full shrink-0',
@@ -411,11 +412,13 @@ function RunAnchorChip({
           )}
           aria-label={visual ? `status: ${visual.label}` : 'status: unknown'}
         />
-        <span className="font-mono text-micro uppercase tracking-widest2 text-iris/80 shrink-0">
-          run
-        </span>
-        <span className="font-mono text-[10.5px] text-fog-300 truncate min-w-0">
-          {teaser}
+        <span
+          className={clsx(
+            'font-mono text-micro uppercase tracking-widest2 shrink-0',
+            visual?.tone ?? 'text-fog-500',
+          )}
+        >
+          {visual?.label ?? 'unknown'}
         </span>
         {hasBounds && (
           <span className="flex items-center gap-1 shrink-0 pl-1 border-l border-ink-700">
