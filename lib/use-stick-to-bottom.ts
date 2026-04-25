@@ -103,4 +103,30 @@ export function useStickToBottom<T extends HTMLElement>(
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
   }, [scrollRef, disengage, reengage]);
+
+  // 2026-04-25 — sticky-tail ResizeObserver. Without this, only the FIRST
+  // mount got the multi-pass snap; every subsequent content change ran a
+  // single sync snap inside useLayoutEffect that read scrollHeight before
+  // late SSE parts / lazy row heights had settled, so the user fell
+  // gradually behind. ResizeObserver fires whenever the container OR its
+  // first child resize, including async content growth that React's render
+  // cycle alone doesn't catch. Gated on stickRef.current so we never fight
+  // a user who has scrolled up — when they come back within reengagePx the
+  // onScroll handler above flips stickRef back true and the RO resumes
+  // snapping.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (!stickRef.current) return;
+      const cur = scrollRef.current;
+      if (!cur) return;
+      cur.scrollTop = cur.scrollHeight;
+    });
+    ro.observe(el);
+    // Children's size changes don't always trigger RO on the element
+    // itself — observe the first child so row-level reflow registers.
+    if (el.firstElementChild) ro.observe(el.firstElementChild as Element);
+    return () => ro.disconnect();
+  }, [scrollRef]);
 }
