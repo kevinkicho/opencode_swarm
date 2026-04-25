@@ -107,8 +107,17 @@ export function HeatRail({
   // gitignore-aware /tree endpoint. Default = list — keeps muscle
   // memory for users on the previous build.
   const [view, setView] = useState<'list' | 'tree' | 'all'>('list');
+  const [filter, setFilter] = useState('');
+
+  // Filter heat data based on the current filter string (case-insensitive)
+  const filteredHeat = useMemo(() => {
+    if (!filter) return heat;
+    const f = filter.toLowerCase();
+    return heat.filter((h) => h.path.toLowerCase().includes(f));
+  }, [heat, filter]);
 
   // Lazy-fetch the workspace file list for `all` mode. We only fire
+
   // when the user actually selects that view AND a swarmRunID is
   // available. The endpoint caches 30s server-side, so polling is
   // cheap; we cache the latest payload in component state and only
@@ -152,7 +161,7 @@ export function HeatRail({
   const body =
     view === 'tree' || view === 'all' ? (
       <HeatTreeView
-        heat={heat}
+        heat={filteredHeat}
         workspace={workspace}
         maxCount={maxCount}
         agentBySession={agentBySession}
@@ -164,12 +173,12 @@ export function HeatRail({
       />
     ) : (
       <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
-        {heat.length === 0 ? (
+        {filteredHeat.length === 0 ? (
           <li className="px-3 py-2 font-mono text-micro uppercase tracking-widest2 text-fog-700">
             no file edits yet
           </li>
         ) : (
-          heat.map((h) => (
+          filteredHeat.map((h) => (
             <HeatRow
               key={h.path}
               heat={h}
@@ -189,31 +198,40 @@ export function HeatRail({
       <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600 shrink-0">
         heat
       </span>
-      <span className="font-mono text-micro text-fog-700 tabular-nums">
-        {heat.length} files
-      </span>
-      <div className="ml-auto flex items-center gap-0.5">
-        <ViewToggleButton
-          active={view === 'list'}
-          onClick={() => setView('list')}
-          label="list"
-          tooltip="hot-first flat list"
-        />
-        <ViewToggleButton
-          active={view === 'tree'}
-          onClick={() => setView('tree')}
-          label="tree"
-          tooltip="grouped by directory · hot files only"
-        />
-        {swarmRunID && (
-          <ViewToggleButton
-            active={view === 'all'}
-            onClick={() => setView('all')}
-            label="all"
-            tooltip="full workspace tree · cold files muted (gitignore-aware)"
-          />
-        )}
-      </div>
+       <span className="font-mono text-micro text-fog-700 tabular-nums">
+         {heat.length} files
+       </span>
+       <div className="ml-auto flex items-center gap-2">
+         <input
+           type="text"
+           value={filter}
+           onChange={(e) => setFilter(e.target.value)}
+           placeholder="filter paths..."
+           className="h-4 w-24 px-1.5 font-mono text-micro text-fog-300 bg-ink-900 border border-ink-700 outline-none focus:border-fog-500 transition-colors placeholder:text-fog-700"
+         />
+         <div className="flex items-center gap-0.5">
+           <ViewToggleButton
+             active={view === 'list'}
+             onClick={() => setView('list')}
+             label="list"
+             tooltip="hot-first flat list"
+           />
+           <ViewToggleButton
+             active={view === 'tree'}
+             onClick={() => setView('tree')}
+             label="tree"
+             tooltip="grouped by directory · hot files only"
+           />
+           {swarmRunID && (
+             <ViewToggleButton
+               active={view === 'all'}
+               onClick={() => setView('all')}
+               label="all"
+               tooltip="full workspace tree · cold files muted (gitignore-aware)"
+             />
+           )}
+         </div>
+       </div>
     </div>
   );
 
