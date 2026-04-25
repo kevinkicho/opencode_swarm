@@ -29,6 +29,7 @@ import { finalizeRun } from './finalize-run';
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
 import { getBoardItem, insertBoardItem } from './blackboard/store';
+import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
 // Directories we never include in an auto-slice. .git / node_modules / build
@@ -355,6 +356,16 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   const dispatchDeadline = Date.now() + DISPATCH_DEADLINE_MS;
 
   while (Date.now() < dispatchDeadline) {
+    // Wall-clock cap (#85) — exit synth dispatch early if the run-
+    // level minutesCap is already exceeded (mapper waits already
+    // burned wall-clock time). Synth item stays on the board for
+    // forensics; the human can see the partial state.
+    if (isWallClockExpired(meta, meta.createdAt)) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — synth dispatch aborted before claim`,
+      );
+      return;
+    }
     const outcome = await tickCoordinator(swarmRunID);
     if (outcome.status === 'picked' && outcome.itemID === itemID) {
       console.log(

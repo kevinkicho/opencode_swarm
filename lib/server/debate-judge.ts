@@ -15,6 +15,7 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
+import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
 import type { OpencodeMessage } from '../opencode/types';
@@ -392,6 +393,15 @@ export async function runDebateJudgeKickoff(
   const I2_ADDRESSED_THRESHOLD = 0.3;
 
   for (let round = 1; round <= maxRounds; round += 1) {
+    // Wall-clock cap (#85) — log + abort cleanly if elapsed exceeds
+    // bounds.minutesCap. Partial debate (drafts + verdicts already
+    // produced) stays in opencode for the human's review.
+    if (isWallClockExpired(meta, meta.createdAt)) {
+      console.warn(
+        `[debate-judge] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at round ${round}/${maxRounds}`,
+      );
+      return;
+    }
     // 1. Wait for each generator to produce their round's draft.
     const deadline = Date.now() + ROUND_WAIT_MS;
     const drafts: Array<{ index: number; text: string | null }> = [];

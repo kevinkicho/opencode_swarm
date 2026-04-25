@@ -22,6 +22,7 @@ import { getSessionMessagesServer, postSessionMessageServer } from './opencode-s
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
+import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '../opencode/types';
 
 const WORKER_AGENT_NAME = 'worker';
@@ -334,6 +335,15 @@ export async function runCriticLoopKickoff(
 
   // Main loop.
   for (let iter = 1; iter <= maxIterations; iter += 1) {
+    // Wall-clock cap (#85). Stops new iterations from launching once
+    // bounds.minutesCap is exceeded. The current draft (last completed
+    // worker turn) stays in opencode regardless.
+    if (isWallClockExpired(meta, meta.createdAt)) {
+      console.warn(
+        `[critic-loop] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at iter ${iter}/${maxIterations}`,
+      );
+      return;
+    }
     // 1. Wait for the worker's draft.
     const workerDeadline = Date.now() + ITERATION_WAIT_MS;
     const workerWait = await waitForSessionIdle(

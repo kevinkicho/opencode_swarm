@@ -32,6 +32,7 @@ import { getSessionMessagesServer, postSessionMessageServer } from './opencode-s
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
+import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '../opencode/types';
 
 // Default auto-round count. 3 = R1 divergent + R2 exchange + R3 converge,
@@ -204,6 +205,16 @@ export async function runCouncilRounds(
   }
 
   for (let roundNum = 2; roundNum <= maxRounds; roundNum += 1) {
+    // Wall-clock cap (#85) — non-ticker patterns previously ignored
+    // bounds.minutesCap silently. Check at the top of each round so
+    // partial deliberation already produced stays in opencode for the
+    // human; we just stop initiating new rounds.
+    if (isWallClockExpired(meta, meta.createdAt)) {
+      console.warn(
+        `[council] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at round ${roundNum}/${maxRounds}`,
+      );
+      return;
+    }
     // PATTERN_DESIGN/council.md I4 — per-member wait runs in parallel
     // so each member gets the full ROUND_WAIT_MS. Sequential waits
     // would have shared the deadline (member 5 starts with member 1's

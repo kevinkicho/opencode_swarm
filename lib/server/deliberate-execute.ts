@@ -28,6 +28,7 @@ import { deleteBoardItems, insertBoardItem, listBoardItems } from './blackboard/
 import { latestTodosFrom, mintItemId } from './blackboard/planner';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { getRun } from './swarm-registry';
+import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '../opencode/types';
 
 const SYNTHESIS_WAIT_MS = 15 * 60 * 1000;
@@ -298,6 +299,16 @@ export async function runDeliberateExecuteKickoff(
     console.warn(
       `[deliberate-execute] run ${swarmRunID}: deliberation threw:`,
       err instanceof Error ? err.message : String(err),
+    );
+    return;
+  }
+
+  // Wall-clock cap (#85) — bail before paying for synthesis if deliberation
+  // already exhausted the budget. Council's own check exits the round loop
+  // but returns, so without this we'd continue into phase 2 anyway.
+  if (isWallClockExpired(meta, meta.createdAt)) {
+    console.warn(
+      `[deliberate-execute] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — synthesis aborted after deliberation`,
     );
     return;
   }
