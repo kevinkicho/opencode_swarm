@@ -34,6 +34,15 @@ interface MemberDraft {
   // For round ≥2: diff vs prior round of same member. Null otherwise.
   diffVsPrior: string | null;
   status: 'pending' | 'drafting' | 'completed' | 'errored';
+  // PATTERN_DESIGN/council.md I2 — per-member direction persistence.
+  // Token-jaccard between this member's draft in this round and their
+  // own draft in the prior round. Null on R1 or when either side is
+  // missing. >0.85 = stayed put; 0.5–0.85 = evolved; <0.5 = position
+  // shift. The convergence metric tracks council-wide consensus; this
+  // tracks each member's individual movement, which is a different
+  // signal — a member can shift sharply while the council still
+  // converges (everyone met in the middle).
+  selfJaccard: number | null;
 }
 
 interface RoundRow {
@@ -93,6 +102,19 @@ function tokenize(text: string): Set<string> {
   return out;
 }
 
+// Pairwise token-jaccard between two tokenized drafts. Used by I2 for
+// per-member persistence (a vs same member's prior round). Distinct
+// from aggregateJaccard's pairwise mean — that's a council-wide
+// consensus metric, this is a per-member trajectory.
+function pairJaccard(a: Set<string>, b: Set<string>): number | null {
+  if (a.size === 0 && b.size === 0) return null;
+  let intersect = 0;
+  for (const t of a) if (b.has(t)) intersect += 1;
+  const union = a.size + b.size - intersect;
+  if (union === 0) return null;
+  return intersect / union;
+}
+
 // Jaccard similarity across a set of tokenized drafts. Returns mean of
 // pairwise jaccards — captures "how similar is the council as a whole"
 // rather than any one pair. Symmetric + order-invariant. Range [0, 1].
@@ -130,6 +152,29 @@ function convergenceLabel(value: number | null): string {
   return 'low';
 }
 
+// PATTERN_DESIGN/council.md I2 — stance bucket from self-jaccard.
+// Three buckets matched to the convergence chip's tone palette so
+// the eye groups them intuitively: stable = mint (no movement),
+// evolved = fog-muted (some refinement), shifted = amber (strong
+// repositioning). Null cases (R1 / pending) get fog and an empty glyph.
+type StanceBucket = 'stable' | 'evolved' | 'shifted' | null;
+function stanceBucket(j: number | null): StanceBucket {
+  if (j === null) return null;
+  if (j >= 0.85) return 'stable';
+  if (j >= 0.5) return 'evolved';
+  return 'shifted';
+}
+const STANCE_GLYPH: Record<NonNullable<StanceBucket>, string> = {
+  stable: '=',
+  evolved: '~',
+  shifted: '↻',
+};
+const STANCE_TONE: Record<NonNullable<StanceBucket>, string> = {
+  stable: 'text-mint/70',
+  evolved: 'text-fog-700',
+  shifted: 'text-amber',
+};
+
 export function CouncilRail({
   slots,
   embedded = false,
@@ -150,19 +195,40 @@ export function CouncilRail({
 
     const rows: RoundRow[] = [];
     for (let r = 0; r < maxRounds; r += 1) {
-      const members: MemberDraft[] = byMember.map((memberDrafts, mi) => {
+      const members: MemberDraft[] = byMember.map((memberDrafts) => {
         const msg = memberDrafts[r];
-        if (!msg) return { lines: 0, text: '', diffVsPrior: null, status: 'pending' };
+        if (!msg) {
+          return {
+            lines: 0,
+            text: '',
+            diffVsPrior: null,
+            status: 'pending',
+            selfJaccard: null,
+          };
+        }
         const text = turnText(msg);
         const lines = countLines(text);
         const prior = r > 0 ? memberDrafts[r - 1] : null;
-        const diffVsPrior = prior ? diffSummary(turnText(prior), text) : null;
+        const priorText = prior ? turnText(prior) : '';
+        const diffVsPrior = prior ? diffSummary(priorText, text) : null;
         const status: MemberDraft['status'] = msg.info.error
           ? 'errored'
           : msg.info.time.completed
             ? 'completed'
             : 'drafting';
-        return { lines, text, diffVsPrior, status };
+        // Self-jaccard only meaningful when both rounds completed
+        // and both have content. Pending/drafting members get null.
+        let selfJaccard: number | null = null;
+        if (
+          prior &&
+          status === 'completed' &&
+          prior.info.time.completed &&
+          priorText &&
+          text
+        ) {
+          selfJaccard = pairJaccard(tokenize(priorText), tokenize(text));
+        }
+        return { lines, text, diffVsPrior, status, selfJaccard };
       });
 
       const completedTexts = members
@@ -316,33 +382,44 @@ function CouncilRowEl({
       }
     >
       <span className="text-fog-400 tabular-nums">R{row.round}</span>
-      {visible.map((m, mi) => (
-        <span
-          key={mi}
-          className={clsx(
-            'tabular-nums text-[9.5px]',
-            m.status === 'pending'
-              ? 'text-fog-800'
-              : m.status === 'drafting'
-                ? 'text-fog-300 animate-pulse'
-                : m.status === 'errored'
-                  ? 'text-rust'
-                  : 'text-fog-400',
-          )}
-          title={
-            m.diffVsPrior
-              ? `member ${mi + 1} · ${m.lines}L · ${m.diffVsPrior} vs R${row.round - 1}`
-              : m.lines > 0
-                ? `member ${mi + 1} · ${m.lines}L`
-                : 'pending'
-          }
-        >
-          {m.lines > 0 ? `${compactNum(m.lines)}L` : '—'}
-          {m.diffVsPrior && m.diffVsPrior !== 'no change' && (
-            <span className="ml-1 text-fog-700 text-[8px]">{m.diffVsPrior}</span>
-          )}
-        </span>
-      ))}
+      {visible.map((m, mi) => {
+        const stance = stanceBucket(m.selfJaccard);
+        const jaccardPct =
+          m.selfJaccard !== null ? `${Math.round(m.selfJaccard * 100)}%` : null;
+        const stanceTitle =
+          stance && jaccardPct
+            ? ` · stance: ${stance} (${jaccardPct} same as R${row.round - 1})`
+            : '';
+        return (
+          <span
+            key={mi}
+            className={clsx(
+              'tabular-nums text-[9.5px]',
+              m.status === 'pending'
+                ? 'text-fog-800'
+                : m.status === 'drafting'
+                  ? 'text-fog-300 animate-pulse'
+                  : m.status === 'errored'
+                    ? 'text-rust'
+                    : 'text-fog-400',
+            )}
+            title={
+              m.diffVsPrior
+                ? `member ${mi + 1} · ${m.lines}L · ${m.diffVsPrior} vs R${row.round - 1}${stanceTitle}`
+                : m.lines > 0
+                  ? `member ${mi + 1} · ${m.lines}L${stanceTitle}`
+                  : 'pending'
+            }
+          >
+            {m.lines > 0 ? `${compactNum(m.lines)}L` : '—'}
+            {stance && (
+              <span className={clsx('ml-1 text-[8px]', STANCE_TONE[stance])}>
+                {STANCE_GLYPH[stance]}
+              </span>
+            )}
+          </span>
+        );
+      })}
       {overflow > 0 && (
         <span
           className="font-mono text-[9px] text-fog-700 text-center"
