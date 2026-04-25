@@ -128,7 +128,7 @@ would have caught the silent failure at t+90s.
 | I1 | improvement | SHIPPED | (next commit) | — | MAX_ORCHESTRATOR_REPLANS=6 cap enforced at attemptTierEscalation + runPeriodicSweep entry via orchestratorReplanCapHit (counts plan_revisions rows). Stop reason 'replan-loop-exhausted' added to StopReason union; RunHealthChip surfaces it as red dot with intervention message |
 | I2 | improvement | SHIPPED | (next commit) | — | plan_revisions SQLite table + computeDelta token-jaccard ≥ 0.6 fuzzy match + GET /api/swarm/run/:id/strategy; logged from runPlannerSweep so all sweep paths (initial, attemptReSweep, runPeriodicSweep) feed it |
 | I3 | improvement | SHIPPED | (next commit) | — | POST /api/swarm/run/:id/replan returns 202 + fires runPlannerSweep with overwrite+includeBoardContext in the background; strategy rail header has a `↻ replan` button with idle/queueing/queued/failed states |
-| I4 | improvement | PROPOSED | — | — | shared with POSTMORTEMS/2026-04-24 F1 |
+| I4 | improvement | SHIPPED | d824bf4 | run_modn6mrg_hxvssz | implemented as F1 dispatch watchdog inside `waitForSessionIdle`: WARN at SILENT_WARN_MS=90s of no-new-parts, abort at SILENT_ERROR_MS=240s with reason='silent'. Fires across all patterns including the orchestrator's planner sweep on session 0. Verified: 1 WARN + 2 aborts on real silent sessions during the live multi-pattern test (POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md). |
 
 ## 6 · Cross-references
 
