@@ -66,8 +66,34 @@ export function roleNamesFromMeta(
       });
       break;
     }
-    // council / map-reduce / deliberate-execute / none:
-    // no pinned role at the pattern level. Returns empty map.
+    // 2026-04-24: extend with display labels for council / map-reduce /
+    // deliberate-execute too. The role isn't enforced (no preferredRole
+    // gating, no per-session prompt diff), but the user wants the lane
+    // header to show what each session IS doing in the run, not just the
+    // provider. Labels are DISPLAY-ONLY here.
+    case 'council': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(ownerIdForSession(sid), `member-${i + 1}`);
+      });
+      break;
+    }
+    case 'map-reduce': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(ownerIdForSession(sid), `mapper-${i + 1}`);
+      });
+      break;
+    }
+    case 'deliberate-execute': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(
+          ownerIdForSession(sid),
+          i === 0 ? 'synthesizer' : `member-${i + 1}`,
+        );
+      });
+      break;
+    }
+    // 'none' has no swarm-pattern roles → empty map (caller falls back
+    // to the model name on the chip).
   }
   return out;
 }
@@ -110,6 +136,24 @@ export function roleNamesBySessionID(
       // See roleNamesFromMeta above for rationale. DISPLAY-ONLY labels.
       meta.sessionIDs.forEach((sid, i) => {
         out.set(sid, i === 0 ? 'planner' : `worker-${i}`);
+      });
+      break;
+    }
+    case 'council': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(sid, `member-${i + 1}`);
+      });
+      break;
+    }
+    case 'map-reduce': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(sid, `mapper-${i + 1}`);
+      });
+      break;
+    }
+    case 'deliberate-execute': {
+      meta.sessionIDs.forEach((sid, i) => {
+        out.set(sid, i === 0 ? 'synthesizer' : `member-${i + 1}`);
       });
       break;
     }

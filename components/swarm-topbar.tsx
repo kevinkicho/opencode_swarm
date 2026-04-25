@@ -97,10 +97,37 @@ export function SwarmTopbar({
         {/* Run identity + status is the nav anchor now. Sessions
             dropdown + duplicate runs dropdown were removed 2026-04-23 —
             the bottombar has the canonical runs picker, and users
-            navigate by run, not by individual opencode session. */}
-        <span className="font-mono text-[12.5px] text-fog-300 truncate">
-          {run.title}
-        </span>
+            navigate by run, not by individual opencode session.
+            2026-04-24: hard-cap title width to 240 px and route the
+            full text through a click-to-pin Popover so a 200-char
+            directive doesn't dominate the topbar. The
+            `RunAnchorChip` to the right has the authoritative
+            full-text view; this title is just an inline teaser. */}
+        <Popover
+          side="bottom"
+          align="start"
+          content={() => (
+            <div className="w-[420px] px-3 py-2 space-y-1.5">
+              <div className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
+                run title / directive
+              </div>
+              <div className="text-[11.5px] text-fog-200 leading-snug whitespace-pre-wrap break-words">
+                {run.title || '(no title)'}
+              </div>
+              <div className="hairline-t pt-1.5 font-mono text-[9.5px] text-fog-700">
+                source set at run launch · click outside to close
+              </div>
+            </div>
+          )}
+        >
+          <button
+            type="button"
+            className="font-mono text-[12.5px] text-fog-300 truncate max-w-[240px] cursor-pointer hover:text-fog-100 text-left"
+            title="click for full directive"
+          >
+            {run.title}
+          </button>
+        </Popover>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} stale={backendStale} />}
         {swarmRunMeta && (
           <RunHealthChip

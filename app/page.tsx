@@ -837,6 +837,7 @@ function PageBody({
               onSelectAgent={selectAgent}
               todos={runPlan}
               onJumpToTodo={jumpToTodo}
+              roleNames={boardRoleNames}
             />
             </ProfileBoundary>
           ) : runView === 'board' ? (

@@ -24,9 +24,13 @@
 // The startup is idempotent — repeated calls (HMR reload) don't
 // stack timers.
 
-import { existsSync, readdirSync, statSync, openSync, closeSync, readSync } from 'node:fs';
-import { homedir } from 'node:os';
-import path from 'node:path';
+// Bare module specifiers (not node:-prefixed) — webpack's default
+// loader chain doesn't resolve `node:` URIs in dev mode, even though
+// Node itself accepts both. The `node:` form would block any API
+// route that transitively imports this file.
+import { existsSync, readdirSync, statSync, openSync, closeSync, readSync } from 'fs';
+import { homedir } from 'os';
+import path from 'path';
 
 // Default log dir matches the documented path on the user's host —
 // see memory/reference_opencode_4097_launcher.md. Override via env

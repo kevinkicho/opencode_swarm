@@ -214,9 +214,30 @@ function AgentRow({
           </span>
         </Tooltip>
 
-        <span className="text-[13px] text-fog-100 truncate flex-1 min-w-0 cursor-default">
+        <span className="text-[13px] text-fog-100 truncate min-w-0 cursor-default">
           {agent.name}
         </span>
+
+        {/* Status text chip — 2026-04-24, complements the colored dot
+            with a readable label. The dot already conveys severity via
+            color (mint=idle, molten=working, amber=waiting, rust=error,
+            etc.); the chip lets a glancer answer "what is this agent
+            DOING right now?" without parsing color → state. Sits in
+            the same flex row so the layout collapses gracefully on
+            narrow widths via truncate on the name. */}
+        <span
+          className={clsx(
+            'shrink-0 inline-flex items-center h-4 px-1.5 rounded-sm',
+            'font-mono text-[9.5px] uppercase tracking-widest2 hairline',
+            st.color,
+            'bg-ink-900/70',
+          )}
+          title={`agent status: ${st.label}${agent.focus ? ` — ${agent.focus}` : ''}`}
+        >
+          {st.label}
+        </span>
+
+        <span className="flex-1 min-w-0" />
 
         {activeTodos.length > 0 && (
           <ActiveTodoChip

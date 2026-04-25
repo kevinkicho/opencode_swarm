@@ -158,6 +158,12 @@ first.
 | 6.3 | Migrate `useSessionDiff` | 1h | PROPOSED |
 | 6.4 | Per-session gating (don't fetch hidden sessions) | 2h | PROPOSED |
 | 6.5 | `/api/swarm/run/:id/snapshot` aggregator endpoint | 4h | PROPOSED |
+| 6.6 | **Page load latency** — 15s blank screen + 30s before board data renders (observed 2026-04-24 against `run_modm7vsw_uxxy6b`). Diagnose: which fetch is the long pole — `/api/swarm/run` snapshot, per-session messages fan-out, or board SSE handshake? Profile cold load + identify the blocking waterfall. Likely fixable by 6.5 (snapshot aggregator) collapsing N round-trips into 1. | 3h | PROPOSED |
+| 6.7 | **Auto-stick-to-bottom on entry across ALL panels** — landing on a run view should snap to the latest items everywhere (board rail, plan rail, contracts, iterations, debate, strategy, etc.), not just the timeline. As items grow during the run, the view should follow unless the user has scrolled up (48px threshold matches timeline). Today only `swarm-timeline.tsx` has this behavior; the per-pattern tabs and BoardRail render top-anchored. Per user 2026-04-24 — "user should be directed to the bottom and stick at the bottom so growing items as run proceeds will be displayed." | 2h | PROPOSED |
+| 6.8 | **`latest ↓` button visibility audit** — user reports the button is no longer visible. Root cause: it's distance-gated at 200px-from-bottom and only renders inside `swarm-timeline.tsx` + `turn-cards-view.tsx`, NOT inside any of the new pattern tabs (contracts/iterations/debate/roles/map/council/phases/strategy/heat). Either lift the button to a shared scroll-container wrapper OR add it per-tab. Pairs with 6.7. | 1h | PROPOSED |
+| 6.9 | **Message inspector right-panel empty state** — user reports the inspector shows no information. Investigate: (1) Is the Drawer opening but rendering empty body? (Possible if `msg.body` is empty for the selected message — MarkdownBody renders nothing on empty input; we should fall back to the part's tool input/output preview.) (2) Are the new pattern tabs (contracts/strategy/iterations/etc.) failing to route row-click → inspector at all? Currently only timeline-nodes + roster + heat-rows wire into focusMessage/selectAgent/selectFileHeat; clicking a strategy row, contracts row, iterations row produces nothing. | 2h | PROPOSED |
+| 6.10 | **F7 preflight is blind to opencode's assembled context** — F7 sizes only the work-prompt text we POST (~1K), not the full conversation history + tool definitions opencode assembles before calling the model. Workers in `run_modm7vsw_uxxy6b` cumulatively hit 128K (gemma4's full window) without F7 ever logging a WARN or refusal. Fix options: (a) read `/session/:id`'s last-message tokens via opencode API and warn when next-turn estimate ≥ 60% / 85% of model limit; (b) sum past assistant `tokens.input` per session and project forward. Pairs with F1 watchdog so we have BOTH a "model can't fit any more" signal AND a "model went silent" signal. Per user 2026-04-24 — workers consumed 80-130k each in 4 rejected turns. | 2h | PROPOSED |
+| 6.11 | **Lane chip: show role, not provider** — replace the inline `ProviderBadge` in the timeline lane header with a role chip (planner / worker-N / orchestrator / judge / generator-N / critic / member-N / mapper-N / synthesizer) sourced from `roleNames` map. Provider info stays in the lane's hover tooltip. Already SHIPPED in next commit; queueing for cross-pattern validation against fresh runs. | — | **SHIPPED** (pending validation) |
 
 ---
 
@@ -171,8 +177,8 @@ first.
 | 3 — Postmortem fixes | 6 | ~10h |
 | 4 — Pattern mechanics | ~20 | ~50h |
 | 5 — Ad-hoc UI | 2 | ~5h |
-| 6 — Perf migration | 5 | ~10h |
-| **Total** | **~49** | **~107 hours** |
+| 6 — Perf + UX | 9 | ~18h |
+| **Total** | **~53** | **~115 hours** |
 
 That's roughly 2.5-3 weeks of focused work. We can ship in increments — every Phase-0 fix and every Phase-1 tab is independently mergeable.
 

@@ -79,6 +79,7 @@ export function SwarmTimeline({
   onSelectAgent,
   todos,
   onJumpToTodo,
+  roleNames,
 }: {
   agents: Agent[];
   messages: AgentMessage[];
@@ -90,6 +91,13 @@ export function SwarmTimeline({
   onSelectAgent: (id: string) => void;
   todos: TodoItem[];
   onJumpToTodo: (todoId: string) => void;
+  // Per-pattern role labels keyed by `ownerIdForSession` (matches
+  // agent.id shape). When set, each lane header shows the role chip
+  // (planner / worker-N / orchestrator / judge / member-N / mapper-N /
+  // synthesizer / critic) instead of the provider name. Empty map →
+  // falls back to provider chip. See lib/blackboard/roles.ts:
+  // roleNamesFromMeta for the per-pattern derivation.
+  roleNames?: ReadonlyMap<string, string>;
 }) {
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
@@ -105,6 +113,17 @@ export function SwarmTimeline({
   // only when the user was already near the bottom.
   const firstIdRef = useRef<string | null>(null);
   const lastIdRef = useRef<string | null>(null);
+  // Mount-time stamp for the early-load auto-stick window. For the first
+  // STICK_GRACE_MS after mount we auto-snap to bottom on every message
+  // change regardless of distance — covers the "messages stream in over
+  // time after page load" case where a strict 48-px threshold would
+  // disengage the moment the first chunk lands. After the grace window,
+  // the strict follow-only-if-near-bottom logic takes over so a
+  // user-initiated scroll-up isn't fought.
+  const mountTsRef = useRef<number>(0);
+  if (mountTsRef.current === 0) mountTsRef.current = Date.now();
+  const STICK_GRACE_MS = 8000;
+  const STICK_DISTANCE_PX = 200;
 
   const agentIndex = useMemo(() => {
     const m = new Map<string, number>();
@@ -195,26 +214,39 @@ export function SwarmTimeline({
       // Two-phase snap: scrollTop=scrollHeight first (synchronous, before
       // paint), then rAF a second pass so any content the React commit is
       // still settling (sticky headers, lazy rows) can't leave us a few
-      // px short of truly-bottom. Needed for large runs where the first
-      // layout pass underreports scrollHeight.
-      el.scrollTop = el.scrollHeight;
-      requestAnimationFrame(() => {
-        if (scrollRef.current === el) el.scrollTop = el.scrollHeight;
-      });
+      // px short of truly-bottom. Plus a settled-layout pass ~120ms later
+      // for the "messages stream in chunks" case where row heights settle
+      // after the initial commit.
+      const snap = () => {
+        const cur = scrollRef.current;
+        if (cur) cur.scrollTop = cur.scrollHeight;
+      };
+      snap();
+      requestAnimationFrame(snap);
+      const t1 = window.setTimeout(snap, 120);
+      const t2 = window.setTimeout(snap, 400);
       firstIdRef.current = firstId;
       lastIdRef.current = lastId;
-      return;
+      return () => {
+        window.clearTimeout(t1);
+        window.clearTimeout(t2);
+      };
     }
 
     if (lastId !== lastIdRef.current) {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      // Follow only when actually at bottom (within the floating-button
-      // clearance). Anything looser yanks the view when the user is
-      // mid-read 200 px up.
-      if (distance < 48) el.scrollTop = el.scrollHeight;
+      // During the grace window after mount, follow regardless of
+      // distance — keeps the user pinned to the latest while the page
+      // is still receiving its initial burst. After the window closes,
+      // require near-bottom (200 px tolerance, more generous than the
+      // earlier 48 px which spuriously disengaged on tall rows).
+      const inGraceWindow = Date.now() - mountTsRef.current < STICK_GRACE_MS;
+      if (inGraceWindow || distance < STICK_DISTANCE_PX) {
+        el.scrollTop = el.scrollHeight;
+      }
       lastIdRef.current = lastId;
     }
-  }, [messages, totalHeight]);
+  }, [messages, totalHeight, STICK_GRACE_MS, STICK_DISTANCE_PX]);
 
   return (
     <section className="relative flex-1 flex flex-col min-w-0 min-h-0 bg-ink-800">
@@ -438,7 +470,33 @@ export function SwarmTimeline({
                             {a.focus}
                           </span>
                         )}
-                        <ProviderBadge provider={a.model.provider} size="sm" clickable />
+                        {/* Role chip 2026-04-24: shows the session's role
+                            in the run (planner / worker-N / judge /
+                            generator-N / critic / orchestrator / member-N /
+                            mapper-N / synthesizer) when the pattern
+                            assigns one. Falls back to the provider name
+                            for `none` pattern or unmapped sessions. The
+                            full provider label still lives in the lane's
+                            hover tooltip above (line 362). */}
+                        {(() => {
+                          const role = roleNames?.get(a.id);
+                          if (role) {
+                            return (
+                              <span
+                                className={clsx(
+                                  'shrink-0 inline-flex items-center h-4 px-1.5 rounded-sm',
+                                  'font-mono text-[9.5px] uppercase tracking-widest2 hairline',
+                                  accentText[a.accent],
+                                  'bg-ink-900/70',
+                                )}
+                                title={`role: ${role} · model: ${a.model.label} (${a.model.provider})`}
+                              >
+                                {role}
+                              </span>
+                            );
+                          }
+                          return <ProviderBadge provider={a.model.provider} size="sm" clickable />;
+                        })()}
                       </div>
                       <LaneMeter
                         throughput={throughput}

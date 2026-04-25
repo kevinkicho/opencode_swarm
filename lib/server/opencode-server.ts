@@ -19,6 +19,17 @@ import { opencodeFetch } from '../opencode/client';
 import type { OpencodeSession } from '../opencode/client';
 import type { OpencodeMessage } from '../opencode/types';
 import { estimateTokens, getModelContextLimit } from './opencode-models';
+import { startOpencodeLogTail } from './opencode-log-tail';
+
+// POSTMORTEMS/2026-04-24 F2 — kick the opencode log tail on first
+// import of this module. instrumentation.ts was the textbook home
+// for this but Next.js 14's instrumentationHook pulls instrumentation
+// into every route's webpack closure, including Edge ones, where
+// fs/os imports fail to resolve. Self-starting from here means the
+// tail comes alive the moment any API route touches opencode (which
+// is guaranteed before any swarm activity), without breaking the
+// build for unrelated routes. Idempotent — second call is a no-op.
+startOpencodeLogTail();
 
 // Preflight thresholds — POSTMORTEMS/2026-04-24 F7. Refuse dispatch
 // when the prompt's token estimate exceeds 85% of the model's

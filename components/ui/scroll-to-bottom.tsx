@@ -12,7 +12,12 @@ import { useEffect, useState, type RefObject } from 'react';
 // Reusable across timeline / cards / any future main-view surface — the
 // scroll container is the only axis of variation, so a ref is enough.
 
-const THRESHOLD_PX = 200;
+// Lowered from 200 → 80 (2026-04-24): users reported the button
+// frequently invisible even when there were dozens of rows below the
+// viewport but they were "near" the bottom. 80 px (~2 row heights)
+// is sensitive enough to surface the affordance whenever there's any
+// useful scroll-down to do, without flickering on micro-scrolls.
+const THRESHOLD_PX = 80;
 
 export function ScrollToBottomButton({
   scrollRef,
@@ -54,19 +59,22 @@ export function ScrollToBottomButton({
   const onClick = () => {
     const el = scrollRef.current;
     if (!el) return;
-    // Two-phase synchronous snap — matches swarm-timeline's first-render
-    // anchor at swarm-timeline.tsx:200-203. Smooth-scroll animates over
-    // ~1s; during the animation new SSE events grow scrollHeight beyond
-    // the original target, so the user lands 100-300px short of the new
-    // bottom. Setting scrollTop directly twice (once now, once after
-    // rAF) catches any layout the React commit is still settling.
-    // Pairs with the timeline's existing 48px sticky-to-bottom check —
-    // after this snap, subsequent SSE events auto-follow because we're
-    // demonstrably at bottom.
-    el.scrollTop = el.scrollHeight;
-    requestAnimationFrame(() => {
-      if (scrollRef.current === el) el.scrollTop = el.scrollHeight;
-    });
+    // 4-phase snap — synchronous scrollTop, then rAF, then two timed
+    // passes. Catches every common case where scrollHeight grows
+    // between the snap and full layout settling: incremental SSE
+    // arrivals during the animation, lazy row heights resolving after
+    // commit, and async fetches that append more rows ~100-400 ms
+    // later. Without the late-pass timeouts, "click latest" lands
+    // visibly short of bottom on long timelines that are still
+    // streaming in. (User report 2026-04-24.)
+    const snap = () => {
+      const cur = scrollRef.current;
+      if (cur) cur.scrollTop = cur.scrollHeight;
+    };
+    snap();
+    requestAnimationFrame(snap);
+    window.setTimeout(snap, 120);
+    window.setTimeout(snap, 400);
   };
 
   return (
