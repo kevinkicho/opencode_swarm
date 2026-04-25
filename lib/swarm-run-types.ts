@@ -207,7 +207,7 @@ export interface SwarmRunBounds {
   // "effectively unbounded" (no sentinel value; just pick 10000+).
   minutesCap?: number;
   // Max number of successful commits (todos transitioned to done) before
-  // the ticker auto-stops with stopReason='hard-cap'. Default 200.
+  // the ticker auto-stops with stopReason='commits-cap'. Default 200.
   // Criteria status-transitions via auditor don't count toward this —
   // only worker-completed todos. Stage 2 declared-roles alignment.
   commitsCap?: number;

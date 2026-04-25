@@ -568,12 +568,12 @@ function TickerChip({ ticker }: { ticker: LiveTicker }) {
     );
   }
 
-  const reasonLabel =
-    state.stopReason === 'auto-idle'
-      ? 'auto-idle'
-      : state.stopReason === 'opencode-frozen'
-        ? 'opencode-frozen'
-        : 'manual';
+  // #65 Phase A — show the granular cap reason (wall-clock / commits /
+  // todos) instead of falling through to a generic "manual" label that
+  // hides why the ticker actually stopped. Cap reasons fire only when
+  // the run hit a configured ceiling, so surfacing which one helps the
+  // operator decide whether to bump the cap or accept the stop.
+  const reasonLabel = state.stopReason ?? 'manual';
   return (
     <div
       className="h-6 hairline-t px-3 flex items-center gap-2 shrink-0 bg-ink-900/30"

@@ -169,11 +169,16 @@ export type StopReason =
   | 'manual'
   | 'opencode-frozen'
   | 'zen-rate-limit'
-  // Stage 2 hard-cap enforcement (wall-clock / commits / todos). The
-  // ollama-swarm spec's "hard caps fire whichever first" — a ceiling
-  // above which the run stops regardless of what the auditor or
-  // planner say. Absent per-run overrides default to 8h / 200 / 300.
-  | 'hard-cap'
+  // Stage 2 hard-cap enforcement (#65 Phase A) — three granular reasons
+  // replace the old generic 'hard-cap'. The ollama-swarm spec's "hard
+  // caps fire whichever first" — a ceiling above which the run stops
+  // regardless of what the auditor or planner say. Absent per-run
+  // overrides default to 8h / 200 / 300. Granular reasons let the
+  // run-health banner say WHICH ceiling was hit without re-deriving
+  // it from logs.
+  | 'wall-clock-cap'
+  | 'commits-cap'
+  | 'todos-cap'
   // PATTERN_DESIGN/orchestrator-worker.md I1. The orchestrator pattern
   // can loop forever if every re-plan sweep proposes work that workers
   // stale out (file contention, complexity underestimation). This cap
@@ -910,17 +915,17 @@ async function checkHardCaps(state: TickerState): Promise<boolean> {
   const elapsedMinutes = elapsedMs / 60_000;
   if (elapsedMinutes >= minutesCap) {
     console.log(
-      `[board/auto-ticker] ${state.swarmRunID}: hard-cap breached — wall-clock ${Math.round(elapsedMinutes)}min >= ${minutesCap}min. Stopping.`,
+      `[board/auto-ticker] ${state.swarmRunID}: wall-clock cap breached — ${Math.round(elapsedMinutes)}min >= ${minutesCap}min. Stopping.`,
     );
-    stopAutoTicker(state.swarmRunID, 'hard-cap');
+    stopAutoTicker(state.swarmRunID, 'wall-clock-cap');
     return true;
   }
 
   if (state.totalCommits >= commitsCap) {
     console.log(
-      `[board/auto-ticker] ${state.swarmRunID}: hard-cap breached — commits ${state.totalCommits} >= ${commitsCap}. Stopping.`,
+      `[board/auto-ticker] ${state.swarmRunID}: commits cap breached — ${state.totalCommits} >= ${commitsCap}. Stopping.`,
     );
-    stopAutoTicker(state.swarmRunID, 'hard-cap');
+    stopAutoTicker(state.swarmRunID, 'commits-cap');
     return true;
   }
 
@@ -931,9 +936,9 @@ async function checkHardCaps(state: TickerState): Promise<boolean> {
   ).length;
   if (todoCount >= todosCap) {
     console.log(
-      `[board/auto-ticker] ${state.swarmRunID}: hard-cap breached — todos authored ${todoCount} >= ${todosCap}. Stopping.`,
+      `[board/auto-ticker] ${state.swarmRunID}: todos cap breached — ${todoCount} >= ${todosCap} authored. Stopping.`,
     );
-    stopAutoTicker(state.swarmRunID, 'hard-cap');
+    stopAutoTicker(state.swarmRunID, 'todos-cap');
     return true;
   }
 
