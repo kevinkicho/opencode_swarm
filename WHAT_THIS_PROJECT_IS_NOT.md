@@ -146,6 +146,19 @@ There is no auth UI. The `kk` chip in the topbar is a placeholder. There is no r
 
 ---
 
+## Not a generic opencode wrapper
+
+We talk to **one** opencode daemon (`172.24.32.1:4097`) belonging to **one** user, against **one** Anthropic / Zen / ollama account. Run isolation is by workspace path, not by tenant. We do not support:
+
+- Multi-tenant opencode instances (one daemon serving several users)
+- Per-turn diff retrieval (`/session/.../diff?messageID=` is silently ignored — we use `patch` part file lists for per-turn granularity instead)
+- Synchronous prompt submission (we use `prompt_async` exclusively so the route returns immediately; SSE surfaces progress)
+- Permission-gated tool execution (the user runs opencode allow-all per `memory/feedback_opencode_permissions.md`; the `/permission` endpoint is plumbed but unused)
+
+**Why:** every contract we make with opencode is implicit (it's not their public API; we're driving the internal HTTP surface). Generalizing those contracts would multiply the silent-failure surface — see `docs/opencode-contracts.md` and `docs/POSTMORTEMS/` for the failure modes we've already paid for. Stay narrow.
+
+---
+
 ## Not a "show inspector" footer button
 
 The inspector opens automatically when you click a timeline node or agent row. We **removed the footer toggle button** because:

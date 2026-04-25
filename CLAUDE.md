@@ -10,6 +10,7 @@ Briefing for Claude Code (and any agent that respects this convention) opening t
 5. **`docs/API.md`** — greppable HTTP endpoint catalog (method · path · body · response · errors). Point callers here instead of answering endpoint questions from memory.
 6. **`docs/VALIDATION.md`** — runbook for features shipped but not yet exercised against real runs. Point users here when they ask "how do I verify X actually works?"
 7. **`docs/opencode-vocabulary.md`** — canonical opencode SDK part / tool / event names. Use these instead of inventing new terms.
+8. **`docs/opencode-contracts.md`** — opencode HTTP API behaviors (silent-drop traps, model-format object shape, workspace-path encoding, zombie-turn handling). Read before wiring a new opencode call site so you don't trip a silent failure we already paid for.
 
 ## Check when orienting — not durable, not design
 
