@@ -89,7 +89,7 @@ postmortem. Each has a validation probe documented in §3.
 | 3.1 | F1 | Dispatch watchdog — silent-turn detector in coordinator.ts | 2h | **SHIPPED** (next commit) | P0 — biggest single observability win |
 | 3.2 | F2 | Tail opencode log into dev console | 2h | **SHIPPED** (next commit) | P0 |
 | 3.3 | F4 | Ollama `/api/ps` liveness probe in waitForSessionIdle | 1h | **SHIPPED** (next commit) | P1 |
-| 3.4 | F5 | Session-level error read (after F3 enables debug logging) | 1h | PROPOSED | P1, blocked on 0.6 |
+| 3.4 | F5 | Session-level error read (after F3 enables debug logging) | 1h | **WONTFIX** (2026-04-25) — F3 unblock investigation showed no session-level error field exists on `GET /session/:id` (only `{id, slug, projectID, directory, title, version, summary, time}`); all errors in DEBUG logs are either HTTP transport noise (`service=server error= failed`, empty content) or session.processor errors tied to a `messageID` (already surfaced via per-message `info.error`). Coverage is complete via that path + F1 watchdog + F2 log tail. See POSTMORTEMS F5 row for the evidence. | — |
 | 3.5 | F7 | Preflight prompt-size estimate | 1h | **SHIPPED** (next commit) | P2 |
 | 3.6 | F8 | Run-health banner in topbar | 2h | **SHIPPED** (next commit) | P3 — UI work |
 
