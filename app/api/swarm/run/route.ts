@@ -31,6 +31,7 @@ import { runCouncilRounds } from '@/lib/server/council';
 import {
   buildScopedDirective,
   deriveSlices,
+  detectScopeImbalance,
   runMapReduceSynthesis,
 } from '@/lib/server/map-reduce';
 import { runOrchestratorWorkerKickoff } from '@/lib/server/orchestrator-worker';
@@ -673,6 +674,15 @@ export async function POST(req: NextRequest): Promise<Response> {
       directives = sessions.map((_, i) =>
         buildScopedDirective(directive, slices[i], i, sessions.length),
       );
+      // Fire-and-forget: walks the slice dirs to detect >5x imbalance.
+      // Non-blocking — kickoff doesn't wait, the WARN just lands in logs
+      // a few hundred ms later for the operator to notice.
+      detectScopeImbalance(parsed.workspace, slices).catch((err) => {
+        console.warn(
+          `[swarm/run] scope imbalance check failed:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      });
     } else {
       directives = sessions.map(() => directive);
     }

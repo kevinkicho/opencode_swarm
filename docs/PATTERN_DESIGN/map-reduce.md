@@ -142,7 +142,7 @@ kind.
 |---|---|---|---|---|---|
 | map-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=map-reduce; MAP per-session rows + REDUCE synthesize row + phase-transition banner; reads slots + board.items |
 | I1 | improvement | PROPOSED | — | — | new critic ~4 h |
-| I2 | improvement | PROPOSED | — | — | detector ~2 h |
+| I2 | improvement | SHIPPED | (next commit) | — | `detectScopeImbalance(workspace, slices)` walks each slice's dirs (skipping SLICE_EXCLUDE + dotfiles), sums bytes of code-extension files, WARNs when max:min > 5x. Fired fire-and-forget from the kickoff route after `deriveSlices`; non-blocking. |
 | I3 | improvement | PROPOSED | — | — | kickoff + wait logic ~3 h |
 | I4 | improvement | SHIPPED | (next commit) | — | meta.synthesisModel field added; coordinator dispatch picks it for `kind === 'synthesize'` items regardless of which session claims. Falls through to per-session pinning when synthesisModel undefined (backward compat). |
 

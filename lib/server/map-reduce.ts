@@ -92,6 +92,87 @@ export async function deriveSlices(
   return buckets.map((b) => b.join(', '));
 }
 
+// PATTERN_DESIGN/map-reduce.md I2 — scope imbalance detector.
+// deriveSlices buckets dirs by count, not size. A repo where one top-level
+// dir holds 90% of the code produces a wildly imbalanced map: one member
+// drowns in work while siblings finish in seconds. We can't auto-rebalance
+// (would require re-bucketing per-file, breaking the dir-as-scope contract),
+// but we CAN warn the operator at kickoff so they know to expect skew.
+//
+// Approach: walk each slice's dirs, sum the bytes of code-extension files,
+// and compute max:min. If the ratio exceeds 5x, log a single WARN naming
+// each slice with its size. Cheap (~ms on small repos, capped on large
+// repos by the recursion cost) and fire-and-forget — never blocks kickoff.
+const SCOPE_IMBALANCE_THRESHOLD = 5;
+const SCOPE_CODE_EXTS = new Set<string>([
+  '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+  '.py', '.go', '.rb', '.java', '.kt', '.swift',
+  '.rs', '.c', '.cc', '.cpp', '.h', '.hpp',
+  '.cs', '.php', '.scala', '.sh', '.sql',
+  '.css', '.scss', '.html', '.md', '.yaml', '.yml', '.json',
+]);
+
+async function walkScopeBytes(dir: string): Promise<number> {
+  let total = 0;
+  let entries: import('node:fs').Dirent[] = [];
+  try {
+    entries = (await fs.readdir(dir, { withFileTypes: true })) as import('node:fs').Dirent[];
+  } catch {
+    return 0;
+  }
+  for (const e of entries) {
+    if (e.name.startsWith('.') || SLICE_EXCLUDE.has(e.name)) continue;
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) {
+      total += await walkScopeBytes(full);
+    } else if (e.isFile()) {
+      const ext = path.extname(e.name).toLowerCase();
+      if (!SCOPE_CODE_EXTS.has(ext)) continue;
+      try {
+        const stat = await fs.stat(full);
+        total += stat.size;
+      } catch {
+        // skip unreadable file
+      }
+    }
+  }
+  return total;
+}
+
+async function approxScopeBytes(workspace: string, slice: string): Promise<number> {
+  // Whole-workspace and root-wildcard slices are unmeasurable as a scope —
+  // they're a fallback for "no real partition", so they can't be compared.
+  if (slice === '(whole workspace)' || slice === '*') return 0;
+  const dirs = slice.split(',').map((s) => s.trim()).filter(Boolean);
+  let total = 0;
+  for (const d of dirs) {
+    total += await walkScopeBytes(path.join(workspace, d));
+  }
+  return total;
+}
+
+export async function detectScopeImbalance(
+  workspace: string,
+  slices: string[],
+): Promise<void> {
+  const sizes = await Promise.all(
+    slices.map((s) => approxScopeBytes(workspace, s)),
+  );
+  const measurable = sizes.filter((n) => n > 0);
+  if (measurable.length < 2) return;
+  const max = Math.max(...measurable);
+  const min = Math.min(...measurable);
+  if (min === 0) return;
+  const ratio = max / min;
+  if (ratio <= SCOPE_IMBALANCE_THRESHOLD) return;
+  const summary = slices
+    .map((s, i) => `${s}=${(sizes[i] / 1024).toFixed(0)}KB`)
+    .join('  ');
+  console.warn(
+    `[map-reduce] PATTERN_DESIGN/map-reduce.md I2 — scope imbalance: max:min = ${ratio.toFixed(1)}x (threshold ${SCOPE_IMBALANCE_THRESHOLD}x); ${summary}`,
+  );
+}
+
 // Per-session directive = base directive + a scope annotation. Appended as a
 // clearly-marked block so the agent doesn't mistake it for part of the user's
 // prompt body.
