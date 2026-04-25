@@ -601,25 +601,14 @@ function LaneMeter({
   return (
     <>
       <div className="mt-1 flex items-center gap-1.5 h-3 font-mono text-[9.5px] tabular-nums">
-        {/* When the throughput rate is zero (idle / dead lane), fall back
-            to the cumulative tokens-in / tokens-out totals. The previous
-            behavior — formatRate(0) → "—" — read visually as "no data
-            exists" even when the lane had real history. Tooltip switches
-            tone to match: live lanes get rate-per-second, idle lanes get
-            cumulative breakdown. STATUS.md 2026-04-24 fix. */}
-        <Tooltip
-          content={hasOut ? 'outbound part rate' : 'cumulative output tokens (idle)'}
-          side="top"
-        >
-          <span
-            className={clsx(
-              'shrink-0 transition-colors cursor-help',
-              hasOut ? 'text-fog-200' : tokensOut > 0 ? 'text-fog-500' : 'text-fog-800',
-            )}
-          >
-            out {hasOut ? formatRate(throughput.outRate) : compact(tokensOut)}
-          </span>
-        </Tooltip>
+        {/* IN first, OUT second (2026-04-24 — user requested swap; the
+            ingest→produce flow reads more naturally in that order).
+            When the throughput rate is zero (idle / dead lane), fall
+            back to the cumulative tokens-in / tokens-out totals. The
+            previous behavior — formatRate(0) → "—" — read visually
+            as "no data exists" even when the lane had real history.
+            Tooltip switches tone to match: live lanes get
+            rate-per-second, idle lanes get cumulative breakdown. */}
         <Tooltip
           content={hasIn ? 'inbound part rate' : 'cumulative input tokens (idle)'}
           side="top"
@@ -631,6 +620,19 @@ function LaneMeter({
             )}
           >
             in {hasIn ? formatRate(throughput.inRate) : compact(tokensIn)}
+          </span>
+        </Tooltip>
+        <Tooltip
+          content={hasOut ? 'outbound part rate' : 'cumulative output tokens (idle)'}
+          side="top"
+        >
+          <span
+            className={clsx(
+              'shrink-0 transition-colors cursor-help',
+              hasOut ? 'text-fog-200' : tokensOut > 0 ? 'text-fog-500' : 'text-fog-800',
+            )}
+          >
+            out {hasOut ? formatRate(throughput.outRate) : compact(tokensOut)}
           </span>
         </Tooltip>
         <div className="ml-auto flex items-center gap-[3px]">
