@@ -333,12 +333,17 @@ export async function runDebateJudgeKickoff(
   }
 
   // Prime judge first (sets up its contract), then fan-post to generators.
+  // 2026-04-25 fix: dropped `agent: JUDGE_AGENT_NAME / generator-N` —
+  // see lib/server/critic-loop.ts for the full root-cause writeup. Custom
+  // agent names not in opencode's built-in list (build/compaction/explore/
+  // general/plan/summary/title) cause prompt_async to silently drop the
+  // user message + never start an assistant turn.
   try {
     await postSessionMessageServer(
       judgeSID,
       meta.workspace,
       buildJudgeIntroPrompt(meta.directive, generatorCount),
-      { agent: JUDGE_AGENT_NAME, model: judgeModel },
+      { model: judgeModel },
     );
     await Promise.all(
       generatorSIDs.map((sid, idx) =>
@@ -347,7 +352,6 @@ export async function runDebateJudgeKickoff(
           meta.workspace,
           buildGeneratorIntroPrompt(meta.directive, idx + 1, generatorCount),
           {
-            agent: `${GENERATOR_AGENT_PREFIX}${idx + 1}`,
             model: generatorModel(idx),
           },
         ),
@@ -459,7 +463,7 @@ export async function runDebateJudgeKickoff(
         judgeSID,
         meta.workspace,
         buildJudgmentPrompt(drafts, round, maxRounds),
-        { agent: JUDGE_AGENT_NAME, model: judgeModel },
+        { model: judgeModel },
       );
     } catch (err) {
       console.warn(
@@ -520,7 +524,6 @@ export async function runDebateJudgeKickoff(
             meta.workspace,
             buildRevisionPrompt(verdict.body, round + 1, maxRounds),
             {
-              agent: `${GENERATOR_AGENT_PREFIX}${idx + 1}`,
               model: generatorModel(idx),
             },
           ),

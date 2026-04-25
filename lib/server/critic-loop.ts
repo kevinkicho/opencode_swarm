@@ -273,17 +273,24 @@ export async function runCriticLoopKickoff(
   }
 
   try {
+    // 2026-04-25 fix: dropped `agent: CRITIC_AGENT_NAME / WORKER_AGENT_NAME`
+    // — custom agent names that aren't in the user's opencode.json (the
+    // built-ins are build/compaction/explore/general/plan/summary/title)
+    // cause opencode's prompt_async to return HTTP 204 success but never
+    // persist the user message or start an assistant turn. Same root
+    // cause as the picker-dispatch fix in lib/blackboard/roles.ts. Role
+    // display in our UI continues working via roleNamesBySessionID.
     await postSessionMessageServer(
       criticSID,
       meta.workspace,
       buildCriticIntroPrompt(meta.directive),
-      { agent: CRITIC_AGENT_NAME, model: criticModel },
+      { model: criticModel },
     );
     await postSessionMessageServer(
       workerSID,
       meta.workspace,
       buildWorkerIntroPrompt(meta.directive),
-      { agent: WORKER_AGENT_NAME, model: workerModel },
+      { model: workerModel },
     );
   } catch (err) {
     console.warn(
@@ -357,7 +364,7 @@ export async function runCriticLoopKickoff(
         criticSID,
         meta.workspace,
         buildReviewPrompt(draft, iter),
-        { agent: CRITIC_AGENT_NAME, model: criticModel },
+        { model: criticModel },
       );
     } catch (err) {
       console.warn(
@@ -411,7 +418,7 @@ export async function runCriticLoopKickoff(
           workerSID,
           meta.workspace,
           `Critic-loop terminated by orchestrator: the last two reviews were low-confidence WORDING revisions, indicating the critic is rewording rather than improving substance. Shipping your draft from this iteration as final.`,
-          { agent: WORKER_AGENT_NAME, model: workerModel },
+          { model: workerModel },
         );
       } catch {
         // Non-fatal; the loop's already terminating.
@@ -428,7 +435,7 @@ export async function runCriticLoopKickoff(
           workerSID,
           meta.workspace,
           `Critic-loop budget exhausted after ${maxIterations} iterations. Shipping your current draft as-is. Critic's final feedback was: ${classified.body}`,
-          { agent: WORKER_AGENT_NAME, model: workerModel },
+          { model: workerModel },
         );
       } catch {
         // Non-fatal; just log.
@@ -448,7 +455,7 @@ export async function runCriticLoopKickoff(
         workerSID,
         meta.workspace,
         buildRevisionPrompt(classified.body, iter + 1, maxIterations),
-        { agent: WORKER_AGENT_NAME, model: workerModel },
+        { model: workerModel },
       );
     } catch (err) {
       console.warn(
