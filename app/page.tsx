@@ -9,8 +9,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
-import { TurnCardsView } from '@/components/turn-cards-view';
-import { BoardFullView } from '@/components/board-full-view';
 import { roleNamesFromMeta, useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
 import { deriveSilentSessions } from '@/lib/silent-session';
 import { deliberationRoundInfo } from '@/lib/deliberate-progress';
@@ -90,14 +88,71 @@ import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 // main viewport per user feedback: pattern-specific deep observability
 // IS the primary surface for understanding the run, not a left-rail
 // secondary tab).
-import { ContractsRail } from '@/components/contracts-rail';
-import { IterationsRail } from '@/components/iterations-rail';
-import { DebateRail } from '@/components/debate-rail';
-import { RolesRail } from '@/components/roles-rail';
-import { MapRail } from '@/components/map-rail';
-import { CouncilRail } from '@/components/council-rail';
-import { PhasesRail } from '@/components/phases-rail';
-import { StrategyRail } from '@/components/strategy-rail';
+//
+// 2026-04-25 — converted to next/dynamic + lazyWithRetry. Each rail is
+// only rendered when its specific runView is active (gated by the
+// switch in the JSX), so we never need them in the initial bundle.
+// Defers ~10 component-trees worth of JS until the user actually
+// clicks the corresponding tab. ssr:false is safe (parent is 'use
+// client', component is interactive). Loading state is null because
+// the tab switch is a single click — a flash of empty space is less
+// jarring than a spinner.
+const TurnCardsView = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/turn-cards-view').then((m) => m.TurnCardsView),
+  ),
+  { ssr: false },
+);
+const BoardFullView = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/board-full-view').then((m) => m.BoardFullView),
+  ),
+  { ssr: false },
+);
+const ContractsRail = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/contracts-rail').then((m) => m.ContractsRail),
+  ),
+  { ssr: false },
+);
+const IterationsRail = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/iterations-rail').then((m) => m.IterationsRail),
+  ),
+  { ssr: false },
+);
+const DebateRail = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/debate-rail').then((m) => m.DebateRail),
+  ),
+  { ssr: false },
+);
+const RolesRail = dynamic(
+  lazyWithRetry(() => import('@/components/roles-rail').then((m) => m.RolesRail)),
+  { ssr: false },
+);
+const MapRail = dynamic(
+  lazyWithRetry(() => import('@/components/map-rail').then((m) => m.MapRail)),
+  { ssr: false },
+);
+const CouncilRail = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/council-rail').then((m) => m.CouncilRail),
+  ),
+  { ssr: false },
+);
+const PhasesRail = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/phases-rail').then((m) => m.PhasesRail),
+  ),
+  { ssr: false },
+);
+const StrategyRail = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/strategy-rail').then((m) => m.StrategyRail),
+  ),
+  { ssr: false },
+);
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
