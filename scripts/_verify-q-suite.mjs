@@ -130,24 +130,40 @@ async function probeRosterStatus() {
     record('Q6', 'roster-status-chip', 'skip', 'needs swarmRunID');
     return;
   }
-  const data = await page.evaluate(() => {
-    // Roster tab contains agent rows. Match against any text node
-    // matching one of the canonical status words.
-    const STATUS_RE = /\b(idle|working|drafting|reviewing|error|errored|claiming|approved|revising|completed|done|stale)\b/i;
-    const tab = document.querySelector('[data-tab="roster"]') ||
-      document.querySelector('button[aria-label*="roster" i]')?.closest('section') ||
-      document.body;
-    const rows = Array.from(tab.querySelectorAll('li, [role="listitem"]'));
-    const total = rows.length;
-    const matched = rows.filter((r) => STATUS_RE.test(r.textContent ?? '')).length;
-    return { total, matched };
+  // Click the roster tab button — it's a small font-mono button labeled
+  // "roster" in the LeftTabs strip. Without this the panel might be on
+  // a different tab (plan/board) and have no roster rows in the DOM.
+  const clicked = await page.evaluate(() => {
+    const btn = Array.from(document.querySelectorAll('button')).find(
+      (b) => /^roster$/i.test((b.textContent ?? '').trim()),
+    );
+    if (!btn) return false;
+    btn.click();
+    return true;
   });
-  if (data.total === 0) {
-    record('Q6', 'roster-status-chip', 'skip', 'no roster rows visible');
+  if (!clicked) {
+    record('Q6', 'roster-status-chip', 'skip', 'roster tab button not found');
     return;
   }
-  // Pass = at least most rows show a status word. Some rows may
-  // legitimately not yet have a chip if they're brand-new.
+  await page.waitForTimeout(400);
+  const data = await page.evaluate(() => {
+    // No word boundaries — roster rows concatenate name and status
+    // without a delimiter (e.g. "build #1error"), and \b doesn't fire
+    // between digit and letter (both are \w).
+    const STATUS_RE = /(idle|working|drafting|reviewing|errored|error|claiming|approved|revising|completed|done|stale|thinking)/i;
+    const candidates = Array.from(document.querySelectorAll('li, [role="listitem"]')).filter(
+      (el) => {
+        const t = (el.textContent ?? '').trim();
+        return t.length > 0 && t.length < 200;
+      },
+    );
+    const matched = candidates.filter((r) => STATUS_RE.test(r.textContent ?? ''));
+    return { total: candidates.length, matched: matched.length };
+  });
+  if (data.total === 0) {
+    record('Q6', 'roster-status-chip', 'skip', 'no roster rows visible after tab click');
+    return;
+  }
   const ratio = data.matched / data.total;
   record(
     'Q6',
@@ -189,12 +205,19 @@ async function probeDirectiveTruncation() {
 
 // ── Q9 — parts filter shows ≥12 part types ───────────────────────────
 async function probePartsFilter() {
-  // Open the parts dropdown (button with aria-label or text "parts").
+  // Parts filter is on the timeline view — make sure that's active
+  // before looking for the button. Click any "timeline" tab if present.
+  await page.evaluate(() => {
+    const tlBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => /^timeline$/i.test((b.textContent ?? '').trim()),
+    );
+    if (tlBtn) tlBtn.click();
+  });
+  await page.waitForTimeout(300);
+  // Open the parts dropdown.
   const opened = await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll('button'));
-    const btn = buttons.find((b) =>
-      /\bparts?\b/i.test(b.textContent ?? '') ||
-      /parts/i.test(b.getAttribute('aria-label') ?? ''),
+    const btn = Array.from(document.querySelectorAll('button')).find(
+      (b) => /^parts$/i.test((b.textContent ?? '').trim()),
     );
     if (!btn) return false;
     btn.click();
@@ -204,23 +227,36 @@ async function probePartsFilter() {
     record('Q9', 'parts-filter-options', 'skip', 'parts button not found');
     return;
   }
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(500);
   const data = await page.evaluate(() => {
-    // Dropdown options. Look for any role=menuitem or similar.
-    const items = Array.from(
-      document.querySelectorAll('[role="menuitem"], [role="option"], li[role]'),
+    // Scope to the multi-select popover by searching for the unique
+    // "part types" + "multi-select" header — there are other popovers
+    // on the page (recent-parts panel, etc.) we don't want to count.
+    const popover = Array.from(document.querySelectorAll('div')).find(
+      (el) =>
+        /part types/i.test(el.textContent ?? '') &&
+        /multi-select/i.test(el.textContent ?? ''),
     );
-    return { count: items.length, sampled: items.slice(0, 5).map((i) => i.textContent?.trim() ?? '') };
+    if (!popover) return { found: false, count: 0, names: [] };
+    const PART_NAMES = ['text','reasoning','tool','subtask','agent','patch','file','step-start','step-finish','snapshot','compaction','retry'];
+    const buttonText = Array.from(popover.querySelectorAll('button')).map(
+      (b) => (b.textContent ?? '').trim().toLowerCase(),
+    );
+    // Each row's button starts with the part name. Match by prefix.
+    const matched = PART_NAMES.filter((n) =>
+      buttonText.some((t) => t === n || t.startsWith(n)),
+    );
+    return { found: true, count: matched.length, names: matched };
   });
-  if (data.count === 0) {
-    record('Q9', 'parts-filter-options', 'skip', 'dropdown menu rendered no items');
+  if (!data.found) {
+    record('Q9', 'parts-filter-options', 'skip', 'multi-select popover not found');
     return;
   }
   record(
     'Q9',
     'parts-filter-options',
     data.count >= 12 ? 'pass' : 'fail',
-    `${data.count} options visible (need ≥12)`,
+    `${data.count}/12 part-name rows found: ${data.names.join(', ')}`,
   );
 }
 
@@ -246,36 +282,48 @@ async function probeLaneMeterOrder() {
     record('Q11', 'lane-meter-in-first', 'skip', 'needs swarmRunID');
     return;
   }
+  // Lane meters render on the timeline view; ensure it's active.
+  await page.evaluate(() => {
+    const tlBtn = Array.from(document.querySelectorAll('button')).find(
+      (b) => /^timeline$/i.test((b.textContent ?? '').trim()),
+    );
+    if (tlBtn) tlBtn.click();
+  });
+  await page.waitForTimeout(300);
   const data = await page.evaluate(() => {
-    // Lane meters live in the timeline lane headers. Look for any
-    // element where text contains both "in" and "out" — check order.
-    const candidates = Array.from(document.querySelectorAll('div, header, span'))
-      .filter((el) => {
-        const t = el.textContent ?? '';
-        return t.length < 80 && /\bin\b/.test(t) && /\bout\b/.test(t);
-      });
-    if (candidates.length === 0) return null;
-    // Inspect the first non-trivial match — its DIRECT text content
-    // (sum of immediate child text nodes / spans).
-    const el = candidates[0];
-    const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
-    const inIdx = text.search(/\bin\s+\d/);
-    const outIdx = text.search(/\bout\s+\d/);
-    return { text, inIdx, outIdx };
+    // Lane meters render two SIBLING spans: one with "in <X>" and one
+    // with "out <Y>", both inside a flex container. Look for ALL
+    // adjacent in/out pairs by walking parents that contain BOTH a
+    // span starting with "in " and one starting with "out ".
+    const allSpans = Array.from(document.querySelectorAll('span'));
+    const inSpans = allSpans.filter((s) => /^\s*in\s/.test(s.textContent ?? ''));
+    const outSpans = allSpans.filter((s) => /^\s*out\s/.test(s.textContent ?? ''));
+    if (inSpans.length === 0 || outSpans.length === 0) return null;
+    // For each in-span, find an out-span that shares a parent and
+    // compare DOM order (compareDocumentPosition).
+    for (const inS of inSpans) {
+      for (const outS of outSpans) {
+        if (inS.parentElement !== outS.parentElement) continue;
+        const order = inS.compareDocumentPosition(outS);
+        const inFirst = !!(order & Node.DOCUMENT_POSITION_FOLLOWING);
+        return {
+          inText: (inS.textContent ?? '').trim(),
+          outText: (outS.textContent ?? '').trim(),
+          inFirst,
+        };
+      }
+    }
+    return null;
   });
   if (!data) {
-    record('Q11', 'lane-meter-in-first', 'skip', 'no lane meter with both in/out values found');
-    return;
-  }
-  if (data.inIdx < 0 || data.outIdx < 0) {
-    record('Q11', 'lane-meter-in-first', 'skip', `partial match: ${data.text.slice(0, 60)}`);
+    record('Q11', 'lane-meter-in-first', 'skip', 'no in/out span pair sharing a parent found');
     return;
   }
   record(
     'Q11',
     'lane-meter-in-first',
-    data.inIdx < data.outIdx ? 'pass' : 'fail',
-    `text="${data.text.slice(0, 60)}" · in@${data.inIdx} out@${data.outIdx}`,
+    data.inFirst ? 'pass' : 'fail',
+    `"${data.inText}" / "${data.outText}" — in-first: ${data.inFirst}`,
   );
 }
 

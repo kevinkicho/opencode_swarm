@@ -183,21 +183,21 @@ moments (F1 watchdog firing). Marked accordingly.
 
 | # | Observation | Status | Verification |
 |---|---|---|---|
-| 7.Q1 | Auto-stick-to-bottom on entry (timeline) | SHIPPED-UNVERIFIED (`f2733a2` + `c0629fe`) | `scripts/_verify-q-suite.mjs <runID>` — probe Q1+Q8 asserts the largest scroll container's `scrollHeight - scrollTop - clientHeight < 80px`. |
-| 7.Q2 | `latest ↓` button visibility | SHIPPED-UNVERIFIED (`f2733a2`) — threshold lowered 200→80px | `scripts/_verify-q-suite.mjs` Q2 — asserts `[aria-label="scroll to latest"]` is in the DOM and rendering. |
+| 7.Q1 | Auto-stick-to-bottom on entry (timeline) | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — 11 rows · scrollTop=0 · distance-from-bottom=0px (atBottom). | — |
+| 7.Q2 | `latest ↓` button visibility | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — `[aria-label="scroll to latest"]` present in DOM (opacity 0 = hidden because at-bottom, correct behavior). | — |
 | 7.Q3 | Inspector right panel empty for new tab rows | DIAGNOSED + queued as 6.9 | — |
 | 7.Q4 | Roster badge 0/5 1/5 | DIAGNOSED (intentional: 1 dispatch/tick + critic gate) | — |
 | 7.Q5 | Worker session 101 `edit` errors | DIAGNOSED + queued as 6.12 | — |
-| 7.Q6 | Status chip in roster rows | SHIPPED-UNVERIFIED (`f2733a2`) | `scripts/_verify-q-suite.mjs <runID>` Q6 — asserts ≥ 50% of roster rows contain a status word. |
-| 7.Q7 | Directive width in topbar | SHIPPED-UNVERIFIED (`f2733a2`) | `scripts/_verify-q-suite.mjs <runID>` Q7 — asserts directive button width ≤ 250px and carries `max-w-[240px]` class. (Earlier "didn't land" probe was a false negative — wrong selector.) |
-| 7.Q8 | Hard refresh stick-to-bottom (re-reported) | SHIPPED-UNVERIFIED (`c0629fe`) | Same probe as Q1 — `_verify-q-suite.mjs <runID>`. |
-| 7.Q9 | Parts filter multi-select + show all 12 | SHIPPED-UNVERIFIED (`c0629fe`) | `scripts/_verify-q-suite.mjs` Q9 — opens parts dropdown, asserts ≥ 12 distinct items. |
-| 7.Q10 | react-scan default-on annoying | SHIPPED-UNVERIFIED (`c8db06c`) | `scripts/_verify-q-suite.mjs` Q10 — asserts no `#react-scan-outline` / `[data-react-scan]` overlay exists. |
-| 7.Q11 | Lane meter swap to in-first | SHIPPED-UNVERIFIED (`ba58d05`) | `scripts/_verify-q-suite.mjs <runID>` Q11 — asserts `in <N>` index < `out <N>` index in lane meter text. |
+| 7.Q6 | Status chip in roster rows | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — 2/2 roster rows contain a status word ("build #1error", "build #2idle"). | — |
+| 7.Q7 | Directive width in topbar | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — directive button width 195px (cap 240) with `max-w-[240px]` class. | — |
+| 7.Q8 | Hard refresh stick-to-bottom (re-reported) | **VERIFIED** — same Q1 probe (atBottom on fresh load). | — |
+| 7.Q9 | Parts filter multi-select + show all 12 | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — multi-select popover lists all 12 part types: text, reasoning, tool, subtask, agent, patch, file, step-start, step-finish, snapshot, compaction, retry. | — |
+| 7.Q10 | react-scan default-on annoying | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — no react-scan overlay in DOM by default. | — |
+| 7.Q11 | Lane meter swap to in-first | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — lane renders `in 397k` then `out 2.7k` (in-first DOM order confirmed via compareDocumentPosition). | — |
 | 7.Q12 | Run-anchor: status-only | SHIPPED-VERIFIED (`790d2d3`) — Playwright found "ERROR" rendered ✓ | — |
-| 7.Q13 | Picker 5s latency | SHIPPED-UNVERIFIED (`135ce9b` — 30s page poll re-enabled) | `scripts/_verify-q-suite.mjs` Q13 — clicks picker, polls every 50ms for first row, asserts < 1000ms after page warm. |
+| 7.Q13 | Picker 5s latency | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — time-to-first-row 24ms (target < 1000ms). | — |
 | 7.Q14 | Run shows live but actually error | SHIPPED-VERIFIED (`135ce9b`) — Playwright found "ERROR" ✓ | — |
-| 7.Q15 | Remove status dot from picker rows | SHIPPED-UNVERIFIED (`135ce9b`) | `scripts/_verify-q-suite.mjs` Q15 — asserts no row carries a ≤12px `rounded-full` element. |
+| 7.Q15 | Remove status dot from picker rows | **VERIFIED** (run_modwae52_unv2lt, 2026-04-25) — 0/12 picker rows carry a ≤12px rounded-full status dot. | — |
 | 7.Q16 | Run not in listview after hard refresh | **VERIFIED PASS** (`bb59603`) — the run IS in the picker; earlier failed probe was searching for the full `run_…` ID but the picker uses `idTail()`. Diag confirms `bodyContainsModm7vsw_uxxy6b: true`. |
 | 7.Q17 | F1 watchdog firing | PRODUCT VALIDATION — F1 worked: WARN at 90s + abort at 240s on 3+ separate sessions during pattern 2. No code action. Update POSTMORTEMS ledger to VERIFIED. | Confirmed in `/tmp/dev-server.log` |
 | 7.Q18 | Test-run hygiene (track + tear down dev/opencode/monitor) | OPEN — see `memory/feedback_test_run_hygiene.md`. Recurring failure across 5+ runs. Need: pre-flight teardown checklist, end-of-run TaskStop discipline, never-`disown`-tracked-procs rule. | Operational; verify by `ss -tlnp` showing only intended ports + matching `1 shell` indicator in user UI. |
