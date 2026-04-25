@@ -106,7 +106,24 @@ interface TailState {
   timer: ReturnType<typeof setInterval> | null;
 }
 
-let state: TailState | null = null;
+// 2026-04-25 #90 fix — state was module-scoped, but Next.js HMR
+// reloads modules on every edit. After reload the new module sees
+// state=null and starts ANOTHER setInterval; the old module's timer
+// keeps running too. Result: dozens of "starting (F2)" log lines per
+// dev session and N concurrent tails reading the same file. Pattern
+// fix: stash state on globalThis with a Symbol key so HMR module
+// reloads see the same single instance and the idempotency check
+// actually idempotent.
+const TAIL_STATE_KEY = Symbol.for('opencode_swarm.opencodeLogTail.state');
+type GlobalWithTail = typeof globalThis & {
+  [TAIL_STATE_KEY]?: TailState | null;
+};
+function getState(): TailState | null {
+  return (globalThis as GlobalWithTail)[TAIL_STATE_KEY] ?? null;
+}
+function setState(value: TailState | null): void {
+  (globalThis as GlobalWithTail)[TAIL_STATE_KEY] = value;
+}
 
 function tickTail(s: TailState): void {
   let stat: ReturnType<typeof statSync>;
@@ -163,9 +180,10 @@ function tickTail(s: TailState): void {
 }
 
 function discoveryTick(): void {
-  if (!state) return;
-  if (state.filePath && existsSync(state.filePath)) {
-    tickTail(state);
+  const s = getState();
+  if (!s) return;
+  if (s.filePath && existsSync(s.filePath)) {
+    tickTail(s);
     return;
   }
   // No active file yet OR the previous one vanished. Re-resolve.
@@ -174,16 +192,16 @@ function discoveryTick(): void {
     const found = findActiveLog(dir);
     if (found) {
       console.log(`[opencode-log-tail] tailing ${found}`);
-      state.filePath = found;
+      s.filePath = found;
       // Start at the end — we don't replay history on first attach,
       // since it'd flood the dev console with log entries from
       // before this server boot.
       try {
-        state.position = statSync(found).size;
+        s.position = statSync(found).size;
       } catch {
-        state.position = 0;
+        s.position = 0;
       }
-      state.buffer = '';
+      s.buffer = '';
       return;
     }
   }
@@ -193,25 +211,29 @@ const POLL_INTERVAL_MS = 1000;
 const DISCOVERY_INTERVAL_MS = 5000;
 
 export function startOpencodeLogTail(): void {
-  if (state?.timer) return; // already running
+  // Idempotency: globalThis-keyed state survives HMR module reloads,
+  // so a second import after an edit sees the existing timer and
+  // returns without starting a duplicate.
+  const existing = getState();
+  if (existing?.timer) return;
   console.log('[opencode-log-tail] starting (F2)');
-  state = {
+  const s: TailState = {
     filePath: '',
     position: 0,
     buffer: '',
     timer: null,
   };
+  setState(s);
   // Two cadences: fast tail (1s) + slower file-discovery (5s) for the
   // case where opencode hasn't started yet on dev-server boot. We
   // implement them as one interval that branches based on whether
   // we have a file open; saves a timer slot.
-  state.timer = setInterval(() => {
-    if (!state) return;
-    if (state.filePath && existsSync(state.filePath)) {
-      tickTail(state);
+  s.timer = setInterval(() => {
+    const cur = getState();
+    if (!cur) return;
+    if (cur.filePath && existsSync(cur.filePath)) {
+      tickTail(cur);
     } else {
-      // Discovery — but only every DISCOVERY_INTERVAL_MS. Use the
-      // tick counter implicitly via Date.now / interval.
       discoveryTick();
     }
   }, POLL_INTERVAL_MS);
@@ -220,8 +242,9 @@ export function startOpencodeLogTail(): void {
 }
 
 export function stopOpencodeLogTail(): void {
-  if (state?.timer) {
-    clearInterval(state.timer);
+  const s = getState();
+  if (s?.timer) {
+    clearInterval(s.timer);
   }
-  state = null;
+  setState(null);
 }
