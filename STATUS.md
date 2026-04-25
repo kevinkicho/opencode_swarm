@@ -546,32 +546,35 @@ One day, large ship run. Grouped by theme.
 
 ## Queued — designed but not started
 
+### Closed since this section was last revised (audit 2026-04-25)
+
+The audit found six items in this list that had silently shipped without
+the doc catching up. Removed from the "Next-up" block below; recording
+here so anyone re-reading old context knows what landed:
+
+- Lane meter `out — in —` fallback → SHIPPED (transform.ts emits
+  `tokensIn` / `tokensOut`; swarm-timeline.tsx LaneMeter falls back to
+  `compact(tokensOut)` when both rates are zero)
+- `latest ↓` 4-phase synchronous snap → SHIPPED (`scroll-to-bottom.tsx`
+  uses sync + rAF + 120 ms + 400 ms passes)
+- Auto-ticker startup-cleanup recent-activity guard → SHIPPED
+  (`STARTUP_CLEANUP_RECENT_ACTIVITY_MS` skip + `skippedAlive` log)
+- board/ticker `stopReason` SQLite persistence → SHIPPED as
+  PATTERN_DESIGN/blackboard.md I3 (`persistTickerSnapshot` /
+  `readTickerSnapshot`)
+- Tokens endpoint `lastActivityTs` zombie-threshold guard → SHIPPED
+  (`deriveSessionStatus` user-trailing branch checks
+  `ZOMBIE_THRESHOLD_MS`)
+- `item.note` retry chip on board rows → SHIPPED (board-rail.tsx
+  surfaces `retried Nx` chip with note tooltip)
+
+Pattern-design ledgers (PATTERN_DESIGN/*.md) for the per-pattern tabs +
+mechanics gaps are also nearly fully closed: only map-reduce I1
+(synthesis-critic gate), role-differentiated I4 (per-role token
+budgets), and stigmergy heat-picked-timeline-chip remain PROPOSED — all
+need a live run to validate before shipping.
+
 ### Next-up (high leverage, < 1 day each)
-
-- **Lane meter `out — in —` placeholders on dead/idle runs.** In
-  `swarm-timeline.tsx` `LaneMeter`, the `out` and `in` labels currently
-  show `formatRate(throughput.outRate)` / `inRate` — these are LIVE
-  parts-per-second rates which are 0 on any run that isn't actively
-  generating, so the labels collapse to em-dashes. Reads visually like
-  "no data exists" even though cumulative tokens are present right
-  below. Fix: extend `Agent` with `tokensIn` + `tokensOut`, populate
-  in `transform.ts` (sum `info.tokens.input.text + input.cache.read +
-  input.cache.write` for in, `info.tokens.output` for out per assistant
-  message), and have LaneMeter fall back to `out {compact(tokensOut)}`
-  / `in {compact(tokensIn)}` when both rates are 0. ~30 min. User
-  flagged 2026-04-24 on run_mob31bx6_jzdfs2.
-
-- **`latest ↓` button doesn't scroll fully + no sticky-to-bottom.** In
-  `components/ui/scroll-to-bottom.tsx` `onClick` uses
-  `el.scrollTo({ behavior: 'smooth' })`. Smooth scroll animates over
-  ~1s; during the animation new SSE events grow `el.scrollHeight`
-  beyond the original target, so the user lands 100-300px short of
-  the new bottom. That breaks `swarm-timeline.tsx` line 209-216's 48px
-  sticky-to-bottom check, so subsequent items don't auto-follow.
-  Fix: replace the smooth scroll with the same two-phase synchronous
-  snap that swarm-timeline already uses on first-render at line 200-203
-  (set scrollTop = scrollHeight, then rAF → set again to catch any
-  layout still settling). ~15 min. User flagged 2026-04-24.
 
 - **Cold-load 30s+ delay on first navigation in dev (artifact, not
   bug).** Next.js compiles each route + each lazy modal chunk on the
@@ -597,40 +600,6 @@ One day, large ship run. Grouped by theme.
   wrapper more resilient to whatever is sending SIGTERM, (c) detect
   the orphan + adopt it instead of starting a duplicate. ~1-2 h to
   diagnose then fix.
-
-- **Auto-ticker startup-cleanup aborts sessions in still-active
-  runs.** On dev restart, `lib/server/blackboard/auto-ticker.ts`
-  startup hook scans all runs younger than 48h and aborts every
-  session marked "live" in opencode. Observed 2026-04-24 on
-  run_modgus90_uny5ga: planner had ~1m of idle time during dev
-  restart, cleanup swept 151 sessions across 37 runs, planner
-  status flipped to `error`. The cleanup's intent is good (no
-  zombie "live" sessions from dead dev runs), but it's too wide:
-  it shouldn't reap sessions in runs whose lastActivityTs is
-  within the last few minutes, or runs whose board still has open
-  items + non-zero tokens (signal: still useful, not a corpse).
-  Fix: add a guard in the cleanup loop — skip runs where
-  `lastActivityTs > now - 5min` OR (open board items > 0 AND
-  totalTokens > 0). ~30 min.
-
-- **Postmortem F1–F9 from `docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md`.**
-  Nine fixes declared, all `PROPOSED`. F1 (dispatch watchdog) + F2 (opencode log
-  tail into dev console) are P0 and unblock everything else — ~3–4 h each.
-  F3 (opencode debug logging via launcher edit) is ~5 min. Each fix has a
-  validation probe documented in the postmortem's §3; update the ledger
-  table in the postmortem as fixes ship + get verified against real runs.
-
-- **Per-pattern observability tabs from `docs/PATTERN_DESIGN/`.**
-  Nine pattern design contracts written (blackboard, orchestrator-worker,
-  role-differentiated, map-reduce, council, critic-loop, debate-judge,
-  deliberate-execute, stigmergy). Each proposes a pattern-specific tab or
-  overlay spec + backend improvements (I<n>) with a ledger. Priority tiers:
-  (T1) `iterations` for critic-loop + `debate` for debate-judge — verdicts
-  already parseable, pure view work; (T2) `strategy` for orchestrator-worker
-  + `roles` for role-differentiated — hierarchical patterns flying blind
-  today; (T3) mechanics gaps (I<n> items) that close loop / cap /
-  decay issues across patterns. Blackboard's `contracts` tab is the one
-  the user explicitly called out — UI ~3 h, all data already in the store.
 
 - **Heat tab: file-tree toggle (VSCode-style).** Button in the heat-rail
   header flips between the current heat-list view and a tree view of
