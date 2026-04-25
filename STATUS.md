@@ -28,6 +28,125 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-25 night — UX polish, test coverage push, autonomous validation
+
+Continuation of the same calendar day's work. Capabilities and test
+coverage expanded substantially while running 8 parallel 30-minute
+validation runs autonomously to ground today's changes.
+
+**UX polish (committed):**
+
+- **Sticky-scroll robustness** (`33ba0f9`) — `useStickToBottom` gained
+  a `ResizeObserver` so SSE chunks arriving 50-1000ms after a content
+  change still snap to bottom. Previously only the FIRST mount got
+  the multi-pass snap; subsequent updates only ran a single sync
+  snap that read scrollHeight before late content settled.
+- **Runs picker widening** (`de58883`, `ab3ead3`) — popover widened
+  760 → 1100px; pat column widened 90 → 140px so long pattern names
+  (`role-differentiated`, `orchestrator-worker`, `deliberate-execute`)
+  fit without truncation.
+- **View-tab tooltips** (`6be9d82`) — every run-view tab (timeline,
+  cards, board, contracts, plus 7 pattern-specific tabs) now carries
+  a hover hint via `VIEW_PATTERN_GATES` config. `filter` and `parts`
+  toggles in the timeline got tooltips disambiguating the
+  quick-preset vs granular-checkbox mechanic.
+- **WSL2 dev perf caches** (`44bdea3`, `1219454`) — `getRun()` now
+  has a 2s TTL cache; `listRuns()` got a 15s TTL cache;
+  `deriveRunRowCached` TTL bumped 2s → 10s. Each /mnt/c file read
+  costs 50-200ms on WSL2's 9P protocol; with 80+ accumulated runs
+  the picker took 2.8s cold. Cached path: 162ms (~18× speedup).
+
+**Page.tsx decomposition (#84) shipped:**
+
+  page.tsx: 1644 → 1340 lines (-304, -18.5%)
+  initial module count: 2345 → 1249 (-46%)
+
+  - 10 conditionally-rendered view components → `next/dynamic`
+    (loaded on tab click, not initial bundle): TurnCardsView,
+    BoardFullView, ContractsRail, IterationsRail, DebateRail,
+    RolesRail, MapRail, CouncilRail, PhasesRail, StrategyRail.
+    Each wrapped in `lazyWithRetry` for HMR-rotation tolerance.
+  - StatusRail (224 lines) and RunNotFoundScreen (43 lines)
+    extracted to `components/status-rail.tsx` and
+    `components/run-not-found-screen.tsx`.
+  - `safePost` helper consolidated 4 repeated cost-cap-block
+    error-handling patterns (`onForwardDraft`, `onStartRoundTwo`,
+    `OrchestratorActionsStrip onAction`, `SwarmComposer onSend`).
+  - `VIEW_PATTERN_GATES` config replaced 3 duplicated runView
+    structures (state union, toolbar render, auto-reset effect)
+    with one source of truth. Each gate also carries a `hint`
+    string for the tab tooltips.
+
+**Orchestrator entry-shell consolidation (#82):**
+
+`withRunGuard` extracted to `lib/server/run-guard.ts`. Wraps the
+~20-line meta-read + pattern-check + finalizeRun-in-finally shell
+that was duplicated across 4 non-ticker orchestrators (council /
+critic-loop / debate-judge / map-reduce). Body still owns its
+state machine; only entry/exit is shared. deliberate-execute does
+NOT use the helper (composite 3-phase lifecycle, each phase owns
+its own cleanup). Coordinator's `pickSession`/`pickTodo` extraction
+left the working tree broken on a parallel session — reverted
+before this commit; intentionally not re-attempted (different scope
+from #82).
+
+**Test coverage growth: 78 → 194 tests (+116):**
+
+Six new test files lock in pure-function contracts that previously
+lived only in source:
+
+  withRunGuard                        7 cases — guard branches + finalize
+  classifyCriticReply                10 cases — YAML I1 contract +
+                                                legacy fallback
+  classifyJudgeReply                 14 cases — verdict classification +
+                                                I2 addressed-fraction math
+  meanPairwiseJaccard                 7 cases — convergence math
+  classifyDirectiveComplexity +      12 cases — I4 directive classifier +
+   classifySynthesisReply                       I1 verifier verdict
+  Coordinator pure helpers           28 cases — turnTimeoutFor,
+                                                zombieThresholdFor,
+                                                currentRetryCount,
+                                                extractPathTokens,
+                                                pathOverlaps,
+                                                relativizeToWorkspace
+  parseUnifiedDiff +                 17 cases — diff parser (single
+   parseSessionDiffs + filterForTurn             hunk, multi-hunk,
+                                                edge cases)
+  priceFor + tokensForBudget +       12 cases — pricing math
+   withPricing
+  deriveSilentSessions                9 cases — run-health chip detector
+
+Surface change: ~12 functions promoted to `export` (stable contracts;
+tests own them now).
+
+**Autonomous parallel validation (8 runs, 30-min cap):**
+
+Spawned all 8 patterns simultaneously around 20:00 local with
+`bounds.minutesCap: 30`. Run-IDs:
+  blackboard           run_moese3ip_p337vx
+  council              run_moese42c_37at6r
+  map-reduce           run_moese4mh_den0hf
+  orchestrator-worker  run_moese5m9_ymc2r4
+  role-differentiated  run_moese62w_m2dclg
+  debate-judge         run_moese6v3_9dxdzm
+  critic-loop          run_moese9p0_4b1cz1
+  deliberate-execute   run_moesea79_5k8fs9
+
+Mid-flight observations (~17 min in):
+  - 7/8 producing real tokens (blackboard 245K, council 901K,
+    map-reduce 381K, orchestrator-worker 226K, debate-judge 437K,
+    critic-loop 270K, deliberate-execute 668K).
+  - 1/8 hit `status=error`: role-differentiated's planner sweep
+    went silent at ~50K tokens. Dev log: "planner sweep aborted:
+    session went silent (provider unreachable?)". Real ollama-side
+    hang, not a code bug; F1 watchdog tripped correctly.
+  - map-reduce had one mapper session go silent mid-phase; I3
+    partial-map tolerance handled it ("proceeding with its last
+    completed text"). Working as designed.
+  - Many opencode upstream "ERROR service=server error= failed"
+    log lines with empty error messages — ollama-side timeouts/
+    crashes, not actionable from app side.
+
 ### 2026-04-25 evening — reliability hardening + broad live validation
 
 Eight tasks closed, every behavioral change grounded by 16 spawned runs.
