@@ -816,6 +816,41 @@ function PageBody({
     setSelectedFileHeat(null);
   }, []);
 
+  // Wrapper for postSessionMessageBrowser that turns the CostCapError thrown
+  // by the proxy gate (DESIGN.md §9) into a banner-block side-effect, so
+  // callers don't have to repeat the same try/catch + setCostCapBlock(...) +
+  // return dance at every send site. Returns a discriminated result so
+  // multi-session fan-out loops (council, reconcile) can decide whether to
+  // bail (capped → yes, abort fan-out) or continue (other errors already
+  // logged by us → next session).
+  const safePost = useCallback(
+    async (
+      sid: string,
+      workspace: string,
+      body: string,
+      opts: { agent?: string } | undefined,
+      context: string,
+    ): Promise<{ ok: true } | { ok: false; capped: boolean }> => {
+      try {
+        await postSessionMessageBrowser(sid, workspace, body, opts);
+        return { ok: true };
+      } catch (err) {
+        if (err instanceof CostCapError) {
+          setCostCapBlock({
+            swarmRunID: err.swarmRunID,
+            costTotal: err.costTotal,
+            costCap: err.costCap,
+            message: err.message,
+          });
+          return { ok: false, capped: true };
+        }
+        console.error(`[${context}] post failed`, sid, err);
+        return { ok: false, capped: false };
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -1157,20 +1192,14 @@ function PageBody({
             body,
           ].join('\n');
           for (const sid of swarmRunMeta.sessionIDs) {
-            try {
-              await postSessionMessageBrowser(sid, swarmRunMeta.workspace, text);
-            } catch (err) {
-              if (err instanceof CostCapError) {
-                setCostCapBlock({
-                  swarmRunID: err.swarmRunID,
-                  costTotal: err.costTotal,
-                  costCap: err.costCap,
-                  message: err.message,
-                });
-                return;
-              }
-              console.error('[reconcile/forward] session failed', sid, err);
-            }
+            const result = await safePost(
+              sid,
+              swarmRunMeta.workspace,
+              text,
+              undefined,
+              'reconcile/forward',
+            );
+            if (!result.ok && result.capped) return;
           }
         }}
         onStartRoundTwo={async (drafts) => {
@@ -1189,20 +1218,14 @@ function PageBody({
             block,
           ].join('\n');
           for (const sid of swarmRunMeta.sessionIDs) {
-            try {
-              await postSessionMessageBrowser(sid, swarmRunMeta.workspace, text);
-            } catch (err) {
-              if (err instanceof CostCapError) {
-                setCostCapBlock({
-                  swarmRunID: err.swarmRunID,
-                  costTotal: err.costTotal,
-                  costCap: err.costCap,
-                  message: err.message,
-                });
-                return;
-              }
-              console.error('[reconcile/round2] session failed', sid, err);
-            }
+            const result = await safePost(
+              sid,
+              swarmRunMeta.workspace,
+              text,
+              undefined,
+              'reconcile/round2',
+            );
+            if (!result.ok && result.capped) return;
           }
         }}
       />
@@ -1238,25 +1261,13 @@ function PageBody({
           if (!swarmRunMeta) return;
           const orchestratorSID = swarmRunMeta.sessionIDs[0];
           if (!orchestratorSID) return;
-          try {
-            await postSessionMessageBrowser(
-              orchestratorSID,
-              swarmRunMeta.workspace,
-              prompt,
-              { agent: 'orchestrator' },
-            );
-          } catch (err) {
-            if (err instanceof CostCapError) {
-              setCostCapBlock({
-                swarmRunID: err.swarmRunID,
-                costTotal: err.costTotal,
-                costCap: err.costCap,
-                message: err.message,
-              });
-              return;
-            }
-            console.error(`[orchestrator-action/${actionID}] post failed`, err);
-          }
+          await safePost(
+            orchestratorSID,
+            swarmRunMeta.workspace,
+            prompt,
+            { agent: 'orchestrator' },
+            `orchestrator-action/${actionID}`,
+          );
         }}
       />
 
@@ -1283,20 +1294,13 @@ function PageBody({
             target.kind === 'agent'
               ? agents.find((a) => a.id === target.id)?.name
               : undefined;
-          postSessionMessageBrowser(liveSessionId, liveDirectory, body, {
-            agent: agentName,
-          }).catch((err) => {
-            if (err instanceof CostCapError) {
-              setCostCapBlock({
-                swarmRunID: err.swarmRunID,
-                costTotal: err.costTotal,
-                costCap: err.costCap,
-                message: err.message,
-              });
-              return;
-            }
-            console.error('[composer] opencode post failed', err);
-          });
+          void safePost(
+            liveSessionId,
+            liveDirectory,
+            body,
+            { agent: agentName },
+            'composer',
+          );
         }}
       />
 
