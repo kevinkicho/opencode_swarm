@@ -14,10 +14,12 @@
 // Same defensive identification-by-agent-name pattern as iterations-rail.
 
 import clsx from 'clsx';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 interface RoundCell {
   // Length in lines of the generator's proposal that round; null when
@@ -236,16 +238,11 @@ export function DebateRail({
     embedded,
     headerStatus,
     !!final,
-    <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0">
-      {rows.map((row) => (
-        <DebateRowEl
-          key={row.round}
-          row={row}
-          generatorCount={generators.length}
-          isFinal={final?.round === row.round}
-        />
-      ))}
-    </ul>,
+    <DebateListBody
+      rows={rows}
+      generatorCount={generators.length}
+      finalRound={final?.round ?? null}
+    />,
   );
 }
 
@@ -399,5 +396,37 @@ function DebateRowEl({
         {row.status}
       </span>
     </li>
+  );
+}
+
+// Stick-to-bottom-enabled body — IMPLEMENTATION_PLAN 6.7 + 6.8.
+function DebateListBody({
+  rows,
+  generatorCount,
+  finalRound,
+}: {
+  rows: RoundRow[];
+  generatorCount: number;
+  finalRound: number | null;
+}) {
+  const scrollRef = useRef<HTMLUListElement>(null);
+  useStickToBottom(scrollRef, rows.length);
+  return (
+    <>
+      <ul
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0"
+      >
+        {rows.map((row) => (
+          <DebateRowEl
+            key={row.round}
+            row={row}
+            generatorCount={generatorCount}
+            isFinal={finalRound === row.round}
+          />
+        ))}
+      </ul>
+      <ScrollToBottomButton scrollRef={scrollRef} />
+    </>
   );
 }

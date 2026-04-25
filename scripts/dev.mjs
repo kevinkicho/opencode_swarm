@@ -132,31 +132,32 @@ process.on('SIGINT', () => killGroup('SIGINT'));
 process.on('SIGTERM', () => killGroup('SIGTERM'));
 process.on('SIGHUP', () => killGroup('SIGHUP'));
 
-// Watch stdin for EOF — if the parent process (npm, claude task
-// runner, etc.) dies and our stdin pipe closes, kill the child
-// group too. This catches the "parent killed without forwarding a
-// signal" case (orphan reparenting to init), which is what
-// produced the `next-server` zombies we kept finding via
-// `ps aux | grep next-server` after task teardown.
-if (process.stdin && typeof process.stdin.on === 'function') {
+// Stdin-EOF watchdog — gated on TTY. We previously listened for
+// 'end' unconditionally to catch the parent-dies-without-forwarding-
+// a-signal case, but in non-interactive contexts (npm script via
+// pipe, background task via run_in_background, CI runners) stdin is
+// already EOF on startup so the listener fired immediately and tore
+// down a healthy server. Limiting the watch to TTY contexts
+// (interactive terminals) keeps the orphan-detection where it
+// matters (Ctrl+D / hangup cases) without breaking non-interactive
+// invocations.
+if (
+  process.stdin &&
+  typeof process.stdin.on === 'function' &&
+  process.stdin.isTTY
+) {
   process.stdin.on('end', () => {
-    console.log('\n[dev] parent stdin closed — tearing down child group');
+    console.log('\n[dev] tty stdin closed (Ctrl+D) — tearing down child group');
     killGroup('SIGTERM');
-    // Brief grace then exit. process.exit propagates through to a
-    // SIGKILL on the group if SIGTERM didn't take, since detached
-    // children don't auto-die on parent exit.
     setTimeout(() => {
       killGroup('SIGKILL');
       process.exit(143);
     }, 1500);
   });
-  // resume() needed to actually receive 'end' — Node defaults stdin
-  // to paused mode otherwise. Doesn't read any data; just enables
-  // the EOF event.
   try {
     process.stdin.resume();
   } catch {
-    // Some environments (no tty) don't allow resume — non-fatal.
+    // Some terminals don't allow resume — non-fatal.
   }
 }
 

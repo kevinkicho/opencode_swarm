@@ -1,7 +1,8 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import type { Agent, AgentMessage, PartType, TodoItem, ToolName } from '@/lib/swarm-types';
 import { IconSearch, IconFilter } from './icons';
 import { ProviderBadge } from './provider-badge';
@@ -113,26 +114,11 @@ export function SwarmTimeline({
   // status circles should stop pulsing — their "live" animation is
   // stale data after the SSE feed drops. See useBackendStale docs.
   const backendStale = useBackendStale();
-  // Stick-to-bottom state machine (replaces 2026-04-24 timing-based
-  // approach). The earlier grace-window + interval-ticker fix was
-  // chasing timing — it would snap to bottom for the first N seconds
-  // and then give up, but Playwright probe showed messages keep
-  // arriving in chunks for 10+ seconds and we'd disengage before the
-  // tail landed (scrollHeight 12040 at t+3s grew to 35448 at t+8s).
-  //
-  // The right model: track whether the user IS at bottom. Initially
-  // true (we always land at bottom). Stays true until the user
-  // manually scrolls up past STICK_DISENGAGE_PX. Goes back to true
-  // when the user scrolls back to within STICK_REENGAGE_PX of the
-  // bottom. While true, every content change auto-snaps. While false,
-  // we leave the user wherever they are.
-  //
-  // `firstIdRef` still distinguishes a fresh session for the initial
-  // multi-pass snap. After that, the at-bottom flag governs everything.
-  const firstIdRef = useRef<string | null>(null);
-  const stickToBottomRef = useRef<boolean>(true);
-  const STICK_DISENGAGE_PX = 80;  // user scrolled away from bottom by more than this → disengage
-  const STICK_REENGAGE_PX = 24;   // user scrolled back within this of the bottom → re-engage
+  // Stick-to-bottom: extracted to `useStickToBottom` 2026-04-24
+  // (lib/use-stick-to-bottom.ts) so every panel can share the same
+  // state-machine + first-render multi-pass snap. This component
+  // just calls the hook with its scroll container ref + a content
+  // signal that changes on each new message.
 
   const agentIndex = useMemo(() => {
     const m = new Map<string, number>();
@@ -208,71 +194,11 @@ export function SwarmTimeline({
   const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + TOP_PAD * 2;
   const totalWidth = TIMELINE_GUTTER_WIDTH + agentOrder.length * LANE_WIDTH;
 
-  // Stick-to-bottom: on a fresh session (first message id changes) always
-  // land at the latest; on new messages within a session follow only if
-  // the user was effectively AT the bottom (tight threshold so a manual
-  // scroll-up reliably disengages auto-follow). 48 px tolerance covers
-  // rounding + the floating "latest" button that anchors to bottom-3.
-  // Snap-to-bottom when the at-bottom flag is set. Runs on every
-  // [messages, totalHeight] change. The flag flips off when the user
-  // scrolls up; the scroll listener (separate effect below) governs
-  // that.
-  useLayoutEffect(() => {
-    const el = scrollRef.current;
-    if (!el || messages.length === 0) return;
-    const firstId = messages[0].id;
-
-    // First-render snap: brand-new run anchor → multi-pass snap to land
-    // at bottom even if scrollHeight grows over the next few rAFs as
-    // late row heights settle. After the initial pass the at-bottom
-    // flag governs everything.
-    if (firstId !== firstIdRef.current) {
-      firstIdRef.current = firstId;
-      stickToBottomRef.current = true;
-      const snap = () => {
-        const cur = scrollRef.current;
-        if (cur) cur.scrollTop = cur.scrollHeight;
-      };
-      snap();
-      requestAnimationFrame(snap);
-      const t1 = window.setTimeout(snap, 120);
-      const t2 = window.setTimeout(snap, 400);
-      return () => {
-        window.clearTimeout(t1);
-        window.clearTimeout(t2);
-      };
-    }
-
-    // Subsequent updates: as long as the user hasn't scrolled away from
-    // the bottom, follow new content. No time-window cutoff — sticking
-    // is a state, not a deadline. This survives long-tail SSE chunking
-    // where messages arrive over 10+ seconds after first paint.
-    if (stickToBottomRef.current) {
-      el.scrollTop = el.scrollHeight;
-    }
-  }, [messages, totalHeight]);
-
-  // Scroll listener: flip the at-bottom flag based on user movement.
-  // Disengages when the user scrolls away by > STICK_DISENGAGE_PX;
-  // re-engages when they come back within STICK_REENGAGE_PX. The
-  // hysteresis prevents flicker at the boundary. Note: scrollTop
-  // changes WE make (the snap above) also fire this event — but
-  // because the snap lands within REENGAGE_PX of the bottom, it
-  // reaffirms the at-bottom state rather than disengaging.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (stickToBottomRef.current && distance > STICK_DISENGAGE_PX) {
-        stickToBottomRef.current = false;
-      } else if (!stickToBottomRef.current && distance <= STICK_REENGAGE_PX) {
-        stickToBottomRef.current = true;
-      }
-    };
-    el.addEventListener('scroll', onScroll, { passive: true });
-    return () => el.removeEventListener('scroll', onScroll);
-  }, [STICK_DISENGAGE_PX, STICK_REENGAGE_PX]);
+  // Stick-to-bottom: shared `useStickToBottom` hook governs both the
+  // first-render multi-pass snap and the at-bottom-state follow-on
+  // behavior. Content signal is `messages.length + ":" + totalHeight`
+  // so both new messages AND row-height settling trigger the effect.
+  useStickToBottom(scrollRef, `${messages.length}:${totalHeight}`);
 
   return (
     <section className="relative flex-1 flex flex-col min-w-0 min-h-0 bg-ink-800">

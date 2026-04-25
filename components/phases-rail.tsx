@@ -15,12 +15,14 @@
 // Spec frozen in docs/PATTERN_DESIGN/deliberate-execute.md §3.
 
 import clsx from 'clsx';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import type { LiveBoard } from '@/lib/blackboard/live';
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 import type { DeliberationProgress } from '@/lib/deliberate-progress';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 function turnText(m: OpencodeMessage): string {
   let out = '';
@@ -250,49 +252,84 @@ export function PhasesRail({
   return wrap(
     embedded,
     headerStatus,
-    <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 flex flex-col">
-      <PhaseHeader label="phase 1 · deliberation" active={phase === 'deliberation'} complete={deliberation.every((d) => d.status === 'done')} />
-      {deliberation.length === 0 ? (
-        <div className="px-3 py-1 font-mono text-micro uppercase tracking-widest2 text-fog-700">
-          awaiting R1
-        </div>
-      ) : (
-        <ul className="list-none">
-          {deliberation.map((row) => (
-            <DeliberationRowEl key={row.round} row={row} />
-          ))}
-        </ul>
-      )}
+    <PhasesScrollBody
+      deliberation={deliberation}
+      synthesis={synthesis}
+      execution={execution}
+      phase={phase}
+    />,
+  );
+}
 
-      <PhaseHeader label="phase 2 · synthesis" active={phase === 'synthesis'} complete={synthesis?.status === 'done'} />
-      {synthesis ? (
-        <SynthesisRowEl row={synthesis} />
-      ) : (
-        <div className="px-3 py-1 font-mono text-micro uppercase tracking-widest2 text-fog-700">
-          awaiting synthesis
-        </div>
-      )}
+// Stick-to-bottom-enabled scrollable container for the 3-phase
+// stack. Phase chronologically appends content (deliberation rounds
+// → synthesis row → execution counters), so bottom-stick lands the
+// user on the active phase. Content signal: deliberation count +
+// synthesis presence + execution total. (IMPLEMENTATION_PLAN 6.7+6.8.)
+function PhasesScrollBody({
+  deliberation,
+  synthesis,
+  execution,
+  phase,
+}: {
+  deliberation: DeliberationRow[];
+  synthesis: SynthesisRow | null;
+  execution: { total: number; done: number; inProgress: number; stale: number };
+  phase: 'deliberation' | 'synthesis' | 'execution' | 'done';
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sig = `${deliberation.length}:${synthesis ? '1' : '0'}:${execution.total}`;
+  useStickToBottom(scrollRef, sig);
+  return (
+    <>
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 flex flex-col"
+      >
+        <PhaseHeader label="phase 1 · deliberation" active={phase === 'deliberation'} complete={deliberation.every((d) => d.status === 'done')} />
+        {deliberation.length === 0 ? (
+          <div className="px-3 py-1 font-mono text-micro uppercase tracking-widest2 text-fog-700">
+            awaiting R1
+          </div>
+        ) : (
+          <ul className="list-none">
+            {deliberation.map((row) => (
+              <DeliberationRowEl key={row.round} row={row} />
+            ))}
+          </ul>
+        )}
 
-      <PhaseHeader label="phase 3 · execution" active={phase === 'execution'} complete={phase === 'done'} />
-      {execution.total === 0 ? (
-        <div className="px-3 py-1 font-mono text-micro uppercase tracking-widest2 text-fog-700">
-          awaiting todos
-        </div>
-      ) : (
-        <div className="px-3 py-1 flex items-center gap-2 font-mono text-[10.5px] tabular-nums">
-          <span className="text-fog-400">
-            <span className="text-fog-200">{execution.total}</span> todos
-          </span>
-          {execution.inProgress > 0 && (
-            <span className="text-molten">{execution.inProgress} in-progress</span>
-          )}
-          {execution.stale > 0 && <span className="text-amber">{execution.stale} stale</span>}
-          <span className={clsx(execution.done > 0 ? 'text-mint' : 'text-fog-700')}>
-            {execution.done} done
-          </span>
-        </div>
-      )}
-    </div>,
+        <PhaseHeader label="phase 2 · synthesis" active={phase === 'synthesis'} complete={synthesis?.status === 'done'} />
+        {synthesis ? (
+          <SynthesisRowEl row={synthesis} />
+        ) : (
+          <div className="px-3 py-1 font-mono text-micro uppercase tracking-widest2 text-fog-700">
+            awaiting synthesis
+          </div>
+        )}
+
+        <PhaseHeader label="phase 3 · execution" active={phase === 'execution'} complete={phase === 'done'} />
+        {execution.total === 0 ? (
+          <div className="px-3 py-1 font-mono text-micro uppercase tracking-widest2 text-fog-700">
+            awaiting todos
+          </div>
+        ) : (
+          <div className="px-3 py-1 flex items-center gap-2 font-mono text-[10.5px] tabular-nums">
+            <span className="text-fog-400">
+              <span className="text-fog-200">{execution.total}</span> todos
+            </span>
+            {execution.inProgress > 0 && (
+              <span className="text-molten">{execution.inProgress} in-progress</span>
+            )}
+            {execution.stale > 0 && <span className="text-amber">{execution.stale} stale</span>}
+            <span className={clsx(execution.done > 0 ? 'text-mint' : 'text-fog-700')}>
+              {execution.done} done
+            </span>
+          </div>
+        )}
+      </div>
+      <ScrollToBottomButton scrollRef={scrollRef} />
+    </>
   );
 }
 

@@ -18,11 +18,13 @@
 // scope annotation. Cheap to extract.
 
 import clsx from 'clsx';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import type { LiveBoard } from '@/lib/blackboard/live';
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 interface MapRow {
   slotIndex: number;
@@ -225,28 +227,59 @@ export function MapRail({
   return wrap(
     embedded,
     `MAP: ${mapSummary}`,
-    <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 flex flex-col">
-      {showBanner && (
-        <div className="hairline-b px-3 py-1 bg-iris/[0.08] font-mono text-micro uppercase tracking-widest2 text-iris">
-          MAP complete · synthesizer dispatched
-        </div>
-      )}
-      <ul className="list-none">
-        {mapRows.map((r) => (
-          <MapRowEl key={r.slotIndex} row={r} />
-        ))}
-      </ul>
-      {reduce && (
-        <>
-          <div className="hairline-b hairline-t px-3 py-0.5 bg-ink-900/40 font-mono text-micro uppercase tracking-widest2 text-fog-600">
-            reduce
+    <MapScrollBody
+      mapRows={mapRows}
+      reduce={reduce}
+      showBanner={showBanner}
+    />,
+  );
+}
+
+// Stick-to-bottom scrollable body for the MAP+REDUCE stack. Reduce
+// row appends BELOW the map sessions when the synthesize item lands;
+// auto-stick puts the user on the active phase. (IMPLEMENTATION_PLAN
+// 6.7+6.8.)
+function MapScrollBody({
+  mapRows,
+  reduce,
+  showBanner,
+}: {
+  mapRows: MapRow[];
+  reduce: ReduceRow | null;
+  showBanner: boolean;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const sig = `${mapRows.length}:${reduce ? reduce.status : 'none'}`;
+  useStickToBottom(scrollRef, sig);
+  return (
+    <>
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden min-h-0 flex flex-col"
+      >
+        {showBanner && (
+          <div className="hairline-b px-3 py-1 bg-iris/[0.08] font-mono text-micro uppercase tracking-widest2 text-iris">
+            MAP complete · synthesizer dispatched
           </div>
-          <ul className="list-none">
-            <ReduceRowEl row={reduce} />
-          </ul>
-        </>
-      )}
-    </div>,
+        )}
+        <ul className="list-none">
+          {mapRows.map((r) => (
+            <MapRowEl key={r.slotIndex} row={r} />
+          ))}
+        </ul>
+        {reduce && (
+          <>
+            <div className="hairline-b hairline-t px-3 py-0.5 bg-ink-900/40 font-mono text-micro uppercase tracking-widest2 text-fog-600">
+              reduce
+            </div>
+            <ul className="list-none">
+              <ReduceRowEl row={reduce} />
+            </ul>
+          </>
+        )}
+      </div>
+      <ScrollToBottomButton scrollRef={scrollRef} />
+    </>
   );
 }
 

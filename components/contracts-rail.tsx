@@ -17,11 +17,13 @@
 // failures (CRITIC busywork, VERIFIER fail, AUDIT unmet, RETRY 2).
 
 import clsx from 'clsx';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import type { LiveBoard } from '@/lib/blackboard/live';
 import type { BoardItem, BoardItemStatus } from '@/lib/blackboard/types';
 import { Tooltip } from './ui/tooltip';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 // Per-row chip tone palette. Mint = good, rust = bad, amber = warning,
 // fog = neutral / not applicable. Reused across columns so the eye
@@ -222,12 +224,30 @@ export function ContractsRail({
 
   return wrap(
     embedded,
-    <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0">
-      {sorted.map((item) => (
-        <ContractRow key={item.id} item={item} />
-      ))}
-    </ul>,
+    <ContractsListBody items={sorted} />,
     counts,
+  );
+}
+
+// Extracted body so we can colocate the scroll-ref + stick-to-bottom
+// hook + the floating "latest" button. The body is what the wrap
+// helper injects between the header and (optionally) the section
+// chrome — it's the scrollable list itself.
+function ContractsListBody({ items }: { items: BoardItem[] }) {
+  const scrollRef = useRef<HTMLUListElement>(null);
+  useStickToBottom(scrollRef, items.length);
+  return (
+    <>
+      <ul
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0"
+      >
+        {items.map((item) => (
+          <ContractRow key={item.id} item={item} />
+        ))}
+      </ul>
+      <ScrollToBottomButton scrollRef={scrollRef} />
+    </>
   );
 }
 

@@ -17,10 +17,12 @@
 // read without touching the render path.
 
 import clsx from 'clsx';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 interface MemberDraft {
   // Length in lines (cheap scan-density signal).
@@ -216,11 +218,32 @@ export function CouncilRail({
   return wrap(
     embedded,
     headerStatus,
-    <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0">
-      {rows.map((r) => (
-        <CouncilRowEl key={r.round} row={r} memberCount={slots.length} />
-      ))}
-    </ul>,
+    <CouncilListBody rows={rows} memberCount={slots.length} />,
+  );
+}
+
+// Stick-to-bottom-enabled body — IMPLEMENTATION_PLAN 6.7 + 6.8.
+function CouncilListBody({
+  rows,
+  memberCount,
+}: {
+  rows: RoundRow[];
+  memberCount: number;
+}) {
+  const scrollRef = useRef<HTMLUListElement>(null);
+  useStickToBottom(scrollRef, rows.length);
+  return (
+    <>
+      <ul
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0"
+      >
+        {rows.map((r) => (
+          <CouncilRowEl key={r.round} row={r} memberCount={memberCount} />
+        ))}
+      </ul>
+      <ScrollToBottomButton scrollRef={scrollRef} />
+    </>
   );
 }
 

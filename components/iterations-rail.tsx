@@ -18,10 +18,12 @@
 // silently mis-label the rows.
 
 import clsx from 'clsx';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 interface IterationRow {
   // `#1` for first draft, `#1r` for first review, `#2` for second draft, …
@@ -218,11 +220,34 @@ export function IterationsRail({
     embedded,
     headerStatus,
     finalApproved >= 0,
-    <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0">
-      {rows.map((r, i) => (
-        <IterationRowEl key={i} row={r} approved={i === finalApproved} />
-      ))}
-    </ul>,
+    <IterationsListBody rows={rows} finalApproved={finalApproved} />,
+  );
+}
+
+// Stick-to-bottom-enabled scrollable body. Co-locates the scroll-ref +
+// hook + floating "latest" button so every chronological rail follows
+// the same shape. (2026-04-24, IMPLEMENTATION_PLAN 6.7+6.8.)
+function IterationsListBody({
+  rows,
+  finalApproved,
+}: {
+  rows: IterationRow[];
+  finalApproved: number;
+}) {
+  const scrollRef = useRef<HTMLUListElement>(null);
+  useStickToBottom(scrollRef, rows.length);
+  return (
+    <>
+      <ul
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0"
+      >
+        {rows.map((r, i) => (
+          <IterationRowEl key={i} row={r} approved={i === finalApproved} />
+        ))}
+      </ul>
+      <ScrollToBottomButton scrollRef={scrollRef} />
+    </>
   );
 }
 
