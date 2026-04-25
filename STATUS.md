@@ -527,6 +527,50 @@ One day, large ship run. Grouped by theme.
   opencode-frozen`. UI-side polish (chip showing the retry-after
   countdown) still queued below.
 
+### Pattern reliability under GEMMA defaults (2026-04-25 validation)
+
+Empirical findings from the 8-pattern × 60-min validation run. The
+governing structural property: **patterns where work concentrates in
+one critical session crash on a single silent turn; patterns where
+work is parallel-redundant survive**.
+
+**Pattern reliability tiers:**
+
+- **Robust** — `blackboard`, `council`, `role-differentiated`
+  (post-fix). Distributed work, no single point of failure. Use
+  these for important runs.
+- **Fragile** — `orchestrator-worker` (orchestrator critical),
+  `critic-loop` (2 sessions sequential), `debate-judge` (judge
+  critical). Reach partial completion (~8-12 done items) before
+  F1 declares opencode-frozen.
+- **Asymmetric fragility** — `map-reduce` MAP phase robust,
+  REDUCE phase brittle (synthesizer reading ~30K tokens of N
+  mapper drafts produces silent turns under GEMMA reliably).
+- **Uniquely broken** — `deliberate-execute` reproducibly silent
+  on initial deliberation directive (both fresh and replay
+  spawns). Investigation queued (#66).
+
+**Specific failure modes observed:**
+
+1. **F1 silent-turn aborts iterative loops mid-flow.** When an
+   orchestrator/critic/judge hits a silent turn, the
+   `waitForSessionIdle` returns reason='silent', loop aborts,
+   no recovery. Fix queued as #73 (silent-turn cascade hardening).
+2. **map-reduce REDUCE single-synthesizer bottleneck.** Synth
+   item bounces forever. Workaround queued as #72 (pin synth to
+   stronger model).
+3. **opencode silently drops POSTs with `agent` param outside
+   built-ins** (build/compaction/explore/general/plan/summary/title).
+   Returns HTTP 204 but never persists. 4 patterns silently broken
+   for unknown duration before fix on 2026-04-25 (commits 0c79175 +
+   23a21f7). See `docs/POSTMORTEMS/2026-04-25-agent-name-silent-drop.md`
+   when written (#69).
+
+Pattern reliability is captured in `memory/reference_pattern_reliability_ranking.md`
+for cross-session use. When picking a pattern for a real run, prefer
+the robust tier unless the work specifically benefits from a fragile
+shape (debate divergence, critic iteration).
+
 ### UI performance
 
 - **Live run view — initial hydration cost on very big runs** (not
