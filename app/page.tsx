@@ -227,18 +227,58 @@ type ViewGateContext = {
   pattern: SwarmRunMeta['pattern'] | undefined;
   boardSwarmRunID: string | null;
 };
-const VIEW_PATTERN_GATES = {
-  timeline: () => true,
-  cards: () => true,
-  board: (ctx: ViewGateContext) => !!ctx.boardSwarmRunID,
-  contracts: (ctx: ViewGateContext) => !!ctx.boardSwarmRunID,
-  iterations: (ctx: ViewGateContext) => ctx.pattern === 'critic-loop',
-  debate: (ctx: ViewGateContext) => ctx.pattern === 'debate-judge',
-  roles: (ctx: ViewGateContext) => ctx.pattern === 'role-differentiated',
-  map: (ctx: ViewGateContext) => ctx.pattern === 'map-reduce',
-  council: (ctx: ViewGateContext) => ctx.pattern === 'council',
-  phases: (ctx: ViewGateContext) => ctx.pattern === 'deliberate-execute',
-  strategy: (ctx: ViewGateContext) => ctx.pattern === 'orchestrator-worker',
+type ViewConfig = {
+  enabled: (ctx: ViewGateContext) => boolean;
+  // Hover hint surfaced via Tooltip on the toolbar button. Keep one
+  // sentence — long enough to disambiguate from siblings, short enough
+  // to read in a hover.
+  hint: string;
+};
+const VIEW_PATTERN_GATES: Record<string, ViewConfig> = {
+  timeline: {
+    enabled: () => true,
+    hint: 'cross-lane event flow with A2A wires',
+  },
+  cards: {
+    enabled: () => true,
+    hint: 'per-turn conversation cards · collapses tool calls into chips',
+  },
+  board: {
+    enabled: (ctx) => !!ctx.boardSwarmRunID,
+    hint: 'full blackboard kanban · todos / claims / findings',
+  },
+  contracts: {
+    enabled: (ctx) => !!ctx.boardSwarmRunID,
+    hint: 'auditor verdicts against acceptance criteria',
+  },
+  iterations: {
+    enabled: (ctx) => ctx.pattern === 'critic-loop',
+    hint: 'critic-loop: worker draft → critic review → revise',
+  },
+  debate: {
+    enabled: (ctx) => ctx.pattern === 'debate-judge',
+    hint: 'debate-judge: N generators propose, judge picks',
+  },
+  roles: {
+    enabled: (ctx) => ctx.pattern === 'role-differentiated',
+    hint: 'per-role lanes · architect / tester / writer …',
+  },
+  map: {
+    enabled: (ctx) => ctx.pattern === 'map-reduce',
+    hint: 'map-reduce: per-mapper drafts + synthesis claim',
+  },
+  council: {
+    enabled: (ctx) => ctx.pattern === 'council',
+    hint: 'council members\' drafts + reconciliation',
+  },
+  phases: {
+    enabled: (ctx) => ctx.pattern === 'deliberate-execute',
+    hint: 'deliberate-execute: deliberation → synthesis → execution',
+  },
+  strategy: {
+    enabled: (ctx) => ctx.pattern === 'orchestrator-worker',
+    hint: 'orchestrator-worker: planner sweeps + re-plan history',
+  },
 } as const;
 type RunView = keyof typeof VIEW_PATTERN_GATES;
 const RUN_VIEW_KEYS = Object.keys(VIEW_PATTERN_GATES) as RunView[];
@@ -597,7 +637,7 @@ function PageBody({
   // Without this, the main view goes blank because the dispatch
   // returns null for the now-disabled key.
   useEffect(() => {
-    const ok = VIEW_PATTERN_GATES[runView]({
+    const ok = VIEW_PATTERN_GATES[runView].enabled({
       pattern: swarmRunMeta?.pattern,
       boardSwarmRunID,
     });
@@ -964,24 +1004,25 @@ function PageBody({
                   run. Single source of truth shared with the auto-reset
                   effect above so the two never drift. */}
               {RUN_VIEW_KEYS.filter((k) =>
-                VIEW_PATTERN_GATES[k]({
+                VIEW_PATTERN_GATES[k].enabled({
                   pattern: swarmRunMeta?.pattern,
                   boardSwarmRunID,
                 }),
               ).map((k) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setRunView(k)}
-                  className={clsx(
-                    'h-5 px-2 rounded-sm transition-colors cursor-pointer',
-                    runView === k
-                      ? 'bg-molten/15 text-molten'
-                      : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
-                  )}
-                >
-                  {k}
-                </button>
+                <Tooltip key={k} content={VIEW_PATTERN_GATES[k].hint} side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => setRunView(k)}
+                    className={clsx(
+                      'h-5 px-2 rounded-sm transition-colors cursor-pointer',
+                      runView === k
+                        ? 'bg-molten/15 text-molten'
+                        : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
+                    )}
+                  >
+                    {k}
+                  </button>
+                </Tooltip>
               ))}
             </div>
             <div className="flex-1" />

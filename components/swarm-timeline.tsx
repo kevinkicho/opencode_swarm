@@ -271,18 +271,23 @@ export function SwarmTimeline({
                 </div>
               )}
             >
-              <button
-                type="button"
-                className={clsx(
-                  'flex items-center gap-1.5 h-6 px-2 rounded bg-ink-900 hairline hover:border-ink-500 transition cursor-pointer',
-                  filter !== 'all' && 'border-molten/30 bg-molten/5 text-molten',
-                )}
+              <Tooltip
+                content="quick filter · single-choice preset to show only one category (errors, tools, reasoning, patches, …)"
+                side="bottom"
               >
-                <IconFilter size={10} />
-                <span className="font-mono text-micro uppercase tracking-wider">
-                  {filter === 'all' ? 'filter' : filter}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className={clsx(
+                    'flex items-center gap-1.5 h-6 px-2 rounded bg-ink-900 hairline hover:border-ink-500 transition cursor-pointer',
+                    filter !== 'all' && 'border-molten/30 bg-molten/5 text-molten',
+                  )}
+                >
+                  <IconFilter size={10} />
+                  <span className="font-mono text-micro uppercase tracking-wider">
+                    {filter === 'all' ? 'filter' : filter}
+                  </span>
+                </button>
+              </Tooltip>
             </Popover>
           </div>
         </div>
@@ -740,27 +745,32 @@ function PartLegend({
         </div>
       )}
     >
-      <button
-        type="button"
-        className={clsx(
-          'flex items-center gap-1.5 h-6 px-2 rounded hairline transition cursor-pointer',
-          active ? 'border-molten/30 bg-molten/5' : 'bg-ink-900 hover:border-ink-500',
-        )}
+      <Tooltip
+        content="part-type toggles · multi-choice show/hide for each opencode part (text, reasoning, tool, patch, …) · independent of the quick-filter preset"
+        side="bottom"
       >
-        <span
+        <button
+          type="button"
           className={clsx(
-            'font-mono text-micro uppercase tracking-wider',
-            active ? 'text-molten' : 'text-fog-400',
+            'flex items-center gap-1.5 h-6 px-2 rounded hairline transition cursor-pointer',
+            active ? 'border-molten/30 bg-molten/5' : 'bg-ink-900 hover:border-ink-500',
           )}
         >
-          {active ? `parts · ${partFilter.size}` : 'parts'}
-        </span>
-        {active && (
-          <span className="font-mono text-[9px] text-fog-600 tabular-nums">
-            {Array.from(partFilter).reduce((sum, p) => sum + (counts.get(p) ?? 0), 0)}
+          <span
+            className={clsx(
+              'font-mono text-micro uppercase tracking-wider',
+              active ? 'text-molten' : 'text-fog-400',
+            )}
+          >
+            {active ? `parts · ${partFilter.size}` : 'parts'}
           </span>
-        )}
-      </button>
+          {active && (
+            <span className="font-mono text-[9px] text-fog-600 tabular-nums">
+              {Array.from(partFilter).reduce((sum, p) => sum + (counts.get(p) ?? 0), 0)}
+            </span>
+          )}
+        </button>
+      </Tooltip>
     </Popover>
   );
 }
