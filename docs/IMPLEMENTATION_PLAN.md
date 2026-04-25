@@ -133,8 +133,8 @@ first.
 
 | Pattern | Item | Effort |
 |---|---|---|
-| council | I1 — convergence-detection auto-stop | 3h (post 2.1) |
-| role-differentiated | I1 — strict-mode role enforcement | 2h |
+| council | I1 — convergence-detection auto-stop | 3h — **SHIPPED** (post 2.1) |
+| role-differentiated | I1 — strict-mode role enforcement | 2h — **SHIPPED** |
 | role-differentiated | I3 — role intro drift / per-sweep clarification | 3h |
 | stigmergy | I3 — cold-file seeding | 3h |
 

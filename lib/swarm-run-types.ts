@@ -91,6 +91,22 @@ export interface SwarmRunRequest {
   // and synthesis runs once more with the verifier's feedback. Capped
   // at 1 retry to avoid infinite loops. Default false.
   enableSynthesisVerifier?: boolean;
+  // Council convergence auto-stop (PATTERN_DESIGN/council.md I1).
+  // When true AND mean-pairwise-token-jaccard convergence on any
+  // round ≥ COUNCIL_CONVERGENCE_THRESHOLD (0.85), the council loop
+  // skips remaining rounds and proceeds to synthesis/handoff.
+  // Saves tokens on high-consensus missions. Default false — opt-in.
+  // Council pattern only; deliberate-execute also uses runCouncilRounds
+  // and inherits the flag's behavior when set.
+  autoStopOnConverge?: boolean;
+  // Strict role routing (PATTERN_DESIGN/role-differentiated.md I1).
+  // When true, the coordinator picker filters out items whose
+  // `preferredRole` doesn't match the picked session's role. Default
+  // false (soft bias only — mismatched items are still claimable but
+  // de-prioritized). Set true to impose tactical constraints like
+  // "only the security role should touch authentication code."
+  // Role-differentiated pattern only.
+  strictRoleRouting?: boolean;
   // Per-gate model pins (2026-04-24). Each gate's dedicated opencode
   // session spawns without a model hint (opencode picks default);
   // when set, the session's prompts carry `model: <id>` so the gate
@@ -207,6 +223,10 @@ export interface SwarmRunMeta {
   // the verifier reuses sessionIDs[1] (peer member, not the
   // synthesizer at sessionIDs[0]).
   enableSynthesisVerifier?: boolean;
+  // Council convergence auto-stop mirror — PATTERN_DESIGN/council.md I1.
+  autoStopOnConverge?: boolean;
+  // Strict role routing mirror — PATTERN_DESIGN/role-differentiated.md I1.
+  strictRoleRouting?: boolean;
   // Per-gate model pins mirrored from the request. See SwarmRunRequest
   // for semantics. Each gate's reviewer module reads these from meta
   // and passes as `model` on its postSessionMessageServer calls.

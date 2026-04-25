@@ -127,7 +127,7 @@ at run creation.
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
 | roles-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=role-differentiated; per-role row w/ claimed/done/stale + preferredRole match-rate + avg-time + accent stripe |
-| I1 | improvement | PROPOSED | — | — | coordinator ~2 h |
+| I1 | improvement | SHIPPED | (next commit) | — | meta.strictRoleRouting flag (default false): coordinator picker filters out items with non-matching preferredRole when the picked session has a role; on empty filtered queue, returns skipped with reason 'strict-role: no matches for session role X' (waits for matching item or another session) |
 | I2 | improvement | PROPOSED | — | — | watchdog ~1 h |
 | I3 | improvement | PROPOSED | — | — | planner + coordinator ~3 h |
 | I4 | improvement | PROPOSED | — | — | store + enforcement ~3 h |

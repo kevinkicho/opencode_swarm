@@ -767,6 +767,37 @@ export async function tickCoordinator(
       score: heatWeightedPick ? scoreTodoByHeat(t.content, heat) : 0,
     };
   });
+  // PATTERN_DESIGN/role-differentiated.md I1 — strict role routing.
+  // When meta.strictRoleRouting is set AND the picked session has a
+  // role, drop items with a non-matching preferredRole from the
+  // candidate list. Items without a preferredRole stay claimable
+  // (no role declared, any session can take). Items with matching
+  // role stay. Mismatch = drop. If filtering empties the queue, the
+  // session is effectively idle for this tick — they'll wait for a
+  // matching item to land or another session to claim from a
+  // different role.
+  if (meta.strictRoleRouting && sessionRole) {
+    const before = scored.length;
+    const kept = scored.filter(
+      (s) => !s.todo.preferredRole || s.todo.preferredRole === sessionRole,
+    );
+    if (kept.length === 0 && before > 0) {
+      console.log(
+        `[coordinator] strict-role: session ${pickedSession?.slice(-8)} role=${sessionRole} has no matching todos (${before} candidates filtered) — skipping (PATTERN_DESIGN/role-differentiated.md I1)`,
+      );
+      return {
+        status: 'skipped',
+        reason: `strict-role: no matches for session role '${sessionRole}'`,
+      };
+    }
+    if (kept.length < before) {
+      console.log(
+        `[coordinator] strict-role: filtered ${before - kept.length} non-matching todos for session role=${sessionRole}`,
+      );
+    }
+    scored.length = 0;
+    scored.push(...kept);
+  }
   scored.sort((a, b) => {
     if (a.roleAffinity !== b.roleAffinity) return a.roleAffinity - b.roleAffinity;
     if (a.score !== b.score) return a.score - b.score;

@@ -47,6 +47,49 @@ const DEFAULT_MAX_ROUNDS = 3;
 // remaining drafts — single hung members no longer stall the council.
 const ROUND_WAIT_MS = 10 * 60 * 1000;
 
+// PATTERN_DESIGN/council.md I1 — convergence-detection auto-stop.
+// Mean-pairwise-token-jaccard ≥ this value at round R(N-1)'s harvest
+// short-circuits rounds N..maxRounds. Threshold matches the
+// council-rail UI's "high" tone (≥ 0.8) but tightened to 0.85 here
+// because we're making a binding decision (skip work) rather than
+// just labeling a row.
+const COUNCIL_CONVERGENCE_THRESHOLD = 0.85;
+
+const CONV_STOPWORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'for', 'on', 'with',
+  'is', 'are', 'was', 'were', 'be', 'been', 'this', 'that',
+]);
+
+function tokenizeForConvergence(s: string): Set<string> {
+  const out = new Set<string>();
+  for (const raw of s.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (!raw || raw.length < 3 || CONV_STOPWORDS.has(raw)) continue;
+    out.add(raw);
+  }
+  return out;
+}
+
+function meanPairwiseJaccard(texts: string[]): number | null {
+  const sets = texts.filter(Boolean).map((t) => tokenizeForConvergence(t));
+  if (sets.length < 2) return null;
+  let pairs = 0;
+  let sum = 0;
+  for (let i = 0; i < sets.length; i += 1) {
+    for (let j = i + 1; j < sets.length; j += 1) {
+      const a = sets[i];
+      const b = sets[j];
+      if (a.size === 0 && b.size === 0) continue;
+      let intersect = 0;
+      for (const t of a) if (b.has(t)) intersect += 1;
+      const union = a.size + b.size - intersect;
+      if (union === 0) continue;
+      sum += intersect / union;
+      pairs += 1;
+    }
+  }
+  return pairs > 0 ? sum / pairs : null;
+}
+
 // Shared with map-reduce.ts (same shape, intentionally duplicated to keep
 // these server-side pattern modules decoupled — cross-imports between
 // pattern orchestrators make it harder to retire a pattern cleanly).
@@ -194,6 +237,25 @@ export async function runCouncilRounds(
         `[council] run ${swarmRunID} — only ${present.length}/${drafts.length} drafts present before round ${roundNum}, auto-rounds stopping`,
       );
       return;
+    }
+
+    // PATTERN_DESIGN/council.md I1 — convergence-detection auto-stop.
+    // The drafts we just harvested are responses to round (roundNum-1)'s
+    // prompt (or the initial directive when roundNum=2). If they converge
+    // tightly enough, skip remaining rounds and let the caller proceed
+    // (deliberate-execute hands off to synthesis; standalone council
+    // returns to its stopping condition). Only fires when the run opted
+    // in via meta.autoStopOnConverge.
+    if (meta.autoStopOnConverge) {
+      const conv = meanPairwiseJaccard(
+        present.map((d) => d.text ?? ''),
+      );
+      if (conv !== null && conv >= COUNCIL_CONVERGENCE_THRESHOLD) {
+        console.log(
+          `[council] run ${swarmRunID} — R${roundNum - 1} convergence ${(conv * 100).toFixed(0)}% ≥ ${(COUNCIL_CONVERGENCE_THRESHOLD * 100).toFixed(0)}% — auto-stopping rounds (PATTERN_DESIGN/council.md I1)`,
+        );
+        return;
+      }
     }
 
     const prompt = buildRoundPrompt(roundNum, drafts, roundNum === maxRounds);
