@@ -22,11 +22,14 @@ export function ReactScanProbe() {
     // Dynamic import so the package isn't bundled in production builds
     // (even with the env guard, static imports pull the code into the
     // graph). Call scan() once on mount.
+    // 2026-04-24: scan starts DISABLED by default — the rerender outlines
+    // are intrusive on every page load and the user found them annoying.
+    // The toolbar widget react-scan auto-injects has its own toggle to
+    // turn on outlines when needed; we still call scan() so that widget
+    // is available, just not pre-armed.
     void import('react-scan').then(({ scan }) => {
       scan({
-        enabled: true,
-        // Default overlay config. Tune later if the visuals get noisy —
-        // the package exposes per-component filtering and slowdown thresholds.
+        enabled: false,
       });
     });
   }, []);
