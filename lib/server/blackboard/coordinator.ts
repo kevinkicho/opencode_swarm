@@ -69,7 +69,7 @@ export interface CoordinatorExports {
   ) =>
     Promise<
       | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
-      | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' }
+      | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' | 'tool-loop' }
     >;
 }
 
@@ -146,6 +146,16 @@ const SESSION_IDLE_QUIET_MS = 2000;
 // the call almost certainly didn't reach the provider.
 const SILENT_WARN_MS = 90 * 1000;
 const SILENT_ERROR_MS = 240 * 1000;
+
+// Tool-loop detector threshold — PATTERN_DESIGN/blackboard.md 6.12.
+// 10 consecutive identical tool errors (same tool name + same error
+// message) within a single turn means the model is stuck retrying a
+// structurally-broken call. Each retry burns ~10-30 K input tokens
+// (full conversation history reposted as context); 10 retries =
+// ~100-300 K tokens of pure waste. The threshold is also low
+// enough that legitimate "model fixes itself on retry 3-4" cases
+// don't trip — those resolve well before 10.
+const TOOL_LOOP_THRESHOLD = 10;
 
 // Ollama daemon reachability probe — POSTMORTEMS/2026-04-24 F4. Fires
 // inside the watchdog only when silence already crossed PROBE_AFTER_MS
@@ -533,7 +543,7 @@ export async function waitForSessionIdle(
   deadline: number,
 ): Promise<
   | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
-  | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' }
+  | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' | 'tool-loop' }
 > {
   // Dispatch watchdog state — F1. We track total parts across all
   // new-since-dispatch assistant messages, plus the wallclock at last
@@ -551,6 +561,22 @@ export async function waitForSessionIdle(
   let lastTotalParts = 0;
   let warnedSilent = false;
   let lastProbeMs = 0;
+  // Tool-loop detector — PATTERN_DESIGN/blackboard.md 6.12. Some
+  // models (notably gemma4:31b-cloud on the `edit` tool) burn entire
+  // turns retrying a structurally-broken tool call with near-identical
+  // arguments — e.g. an `oldString` that doesn't match because of
+  // whitespace, hallucinated syntax, etc. opencode's per-turn tool
+  // cap doesn't break this loop because each retry is "valid". We
+  // track consecutive same-tool same-error count; when it crosses
+  // TOOL_LOOP_THRESHOLD we abort the turn and surface 'tool-loop'.
+  // The coordinator marks the item stale with a [tool-loop] note so
+  // the user can see what happened at a glance and the planner can
+  // decide whether to rephrase the todo on the next sweep.
+  // Observed in `run_modm7vsw_uxxy6b` worker-2: 101 consecutive
+  // `edit` errors all "Could not find oldString in the file" before
+  // the (15-minute) planner timeout finally bailed.
+  let lastFailedToolKey: string | null = null;
+  let toolLoopCount = 0;
 
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
@@ -632,6 +658,66 @@ export async function waitForSessionIdle(
         `[coordinator] session ${sessionID} silent ${ageS}s — provider may be unreachable (F1 watchdog)`,
       );
       warnedSilent = true;
+    }
+
+    // Tool-loop detector — count consecutive identical tool errors
+    // across all the new assistant messages in this turn. When the
+    // count crosses TOOL_LOOP_THRESHOLD we abort. Done inside the
+    // poll loop so we catch it BEFORE the turn keeps generating
+    // wasted retries — earlier exit beats the silent-watchdog
+    // because the model is actively producing content (not silent),
+    // it's just producing the same broken call.
+    {
+      const errorParts: Array<{ tool: string; error: string }> = [];
+      for (const m of newAssistants) {
+        for (const p of m.parts) {
+          if (p.type !== 'tool') continue;
+          const state = p.state as { status?: string; error?: string } | undefined;
+          if (state?.status !== 'error') continue;
+          errorParts.push({
+            tool: String(p.tool ?? 'unknown'),
+            error: String(state.error ?? ''),
+          });
+        }
+      }
+      // Walk the trailing tail of error parts to count the longest
+      // suffix where (tool, error) is identical. That's the
+      // "consecutive identical errors right now" measure.
+      let suffixCount = 0;
+      let suffixKey: string | null = null;
+      for (let i = errorParts.length - 1; i >= 0; i -= 1) {
+        const key = errorParts[i].tool + '|' + errorParts[i].error;
+        if (suffixKey === null) {
+          suffixKey = key;
+          suffixCount = 1;
+        } else if (suffixKey === key) {
+          suffixCount += 1;
+        } else {
+          break;
+        }
+      }
+      if (suffixKey !== null && suffixKey !== lastFailedToolKey) {
+        // New error key — reset (the model switched failure modes).
+        lastFailedToolKey = suffixKey;
+        toolLoopCount = suffixCount;
+      } else if (suffixKey !== null) {
+        toolLoopCount = suffixCount;
+      }
+      if (toolLoopCount >= TOOL_LOOP_THRESHOLD) {
+        const [tool, err] = (suffixKey ?? '|').split('|', 2);
+        console.error(
+          `[coordinator] session ${sessionID} tool-loop: ${toolLoopCount} consecutive '${tool}' errors with same message ("${(err ?? '').slice(0, 80)}…") — aborting (PATTERN_DESIGN/blackboard.md 6.12)`,
+        );
+        try {
+          await abortSessionServer(sessionID, workspace);
+        } catch (e) {
+          const detail = e instanceof Error ? e.message : String(e);
+          console.warn(
+            `[coordinator] tool-loop abort failed for ${sessionID}: ${detail}`,
+          );
+        }
+        return { ok: false, reason: 'tool-loop' };
+      }
     }
 
     if (newAssistants.length === 0) continue;
@@ -959,7 +1045,9 @@ export async function tickCoordinator(
           ? 'turn went silent'
           : waited.reason === 'provider-unavailable'
             ? 'provider-unavailable'
-            : 'turn errored';
+            : waited.reason === 'tool-loop'
+              ? 'tool-loop'
+              : 'turn errored';
     // On timeout, abort the opencode turn eagerly. Without this the turn
     // keeps consuming tokens in the background for up to
     // ZOMBIE_TURN_THRESHOLD_MS (10 min) before the picker catches it on

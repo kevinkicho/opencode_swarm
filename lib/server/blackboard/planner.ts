@@ -741,6 +741,11 @@ export async function runPlannerSweep(
       // diagnose model hang).
       throw new Error('planner sweep aborted: ollama daemon unreachable');
     }
+    if (waited.reason === 'tool-loop') {
+      // 6.12 tool-loop detector tripped — model burned the turn
+      // retrying a structurally-broken tool call. Surface distinctly.
+      throw new Error('planner sweep aborted: tool-loop (model stuck on a tool error)');
+    }
     throw new Error('planner sweep failed: assistant turn errored');
   }
 

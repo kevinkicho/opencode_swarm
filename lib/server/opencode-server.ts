@@ -164,24 +164,72 @@ export async function postSessionMessageServer(
   // When opts.model is omitted (opencode resolves the agent's default
   // model), we don't know which model will run the turn so we can't
   // size-check; fall through and let opencode reject if needed.
+  //
+  // Two layers (2026-04-24 evening):
+  //   (1) Text-only check on the new prompt — catches a single
+  //       oversized prompt at dispatch time
+  //   (2) Conversation-context check (IMPLEMENTATION_PLAN 6.10) —
+  //       fetches the session's latest assistant message and uses
+  //       its `tokens.input` as the baseline for what opencode will
+  //       assemble on the NEXT call (system prompt + tool defs +
+  //       history). Adds the new prompt's estimate. Refuses ≥85%
+  //       of model limit. This catches the failure mode observed
+  //       in run_modm7vsw_uxxy6b: workers cumulatively hit gemma4's
+  //       128K window without F7 ever firing because layer (1) only
+  //       sees ~1 K of new prompt text.
   if (opts.model) {
     const limit = await getModelContextLimit(opts.model);
     if (limit !== null) {
-      const tokens = estimateTokens(text);
-      const ratio = tokens / limit;
+      const newTokens = estimateTokens(text);
+
+      // Layer (2): assembled-context projection
+      let baselineTokens = 0;
+      try {
+        const messages = await getSessionMessagesServer(sessionId, directory);
+        // Walk back from newest to find the latest completed assistant
+        // turn. Its tokens.input is the assembled-context size opencode
+        // produced on that call — closely tracks what the NEXT call's
+        // input will be (history grows by ~1 user message + 1 assistant
+        // response per turn, both of which are typically much smaller
+        // than the running history total).
+        for (let i = messages.length - 1; i >= 0; i -= 1) {
+          const m = messages[i];
+          if (m.info.role !== 'assistant') continue;
+          if (!m.info.time.completed) continue;
+          const t = m.info.tokens;
+          if (!t) continue;
+          baselineTokens =
+            (t.input ?? 0) +
+            (t.cache?.read ?? 0) +
+            (t.cache?.write ?? 0) +
+            (t.output ?? 0);
+          break;
+        }
+      } catch {
+        // Message fetch failed (transient opencode hiccup) — fall back
+        // to layer (1) only. We don't want a probe failure to block
+        // dispatch.
+      }
+
+      const projectedTokens = baselineTokens + newTokens;
+      const ratio = projectedTokens / limit;
       if (ratio >= PROMPT_REFUSE_RATIO) {
         const limitK = (limit / 1000).toFixed(1);
-        const tokensK = (tokens / 1000).toFixed(1);
+        const projK = (projectedTokens / 1000).toFixed(1);
+        const baseK = (baselineTokens / 1000).toFixed(1);
+        const newK = (newTokens / 1000).toFixed(1);
         throw new Error(
-          `prompt-preflight refused: ${tokensK}k tokens estimated for ${opts.model} ` +
-            `(limit ${limitK}k, ratio ${(ratio * 100).toFixed(0)}% ≥ ${(PROMPT_REFUSE_RATIO * 100).toFixed(0)}%) — ` +
-            `shrink the prompt or pin to a higher-context model`,
+          `prompt-preflight refused: ${projK}k projected tokens for ${opts.model} ` +
+            `(baseline ${baseK}k from prior turn + ${newK}k new prompt; ` +
+            `limit ${limitK}k, ratio ${(ratio * 100).toFixed(0)}% ≥ ${(PROMPT_REFUSE_RATIO * 100).toFixed(0)}%) — ` +
+            `session has saturated this model's context; pin to a higher-context model or start a new session`,
         );
       }
       if (ratio >= PROMPT_WARN_RATIO) {
         console.warn(
-          `[opencode-server] prompt-preflight WARN: ${(tokens / 1000).toFixed(1)}k tokens for ${opts.model} ` +
-            `(${(ratio * 100).toFixed(0)}% of ${(limit / 1000).toFixed(1)}k limit) — close to refuse threshold`,
+          `[opencode-server] prompt-preflight WARN: ${(projectedTokens / 1000).toFixed(1)}k projected for ${opts.model} ` +
+            `(${(baselineTokens / 1000).toFixed(1)}k history + ${(newTokens / 1000).toFixed(1)}k new; ` +
+            `${(ratio * 100).toFixed(0)}% of ${(limit / 1000).toFixed(1)}k limit) — close to refuse threshold`,
         );
       }
     }
