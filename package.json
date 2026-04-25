@@ -15,7 +15,11 @@
     "perf:bundle": "node scripts/perf-bundle.mjs",
     "perf:tabs": "node scripts/perf-tab-switch.mjs",
     "perf:cold": "node scripts/perf-cold-load.mjs",
-    "prod": "next build && next start"
+    "prod": "next build && next start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
+    "test:integration": "VITEST_INTEGRATION=1 vitest run"
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
@@ -40,12 +44,14 @@
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
+    "@vitest/ui": "^2.1.9",
     "autoprefixer": "^10.4.20",
     "lighthouse": "^13.1.0",
     "playwright": "^1.59.1",
     "postcss": "^8.4.49",
     "react-scan": "^0.5.3",
     "tailwindcss": "^3.4.15",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
   }
 }
