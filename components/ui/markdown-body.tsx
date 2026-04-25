@@ -26,6 +26,7 @@
 import clsx from 'clsx';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { stripProtocolTokens } from '@/lib/text-sanitize';
 
 interface MarkdownBodyProps {
   text: string;
@@ -197,7 +198,12 @@ export function MarkdownBody({
           ),
         }}
       >
-        {text}
+        {/* Strip model-emitted tool-call protocol tokens (e.g.
+            `<|tool_call_begin|>`) before rendering. Some local models
+            leak these into their content stream rather than the
+            tool-call channel. The sanitiser is conservative — only
+            real protocol markers match. See lib/text-sanitize.ts. */}
+        {stripProtocolTokens(text)}
       </ReactMarkdown>
     </div>
   );
