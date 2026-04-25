@@ -380,20 +380,42 @@ function decayFactor(lastTouchedMs: number): number {
   return Math.pow(0.5, dt / heatHalfLifeMs());
 }
 
-function scoreTodoByHeat(content: string, heat: FileHeat[]): number {
+function scoreTodoByHeat(
+  content: string,
+  heat: FileHeat[],
+  pickedSessionID?: string,
+): number {
   let score = 0;
   for (const h of heat) {
     const norm = h.path.replace(/\\/g, '/');
     const lastSlash = norm.lastIndexOf('/');
     const base = lastSlash >= 0 ? norm.slice(lastSlash + 1) : norm;
     const dirWithSlash = lastSlash >= 0 ? norm.slice(0, lastSlash + 1) : '';
-    const decayedCount = h.editCount * decayFactor(h.lastTouchedMs);
+    const decay = decayFactor(h.lastTouchedMs);
+    const decayedCount = h.editCount * decay;
+    let weight = 0;
     if (content.includes(h.path) || content.includes(norm)) {
-      score += decayedCount * 2;
+      weight = 2;
     } else if (dirWithSlash && content.includes(dirWithSlash)) {
-      score += decayedCount;
+      weight = 1;
     } else if (base.length >= 4 && content.includes(base)) {
-      score += decayedCount;
+      weight = 1;
+    }
+    if (weight > 0) {
+      score += decayedCount * weight;
+      // PATTERN_DESIGN/stigmergy.md I4 — per-worker warmth bonus.
+      // Picker sorts ascending (low-heat = preferred), so subtracting
+      // here biases the picked session toward files it has already
+      // touched (exploitation). Coefficient 0.5 keeps the global
+      // exploratory bias dominant when the worker is one of many
+      // touchers, but lets a sole-toucher tip toward continuing where
+      // they have session context.
+      if (pickedSessionID) {
+        const sessionEdits = h.editsBySession?.[pickedSessionID] ?? 0;
+        if (sessionEdits > 0) {
+          score -= 0.5 * sessionEdits * decay * weight;
+        }
+      }
     }
   }
   return score;
@@ -850,7 +872,7 @@ export async function tickCoordinator(
     return {
       todo: t,
       roleAffinity,
-      score: heatWeightedPick ? scoreTodoByHeat(t.content, heat) : 0,
+      score: heatWeightedPick ? scoreTodoByHeat(t.content, heat, pickedSession ?? undefined) : 0,
     };
   });
   // PATTERN_DESIGN/role-differentiated.md I1 — strict role routing.

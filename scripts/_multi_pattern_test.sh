@@ -21,7 +21,18 @@ DEV='http://127.0.0.1:49187'
 WS='C:\\Users\\kevin\\Workspace\\kyahoofinance032926'
 SOURCE='https://github.com/kevinkicho/kyahoofinance032926'
 DIRECTIVE='Keep building the yahoo-finance macro-dashboard. Treat the README and KNOWN_LIMITATIONS.md as the backlog — close real gaps, wire unshipped claims, ship substantive features. No busywork.'
-PAUSE_BETWEEN=120  # 2 min between patterns
+# 30s pause between patterns (was 120s, dropped 2026-04-24 — user
+# observed only 3 of 9 patterns got real time during the prior test
+# because the pause + per-pattern duration ate too much wall-clock).
+PAUSE_BETWEEN=30
+# After a pattern's minutesCap fires, give the coordinator up to this
+# long to wind down naturally before we move on. Replaces the prior
+# explicit `{action:stop}` POST to the ticker — that was an abrupt
+# kill that aborted live planner turns mid-flight. Letting the run's
+# own caps + auto-idle handle termination produces cleaner end-state
+# data + avoids the "planner_aborted_at_15:26" pattern from the
+# 2026-04-24 audit.
+GRACEFUL_DRAIN_MAX_S=120
 
 log() {
   printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"
@@ -119,10 +130,24 @@ EOF
     log "[CHECKPOINT] pattern=$pattern run=$run_id elapsed=${elapsed}m items=$total_items done=$done_ct stale=$stale_ct crit=$crit_ct tokens=$tokens cost=\$$cost ticker=$status"
   done
 
-  # Attempt to stop the ticker (idempotent: 400 if pattern has no ticker).
-  curl -s --max-time 10 -X POST "$DEV/api/swarm/run/$run_id/board/ticker" \
-    -H 'Content-Type: application/json' \
-    -d '{"action":"stop"}' > /dev/null 2>&1 || true
+  # No explicit ticker stop — let the run end on its own (minutesCap +
+  # commitsCap + auto-idle handle this). Wait up to GRACEFUL_DRAIN_MAX_S
+  # for status to flip away from 'live' so the next pattern doesn't
+  # start while this one is still mid-tier-escalation. If the run
+  # genuinely won't quit (rare — usually means the planner is in a
+  # tight loop), we cap the wait and move on; the run keeps going in
+  # the background and any subsequent activity is fair game.
+  local drain_deadline=$(( $(date +%s) + GRACEFUL_DRAIN_MAX_S ))
+  while (( $(date +%s) < drain_deadline )); do
+    local cur_status
+    cur_status=$(curl -s --max-time 5 "$DEV/api/swarm/run" 2>/dev/null \
+      | jq -r --arg id "$run_id" '.runs // [] | map(select(.meta.swarmRunID == $id)) | .[0].status // "unknown"')
+    if [[ "$cur_status" != "live" ]]; then
+      log "  drained naturally — status=$cur_status"
+      break
+    fi
+    sleep 10
+  done
 
   # Final snapshot.
   local final_items final_tokens final_cost
@@ -151,9 +176,10 @@ log "9 patterns sequential, ~3h25m total"
 
 probe_dev || { log '[FATAL] dev server probe failed — aborting'; exit 1; }
 
-# Pattern order: baseline → blackboard-family (ticker, validated) →
-# non-ticker shapes (council/map-reduce/critic/debate/deliberate).
-run_pattern 'none' 1 5
+# Pattern order: blackboard-family (ticker, validated) → non-ticker
+# shapes (council/map-reduce/critic/debate/deliberate). 'none' is
+# excluded per user direction 2026-04-24 — we're testing the swarm
+# patterns specifically, not the single-session degenerate.
 
 run_pattern 'blackboard' 5 25 ', "enableAuditorGate": true, "enableCriticGate": true, "persistentSweepMinutes": 20'
 
