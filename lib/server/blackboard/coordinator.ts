@@ -505,7 +505,23 @@ function relativizeToWorkspace(workspace: string, p: string): string {
   return rel.replace(/\\/g, '/');
 }
 
-function buildWorkPrompt(item: BoardItem): string {
+// #76 — extract the human-readable failure reason from a retry note so
+// it can be surfaced to the model on re-dispatch. Notes have the shape
+// `[retry:N] <reason>` (set by retryOrStale). Returns null when the note
+// is absent or doesn't carry a retry tag. Exported for unit tests.
+export function extractRetryFailureReason(
+  note: string | null | undefined,
+): { attempt: number; reason: string } | null {
+  if (!note) return null;
+  const m = RETRY_TAG_RE.exec(note);
+  if (!m) return null;
+  const attempt = Number(m[1]);
+  const reason = note.slice(m[0].length).trim();
+  if (!reason) return { attempt, reason: '(no reason recorded)' };
+  return { attempt, reason };
+}
+
+export function buildWorkPrompt(item: BoardItem): string {
   // Synthesize items carry a complete, self-contained prompt (member drafts
   // already embedded by the caller). Wrapping them in the blackboard-edit
   // preamble would both mangle the synthesis directive and mislead the
@@ -518,6 +534,24 @@ function buildWorkPrompt(item: BoardItem): string {
     `Todo id: ${item.id}`,
     `Todo: ${item.content}`,
   ];
+  // #76 retry-differentiation. When this todo was previously claimed
+  // and stalled / errored, retryOrStale set a `[retry:N] <reason>`
+  // note. Without surfacing that to the model, the re-dispatch is
+  // identical to the first attempt — same prompt, same model, likely
+  // same failure mode. Inject a preamble that names the prior failure
+  // so the model can adapt (try a different approach, narrower scope,
+  // smaller diff). The note already truncates at 200 chars; further
+  // trimming here would strip the actual reason content.
+  const retry = extractRetryFailureReason(item.note);
+  if (retry) {
+    lines.push(
+      '',
+      `NOTE: this is retry ${retry.attempt} of this todo. Previous attempt failed with: ${retry.reason}`,
+      'Adjust your approach so you do not hit the same failure mode —',
+      'narrow the scope, split the work, or try a different file ordering',
+      'if appropriate. Do not just repeat the previous attempt verbatim.',
+    );
+  }
   // Pre-announced file scope (declared-roles alignment). When the
   // planner tagged the todo with [files:a,b], the coordinator has
   // already hashed those files at claim time for CAS drift detection;
