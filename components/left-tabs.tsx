@@ -10,31 +10,18 @@ import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
-import { ContractsRail } from './contracts-rail';
-import { IterationsRail } from './iterations-rail';
-import { DebateRail } from './debate-rail';
-import { RolesRail } from './roles-rail';
-import { MapRail } from './map-rail';
-import { CouncilRail } from './council-rail';
-import { PhasesRail } from './phases-rail';
-import { StrategyRail } from './strategy-rail';
+// Pattern-specific rails (contracts/iterations/debate/roles/map/
+// council/phases/strategy) moved 2026-04-24 to the main viewport in
+// app/page.tsx. The left panel now holds only the cross-pattern
+// surfaces (plan / roster / board / heat).
 import { HeatRail, type DiffStatsByPath } from './heat-rail';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 
-export type Tab =
-  | 'plan'
-  | 'roster'
-  | 'board'
-  | 'contracts'
-  | 'iterations'
-  | 'debate'
-  | 'roles'
-  | 'map'
-  | 'council'
-  | 'phases'
-  | 'strategy'
-  | 'heat';
+// 2026-04-24: pattern-specific tabs moved out of the left panel into
+// the main viewport. Left panel keeps only the cross-pattern
+// surfaces (plan / roster / board / heat).
+export type Tab = 'plan' | 'roster' | 'board' | 'heat';
 
 export function LeftTabs({
   plan,
@@ -125,39 +112,18 @@ export function LeftTabs({
     else setLocalTab(t);
   };
 
-  // Per-pattern visibility flags for the swarm-mode tabs. Each tab is
-  // rendered only when the run's pattern matches; the conditions live
-  // here so the JSX below can stay readable. The board / contracts
-  // tabs are gated on boardSwarmRunID (set for any board-using pattern)
-  // rather than pattern alone, since hierarchical patterns with a
-  // board-execution phase reuse the blackboard machinery.
-  const showIterationsTab = boardPattern === 'critic-loop';
-  const showDebateTab = boardPattern === 'debate-judge';
-  const showRolesTab = boardPattern === 'role-differentiated';
-  const showMapTab = boardPattern === 'map-reduce';
-  const showCouncilTab = boardPattern === 'council';
-  const showPhasesTab = boardPattern === 'deliberate-execute';
-  const showStrategyTab = boardPattern === 'orchestrator-worker';
-
-  // If the active run stops being a blackboard (or we switch to a different
-  // run that has no board), 'board' becomes an invalid selection. Fall back
-  // to 'plan' so the header doesn't show a highlighted tab with no content.
-  // Same shape for the 'heat' tab — it vanishes when no files have been
-  // touched yet, so a mid-run tab switch back to 'heat' after a restart
-  // shouldn't leave the header in an invalid state.
+  // If the active run stops being a blackboard (or we switch to a
+  // different run that has no board), 'board' becomes an invalid
+  // selection. Fall back to 'plan' so the header doesn't show a
+  // highlighted tab with no content. Same shape for the 'heat' tab —
+  // it vanishes when no files have been touched yet, so a mid-run tab
+  // switch back to 'heat' after a restart shouldn't leave the header
+  // in an invalid state.
   useEffect(() => {
     if (!boardSwarmRunID && tab === 'board') setTab('plan');
-    if (!boardSwarmRunID && tab === 'contracts') setTab('plan');
     if (heat.length === 0 && tab === 'heat') setTab('plan');
-    if (!showIterationsTab && tab === 'iterations') setTab('plan');
-    if (!showDebateTab && tab === 'debate') setTab('plan');
-    if (!showRolesTab && tab === 'roles') setTab('plan');
-    if (!showMapTab && tab === 'map') setTab('plan');
-    if (!showCouncilTab && tab === 'council') setTab('plan');
-    if (!showPhasesTab && tab === 'phases') setTab('plan');
-    if (!showStrategyTab && tab === 'strategy') setTab('plan');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardSwarmRunID, heat.length, tab, showIterationsTab, showDebateTab, showRolesTab, showMapTab, showCouncilTab, showPhasesTab, showStrategyTab]);
+  }, [boardSwarmRunID, heat.length, tab]);
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -219,149 +185,11 @@ export function LeftTabs({
             }
           />
         )}
-        {boardSwarmRunID && (
-          <TabButton
-            active={tab === 'contracts'}
-            onClick={() => setTab('contracts')}
-            label="contracts"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">contracts</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  verdict view — auditor met/unmet on criteria, anti-busywork
-                  critic, Playwright verifier pass/fail, CAS drift, retry counter.
-                  Same items as the board, sorted by verdict severity
-                  (PATTERN_DESIGN/blackboard.md §3).
-                </div>
-              </div>
-            }
-          />
-        )}
-        {showIterationsTab && (
-          <TabButton
-            active={tab === 'iterations'}
-            onClick={() => setTab('iterations')}
-            label="iterations"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">iterations</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  worker draft → critic review → revise loop. Final-row
-                  highlight on APPROVED (PATTERN_DESIGN/critic-loop.md §3).
-                </div>
-              </div>
-            }
-          />
-        )}
-        {showDebateTab && (
-          <TabButton
-            active={tab === 'debate'}
-            onClick={() => setTab('debate')}
-            label="debate"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">debate</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  per-round generator drafts × judge verdict
-                  (WINNER / MERGE / REVISE)
-                  (PATTERN_DESIGN/debate-judge.md §3).
-                </div>
-              </div>
-            }
-          />
-        )}
-        {showRolesTab && (
-          <TabButton
-            active={tab === 'roles'}
-            onClick={() => setTab('roles')}
-            label="roles"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">roles</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  per-role claimed / done / stale + preferredRole match-rate
-                  + avg-time. Stripe color = role accent
-                  (PATTERN_DESIGN/role-differentiated.md §3).
-                </div>
-              </div>
-            }
-          />
-        )}
-        {showMapTab && (
-          <TabButton
-            active={tab === 'map'}
-            onClick={() => setTab('map')}
-            label="map"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">map</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  MAP per-session scope/status/output + REDUCE synthesize-row
-                  (PATTERN_DESIGN/map-reduce.md §3).
-                </div>
-              </div>
-            }
-          />
-        )}
-        {showCouncilTab && (
-          <TabButton
-            active={tab === 'council'}
-            onClick={() => setTab('council')}
-            label="council"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">council</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  per-round member drafts × convergence chip
-                  (mean pairwise token-jaccard) — spot consensus before
-                  R_max fires (PATTERN_DESIGN/council.md §3).
-                </div>
-              </div>
-            }
-          />
-        )}
-        {showPhasesTab && (
-          <TabButton
-            active={tab === 'phases'}
-            onClick={() => setTab('phases')}
-            label="phases"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">phases</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  deliberation rounds → synthesis → execution. Per-round
-                  members idle/avg-len/convergence; phase boundary banners
-                  (PATTERN_DESIGN/deliberate-execute.md §3).
-                </div>
-              </div>
-            }
-          />
-        )}
-        {showStrategyTab && boardSwarmRunID && (
-          <TabButton
-            active={tab === 'strategy'}
-            onClick={() => setTab('strategy')}
-            label="strategy"
-            count=""
-            tooltip={
-              <div className="space-y-0.5 max-w-[280px]">
-                <div className="font-mono text-[11px] text-fog-200">strategy</div>
-                <div className="font-mono text-[10.5px] text-fog-500">
-                  orchestrator re-plan timeline — per-sweep board snapshot,
-                  added/removed/rephrased delta vs prior sweep, plan
-                  excerpt (PATTERN_DESIGN/orchestrator-worker.md §3 + I2).
-                </div>
-              </div>
-            }
-          />
-        )}
+        {/* Pattern-specific tabs (contracts/iterations/debate/roles/
+            map/council/phases/strategy) moved 2026-04-24 to the main
+            viewport's runView toggle. They were the primary surface
+            for understanding a run on its pattern; the left panel
+            should hold only cross-pattern surfaces. */}
         {heat.length > 0 && (
           <TabButton
             active={tab === 'heat'}
@@ -434,45 +262,6 @@ export function LeftTabs({
             deliberationProgress={deliberationProgress}
             heat={heat}
           />
-        )}
-        {tab === 'contracts' && boardSwarmRunID && (
-          <ContractsRail live={live} embedded />
-        )}
-        {tab === 'iterations' && showIterationsTab && (
-          <IterationsRail slots={liveSlots ?? []} embedded />
-        )}
-        {tab === 'debate' && showDebateTab && (
-          <DebateRail slots={liveSlots ?? []} embedded />
-        )}
-        {tab === 'roles' && showRolesTab && (
-          <RolesRail
-            live={live}
-            roleNames={boardRoleNames ?? new Map()}
-            sessionIDs={runSessionIDs ?? []}
-            embedded
-          />
-        )}
-        {tab === 'map' && showMapTab && (
-          <MapRail
-            slots={liveSlots ?? []}
-            live={live}
-            sessionIDs={runSessionIDs ?? []}
-            embedded
-          />
-        )}
-        {tab === 'council' && showCouncilTab && (
-          <CouncilRail slots={liveSlots ?? []} embedded />
-        )}
-        {tab === 'phases' && showPhasesTab && (
-          <PhasesRail
-            slots={liveSlots ?? []}
-            live={live}
-            deliberationProgress={deliberationProgress}
-            embedded
-          />
-        )}
-        {tab === 'strategy' && showStrategyTab && boardSwarmRunID && (
-          <StrategyRail swarmRunID={boardSwarmRunID} embedded />
         )}
         {tab === 'heat' && (
           <HeatRail

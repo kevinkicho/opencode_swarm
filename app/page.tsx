@@ -85,6 +85,18 @@ const Inspector = dynamic(
 );
 import type { PaletteAction } from '@/components/command-palette';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
+// Pattern-specific main-view rails (moved 2026-04-24 from LeftTabs to
+// main viewport per user feedback: pattern-specific deep observability
+// IS the primary surface for understanding the run, not a left-rail
+// secondary tab).
+import { ContractsRail } from '@/components/contracts-rail';
+import { IterationsRail } from '@/components/iterations-rail';
+import { DebateRail } from '@/components/debate-rail';
+import { RolesRail } from '@/components/roles-rail';
+import { MapRail } from '@/components/map-rail';
+import { CouncilRail } from '@/components/council-rail';
+import { PhasesRail } from '@/components/phases-rail';
+import { StrategyRail } from '@/components/strategy-rail';
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
 import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
@@ -446,20 +458,10 @@ function PageBody({
   // Left-panel tab is lifted so the timeline can reveal the plan when a task
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
-  const [leftTab, setLeftTab] = useState<
-    | 'plan'
-    | 'roster'
-    | 'board'
-    | 'contracts'
-    | 'iterations'
-    | 'debate'
-    | 'roles'
-    | 'map'
-    | 'council'
-    | 'phases'
-    | 'strategy'
-    | 'heat'
-  >('plan');
+  // 2026-04-24: pattern-specific tabs moved out of LeftTabs to the
+  // main viewport runView. Left panel now holds only cross-pattern
+  // surfaces.
+  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board' | 'heat'>('plan');
 
   // Board SSE subscription lives at the page level so both the left-rail
   // "board" tab and the main-view "board" toggle read from the same
@@ -498,7 +500,55 @@ function PageBody({
   // view is a complement to the timeline — it collapses tool calls into
   // chip rows but loses the wire/A2A topology the timeline exists to
   // show. See DESIGN.md §2.
-  const [runView, setRunView] = useState<'timeline' | 'cards' | 'board'>('timeline');
+  const [runView, setRunView] = useState<
+    | 'timeline'
+    | 'cards'
+    | 'board'
+    | 'contracts'
+    | 'iterations'
+    | 'debate'
+    | 'roles'
+    | 'map'
+    | 'council'
+    | 'phases'
+    | 'strategy'
+  >('timeline');
+
+  // Auto-reset runView when its enabling condition disappears (e.g.,
+  // user navigates from a critic-loop run with `iterations` selected
+  // to a council run where `iterations` is no longer in the toggle).
+  // Without this, the main view goes blank because the switch
+  // statement returns null for the now-disabled key.
+  useEffect(() => {
+    const pat = swarmRunMeta?.pattern;
+    const enabled = (() => {
+      switch (runView) {
+        case 'timeline':
+        case 'cards':
+          return true;
+        case 'board':
+        case 'contracts':
+          return !!boardSwarmRunID;
+        case 'iterations':
+          return pat === 'critic-loop';
+        case 'debate':
+          return pat === 'debate-judge';
+        case 'roles':
+          return pat === 'role-differentiated';
+        case 'map':
+          return pat === 'map-reduce';
+        case 'council':
+          return pat === 'council';
+        case 'phases':
+          return pat === 'deliberate-execute';
+        case 'strategy':
+          return pat === 'orchestrator-worker';
+        default:
+          return false;
+      }
+    })();
+    if (!enabled) setRunView('timeline');
+  }, [runView, swarmRunMeta?.pattern, boardSwarmRunID]);
 
   const jumpToTodo = useCallback((todoId: string) => {
     setLeftTab('plan');
@@ -796,9 +846,43 @@ function PageBody({
                 [
                   { key: 'timeline', enabled: true },
                   { key: 'cards', enabled: true },
-                  // `board` only rendered for blackboard runs — LiveBoard
-                  // would be empty otherwise.
+                  // `board` shows the full board grid, only meaningful
+                  // when the run uses a blackboard-derived store.
                   { key: 'board', enabled: !!boardSwarmRunID },
+                  // Pattern-specific deep views (2026-04-24): each
+                  // gated on the active boardPattern. Contracts is
+                  // shown for any board-using pattern (verdict
+                  // surface, not pattern-exclusive). The other 7 are
+                  // pinned per-pattern.
+                  { key: 'contracts', enabled: !!boardSwarmRunID },
+                  {
+                    key: 'iterations',
+                    enabled: swarmRunMeta?.pattern === 'critic-loop',
+                  },
+                  {
+                    key: 'debate',
+                    enabled: swarmRunMeta?.pattern === 'debate-judge',
+                  },
+                  {
+                    key: 'roles',
+                    enabled: swarmRunMeta?.pattern === 'role-differentiated',
+                  },
+                  {
+                    key: 'map',
+                    enabled: swarmRunMeta?.pattern === 'map-reduce',
+                  },
+                  {
+                    key: 'council',
+                    enabled: swarmRunMeta?.pattern === 'council',
+                  },
+                  {
+                    key: 'phases',
+                    enabled: swarmRunMeta?.pattern === 'deliberate-execute',
+                  },
+                  {
+                    key: 'strategy',
+                    enabled: swarmRunMeta?.pattern === 'orchestrator-worker',
+                  },
                 ] as const
               )
                 .filter((v) => v.enabled)
@@ -824,42 +908,129 @@ function PageBody({
                 ? `${messages.length} events`
                 : runView === 'cards'
                   ? `${turnCards.length} turns`
-                  : `${liveBoard.items?.length ?? 0} items`}
+                  : runView === 'board' || runView === 'contracts'
+                    ? `${liveBoard.items?.length ?? 0} items`
+                    : `${liveSlots.length} sessions`}
             </span>
           </div>
-          {runView === 'timeline' ? (
-            <ProfileBoundary id="swarm-timeline">
-            <SwarmTimeline
-              agents={agents}
-              messages={messages}
-              agentOrder={agentOrder}
-              focusedId={focusedMsgId}
-              onFocus={focusMessage}
-              onClearFocus={clearFocus}
-              selectedAgentId={selectedAgentId}
-              onSelectAgent={selectAgent}
-              todos={runPlan}
-              onJumpToTodo={jumpToTodo}
-              roleNames={boardRoleNames}
-            />
-            </ProfileBoundary>
-          ) : runView === 'board' ? (
-            <ProfileBoundary id="board-full">
-            <BoardFullView live={liveBoard} ticker={liveTicker} roleNames={boardRoleNames} pattern={swarmRunMeta?.pattern} deliberationProgress={deliberationProgress} />
-            </ProfileBoundary>
-          ) : (
-            <ProfileBoundary id="turn-cards">
-            <TurnCardsView
-              cards={turnCards}
-              agents={agents}
-              agentOrder={agentOrder}
-              workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
-              diffStatsByPath={diffStatsByPath}
-              focusedId={focusedMsgId}
-              onFocus={focusMessage}
-            />
-            </ProfileBoundary>
-          )}
+          {(() => {
+            // Switch-style render so we don't pile 11 ternary branches.
+            // Each pattern-specific view falls back to timeline when its
+            // pattern flag is false, which can happen if the user lands
+            // on the URL with a stale runView selection from before a
+            // pattern switch.
+            switch (runView) {
+              case 'timeline':
+                return (
+                  <ProfileBoundary id="swarm-timeline">
+                    <SwarmTimeline
+                      agents={agents}
+                      messages={messages}
+                      agentOrder={agentOrder}
+                      focusedId={focusedMsgId}
+                      onFocus={focusMessage}
+                      onClearFocus={clearFocus}
+                      selectedAgentId={selectedAgentId}
+                      onSelectAgent={selectAgent}
+                      todos={runPlan}
+                      onJumpToTodo={jumpToTodo}
+                      roleNames={boardRoleNames}
+                    />
+                  </ProfileBoundary>
+                );
+              case 'board':
+                return (
+                  <ProfileBoundary id="board-full">
+                    <BoardFullView
+                      live={liveBoard}
+                      ticker={liveTicker}
+                      roleNames={boardRoleNames}
+                      pattern={swarmRunMeta?.pattern}
+                      deliberationProgress={deliberationProgress}
+                    />
+                  </ProfileBoundary>
+                );
+              case 'cards':
+                return (
+                  <ProfileBoundary id="turn-cards">
+                    <TurnCardsView
+                      cards={turnCards}
+                      agents={agents}
+                      agentOrder={agentOrder}
+                      workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
+                      diffStatsByPath={diffStatsByPath}
+                      focusedId={focusedMsgId}
+                      onFocus={focusMessage}
+                    />
+                  </ProfileBoundary>
+                );
+              case 'contracts':
+                return (
+                  <ProfileBoundary id="contracts-rail">
+                    <ContractsRail live={liveBoard} embedded />
+                  </ProfileBoundary>
+                );
+              case 'iterations':
+                return (
+                  <ProfileBoundary id="iterations-rail">
+                    <IterationsRail slots={liveSlots} embedded />
+                  </ProfileBoundary>
+                );
+              case 'debate':
+                return (
+                  <ProfileBoundary id="debate-rail">
+                    <DebateRail slots={liveSlots} embedded />
+                  </ProfileBoundary>
+                );
+              case 'roles':
+                return (
+                  <ProfileBoundary id="roles-rail">
+                    <RolesRail
+                      live={liveBoard}
+                      roleNames={boardRoleNames ?? new Map()}
+                      sessionIDs={swarmRunMeta?.sessionIDs ?? []}
+                      embedded
+                    />
+                  </ProfileBoundary>
+                );
+              case 'map':
+                return (
+                  <ProfileBoundary id="map-rail">
+                    <MapRail
+                      slots={liveSlots}
+                      live={liveBoard}
+                      sessionIDs={swarmRunMeta?.sessionIDs ?? []}
+                      embedded
+                    />
+                  </ProfileBoundary>
+                );
+              case 'council':
+                return (
+                  <ProfileBoundary id="council-rail">
+                    <CouncilRail slots={liveSlots} embedded />
+                  </ProfileBoundary>
+                );
+              case 'phases':
+                return (
+                  <ProfileBoundary id="phases-rail">
+                    <PhasesRail
+                      slots={liveSlots}
+                      live={liveBoard}
+                      deliberationProgress={deliberationProgress}
+                      embedded
+                    />
+                  </ProfileBoundary>
+                );
+              case 'strategy':
+                return boardSwarmRunID ? (
+                  <ProfileBoundary id="strategy-rail">
+                    <StrategyRail swarmRunID={boardSwarmRunID} embedded />
+                  </ProfileBoundary>
+                ) : null;
+              default:
+                return null;
+            }
+          })()}
         </section>
       </main>
 
