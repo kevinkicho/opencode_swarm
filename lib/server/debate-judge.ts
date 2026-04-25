@@ -81,8 +81,8 @@ function buildJudgeIntroPrompt(
     'verdict in exactly this structured shape (PATTERN_DESIGN/debate-',
     'judge.md I1):',
     '',
-    '  WINNER: generator-N — <one-line reason>',
-    '  MERGE: <synthesis of best elements across proposals>',
+    '  WINNER: generator-N (confidence: K/5) — <one-line reason>',
+    '  MERGE: (confidence: K/5) <synthesis of best elements across proposals>',
     '  REVISE — generator-N:',
     '    - <specific change 1>',
     '    - <specific change 2>',
@@ -91,7 +91,12 @@ function buildJudgeIntroPrompt(
     '    - <…>',
     '',
     'Start your reply with one of WINNER / MERGE / REVISE (case-',
-    'insensitive). On REVISE, list 2-4 specific bullet-point',
+    'insensitive). On WINNER and MERGE, include `(confidence: K/5)`',
+    'where K is 1-5 (PATTERN_DESIGN/debate-judge.md I4). 5 = clearly',
+    'best, 4 = strong preference, 3 = better-than-others, 2 = close',
+    'call, 1 = could go either way. Be honest about close calls — the',
+    'UI shows the score so the user can spot when a winner barely',
+    'edged out the others. On REVISE, list 2-4 specific bullet-point',
     'changes per generator who needs revision. Bullets must name a',
     'concrete edit, not a vague critique — "tighten the second',
     'paragraph" beats "improve flow."',
@@ -152,6 +157,22 @@ interface JudgeVerdict {
   // verdict's bullet list for that generator. Empty when the reply
   // didn't conform to the structured contract — fallback path.
   bulletsByGenerator: Map<number, string[]>;
+  // PATTERN_DESIGN/debate-judge.md I4 — judge confidence on
+  // WINNER/MERGE verdicts. 1-5 scale; null when the judge didn't
+  // emit a parseable score (older models, REVISE verdicts where
+  // confidence isn't applicable, or non-conforming replies).
+  // Surfaced in the debate-rail's verdict cell as a small bar.
+  confidence: number | null;
+}
+
+// Parse `(confidence: K/5)` or `confidence: K` from a verdict line.
+// Tolerant of capitalization and surrounding punctuation.
+const CONFIDENCE_RE = /confidence\s*[:=]\s*([1-5])\s*(?:\/\s*5)?/i;
+function parseConfidence(text: string): number | null {
+  const m = CONFIDENCE_RE.exec(text);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
 }
 
 // Parse REVISE bullets per generator. Pattern: a line like
@@ -183,11 +204,26 @@ function parseGeneratorBullets(text: string): Map<number, string[]> {
 
 function classifyJudgeReply(text: string): JudgeVerdict {
   const first = text.split('\n', 1)[0]?.trim() ?? '';
+  // I4: confidence comes from anywhere in the WINNER / MERGE line.
+  // Parsed once across the first ~200 chars (the verdict line);
+  // null when missing.
+  const headerSlice = text.slice(0, 200);
+  const confidence = parseConfidence(headerSlice);
   if (/^winner\b/i.test(first)) {
-    return { verdict: 'winner', body: text.trim(), bulletsByGenerator: new Map() };
+    return {
+      verdict: 'winner',
+      body: text.trim(),
+      bulletsByGenerator: new Map(),
+      confidence,
+    };
   }
   if (/^merge\b/i.test(first)) {
-    return { verdict: 'merge', body: text.trim(), bulletsByGenerator: new Map() };
+    return {
+      verdict: 'merge',
+      body: text.trim(),
+      bulletsByGenerator: new Map(),
+      confidence,
+    };
   }
   if (/^revise\b/i.test(first)) {
     const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
@@ -195,9 +231,17 @@ function classifyJudgeReply(text: string): JudgeVerdict {
       verdict: 'revise',
       body: stripped,
       bulletsByGenerator: parseGeneratorBullets(text),
+      // REVISE verdicts don't have confidence (they're not picking a
+      // winner). Always null.
+      confidence: null,
     };
   }
-  return { verdict: 'unclear', body: text.trim(), bulletsByGenerator: new Map() };
+  return {
+    verdict: 'unclear',
+    body: text.trim(),
+    bulletsByGenerator: new Map(),
+    confidence: null,
+  };
 }
 
 // PATTERN_DESIGN/debate-judge.md I2 — feedback-addressed detection.

@@ -136,7 +136,7 @@ verdict chip.
 | I1 | improvement | SHIPPED | (next commit) | — | structured per-generator REVISE bullets in buildJudgeIntroPrompt; parseGeneratorBullets extracts `Map<genIdx, string[]>` for I2 to consume |
 | I2 | improvement | SHIPPED | (next commit) | — | bulletAddressedFraction(token-jaccard ≥ 0.10) per draft × prior-round bullets; mean across generators with bullets <30% triggers auto-stop |
 | I3 | improvement | SHIPPED | (next commit) | — | kickoff WARN in runDebateJudgeKickoff: triggers when ≥3 generators all share a single modelID — surfaces lack of model diversity without blocking the run |
-| I4 | improvement | PROPOSED | — | — | ties to I1 ~30 min |
+| I4 | improvement | SHIPPED | (next commit) | — | judge prompt extended to require `(confidence: K/5)` on WINNER/MERGE; `parseConfidence` extracts; `JudgeVerdict.confidence` exposed for debate-rail to render alongside the verdict chip. REVISE verdicts always null. |
 
 ## 6 · Cross-references
 

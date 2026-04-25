@@ -1015,8 +1015,18 @@ export async function tickCoordinator(
   // which is the intended precedence for role-differentiated runs.
   // See SwarmRunRequest.teamModels for the contract.
   const sessionIdx = meta.sessionIDs.indexOf(sessionID);
+  // PATTERN_DESIGN/map-reduce.md I4 — synthesize items run on the
+  // run's pinned `synthesisModel` regardless of which session
+  // claims. This keeps synthesis quality consistent run-to-run
+  // (the pinned model is typically chosen for reasoning + summary
+  // strength). Falls back to per-session pinning when the run
+  // didn't opt into synthesis-pinning.
   const pinnedModel =
-    sessionIdx >= 0 ? meta.teamModels?.[sessionIdx] : undefined;
+    todo.kind === 'synthesize' && meta.synthesisModel
+      ? meta.synthesisModel
+      : sessionIdx >= 0
+        ? meta.teamModels?.[sessionIdx]
+        : undefined;
   try {
     await postSessionMessageServer(sessionID, meta.workspace, prompt, {
       agent: dispatchAgent,

@@ -144,7 +144,7 @@ kind.
 | I1 | improvement | PROPOSED | — | — | new critic ~4 h |
 | I2 | improvement | PROPOSED | — | — | detector ~2 h |
 | I3 | improvement | PROPOSED | — | — | kickoff + wait logic ~3 h |
-| I4 | improvement | PROPOSED | — | — | small coordinator change ~1 h |
+| I4 | improvement | SHIPPED | (next commit) | — | meta.synthesisModel field added; coordinator dispatch picks it for `kind === 'synthesize'` items regardless of which session claims. Falls through to per-session pinning when synthesisModel undefined (backward compat). |
 
 ## 6 · Cross-references
 

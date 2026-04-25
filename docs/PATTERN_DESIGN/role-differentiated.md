@@ -128,7 +128,7 @@ at run creation.
 |---|---|---|---|---|---|
 | roles-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=role-differentiated; per-role row w/ claimed/done/stale + preferredRole match-rate + avg-time + accent stripe |
 | I1 | improvement | SHIPPED | (next commit) | — | meta.strictRoleRouting flag (default false): coordinator picker filters out items with non-matching preferredRole when the picked session has a role; on empty filtered queue, returns skipped with reason 'strict-role: no matches for session role X' (waits for matching item or another session) |
-| I2 | improvement | PROPOSED | — | — | watchdog ~1 h |
+| I2 | improvement | SHIPPED | (next commit) | — | `checkRoleImbalance` fires inside auto-ticker fanout once per ROLE_IMBALANCE_REPEAT_MS=30 min, after a 15-min run-age grace. Aggregates non-open todos by `preferredRole`; logs WARN naming idle role(s) (claimed=0) when at least one busy role (claimed≥5) exists. Pattern-gated to role-differentiated only. |
 | I3 | improvement | PROPOSED | — | — | planner + coordinator ~3 h |
 | I4 | improvement | PROPOSED | — | — | store + enforcement ~3 h |
 

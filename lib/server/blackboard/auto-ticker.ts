@@ -252,6 +252,11 @@ interface TickerState {
   // a live-countdown chip ("retry 3h 47m") on rate-limited runs.
   // Absent on any other stop reason.
   retryAfterEndsAtMs?: number;
+  // PATTERN_DESIGN/role-differentiated.md I2 — role-imbalance watchdog
+  // last-fire timestamp. Throttles repeated WARN logs to once per
+  // ROLE_IMBALANCE_REPEAT_MS window so a persistent imbalance doesn't
+  // spam the dev console. Absent until the first imbalance fires.
+  roleImbalanceWarnedAtMs?: number;
   // Periodic re-sweep cadence for long-running runs. When > 0, fires a
   // fresh planner sweep every N ms so an overnight run keeps producing
   // work as the codebase evolves. When > 0, the auto-idle stop logic is
@@ -646,6 +651,10 @@ async function fanout(swarmRunID: string): Promise<void> {
   if (!ready) return;
   // Re-check after the await — could have been stopped while resolving run.
   if (s.stopped) return;
+  // Role-imbalance watchdog (PATTERN_DESIGN/role-differentiated.md I2).
+  // Cheap (single SQL read + per-role aggregation); throttled by run-
+  // age + last-warn timestamp so a persistent imbalance doesn't spam.
+  void checkRoleImbalance(s);
   // Fire per-session ticks without awaiting. Each has its own inFlight
   // guard, so slow sessions don't block fast ones. Orchestrator-worker
   // runs skip the orchestrator — it's the planner, not a worker.
@@ -655,6 +664,59 @@ async function fanout(swarmRunID: string): Promise<void> {
     }
     void tickSession(s, sessionID);
   }
+}
+
+// PATTERN_DESIGN/role-differentiated.md I2 — role-imbalance watchdog.
+// After 15 min of run wallclock, check whether any pinned role has
+// claimed zero items while another has claimed ≥ 5. Log WARN once
+// per ROLE_IMBALANCE_REPEAT_MS so a persistent imbalance produces
+// signal but not spam. Pattern-gated: only fires for
+// `role-differentiated` runs where roles are pinned per session.
+const ROLE_IMBALANCE_GRACE_MS = 15 * 60 * 1000; // 15 min wallclock
+const ROLE_IMBALANCE_REPEAT_MS = 30 * 60 * 1000; // 30 min between repeats
+const ROLE_IMBALANCE_BUSY_THRESHOLD = 5;
+async function checkRoleImbalance(state: TickerState): Promise<void> {
+  const meta = await getRun(state.swarmRunID).catch(() => null);
+  if (!meta || meta.pattern !== 'role-differentiated') return;
+  const ageMs = Date.now() - state.startedAtMs;
+  if (ageMs < ROLE_IMBALANCE_GRACE_MS) return;
+  const lastWarn = state.roleImbalanceWarnedAtMs ?? 0;
+  if (Date.now() - lastWarn < ROLE_IMBALANCE_REPEAT_MS) return;
+
+  // Aggregate per-role claimed-or-done counts from the board.
+  const items = listBoardItems(state.swarmRunID);
+  const byRole = new Map<string, number>();
+  for (const sid of meta.sessionIDs) {
+    const role = (meta.teamRoles ?? [])[meta.sessionIDs.indexOf(sid)];
+    if (!role) continue;
+    if (!byRole.has(role)) byRole.set(role, 0);
+  }
+  for (const it of items) {
+    if (it.kind !== 'todo') continue;
+    if (it.status === 'open') continue;
+    const role = it.preferredRole;
+    if (!role) continue;
+    if (!byRole.has(role)) byRole.set(role, 0);
+    byRole.set(role, (byRole.get(role) ?? 0) + 1);
+  }
+  if (byRole.size < 2) return;
+
+  const counts = [...byRole.entries()];
+  const idle = counts.filter(([, n]) => n === 0).map(([r]) => r);
+  const busy = counts.filter(([, n]) => n >= ROLE_IMBALANCE_BUSY_THRESHOLD);
+  if (idle.length === 0 || busy.length === 0) return;
+
+  const ageMin = Math.round(ageMs / 60_000);
+  const summary = counts.map(([r, n]) => `${r}=${n}`).join(' · ');
+  console.warn(
+    `[role-imbalance] run ${state.swarmRunID} (${ageMin}m): ` +
+      `idle role(s) [${idle.join(', ')}] while busy role(s) ` +
+      `[${busy.map(([r, n]) => `${r}=${n}`).join(', ')}]; ` +
+      `consider a manual re-prompt to surface work for the idle role(s). ` +
+      `Per-role claimed counts: ${summary}. ` +
+      `(PATTERN_DESIGN/role-differentiated.md I2)`,
+  );
+  state.roleImbalanceWarnedAtMs = Date.now();
 }
 
 // PATTERN_DESIGN/blackboard.md I2 — detect items that workers refused

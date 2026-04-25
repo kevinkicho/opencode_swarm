@@ -99,6 +99,17 @@ export interface SwarmRunRequest {
   // Council pattern only; deliberate-execute also uses runCouncilRounds
   // and inherits the flag's behavior when set.
   autoStopOnConverge?: boolean;
+  // PATTERN_DESIGN/map-reduce.md I4 — deterministic synthesis model.
+  // When set, the coordinator forces this model for any board item
+  // with `kind === 'synthesize'` regardless of which session claims
+  // it. Reason: synthesis quality varies sharply across models, and
+  // map-reduce's "any idle session claims" lottery makes the
+  // synthesizer choice random. Pinning a specific model produces
+  // consistent results across runs. Format: same shape as teamModels
+  // entries (`ollama/<model>` or `opencode/<model>`). Defaults to
+  // undefined → use whatever the claiming session's model would be.
+  // Map-reduce pattern only — ignored by other patterns.
+  synthesisModel?: string;
   // Strict role routing (PATTERN_DESIGN/role-differentiated.md I1).
   // When true, the coordinator picker filters out items whose
   // `preferredRole` doesn't match the picked session's role. Default
@@ -227,6 +238,8 @@ export interface SwarmRunMeta {
   autoStopOnConverge?: boolean;
   // Strict role routing mirror — PATTERN_DESIGN/role-differentiated.md I1.
   strictRoleRouting?: boolean;
+  // Synthesis-model pin mirror — PATTERN_DESIGN/map-reduce.md I4.
+  synthesisModel?: string;
   // Per-gate model pins mirrored from the request. See SwarmRunRequest
   // for semantics. Each gate's reviewer module reads these from meta
   // and passes as `model` on its postSessionMessageServer calls.
