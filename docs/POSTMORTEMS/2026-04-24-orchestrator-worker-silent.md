@@ -189,7 +189,7 @@ exhibited the fix working.
 
 | Fix | Status | Commit | Verified against | Notes |
 |-----|--------|--------|------------------|-------|
-| F1  | SHIPPED | (next commit) | — | dispatch watchdog inside waitForSessionIdle: WARN at 90s of no-new-parts, ERROR + abort at 240s; new reason='silent' on the ok=false return |
+| F1  | VERIFIED | d824bf4 | `run_modn6mrg_hxvssz` (orchestrator-worker, 2026-04-24 evening) | dispatch watchdog inside waitForSessionIdle: WARN at 90s of no-new-parts, ERROR + abort at 240s; new reason='silent' on the ok=false return. **Fired 3+ times during pattern 2 of the live multi-pattern test** — 1 WARN + 2 abort on real silent sessions (planner + worker sessions) without false positives. The 240s abort prevented the previously-observed 15-min-of-zero-signal failure mode. |
 | F2  | SHIPPED | (next commit) | — | lib/server/opencode-log-tail.ts polls /mnt/c/Users/<user>/.local/share/opencode/log for the newest .log; tails on 1s cadence; filters file.watcher.updated + snapshot prune + session.idle noise; started from instrumentation.ts on Node runtime |
 | F3  | PROPOSED | — | — | Requires editing launcher .ps1 (Windows-side, outside repo) |
 | F4  | SHIPPED | (next commit) | — | probeOllamaPs() inside watchdog, fires once silence ≥ 30s, throttled to every 30s; on /api/ps unreachable returns reason='provider-unavailable' + aborts session |
