@@ -128,9 +128,33 @@ function killGroup(signal) {
     }
   }
 }
-process.on('SIGINT', () => killGroup('SIGINT'));
-process.on('SIGTERM', () => killGroup('SIGTERM'));
-process.on('SIGHUP', () => killGroup('SIGHUP'));
+
+// Forced-exit safety net for orphan diagnoses. Without this, if
+// killGroup throws AND the child is already dead AND child.on('exit')
+// never fires (because it already fired before we got here, or the
+// child went into a zombie state), dev.mjs hangs forever holding the
+// `node scripts/dev.mjs` pid in our task tracker. Observed multiple
+// times during 2026-04-24 + 2026-04-25 sessions: next-server died
+// but the wrapper persisted indefinitely.
+//
+// 5s grace gives killGroup time to land + child to exit naturally;
+// after that we force-exit so the wrapper task always cleans up.
+let shutdownInFlight = false;
+function shutdown(signal) {
+  if (shutdownInFlight) return; // double-signal — already in progress
+  shutdownInFlight = true;
+  killGroup(signal);
+  setTimeout(() => {
+    // child.on('exit') will have called process.exit by now if the
+    // group-kill worked. If we're still here, the child is wedged —
+    // force-exit so the wrapper-task tracker frees up.
+    console.log(`\n[dev] shutdown timeout — forcing exit after ${signal}`);
+    process.exit(128 + (signalNumber(signal) ?? 15));
+  }, 5000).unref();
+}
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGHUP', () => shutdown('SIGHUP'));
 
 // Stdin-EOF watchdog — gated on TTY. We previously listened for
 // 'end' unconditionally to catch the parent-dies-without-forwarding-

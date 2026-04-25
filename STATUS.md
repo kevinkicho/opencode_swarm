@@ -589,17 +589,16 @@ need a live run to validate before shipping.
   this whenever bugs feel like they're piling up; capture findings
   as new entries here. First run not yet completed.
 
-- **Dev wrapper task dies, next-server orphans (recurring).** The
-  `npm run dev` wrapper script's task in our shell tracker exits
-  with SIGTERM (exit 143) periodically — cause unknown, not us
-  killing it directly. The next-server child PID survives and keeps
-  serving fine, but the task system shows nothing in the sidebar so
-  user doesn't realize the dev server is still up. Observed three
-  times 2026-04-24. Fix candidates: (a) make scripts/dev.mjs detach
-  next-server cleanly so the wrapper exit is expected, (b) make the
-  wrapper more resilient to whatever is sending SIGTERM, (c) detect
-  the orphan + adopt it instead of starting a duplicate. ~1-2 h to
-  diagnose then fix.
+- **Dev wrapper SIGTERM 143 → SHIPPED 2026-04-25.** The
+  `npm run dev` wrapper would survive after next-server died,
+  hanging in the task tracker. Root cause: dev.mjs's signal
+  handlers called `killGroup(signal)` but never scheduled an
+  exit fallback — if `killGroup` failed, throws, or the child was
+  already dead before our SIGCHLD landed, `child.on('exit')` would
+  never fire and dev.mjs would wait forever. Fix: shutdown handler
+  now schedules a 5s force-exit timeout (.unref() so it doesn't
+  block clean shutdowns); double-signal protected via
+  `shutdownInFlight` flag.
 
 - **Heat tab: file-tree toggle (VSCode-style).** Button in the heat-rail
   header flips between the current heat-list view and a tree view of
