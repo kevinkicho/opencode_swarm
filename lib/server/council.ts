@@ -70,7 +70,7 @@ function tokenizeForConvergence(s: string): Set<string> {
   return out;
 }
 
-function meanPairwiseJaccard(texts: string[]): number | null {
+export function meanPairwiseJaccard(texts: string[]): number | null {
   const sets = texts.filter(Boolean).map((t) => tokenizeForConvergence(t));
   if (sets.length < 2) return null;
   let pairs = 0;

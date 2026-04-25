@@ -150,7 +150,7 @@ function buildRevisionPrompt(
   ].join('\n');
 }
 
-interface JudgeVerdict {
+export interface JudgeVerdict {
   verdict: 'winner' | 'merge' | 'revise' | 'unclear';
   body: string;
   // PATTERN_DESIGN/debate-judge.md I1 — per-generator structured
@@ -203,7 +203,7 @@ function parseGeneratorBullets(text: string): Map<number, string[]> {
   return map;
 }
 
-function classifyJudgeReply(text: string): JudgeVerdict {
+export function classifyJudgeReply(text: string): JudgeVerdict {
   const first = text.split('\n', 1)[0]?.trim() ?? '';
   // I4: confidence comes from anywhere in the WINNER / MERGE line.
   // Parsed once across the first ~200 chars (the verdict line);
@@ -260,7 +260,7 @@ function tokenizeForAddress(s: string): Set<string> {
   return out;
 }
 
-function bulletAddressedFraction(
+export function bulletAddressedFraction(
   proposalText: string,
   bullets: string[],
 ): number {

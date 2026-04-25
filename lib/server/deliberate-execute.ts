@@ -1,3 +1,47 @@
+// Pattern implementation survey (2026-04-25):
+//
+// - deliberate-execute: FULLY IMPLEMENTED. runDeliberateExecuteKickoff covers
+//   all three phases (deliberation via runCouncilRounds, synthesis with
+//   todowrite extraction + cold-file-seed fallback, execution via startAutoTicker).
+//   Synthesis-verifier gate (I1) with clear-and-retry loop is wired.
+//   Directive-complexity classifier (I4) emits WARN for trivial directives.
+//   Partial-outcome recording on every early-return path. Wall-clock cap checked
+//   between phases. No separate tick function — execution phase delegates to
+//   the blackboard auto-ticker.
+//
+// - debate-judge: FULLY IMPLEMENTED. runDebateJudgeKickoff runs the full
+//   multi-round generator→judge loop. Verdict parsing (WINNER/MERGE/REVISE),
+//   per-generator structured bullet extraction (I1), confidence scoring (I4),
+//   feedback-addressed detection (I2) with auto-stop on low engagement, and
+//   wall-clock cap per round all wired. finalizeRun called on every exit path.
+//   No separate tick — the loop itself is the orchestrator.
+//
+// - critic-loop: FULLY IMPLEMENTED. runCriticLoopKickoff runs the worker→critic
+//   iteration loop with YAML verdict parsing (I1), nitpick-loop auto-
+//   termination (I2), max-iterations budget exhaustion, and wall-clock cap.
+//   finalizeRun called on every exit path. Partial-outcome recording throughout.
+//   No separate tick — the loop itself is the orchestrator.
+//
+// - orchestrator-worker: FULLY IMPLEMENTED (thin). runOrchestratorWorkerKickoff
+//   posts the orchestrator intro, fires the initial planner sweep, and starts
+//   the auto-ticker with orchestratorSessionID excluded from dispatch. All
+//   subsequent orchestration (re-planning, tier escalation, idle-stop) reuses
+//   the blackboard auto-ticker + planner machinery. No dedicated tick function
+//   needed — the auto-ticker handles it.
+//
+// - role-differentiated: FULLY IMPLEMENTED (thin). runRoleDifferentiatedKickoff
+//   resolves team roles (user-supplied or defaulted), persists them to meta,
+//   posts role-framed intros to sessions 1..N, fires the planner sweep on
+//   session 0, and starts the auto-ticker. All dispatch mechanics (role-
+//   affinity picker, strict-role routing, role-budget caps) live in the
+//   coordinator and auto-ticker. No dedicated tick function needed.
+//
+// Summary: all five patterns have complete kickoff functions. None have
+// separate tick functions — the three loop-based patterns (debate-judge,
+// critic-loop, deliberate-execute) self-orchestrate within their kickoff,
+// while the two blackboard-family patterns (orchestrator-worker, role-
+// differentiated) delegate ongoing orchestration to the auto-ticker.
+
 // Deliberate-execute pattern — hierarchical pattern #5 (compositional).
 // See SWARM_PATTERNS.md §9.
 //
@@ -90,7 +134,7 @@ export function classifyDirectiveComplexity(directive: string): DirectiveComplex
 const VERIFIER_WAIT_MS = 5 * 60 * 1000;
 const MAX_SYNTHESIS_RETRIES = 1;
 
-interface SynthesisVerdict {
+export interface SynthesisVerdict {
   verdict: 'approved' | 'revise' | 'unclear';
   feedback: string;
 }
@@ -126,7 +170,7 @@ function buildSynthesisVerifierPrompt(todos: string[]): string {
   ].join('\n');
 }
 
-function classifySynthesisReply(text: string): SynthesisVerdict {
+export function classifySynthesisReply(text: string): SynthesisVerdict {
   const first = text.split('\n', 1)[0]?.trim() ?? '';
   if (/^approved\b/i.test(first)) return { verdict: 'approved', feedback: text.trim() };
   if (/^revise\b/i.test(first)) {

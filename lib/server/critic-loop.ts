@@ -143,9 +143,9 @@ function buildRevisionPrompt(
 // safe values). Falls back to legacy `APPROVED:` / `REVISE:` first-
 // line check when no yaml block is present so older critic prompts
 // still classify.
-type VerdictScope = 'STRUCTURAL' | 'WORDING' | 'NONE';
+export type VerdictScope = 'STRUCTURAL' | 'WORDING' | 'NONE';
 
-interface ParsedVerdict {
+export interface ParsedVerdict {
   verdict: 'approved' | 'revise' | 'unclear';
   confidence: number; // 1-5; 0 = unknown
   scope: VerdictScope;
@@ -153,7 +153,7 @@ interface ParsedVerdict {
   body: string; // text payload to feed to the worker on REVISE
 }
 
-function classifyCriticReply(text: string): ParsedVerdict {
+export function classifyCriticReply(text: string): ParsedVerdict {
   // Try YAML block extraction first (the I1 structured contract).
   const yamlMatch = text.match(/```ya?ml\s*\n([\s\S]*?)\n\s*```/i);
   if (yamlMatch) {
