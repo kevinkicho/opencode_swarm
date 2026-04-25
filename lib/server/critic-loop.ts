@@ -20,8 +20,7 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
-import { finalizeRun } from './finalize-run';
-import { getRun } from './swarm-registry';
+import { withRunGuard } from './run-guard';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import { recordPartialOutcome } from './degraded-completion';
 import type { OpencodeMessage } from '../opencode/types';
@@ -228,20 +227,10 @@ export async function runCriticLoopKickoff(
   swarmRunID: string,
   opts: { maxIterations?: number } = {},
 ): Promise<void> {
-  try {
-  const meta = await getRun(swarmRunID);
-  if (!meta) {
-    console.warn(
-      `[critic-loop] run ${swarmRunID} not found — kickoff aborted`,
-    );
-    return;
-  }
-  if (meta.pattern !== 'critic-loop') {
-    console.warn(
-      `[critic-loop] run ${swarmRunID} has pattern '${meta.pattern}', not critic-loop — kickoff aborted`,
-    );
-    return;
-  }
+  await withRunGuard(
+    swarmRunID,
+    { expectedPattern: 'critic-loop', context: 'critic-loop' },
+    async (meta) => {
   if (meta.sessionIDs.length !== 2) {
     console.warn(
       `[critic-loop] run ${swarmRunID} requires exactly 2 sessions (got ${meta.sessionIDs.length}) — kickoff aborted`,
@@ -551,7 +540,6 @@ export async function runCriticLoopKickoff(
       `[critic-loop] run ${swarmRunID} iter ${iter}: REVISE → worker ("${classified.body.slice(0, 80)}")`,
     );
   }
-  } finally {
-    await finalizeRun(swarmRunID, 'critic-loop');
-  }
+    },
+  );
 }

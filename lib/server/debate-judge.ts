@@ -16,8 +16,7 @@
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
-import { finalizeRun } from './finalize-run';
-import { getRun } from './swarm-registry';
+import { withRunGuard } from './run-guard';
 import { recordPartialOutcome } from './degraded-completion';
 import type { OpencodeMessage } from '../opencode/types';
 
@@ -287,18 +286,10 @@ export async function runDebateJudgeKickoff(
   swarmRunID: string,
   opts: { maxRounds?: number } = {},
 ): Promise<void> {
-  try {
-  const meta = await getRun(swarmRunID);
-  if (!meta) {
-    console.warn(`[debate-judge] run ${swarmRunID} not found — kickoff aborted`);
-    return;
-  }
-  if (meta.pattern !== 'debate-judge') {
-    console.warn(
-      `[debate-judge] run ${swarmRunID} has pattern '${meta.pattern}', not debate-judge — kickoff aborted`,
-    );
-    return;
-  }
+  await withRunGuard(
+    swarmRunID,
+    { expectedPattern: 'debate-judge', context: 'debate-judge' },
+    async (meta) => {
   if (meta.sessionIDs.length < 3) {
     console.warn(
       `[debate-judge] run ${swarmRunID} requires at least 3 sessions (1 judge + 2 generators); got ${meta.sessionIDs.length} — kickoff aborted`,
@@ -652,7 +643,6 @@ export async function runDebateJudgeKickoff(
       `[debate-judge] run ${swarmRunID} round ${round}: REVISE — feedback fanned to ${generatorSIDs.length} generators`,
     );
   }
-  } finally {
-    await finalizeRun(swarmRunID, 'debate-judge');
-  }
+    },
+  );
 }

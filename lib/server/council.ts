@@ -30,9 +30,8 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
-import { finalizeRun } from './finalize-run';
+import { withRunGuard } from './run-guard';
 import { recordPartialOutcome } from './degraded-completion';
-import { getRun } from './swarm-registry';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '../opencode/types';
 
@@ -161,29 +160,21 @@ export async function runCouncilRounds(
   swarmRunID: string,
   opts: { maxRounds?: number } = {},
 ): Promise<void> {
-  try {
   const maxRounds = opts.maxRounds ?? DEFAULT_MAX_ROUNDS;
   if (maxRounds < 2) return;
 
-  const meta = await getRun(swarmRunID);
-  if (!meta) {
-    console.warn(`[council] run ${swarmRunID} not found — auto-rounds aborted`);
-    return;
-  }
-  // Pattern guard. Council itself uses this orchestrator directly;
-  // deliberate-execute calls it as its phase-1 deliberation.
+  // Council accepts both 'council' (standalone) and 'deliberate-execute'
+  // (when called as that pattern's phase-1 deliberation).
   // 2026-04-25 fix: previously rejected any non-'council' pattern,
-  // which silently no-op'd every deliberate-execute kickoff —
-  // sessions sat at msgs=2/done=0/inflight=1 forever because the
-  // orchestrator that should have waited + dispatched rounds
-  // returned immediately without doing anything. POSTMORTEM cross-
-  // ref: 2026-04-25-agent-name-silent-drop.md (sibling failure).
-  if (meta.pattern !== 'council' && meta.pattern !== 'deliberate-execute') {
-    console.warn(
-      `[council] run ${swarmRunID} has pattern '${meta.pattern}' — runCouncilRounds expected 'council' or 'deliberate-execute'; aborted`,
-    );
-    return;
-  }
+  // which silently no-op'd every deliberate-execute kickoff. POSTMORTEM
+  // cross-ref: 2026-04-25-agent-name-silent-drop.md (sibling failure).
+  await withRunGuard(
+    swarmRunID,
+    {
+      expectedPattern: ['council', 'deliberate-execute'],
+      context: 'council',
+    },
+    async (meta) => {
   if (meta.sessionIDs.length < 2) {
     // A single-session council is just a chat; there's nothing to
     // reconcile across members. The POST handler already clamps to
@@ -340,9 +331,6 @@ export async function runCouncilRounds(
   console.log(
     `[council] run ${swarmRunID} — auto-rounds complete (${maxRounds} rounds total)`,
   );
-  } finally {
-    // Abort any lingering in-flight turns on session sessions so
-    // closing orchestrators don't leak tokens. No-op on idle sessions.
-    await finalizeRun(swarmRunID, 'council');
-  }
+    },
+  );
 }
