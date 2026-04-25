@@ -11,6 +11,12 @@ import type {
   OpencodeSession,
   OpencodeMessage,
 } from './types';
+import { parseOpencodeJSON } from './runtime-shape';
+import {
+  isOpencodeMessageArray,
+  isOpencodeProjectArray,
+  isOpencodeSessionArray,
+} from './validators';
 
 export type {
   OpencodeProject,
@@ -51,25 +57,19 @@ export async function opencodeFetch(path: string, init: RequestInit = {}): Promi
   return fetch(url, { ...init, headers, cache: 'no-store' });
 }
 
-async function getJson<T>(path: string): Promise<T> {
+export async function getProjects(): Promise<OpencodeProject[]> {
+  const path = '/project';
   const res = await opencodeFetch(path);
-  if (!res.ok) {
-    throw new Error(`opencode ${path} -> HTTP ${res.status}`);
-  }
-  const body = await res.json();
-  if (body && typeof body === 'object' && !Array.isArray(body) && 'value' in body) {
-    return (body as { value: T }).value;
-  }
-  return body as T;
+  if (!res.ok) throw new Error(`opencode ${path} -> HTTP ${res.status}`);
+  return parseOpencodeJSON(res, isOpencodeProjectArray, `GET ${path}`);
 }
 
-export function getProjects(): Promise<OpencodeProject[]> {
-  return getJson<OpencodeProject[]>('/project');
-}
-
-export function getSessionsByDirectory(directory: string): Promise<OpencodeSession[]> {
+export async function getSessionsByDirectory(directory: string): Promise<OpencodeSession[]> {
   const qs = new URLSearchParams({ directory });
-  return getJson<OpencodeSession[]>(`/session?${qs.toString()}`);
+  const path = `/session?${qs.toString()}`;
+  const res = await opencodeFetch(path);
+  if (!res.ok) throw new Error(`opencode ${path} -> HTTP ${res.status}`);
+  return parseOpencodeJSON(res, isOpencodeSessionArray, `GET ${path}`);
 }
 
 // `/session` on its own is server-cwd-scoped and truncates the list.
@@ -94,6 +94,9 @@ export async function getAllSessions(): Promise<OpencodeSession[]> {
   return rows;
 }
 
-export function getSessionMessages(sessionId: string): Promise<OpencodeMessage[]> {
-  return getJson<OpencodeMessage[]>(`/session/${encodeURIComponent(sessionId)}/message`);
+export async function getSessionMessages(sessionId: string): Promise<OpencodeMessage[]> {
+  const path = `/session/${encodeURIComponent(sessionId)}/message`;
+  const res = await opencodeFetch(path);
+  if (!res.ok) throw new Error(`opencode ${path} -> HTTP ${res.status}`);
+  return parseOpencodeJSON(res, isOpencodeMessageArray, `GET ${path}`);
 }

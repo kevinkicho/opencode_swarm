@@ -18,6 +18,13 @@
 import { opencodeFetch } from '../opencode/client';
 import type { OpencodeSession } from '../opencode/client';
 import type { OpencodeMessage } from '../opencode/types';
+import { parseOpencodeJSON } from '../opencode/runtime-shape';
+import {
+  isOpencodeDiffArray,
+  isOpencodeMessageArray,
+  isOpencodeSession,
+  type OpencodeDiffEntry,
+} from '../opencode/validators';
 import { estimateTokens, getModelContextLimit } from './opencode-models';
 import { startOpencodeLogTail } from './opencode-log-tail';
 
@@ -60,7 +67,7 @@ export async function createSessionServer(
       `opencode session create -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
     );
   }
-  return (await res.json()) as OpencodeSession;
+  return parseOpencodeJSON(res, isOpencodeSession, 'POST /session');
 }
 
 // Read session messages. The status deriver only needs the last assistant
@@ -85,7 +92,11 @@ export async function getSessionMessagesServer(
       `opencode session messages -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
     );
   }
-  return (await res.json()) as OpencodeMessage[];
+  return parseOpencodeJSON(
+    res,
+    isOpencodeMessageArray,
+    `GET /session/${sessionId.slice(-8)}/message`,
+  );
 }
 
 // Session-aggregate diff. Opencode returns one entry per changed file with a
@@ -97,7 +108,7 @@ export async function getSessionDiffServer(
   sessionId: string,
   directory: string,
   signal?: AbortSignal
-): Promise<Array<{ file: string; patch: string }>> {
+): Promise<OpencodeDiffEntry[]> {
   const qs = new URLSearchParams({ directory }).toString();
   const res = await opencodeFetch(
     `/session/${encodeURIComponent(sessionId)}/diff?${qs}`,
@@ -109,7 +120,11 @@ export async function getSessionDiffServer(
       `opencode session diff -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
     );
   }
-  return (await res.json()) as Array<{ file: string; patch: string }>;
+  return parseOpencodeJSON(
+    res,
+    isOpencodeDiffArray,
+    `GET /session/${sessionId.slice(-8)}/diff`,
+  );
 }
 
 // Cancels any in-flight model turn for this session. Soft cancel — any tool
