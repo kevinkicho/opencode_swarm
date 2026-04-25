@@ -624,20 +624,26 @@ need a live run to validate before shipping.
     refused items as active work and the ratchet stayed dormant
     indefinitely (run_mob31bx6_jzdfs2 stranded at 22.33M).
 
-- **Nemotron-through-opencode (orchestrator-worker swapped).**
-  Retest 2026-04-25 with `--log-level DEBUG` (run_modx3mv5_cpwh93)
-  found a different failure mode than the original 0-response
-  symptom: nemotron-through-opencode IS responding (18 successful
-  assistant turns in 200s) but loops on `todowrite`, re-emitting
-  the same 10 items every turn while the board never gets seeded.
-  Functionally equivalent end-state for orchestrator-worker, so
-  swapped that seat to GEMMA in `lib/swarm-patterns.ts`. Council
-  drafters / map-reduce synthesizer / debate judge / role-
-  differentiated architect were NOT changed — those seats don't
-  use todowrite, so the observed loop failure wouldn't apply.
-  Each gated on its own retest if a real failure surfaces. Direct
-  ollama API still works fine for nemotron; the issue is opencode's
-  wrapper handling of step-tool-step loops on this specific model.
+- **Nemotron-through-opencode → GEMMA across all 6 default seats.**
+  Two retests 2026-04-25 with `--log-level DEBUG` reproduced a
+  step-loop cost behaviour that affects every nemotron seat in
+  opencode's wrapper:
+  1. **run_modx3mv5_cpwh93** (orchestrator-worker): 18 turns in
+     200s, each calling `todowrite` and re-emitting the same 10
+     items, board never seeded.
+  2. **run_modxga1j_kh4j8k** (council, 3 nemotron drafters): real
+     output produced (drafts were good) but in 20+ tiny step-finish
+     turns per session, each re-reading 47K input tokens to emit
+     ~150 output tokens — **~50× more expensive than necessary**
+     for a 3-sentence directive.
+  Same root cause: opencode's wrapper handling of step-tool-step
+  loops on nemotron specifically. Direct ollama `/api/generate` +
+  `/v1/chat/completions` work normally for the same model.
+  Swapped NEMOTRON → GEMMA in `patternDefaults` for orchestrator-
+  worker, council, map-reduce, role-differentiated, debate-judge,
+  and deliberate-execute. The `auditorModel: NEMOTRON` on the
+  blackboard pattern's optional auditor gate is left — non-default,
+  user-opted-in, distinct role from drafting/planning seats.
 
 ### Designed but deprioritized
 
@@ -651,6 +657,18 @@ need a live run to validate before shipping.
 Things we shipped but haven't exercised against real runs. See
 `docs/VALIDATION.md` for the per-item runbook (setup / invocation /
 pass-fail signals).
+
+**Audit 2026-04-25 partial coverage:**
+- Council pattern partially exercised in run_modxga1j_kh4j8k
+  during the nemotron retest above — drafts produced correctly,
+  per-member content scaled to teamSize=3. Cost was the bottleneck,
+  not correctness. After the GEMMA swap a fresh council run
+  should validate at <10× the prior cost; not yet re-run.
+- Other validation areas (Playwright grounding, pattern benchmark,
+  ambition-ratchet tier-2+, overnight-safety stack) all need
+  dedicated runs that cost real money. Each is documented in
+  VALIDATION.md with the exact curl invocation; ready to fire
+  when someone wants to spend the budget.
 
 - **Playwright grounding (`enableVerifierGate: true`)** — schema + code
   wired, never exercised live. Blocked on: user running the target

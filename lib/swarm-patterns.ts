@@ -143,16 +143,20 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     auditorModel: NEMOTRON,
   },
   'map-reduce': {
-    // session[0] = synthesizer (reuses the same session for the later
-    // synth phase via a 'synthesize' board item); sessions[1..N-1] =
-    // mappers. Upgrade session[0] to nemotron — merging is the hard
-    // part. Mappers stay on gemma4.
-    teamModels: (n) => [NEMOTRON, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
+    // Synthesizer + mappers all on GEMMA. Was [NEMOTRON, ...GEMMA]
+    // — flipped 2026-04-25 alongside orchestrator-worker after the
+    // step-loop cost behaviour also surfaced on the council retest.
+    // See orchestrator-worker comment for full evidence + reasoning.
+    teamModels: (n) => Array(n).fill(GEMMA),
   },
   council: {
-    // All drafters strongest tier — each owns a full proposal and
-    // divergence is the whole point. Mixing is a user override.
-    teamModels: (n) => Array(n).fill(NEMOTRON),
+    // All drafters on GEMMA. Was NEMOTRON — flipped 2026-04-25.
+    // Council retest (run_modxga1j_kh4j8k) reproduced the cost
+    // pattern: 20 successful nemotron turns in 200s for a 3-sentence
+    // directive, each turn 47K input / ~150 output. Drafts were
+    // good but the step-loop made the run ~50× more expensive than
+    // necessary. GEMMA on the same directive completes in 2-3 turns.
+    teamModels: (n) => Array(n).fill(GEMMA),
   },
   'orchestrator-worker': {
     // session[0] = orchestrator (owns strategy for long runs);
@@ -176,16 +180,19 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     teamModels: (n) => Array(n).fill(GEMMA),
   },
   'role-differentiated': {
-    // Role-indexed defaults. Architect / reviewer / security carry
-    // strongest reasoning; builder / tester / ux / data are worker-
-    // shaped; docs is balanced. teamRoles rotates through this list
-    // when the request doesn't supply its own.
+    // Role-indexed defaults. All roles on GEMMA after 2026-04-25
+    // swap — was {architect/reviewer/security: NEMOTRON, ...GEMMA,
+    // docs: GLM}. NEMOTRON's step-loop cost behaviour (see
+    // orchestrator-worker + council comments) made it expensive in
+    // any drafting seat; flipped uniformly here for consistency.
+    // teamRoles rotates through the canonical role list when the
+    // request doesn't supply its own.
     teamModels: (n) => {
       const roles = ['architect', 'builder', 'tester', 'reviewer', 'security', 'docs', 'ux', 'data'];
       const roleModel: Record<string, string> = {
-        architect: NEMOTRON,
-        reviewer: NEMOTRON,
-        security: NEMOTRON,
+        architect: GEMMA,
+        reviewer: GEMMA,
+        security: GEMMA,
         builder: GEMMA,
         tester: GEMMA,
         ux: GEMMA,
@@ -202,13 +209,14 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     teamRoles: ['architect', 'builder', 'tester', 'reviewer', 'security', 'docs', 'ux', 'data'],
   },
   'debate-judge': {
-    // session[0] = judge (authoritative verdict); sessions[1..N-1] =
-    // generators. Mix generators for divergence: rotate through
-    // nemotron, gemma, glm so multi-draft runs get different
-    // reasoning styles instead of a monoculture.
+    // Judge on GEMMA, generators rotate GEMMA / GLM. Was NEMOTRON
+    // judge + cycle including NEMOTRON — swapped 2026-04-25 to
+    // skirt the step-loop cost issue (see orchestrator-worker
+    // comment). Two-model rotation still gives draft divergence;
+    // monoculture risk is low because judge differs from generators.
     teamModels: (n) => {
-      const generatorCycle = [NEMOTRON, GEMMA, GLM];
-      const out: string[] = [NEMOTRON]; // judge
+      const generatorCycle = [GEMMA, GLM];
+      const out: string[] = [GEMMA]; // judge
       for (let i = 1; i < n; i += 1) {
         out.push(generatorCycle[(i - 1) % generatorCycle.length]);
       }
@@ -222,12 +230,12 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
   },
   'deliberate-execute': {
     // Council-style deliberation then blackboard-style execution on
-    // the same session pool. Current code structure can't switch
-    // models mid-run, so we pin all sessions to nemotron — the
-    // council phase is the most important, and gemma-range tasks in
-    // the execution phase are acceptable on a stronger model.
-    // Phase-switching model support is a follow-up.
-    teamModels: (n) => Array(n).fill(NEMOTRON),
+    // the same session pool. All sessions on GEMMA after 2026-04-25
+    // swap — was NEMOTRON. Same step-loop cost issue applies (see
+    // orchestrator-worker + council comments). Phase-switching
+    // model support is still a follow-up; running both phases on
+    // GEMMA is the safer cost default until that's built.
+    teamModels: (n) => Array(n).fill(GEMMA),
   },
 };
 
