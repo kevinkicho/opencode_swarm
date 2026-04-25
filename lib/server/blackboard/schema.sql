@@ -69,6 +69,14 @@ CREATE TABLE IF NOT EXISTS board_items (
   -- deliberation drafts that motivated each todo.
   source_drafts_json TEXT,
 
+  -- Stigmergy heat-pick diagnostic flag
+  -- (PATTERN_DESIGN/stigmergy.md heat-picked-timeline-chip). Set 1 by
+  -- the coordinator at claim time when heat-weighted picking chose a
+  -- different item than age-only would have. Renders an amber chip on
+  -- board-rail rows so the user can see when stigmergy actually
+  -- influenced the dispatch.
+  picked_by_heat INTEGER NOT NULL DEFAULT 0,
+
   PRIMARY KEY (swarm_run_id, id)
 );
 

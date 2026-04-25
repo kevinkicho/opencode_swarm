@@ -35,6 +35,7 @@ interface BoardRow {
   preferred_role: string | null;
   expected_files_json: string | null;
   source_drafts_json: string | null;
+  picked_by_heat: number;
 }
 
 function hydrate(row: BoardRow): BoardItem {
@@ -74,6 +75,7 @@ function hydrate(row: BoardRow): BoardItem {
       // Malformed JSON — drop silently, matches expected_files behavior.
     }
   }
+  if (row.picked_by_heat) item.pickedByHeat = true;
   if (row.file_hashes_json) {
     try {
       const parsed = JSON.parse(row.file_hashes_json) as BoardItem['fileHashes'];
@@ -192,6 +194,11 @@ export interface TransitionInput {
   staleSinceSha?: string | null;
   note?: string | null;
   setCompletedAt?: boolean;
+  // PATTERN_DESIGN/stigmergy.md heat-picked-timeline-chip — set true
+  // by the coordinator at claim time when heat-weighted picking chose
+  // this item over what age-only ordering would have. Persisted on
+  // the row; surfaced as an amber chip in board-rail.
+  pickedByHeat?: boolean;
 }
 
 export function transitionStatus(
@@ -227,6 +234,10 @@ export function transitionStatus(
   if (input.setCompletedAt) {
     sets.push('completed_ms = ?');
     args.push(Date.now());
+  }
+  if (input.pickedByHeat !== undefined) {
+    sets.push('picked_by_heat = ?');
+    args.push(input.pickedByHeat ? 1 : 0);
   }
 
   args.push(swarmRunID, itemId, ...fromList);

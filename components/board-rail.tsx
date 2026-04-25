@@ -437,6 +437,15 @@ function BoardRailRow({
             </span>
           );
         })()}
+        {item.pickedByHeat && (
+          <span
+            className="shrink-0 font-mono text-[10px] text-amber"
+            title="heat-weighted pick — stigmergy preferred this over oldest-first (PATTERN_DESIGN/stigmergy.md)"
+            aria-label="heat-weighted pick"
+          >
+            🜂
+          </span>
+        )}
         {isStale && item.staleSinceSha && (
           <span
             className="shrink-0 font-mono text-[9px] text-amber tabular-nums"

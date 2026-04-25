@@ -938,10 +938,20 @@ export async function tickCoordinator(
     );
   }
   const todo = finalQueue[0].todo;
-  if (heatWeightedPick && scored[0].score !== scored[scored.length - 1].score) {
-    // Log only when heat actually changed the order — diagnostic signal
-    // that stigmergy fired. Quiet otherwise to avoid log spam on runs
-    // where every todo maps to the same bucket of files.
+  // PATTERN_DESIGN/stigmergy.md heat-picked-timeline-chip — flag this
+  // claim with `pickedByHeat: true` when stigmergy actually shifted the
+  // order. Detected by checking that (a) heat scoring was active AND
+  // (b) the picked item differs from what age-only ordering would have
+  // chosen. The age-only first pick is the open todo with the earliest
+  // createdAtMs, so we compare that against `todo`.
+  let pickedByHeat = false;
+  if (heatWeightedPick && finalQueue.length > 1) {
+    const ageOnlyFirst = [...finalQueue]
+      .map((s) => s.todo)
+      .sort((a, b) => a.createdAtMs - b.createdAtMs)[0];
+    pickedByHeat = ageOnlyFirst.id !== todo.id;
+  }
+  if (pickedByHeat) {
     console.log(
       `[coordinator] heat-weighted pick: "${todo.content.slice(0, 50)}..." (score=${scored[0].score}, max=${scored[scored.length - 1].score})`,
     );
@@ -1003,6 +1013,7 @@ export async function tickCoordinator(
     to: 'claimed',
     ownerAgentId,
     fileHashes: claimAnchors,
+    pickedByHeat: pickedByHeat || undefined,
   });
   if (!claim.ok) {
     return { status: 'skipped', reason: `claim lost race: ${claim.currentStatus}` };

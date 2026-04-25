@@ -106,4 +106,13 @@ export interface BoardItem {
   // Lets a future inspector drawer answer "why does this todo exist?"
   // by linking back to the member drafts that motivated it.
   sourceDrafts?: number[];
+  // PATTERN_DESIGN/stigmergy.md "heat-picked-timeline-chip" — set true
+  // by the coordinator when the heat-weighted picker preferred this
+  // item over what age-only ordering would have chosen. Diagnostic
+  // signal that stigmergy actually shifted the dispatch (vs. when the
+  // bias agreed with oldest-first anyway). Surfaced as a small amber
+  // 🜂 chip on the board-rail row. Stays on the item for the run's
+  // lifetime — flips false on re-claim only if the new claim's heat
+  // bias didn't fire. Default undefined → render no chip.
+  pickedByHeat?: boolean;
 }

@@ -100,6 +100,12 @@ function migrate(db: DB): void {
        ADD COLUMN source_drafts_json TEXT`,
     );
   }
+  if (!have.has('picked_by_heat')) {
+    db.exec(
+      `ALTER TABLE board_items
+       ADD COLUMN picked_by_heat INTEGER NOT NULL DEFAULT 0`,
+    );
+  }
 }
 
 function resolveSchema(): string {
