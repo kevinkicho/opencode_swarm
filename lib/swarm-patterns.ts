@@ -121,6 +121,12 @@ export interface PatternDefaults {
   criticModel?: string;
   verifierModel?: string;
   auditorModel?: string;
+  // Map-reduce only: default for `meta.synthesisModel`. Coordinator
+  // pins the synth claim to this model regardless of which session
+  // claims it. Set when the synthesizer's prompt is heavy enough that
+  // a smaller model unreliably produces output. Today's GEMMA on a
+  // 3-mapper / ~30K-token synth prompt was the motivating case.
+  synthesisModel?: string;
   // Role-differentiated only: default role names the planner's
   // teamRoles uses. Indexed 0..N-1. Array shorter than teamSize
   // cycles; longer arrays are truncated.
@@ -143,11 +149,18 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     auditorModel: NEMOTRON,
   },
   'map-reduce': {
-    // Synthesizer + mappers all on GEMMA. Was [NEMOTRON, ...GEMMA]
-    // — flipped 2026-04-25 alongside orchestrator-worker after the
-    // step-loop cost behaviour also surfaced on the council retest.
-    // See orchestrator-worker comment for full evidence + reasoning.
+    // Mappers on GEMMA (parallel-redundant slice work — GEMMA handles
+    // it fine). Synthesizer pinned to GLM via synthesisModel: the
+    // 2026-04-25 validation showed GEMMA reliably produced silent
+    // turns when the synth prompt embedded ~30K tokens of N mapper
+    // drafts (run_modytfez_frfs8l: synth item bounced repeatedly,
+    // synthesis never landed). GLM-5.1 has the same context limit
+    // (202K) and didn't show step-loop fragility in any 2026-04-25
+    // run, so it's the lowest-risk pin for this seat. Falls back to
+    // GEMMA on the claiming session if synthesisModel is absent —
+    // user override via meta.synthesisModel still wins.
     teamModels: (n) => Array(n).fill(GEMMA),
+    synthesisModel: GLM,
   },
   council: {
     // All drafters on GEMMA. Was NEMOTRON — flipped 2026-04-25.

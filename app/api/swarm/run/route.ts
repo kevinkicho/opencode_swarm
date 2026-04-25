@@ -543,6 +543,9 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (defaults.auditorModel && !parsed.auditorModel) {
     parsed.auditorModel = defaults.auditorModel;
   }
+  if (defaults.synthesisModel && !parsed.synthesisModel) {
+    parsed.synthesisModel = defaults.synthesisModel;
+  }
   if (defaults.teamRoles && !parsed.teamRoles && parsed.pattern === 'role-differentiated') {
     // Cycle or truncate to teamSize so the roles array lines up with
     // the session count (role-differentiated.ts validates this pairing).
