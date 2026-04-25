@@ -133,8 +133,8 @@ verdict chip.
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
 | debate-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=debate-judge; rounds × generators matrix + judge verdict (WINNER mint / MERGE iris / REVISE amber) |
-| I1 | improvement | PROPOSED | — | — | prompt + parser ~3 h; shared with critic-loop I1 |
-| I2 | improvement | PROPOSED | — | — | needs I1; ~2 h |
+| I1 | improvement | SHIPPED | (next commit) | — | structured per-generator REVISE bullets in buildJudgeIntroPrompt; parseGeneratorBullets extracts `Map<genIdx, string[]>` for I2 to consume |
+| I2 | improvement | SHIPPED | (next commit) | — | bulletAddressedFraction(token-jaccard ≥ 0.10) per draft × prior-round bullets; mean across generators with bullets <30% triggers auto-stop |
 | I3 | improvement | SHIPPED | (next commit) | — | kickoff WARN in runDebateJudgeKickoff: triggers when ≥3 generators all share a single modelID — surfaces lack of model diversity without blocking the run |
 | I4 | improvement | PROPOSED | — | — | ties to I1 ~30 min |
 

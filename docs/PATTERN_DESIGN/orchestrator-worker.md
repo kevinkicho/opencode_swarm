@@ -127,7 +127,7 @@ would have caught the silent failure at t+90s.
 | strategy-tab | tab | SHIPPED | (next commit) | — | vertical newest-first sweep timeline; per-sweep board snapshot chip + +N/-M/~K delta counts; iris stripe when changed; click-to-expand shows full added/removed/rephrased text |
 | I1 | improvement | SHIPPED | (next commit) | — | MAX_ORCHESTRATOR_REPLANS=6 cap enforced at attemptTierEscalation + runPeriodicSweep entry via orchestratorReplanCapHit (counts plan_revisions rows). Stop reason 'replan-loop-exhausted' added to StopReason union; RunHealthChip surfaces it as red dot with intervention message |
 | I2 | improvement | SHIPPED | (next commit) | — | plan_revisions SQLite table + computeDelta token-jaccard ≥ 0.6 fuzzy match + GET /api/swarm/run/:id/strategy; logged from runPlannerSweep so all sweep paths (initial, attemptReSweep, runPeriodicSweep) feed it |
-| I3 | improvement | PROPOSED | — | — | backend + endpoint ~2 h |
+| I3 | improvement | SHIPPED | (next commit) | — | POST /api/swarm/run/:id/replan returns 202 + fires runPlannerSweep with overwrite+includeBoardContext in the background; strategy rail header has a `↻ replan` button with idle/queueing/queued/failed states |
 | I4 | improvement | PROPOSED | — | — | shared with POSTMORTEMS/2026-04-24 F1 |
 
 ## 6 · Cross-references

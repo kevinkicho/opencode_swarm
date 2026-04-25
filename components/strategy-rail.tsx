@@ -43,6 +43,7 @@ export function StrategyRail({
 }) {
   const { revisions, loading, error } = useStrategy(swarmRunID);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [replanState, setReplanState] = useState<'idle' | 'firing' | 'queued' | 'failed'>('idle');
 
   const headerStatus = useMemo(() => {
     if (loading && revisions.length === 0) return 'loading…';
@@ -52,10 +53,37 @@ export function StrategyRail({
     return `R${latest.round} · last sweep ${fmtAge(latest.createdAt)} ago · ${revisions.length} sweep${revisions.length === 1 ? '' : 's'}`;
   }, [loading, error, revisions]);
 
+  // PATTERN_DESIGN/orchestrator-worker.md I3 — manual replan trigger.
+  // POST /api/swarm/run/:id/replan returns 202 immediately. We render
+  // a transient "queued" state that auto-resets so repeated clicks
+  // produce repeated background sweeps without a permanent label
+  // change.
+  const fireReplan = async (): Promise<void> => {
+    if (replanState === 'firing') return;
+    setReplanState('firing');
+    try {
+      const res = await fetch(`/api/swarm/run/${swarmRunID}/replan`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        setReplanState('failed');
+        setTimeout(() => setReplanState('idle'), 3000);
+        return;
+      }
+      setReplanState('queued');
+      setTimeout(() => setReplanState('idle'), 3000);
+    } catch {
+      setReplanState('failed');
+      setTimeout(() => setReplanState('idle'), 3000);
+    }
+  };
+
   if (revisions.length === 0) {
     return wrap(
       embedded,
       headerStatus,
+      replanState,
+      fireReplan,
       <div className="px-3 py-4 font-mono text-micro uppercase tracking-widest2 text-fog-700">
         {loading
           ? 'awaiting first plan — orchestrator is thinking'
@@ -67,6 +95,8 @@ export function StrategyRail({
   return wrap(
     embedded,
     headerStatus,
+    replanState,
+    fireReplan,
     <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none min-h-0">
       {revisions.map((rev) => (
         <StrategyRowEl
@@ -80,7 +110,27 @@ export function StrategyRail({
   );
 }
 
-function wrap(embedded: boolean, headerStatus: string, body: React.ReactNode) {
+function wrap(
+  embedded: boolean,
+  headerStatus: string,
+  replanState: 'idle' | 'firing' | 'queued' | 'failed',
+  fireReplan: () => void,
+  body: React.ReactNode,
+) {
+  const replanLabel =
+    replanState === 'firing'
+      ? 'queueing…'
+      : replanState === 'queued'
+        ? 'queued ✓'
+        : replanState === 'failed'
+          ? 'failed'
+          : '↻ replan';
+  const replanTone =
+    replanState === 'queued'
+      ? 'text-mint border-mint/40'
+      : replanState === 'failed'
+        ? 'text-rust border-rust/40'
+        : 'text-fog-400 border-fog-700 hover:text-iris hover:border-iris/40';
   const header = (
     <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
       <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600 shrink-0">
@@ -89,6 +139,19 @@ function wrap(embedded: boolean, headerStatus: string, body: React.ReactNode) {
       <span className="font-mono text-micro tabular-nums text-fog-700 truncate">
         {headerStatus}
       </span>
+      <button
+        type="button"
+        onClick={fireReplan}
+        disabled={replanState === 'firing'}
+        title="Trigger a fresh planner sweep on this run (PATTERN_DESIGN/orchestrator-worker.md I3)"
+        className={clsx(
+          'ml-auto h-5 px-1.5 rounded border bg-ink-900/60 font-mono text-[9.5px] uppercase tracking-widest2 transition cursor-pointer',
+          replanTone,
+          replanState === 'firing' && 'opacity-60 cursor-wait',
+        )}
+      >
+        {replanLabel}
+      </button>
     </div>
   );
   if (embedded) return <>{header}{body}</>;

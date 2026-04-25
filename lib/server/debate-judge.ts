@@ -78,16 +78,29 @@ function buildJudgeIntroPrompt(
     '',
     'Sit tight until the generators produce their proposals. Once you',
     "receive them, your job is to evaluate rigorously and deliver a",
-    'verdict. Reply in exactly one of these shapes:',
+    'verdict in exactly this structured shape (PATTERN_DESIGN/debate-',
+    'judge.md I1):',
     '',
-    '  WINNER: <generator-N> — <one-line reason>',
+    '  WINNER: generator-N — <one-line reason>',
     '  MERGE: <synthesis of best elements across proposals>',
-    '  REVISE: <specific feedback for each generator who needs revision>',
+    '  REVISE — generator-N:',
+    '    - <specific change 1>',
+    '    - <specific change 2>',
+    '    - <specific change 3>',
+    '  REVISE — generator-M:',
+    '    - <…>',
     '',
-    'Start your reply with one of those keywords (case-insensitive).',
-    'Your verdict is authoritative. If you pick a WINNER or deliver a',
-    'MERGE, the debate ends. REVISE sends specific feedback back to',
-    'generators for another round (limited rounds available).',
+    'Start your reply with one of WINNER / MERGE / REVISE (case-',
+    'insensitive). On REVISE, list 2-4 specific bullet-point',
+    'changes per generator who needs revision. Bullets must name a',
+    'concrete edit, not a vague critique — "tighten the second',
+    'paragraph" beats "improve flow."',
+    '',
+    'Your verdict is authoritative. WINNER or MERGE ends the debate.',
+    'REVISE sends per-generator bullets back for the next round.',
+    'Note: the orchestrator auto-stops if generators fail to engage',
+    "with your REVISE bullets across consecutive rounds, so the",
+    'feedback shape is load-bearing.',
   ].join('\n');
 }
 
@@ -134,17 +147,94 @@ function buildRevisionPrompt(
 interface JudgeVerdict {
   verdict: 'winner' | 'merge' | 'revise' | 'unclear';
   body: string;
+  // PATTERN_DESIGN/debate-judge.md I1 — per-generator structured
+  // bullets. Map keys are generator indices (1..N); values are the
+  // verdict's bullet list for that generator. Empty when the reply
+  // didn't conform to the structured contract — fallback path.
+  bulletsByGenerator: Map<number, string[]>;
+}
+
+// Parse REVISE bullets per generator. Pattern: a line like
+// "REVISE — generator-2:" introduces a generator block, followed
+// by bulleted lines starting with "- " until the next block or
+// end-of-text. Tolerant of variants ("REVISE generator-2:",
+// "Generator 2:" inside a single REVISE block).
+function parseGeneratorBullets(text: string): Map<number, string[]> {
+  const map = new Map<number, string[]>();
+  // Match section headers like "REVISE — generator-2:" or
+  // "Generator 2:" optionally preceded by whitespace.
+  const sectionRe = /(?:^|\n)\s*(?:revise[\s:—-]+)?generator[\s-]*(\d+)\s*:\s*\n([\s\S]*?)(?=(?:\n\s*(?:revise[\s:—-]+)?generator[\s-]*\d+\s*:)|$)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = sectionRe.exec(text)) !== null) {
+    const idx = parseInt(match[1], 10);
+    if (!Number.isFinite(idx)) continue;
+    const block = match[2];
+    const bullets: string[] = [];
+    const bulletRe = /^\s*[-*+]\s+(.+)$/gm;
+    let bm: RegExpExecArray | null;
+    while ((bm = bulletRe.exec(block)) !== null) {
+      const cleaned = bm[1].trim();
+      if (cleaned) bullets.push(cleaned);
+    }
+    if (bullets.length > 0) map.set(idx, bullets);
+  }
+  return map;
 }
 
 function classifyJudgeReply(text: string): JudgeVerdict {
   const first = text.split('\n', 1)[0]?.trim() ?? '';
-  if (/^winner\b/i.test(first)) return { verdict: 'winner', body: text.trim() };
-  if (/^merge\b/i.test(first)) return { verdict: 'merge', body: text.trim() };
+  if (/^winner\b/i.test(first)) {
+    return { verdict: 'winner', body: text.trim(), bulletsByGenerator: new Map() };
+  }
+  if (/^merge\b/i.test(first)) {
+    return { verdict: 'merge', body: text.trim(), bulletsByGenerator: new Map() };
+  }
   if (/^revise\b/i.test(first)) {
     const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
-    return { verdict: 'revise', body: stripped };
+    return {
+      verdict: 'revise',
+      body: stripped,
+      bulletsByGenerator: parseGeneratorBullets(text),
+    };
   }
-  return { verdict: 'unclear', body: text.trim() };
+  return { verdict: 'unclear', body: text.trim(), bulletsByGenerator: new Map() };
+}
+
+// PATTERN_DESIGN/debate-judge.md I2 — feedback-addressed detection.
+// Given a generator's R(N+1) proposal text and the bullets the judge
+// asked it to address in R(N), count how many bullets the proposal
+// engaged with. Engagement is detected by token-jaccard ≥ 0.4 against
+// the bullet text — captures rephrasing without forcing exact
+// substring match. Returns the addressed-fraction in [0, 1].
+function tokenizeForAddress(s: string): Set<string> {
+  const out = new Set<string>();
+  for (const raw of s.toLowerCase().split(/[^a-z0-9]+/)) {
+    if (!raw || raw.length < 4) continue;
+    out.add(raw);
+  }
+  return out;
+}
+
+function bulletAddressedFraction(
+  proposalText: string,
+  bullets: string[],
+): number {
+  if (bullets.length === 0) return 1; // nothing to address = trivially "addressed"
+  const proposalTok = tokenizeForAddress(proposalText);
+  let addressed = 0;
+  for (const b of bullets) {
+    const bulletTok = tokenizeForAddress(b);
+    if (bulletTok.size === 0) continue;
+    let intersect = 0;
+    for (const t of bulletTok) if (proposalTok.has(t)) intersect += 1;
+    const union = proposalTok.size + bulletTok.size - intersect;
+    const jaccard = union === 0 ? 0 : intersect / union;
+    // Use a low threshold (0.10) — proposals are typically much
+    // longer than the bullet, so even partial overlap usually means
+    // engagement. We just want to catch the "totally ignored" case.
+    if (jaccard >= 0.1) addressed += 1;
+  }
+  return addressed / bullets.length;
 }
 
 export async function runDebateJudgeKickoff(
@@ -246,6 +336,13 @@ export async function runDebateJudgeKickoff(
     for (const m of msgs) knownJudge.add(m.info.id);
   }
 
+  // PATTERN_DESIGN/debate-judge.md I2 — feedback-addressed detection
+  // bookkeeping. Stores the prior round's per-generator bullets so
+  // the current round's drafts can be checked against them. Empty
+  // until the first REVISE verdict.
+  let lastReviseBullets: Map<number, string[]> = new Map();
+  const I2_ADDRESSED_THRESHOLD = 0.3;
+
   for (let round = 1; round <= maxRounds; round += 1) {
     // 1. Wait for each generator to produce their round's draft.
     const deadline = Date.now() + ROUND_WAIT_MS;
@@ -280,6 +377,36 @@ export async function runDebateJudgeKickoff(
         `[debate-judge] run ${swarmRunID} round ${round}: only ${present.length} proposal(s) — aborting`,
       );
       return;
+    }
+
+    // I2 — feedback-addressed detection. Only fires from round 2+ and
+    // only when the prior round produced REVISE bullets. If the
+    // average addressed-fraction across generators with bullets falls
+    // below I2_ADDRESSED_THRESHOLD, the generators are ignoring the
+    // judge — escalate to human rather than burning more rounds.
+    if (round >= 2 && lastReviseBullets.size > 0) {
+      let totalGen = 0;
+      let totalFrac = 0;
+      for (const d of drafts) {
+        if (d.text === null) continue;
+        const bullets = lastReviseBullets.get(d.index);
+        if (!bullets || bullets.length === 0) continue;
+        totalGen += 1;
+        totalFrac += bulletAddressedFraction(d.text, bullets);
+      }
+      if (totalGen > 0) {
+        const meanFrac = totalFrac / totalGen;
+        if (meanFrac < I2_ADDRESSED_THRESHOLD) {
+          console.warn(
+            `[debate-judge] run ${swarmRunID} round ${round}: generators addressed only ${(meanFrac * 100).toFixed(0)}% of judge's prior REVISE bullets (${totalGen} gen with bullets) — auto-stopping (PATTERN_DESIGN/debate-judge.md I2)`,
+          );
+          return;
+        } else {
+          console.log(
+            `[debate-judge] run ${swarmRunID} round ${round}: generators addressed ${(meanFrac * 100).toFixed(0)}% of prior REVISE bullets — proceeding`,
+          );
+        }
+      }
     }
 
     // 2. Send proposals to judge for verdict.
@@ -338,7 +465,9 @@ export async function runDebateJudgeKickoff(
 
     // 4. Judge asked for revise (or gave unclear verdict — treated as
     // revise with full text forwarded). Fan-post revision prompt to
-    // every generator in parallel.
+    // every generator in parallel. Save the structured bullets for
+    // I2's next-round addressed-detection.
+    lastReviseBullets = verdict.bulletsByGenerator;
     try {
       await Promise.allSettled(
         generatorSIDs.map((sid, idx) =>

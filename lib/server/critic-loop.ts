@@ -77,13 +77,27 @@ function buildCriticIntroPrompt(directive: string | undefined): string {
     '',
     'Sit tight until the worker produces a draft. You will receive the',
     'draft and your job is to review it rigorously. When you review,',
-    'reply in exactly one of these shapes:',
+    'reply in EXACTLY this structured shape (PATTERN_DESIGN/critic-loop.md I1):',
     '',
-    '  APPROVED: <one-line reason>',
-    '  REVISE: <specific, actionable feedback for the worker>',
+    '  ```yaml',
+    '  verdict: APPROVED | REVISE',
+    '  confidence: 1-5  # 5 = certain, 1 = guessing',
+    '  scope: STRUCTURAL | WORDING | NONE  # NONE only on APPROVED',
+    '  issues:',
+    '    - <issue 1>',
+    '    - <issue 2>',
+    '  ```',
     '',
-    'Start your reply with one of those two keywords (case-insensitive).',
-    'Your verdict determines whether the loop ends or the worker revises.',
+    'Then a single human paragraph explaining the verdict.',
+    '',
+    'Rules:',
+    '- The yaml block is mandatory; replies that lack it will be re-asked.',
+    '- `verdict: APPROVED` ends the loop. Use it when the draft meets the bar.',
+    '- `verdict: REVISE` plus your issues feeds back to the worker.',
+    '- `scope: STRUCTURAL` = the draft is fundamentally wrong / missing chunks.',
+    '- `scope: WORDING` = the substance is right; only phrasing / polish remains.',
+    '- `confidence: 1-5` — be honest. The orchestrator auto-terminates a loop',
+    '  that drags through low-confidence WORDING revisions in successive rounds.',
     '',
     "Be exacting — your approval is load-bearing. If the worker's draft",
     'has gaps, say so concretely. If it meets the bar, approve and move on.',
@@ -121,19 +135,91 @@ function buildRevisionPrompt(
   ].join('\n');
 }
 
-// Classify a critic reply: 'approved' ends the loop, 'revise' feeds
-// back to worker, 'unclear' nudges the critic for a decisive call.
-function classifyCriticReply(
-  text: string,
-): { verdict: 'approved' | 'revise' | 'unclear'; body: string } {
-  const first = text.split('\n', 1)[0]?.trim() ?? '';
-  if (/^approved\b/i.test(first)) return { verdict: 'approved', body: first };
-  if (/^revise\b/i.test(first)) {
-    // Strip the "REVISE:" prefix from the body that goes to the worker.
-    const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
-    return { verdict: 'revise', body: stripped };
+// PATTERN_DESIGN/critic-loop.md I1 — structured verdict contract.
+// Parses the YAML-ish block at the top of the critic's reply and
+// returns the verdict + confidence + scope + issues. Tolerant of
+// minor formatting variation (loose yaml, missing fields default to
+// safe values). Falls back to legacy `APPROVED:` / `REVISE:` first-
+// line check when no yaml block is present so older critic prompts
+// still classify.
+type VerdictScope = 'STRUCTURAL' | 'WORDING' | 'NONE';
+
+interface ParsedVerdict {
+  verdict: 'approved' | 'revise' | 'unclear';
+  confidence: number; // 1-5; 0 = unknown
+  scope: VerdictScope;
+  issues: string[];
+  body: string; // text payload to feed to the worker on REVISE
+}
+
+function classifyCriticReply(text: string): ParsedVerdict {
+  // Try YAML block extraction first (the I1 structured contract).
+  const yamlMatch = text.match(/```ya?ml\s*\n([\s\S]*?)\n\s*```/i);
+  if (yamlMatch) {
+    const block = yamlMatch[1];
+    const verdictRaw = /^\s*verdict:\s*(APPROVED|REVISE)/im.exec(block)?.[1] ?? '';
+    const confRaw = /^\s*confidence:\s*([1-5])/im.exec(block)?.[1] ?? '';
+    const scopeRaw =
+      /^\s*scope:\s*(STRUCTURAL|WORDING|NONE)/im.exec(block)?.[1] ?? 'NONE';
+    const issues: string[] = [];
+    const issueLines = block.match(/^\s*-\s+.+/gm) ?? [];
+    for (const line of issueLines) {
+      const cleaned = line.replace(/^\s*-\s+/, '').trim();
+      if (cleaned) issues.push(cleaned);
+    }
+    if (/^APPROVED$/i.test(verdictRaw)) {
+      return {
+        verdict: 'approved',
+        confidence: parseInt(confRaw, 10) || 0,
+        scope: 'NONE',
+        issues,
+        body: text.trim(),
+      };
+    }
+    if (/^REVISE$/i.test(verdictRaw)) {
+      // Body fed to worker: yaml's issues + the trailing paragraph.
+      const matchEnd = (yamlMatch.index ?? 0) + yamlMatch[0].length;
+      const trailing = text.slice(matchEnd).trim();
+      const issuesAsText = issues.length > 0 ? issues.map((i) => `- ${i}`).join('\n') : '';
+      const body = [issuesAsText, trailing].filter(Boolean).join('\n\n').trim();
+      return {
+        verdict: 'revise',
+        confidence: parseInt(confRaw, 10) || 0,
+        scope: (scopeRaw.toUpperCase() as VerdictScope) || 'WORDING',
+        issues,
+        body: body || text.trim(),
+      };
+    }
   }
-  return { verdict: 'unclear', body: text.trim() };
+
+  // Legacy fallback — first line keyword check.
+  const first = text.split('\n', 1)[0]?.trim() ?? '';
+  if (/^approved\b/i.test(first)) {
+    return {
+      verdict: 'approved',
+      confidence: 0,
+      scope: 'NONE',
+      issues: [],
+      body: first,
+    };
+  }
+  if (/^revise\b/i.test(first)) {
+    const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
+    return {
+      verdict: 'revise',
+      confidence: 0,
+      scope: 'WORDING',
+      issues: [],
+      body: stripped,
+    };
+  }
+  return {
+    verdict: 'unclear',
+    confidence: 0,
+    scope: 'NONE',
+    issues: [],
+    body: text.trim(),
+  };
 }
 
 export async function runCriticLoopKickoff(
@@ -219,6 +305,26 @@ export async function runCriticLoopKickoff(
       .map((m) => m.info.id),
   );
 
+  // PATTERN_DESIGN/critic-loop.md I2 — auto-terminate on nitpick
+  // loop. Track the last few verdicts; if iterations N-1 and N are
+  // both REVISE + WORDING + confidence ≤ 3, the critic is fixating
+  // on phrasing rather than substance — ship the current draft and
+  // stop. Spec calls for a 2-iteration look-back; we keep history
+  // longer for log clarity.
+  const verdictHistory: ParsedVerdict[] = [];
+  const NITPICK_CONF_MAX = 3;
+  function isNitpickStreak(): boolean {
+    if (verdictHistory.length < 2) return false;
+    const last2 = verdictHistory.slice(-2);
+    return last2.every(
+      (v) =>
+        v.verdict === 'revise' &&
+        v.scope === 'WORDING' &&
+        v.confidence > 0 &&
+        v.confidence <= NITPICK_CONF_MAX,
+    );
+  }
+
   // Main loop.
   for (let iter = 1; iter <= maxIterations; iter += 1) {
     // 1. Wait for the worker's draft.
@@ -285,10 +391,31 @@ export async function runCriticLoopKickoff(
     }
 
     const classified = classifyCriticReply(criticReply);
+    verdictHistory.push(classified);
+
     if (classified.verdict === 'approved') {
       console.log(
-        `[critic-loop] run ${swarmRunID} iter ${iter}: APPROVED — "${classified.body.slice(0, 80)}"`,
+        `[critic-loop] run ${swarmRunID} iter ${iter}: APPROVED — "${classified.body.slice(0, 80)}" (confidence=${classified.confidence || '?'})`,
       );
+      return;
+    }
+
+    // I2 — nitpick-loop auto-terminate. Triggers from iter ≥ 2 once
+    // we have a two-iteration window of WORDING+low-confidence REVISE.
+    if (iter >= 2 && isNitpickStreak()) {
+      console.log(
+        `[critic-loop] run ${swarmRunID} iter ${iter}: auto-terminating — nitpick streak (last 2 = REVISE+WORDING+confidence≤${NITPICK_CONF_MAX}). Shipping draft N=${iter} (PATTERN_DESIGN/critic-loop.md I2)`,
+      );
+      try {
+        await postSessionMessageServer(
+          workerSID,
+          meta.workspace,
+          `Critic-loop terminated by orchestrator: the last two reviews were low-confidence WORDING revisions, indicating the critic is rewording rather than improving substance. Shipping your draft from this iteration as final.`,
+          { agent: WORKER_AGENT_NAME, model: workerModel },
+        );
+      } catch {
+        // Non-fatal; the loop's already terminating.
+      }
       return;
     }
 

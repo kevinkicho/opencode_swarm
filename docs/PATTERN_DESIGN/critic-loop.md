@@ -118,8 +118,8 @@ a model; feedback quality may regress toward self-approval."
 | ID | Kind | Status | Commit | Verified against | Notes |
 |---|---|---|---|---|---|
 | iterations-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=critic-loop; per-iteration timeline (#N draft + #Nr review) w/ APPROVED-row tint; reads slots from useLiveSwarmRunMessages |
-| I1 | improvement | PROPOSED | — | — | prompt + parser ~3 h |
-| I2 | improvement | PROPOSED | — | — | depends on I1; ~1 h |
+| I1 | improvement | SHIPPED | (next commit) | — | structured YAML verdict block in buildCriticIntroPrompt; classifyCriticReply parses verdict/confidence/scope/issues with legacy-keyword fallback for non-conforming replies |
+| I2 | improvement | SHIPPED | (next commit) | — | runCriticLoopKickoff tracks verdictHistory and auto-terminates after 2 consecutive REVISE+WORDING+confidence≤3 iterations; worker receives "shipping current draft as final" notice |
 | I3 | improvement | PROPOSED | — | — | orchestrator + store ~2–3 h |
 | I4 | improvement | SHIPPED | (next commit) | — | kickoff WARN in runCriticLoopKickoff when teamModels[0] === teamModels[1] — surfaces same-model risk to dev console without blocking the run |
 

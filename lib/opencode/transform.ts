@@ -774,6 +774,13 @@ export interface FileHeat {
   distinctSessions: number;  // how many different opencode sessions touched it
   lastTouchedMs: number;     // most recent assistant completion time that touched it
   sessionIDs: string[];      // deduped; agents in the roster index by session.id
+  // PATTERN_DESIGN/stigmergy.md I2 — per-session edit counts. Lets
+  // consumers detect "session 3 edits src/auth/ constantly while the
+  // rest avoid it" — a specialization signal that the flat sessionIDs
+  // list can't surface. Keys are the same opencode sessionIDs that
+  // appear in the array; sum across all keys equals editCount.
+  // Empty record on heat entries derived from the legacy code path.
+  editsBySession: Record<string, number>;
 }
 
 export function toFileHeat(messages: OpencodeMessage[]): FileHeat[] {
@@ -782,6 +789,7 @@ export function toFileHeat(messages: OpencodeMessage[]): FileHeat[] {
     count: number;
     sessions: Set<string>;
     lastMs: number;
+    bySession: Map<string, number>;
   }
   const byPath = new Map<string, Bucket>();
 
@@ -794,11 +802,12 @@ export function toFileHeat(messages: OpencodeMessage[]): FileHeat[] {
       for (const path of p.files) {
         let entry = byPath.get(path);
         if (!entry) {
-          entry = { path, count: 0, sessions: new Set(), lastMs: 0 };
+          entry = { path, count: 0, sessions: new Set(), lastMs: 0, bySession: new Map() };
           byPath.set(path, entry);
         }
         entry.count += 1;
         entry.sessions.add(sessionID);
+        entry.bySession.set(sessionID, (entry.bySession.get(sessionID) ?? 0) + 1);
         if (completedMs > entry.lastMs) entry.lastMs = completedMs;
       }
     }
@@ -811,6 +820,7 @@ export function toFileHeat(messages: OpencodeMessage[]): FileHeat[] {
       distinctSessions: e.sessions.size,
       lastTouchedMs: e.lastMs,
       sessionIDs: Array.from(e.sessions),
+      editsBySession: Object.fromEntries(e.bySession),
     }))
     // Hot first — desc by editCount, tie-break by recency so a file
     // touched many times long ago doesn't outrank a freshly-claimed
