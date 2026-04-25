@@ -240,32 +240,45 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   const SESSION_WAIT_MS = 25 * 60 * 1000;
   const deadline = Date.now() + SESSION_WAIT_MS;
 
-  const drafts: Array<{ sessionID: string; text: string | null }> = [];
-  for (const sid of meta.sessionIDs) {
-    const known = knownIDsBySession.get(sid) ?? new Set<string>();
-    const result = await waitForSessionIdle(sid, meta.workspace, known, deadline);
-    if (!result.ok) {
-      console.warn(
-        `[map-reduce] session ${sid} wait failed (${result.reason}) — proceeding with its last completed text`,
-      );
-    }
-    // Whether waitForSessionIdle succeeded or not, fetch the latest state and
-    // take the newest completed assistant text part. For map-reduce this is
-    // the member's final draft regardless of how we exited the wait.
-    let lastText: string | null = null;
-    try {
-      const msgs = await getSessionMessagesServer(sid, meta.workspace);
-      lastText = extractLatestAssistantText(msgs);
-    } catch (err) {
-      console.warn(
-        `[map-reduce] session ${sid} message fetch failed:`,
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-    drafts.push({ sessionID: sid, text: lastText });
-  }
+  // PATTERN_DESIGN/map-reduce.md I3 — parallel waits so a hung member
+  // doesn't block sibling waits sequentially. Each wait runs to its own
+  // deadline; the slow ones don't penalize the fast ones.
+  const waitResults = await Promise.all(
+    meta.sessionIDs.map(async (sid) => {
+      const known = knownIDsBySession.get(sid) ?? new Set<string>();
+      const result = await waitForSessionIdle(sid, meta.workspace, known, deadline);
+      if (!result.ok) {
+        console.warn(
+          `[map-reduce] session ${sid} wait failed (${result.reason}) — proceeding with its last completed text`,
+        );
+      }
+      // Whether waitForSessionIdle succeeded or not, fetch the latest
+      // state and take the newest completed assistant text part. For
+      // map-reduce this is the member's final draft regardless of how
+      // we exited the wait.
+      let lastText: string | null = null;
+      try {
+        const msgs = await getSessionMessagesServer(sid, meta.workspace);
+        lastText = extractLatestAssistantText(msgs);
+      } catch (err) {
+        console.warn(
+          `[map-reduce] session ${sid} message fetch failed:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      }
+      return {
+        sessionID: sid,
+        ok: result.ok,
+        reason: result.ok ? null : result.reason,
+        text: lastText,
+      };
+    }),
+  );
+  const drafts: Array<{ sessionID: string; text: string | null }> =
+    waitResults.map((r) => ({ sessionID: r.sessionID, text: r.text }));
 
   const present = drafts.filter((d) => d.text !== null);
+  const failedCount = waitResults.filter((r) => !r.ok || r.text === null).length;
   if (present.length === 0) {
     console.warn(
       `[map-reduce] run ${swarmRunID} — no draft texts harvested, synthesis skipped`,
@@ -273,7 +286,33 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
     return;
   }
 
-  const synthesisPrompt = buildSynthesisPrompt(drafts, meta.directive);
+  // PATTERN_DESIGN/map-reduce.md I3 — partial-map tolerance gate. When
+  // the operator opts in, refuse to proceed unless the floor of
+  // successful drafts is met AND the ceiling of failures isn't
+  // exceeded. Without the knob, we always proceed with whatever
+  // drafts came back (the existing behavior).
+  const tolerance = meta.partialMapTolerance;
+  if (tolerance) {
+    if (present.length < tolerance.minMembers) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — only ${present.length}/${meta.sessionIDs.length} drafts harvested, below minMembers=${tolerance.minMembers} — synthesis aborted (PATTERN_DESIGN/map-reduce.md I3)`,
+      );
+      return;
+    }
+    if (failedCount > tolerance.maxMemberFailures) {
+      console.warn(
+        `[map-reduce] run ${swarmRunID} — ${failedCount} member(s) failed, above maxMemberFailures=${tolerance.maxMemberFailures} — synthesis aborted (PATTERN_DESIGN/map-reduce.md I3)`,
+      );
+      return;
+    }
+    if (failedCount > 0) {
+      console.log(
+        `[map-reduce] run ${swarmRunID} — proceeding with ${present.length}/${meta.sessionIDs.length} drafts, ${failedCount} failures within tolerance (PATTERN_DESIGN/map-reduce.md I3)`,
+      );
+    }
+  }
+
+  const synthesisPrompt = buildSynthesisPrompt(drafts, meta.directive, failedCount);
   const itemID = `synth_${swarmRunID}`;
 
   // Idempotency guard. If this function fires twice (e.g. a retry after a
@@ -362,6 +401,7 @@ function extractLatestAssistantText(messages: OpencodeMessage[]): string | null 
 function buildSynthesisPrompt(
   drafts: Array<{ sessionID: string; text: string | null }>,
   baseDirective: string | undefined,
+  failedCount?: number,
 ): string {
   const preface = baseDirective?.trim()
     ? `Original directive: ${baseDirective.trim()}`
@@ -374,6 +414,22 @@ function buildSynthesisPrompt(
     }
     return `### ${label}\n\n${d.text.trim()}`;
   });
+
+  const presentCount = drafts.filter((d) => d.text !== null).length;
+  // PATTERN_DESIGN/map-reduce.md I3 — surface partial-map state to the
+  // synthesizer so it knows the input is incomplete and can call out
+  // the gap rather than papering over it.
+  const failureNote =
+    failedCount && failedCount > 0
+      ? [
+          '',
+          `**Note:** ${failedCount} member(s) did not produce a draft in time;`,
+          `this synthesis is based on ${presentCount} draft(s). Surface the`,
+          `coverage gap explicitly in your output so a downstream reader can`,
+          `tell the story is incomplete.`,
+          '',
+        ]
+      : [];
 
   return [
     'Map-reduce synthesis phase.',
@@ -388,6 +444,7 @@ function buildSynthesisPrompt(
     '- Merge overlapping findings; call out genuine disagreements instead of averaging them away.',
     '- Preserve unique picks from individual members when they add value, attributing by member number.',
     '- Finish with a clean markdown document as your final assistant text turn. Do not edit any files.',
+    ...failureNote,
     '',
     '---',
     '',

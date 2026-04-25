@@ -118,6 +118,17 @@ export interface SwarmRunRequest {
   // "only the security role should touch authentication code."
   // Role-differentiated pattern only.
   strictRoleRouting?: boolean;
+  // PATTERN_DESIGN/map-reduce.md I3 — partial-map tolerance knob.
+  // When set, the synthesis-wait stage tolerates per-member failures
+  // by proceeding with whatever drafts arrived as long as at least
+  // `minMembers` succeeded AND at most `maxMemberFailures` errored.
+  // Without this, a single hung member stalls the entire run for the
+  // full SESSION_WAIT_MS (25 min). Defaults to undefined → wait for
+  // every member as before. Map-reduce pattern only.
+  partialMapTolerance?: {
+    minMembers: number;
+    maxMemberFailures: number;
+  };
   // Per-gate model pins (2026-04-24). Each gate's dedicated opencode
   // session spawns without a model hint (opencode picks default);
   // when set, the session's prompts carry `model: <id>` so the gate
@@ -238,6 +249,11 @@ export interface SwarmRunMeta {
   autoStopOnConverge?: boolean;
   // Strict role routing mirror — PATTERN_DESIGN/role-differentiated.md I1.
   strictRoleRouting?: boolean;
+  // Partial-map tolerance mirror — PATTERN_DESIGN/map-reduce.md I3.
+  partialMapTolerance?: {
+    minMembers: number;
+    maxMemberFailures: number;
+  };
   // Synthesis-model pin mirror — PATTERN_DESIGN/map-reduce.md I4.
   synthesisModel?: string;
   // Per-gate model pins mirrored from the request. See SwarmRunRequest

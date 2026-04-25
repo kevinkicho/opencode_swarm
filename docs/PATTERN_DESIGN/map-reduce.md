@@ -143,7 +143,7 @@ kind.
 | map-tab | tab | SHIPPED | (next commit) | — | LeftTabs gates on pattern=map-reduce; MAP per-session rows + REDUCE synthesize row + phase-transition banner; reads slots + board.items |
 | I1 | improvement | PROPOSED | — | — | new critic ~4 h |
 | I2 | improvement | SHIPPED | (next commit) | — | `detectScopeImbalance(workspace, slices)` walks each slice's dirs (skipping SLICE_EXCLUDE + dotfiles), sums bytes of code-extension files, WARNs when max:min > 5x. Fired fire-and-forget from the kickoff route after `deriveSlices`; non-blocking. |
-| I3 | improvement | PROPOSED | — | — | kickoff + wait logic ~3 h |
+| I3 | improvement | SHIPPED | (next commit) | — | runMapReduceSynthesis now waits per-member in parallel via Promise.all (no more sequential blocking by a hung member). When `meta.partialMapTolerance: { minMembers, maxMemberFailures }` is set, the synthesis-wait gate aborts if successes < minMembers OR failures > maxMemberFailures; otherwise proceeds with available drafts and the synthesis prompt surfaces the coverage gap explicitly so the synthesizer doesn't paper over it. Default behavior (knob unset) unchanged. |
 | I4 | improvement | SHIPPED | (next commit) | — | meta.synthesisModel field added; coordinator dispatch picks it for `kind === 'synthesize'` items regardless of which session claims. Falls through to per-session pinning when synthesisModel undefined (backward compat). |
 
 ## 6 · Cross-references

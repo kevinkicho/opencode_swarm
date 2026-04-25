@@ -165,6 +165,8 @@ export async function createRun(
     autoStopOnConverge: req.autoStopOnConverge ? true : undefined,
     // Strict role routing — PATTERN_DESIGN/role-differentiated.md I1.
     strictRoleRouting: req.strictRoleRouting ? true : undefined,
+    // Partial-map tolerance — PATTERN_DESIGN/map-reduce.md I3.
+    partialMapTolerance: req.partialMapTolerance,
     // Synthesis-model pin — PATTERN_DESIGN/map-reduce.md I4.
     synthesisModel: req.synthesisModel,
     // Per-gate model pins (2026-04-24). Each gate's reviewer module
