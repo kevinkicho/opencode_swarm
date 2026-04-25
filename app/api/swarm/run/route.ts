@@ -86,7 +86,16 @@ const PATTERN_TEAM_SIZE: Record<
   none: { defaultSize: 1, minSize: 1, maxSize: 1 },
   council: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
   blackboard: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
-  'map-reduce': { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
+  // Map-reduce: minSize 3 enforces meaningful parallelism. With
+  // teamSize=2, deriveSlices would hand each session a single dir
+  // (or one dir + whole-workspace fallback) and the synth would
+  // merge two near-identical analyses — basically running solo
+  // twice. ollama-swarm sibling app (#109) found the same: bumped
+  // their min mapper count to 3 mappers + 1 synth = 4 sessions.
+  // Our model is more efficient since any session can claim the
+  // synth (no dedicated synth slot), so 3 sessions = 3 mappers
+  // with one of them taking the synth claim — minimum useful.
+  'map-reduce': { defaultSize: 3, minSize: 3, maxSize: TEAM_SIZE_MAX },
   // Orchestrator-worker: 1 orchestrator + at least 1 worker = minSize 2.
   // Default 4 = 1 orchestrator + 3 workers. Maxes match the other
   // multi-session patterns.
