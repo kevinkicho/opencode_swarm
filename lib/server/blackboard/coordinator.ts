@@ -95,7 +95,7 @@ const TURN_TIMEOUTS_MS: Record<string, number> = {
   'role-differentiated': 10 * 60_000,
   'deliberate-execute': 15 * 60_000,
 };
-function turnTimeoutFor(pattern: string): number {
+export function turnTimeoutFor(pattern: string): number {
   return TURN_TIMEOUTS_MS[pattern] ?? DEFAULT_TURN_TIMEOUT_MS;
 }
 
@@ -119,7 +119,7 @@ const ZOMBIE_TURN_THRESHOLDS_MS: Record<string, number> = {
   'role-differentiated': 10 * 60_000,
   'deliberate-execute': 15 * 60_000,
 };
-function zombieThresholdFor(pattern: string): number {
+export function zombieThresholdFor(pattern: string): number {
   return ZOMBIE_TURN_THRESHOLDS_MS[pattern] ?? ZOMBIE_TURN_THRESHOLD_DEFAULT_MS;
 }
 
@@ -278,7 +278,7 @@ async function sha7(absPath: string): Promise<string> {
 const MAX_STALE_RETRIES = 2;
 const RETRY_TAG_RE = /^\[retry:(\d+)\]\s*/;
 
-function currentRetryCount(note: string | null | undefined): number {
+export function currentRetryCount(note: string | null | undefined): number {
   if (!note) return 0;
   const m = RETRY_TAG_RE.exec(note);
   return m ? Number(m[1]) : 0;
@@ -320,14 +320,14 @@ function retryOrStale(
 // under 4 chars are skipped — "ts" / "js" would be noise.
 const PATH_TOKEN_RE = /[a-zA-Z_][\w.-]*(?:\/[\w.-]+)+\/?|\b\w{4,}\.(?:ts|tsx|js|jsx|py|go|rs|md|css|html|json|yaml|yml|toml)\b/g;
 
-function extractPathTokens(content: string): Set<string> {
+export function extractPathTokens(content: string): Set<string> {
   const out = new Set<string>();
   const matches = content.match(PATH_TOKEN_RE) ?? [];
   for (const m of matches) out.add(m.replace(/\\/g, '/').replace(/\/$/, ''));
   return out;
 }
 
-function pathOverlaps(a: Set<string>, b: Set<string>): boolean {
+export function pathOverlaps(a: Set<string>, b: Set<string>): boolean {
   for (const x of a) {
     for (const y of b) {
       if (x === y) return true;
@@ -497,7 +497,7 @@ function extractWorkerAssistantText(
 // edit landed outside the workspace (e.g. a shared config), since we'd
 // rather record something truthful than pretend an out-of-tree edit is
 // local.
-function relativizeToWorkspace(workspace: string, p: string): string {
+export function relativizeToWorkspace(workspace: string, p: string): string {
   const rel = path.relative(workspace, p);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
     return p.replace(/\\/g, '/');
