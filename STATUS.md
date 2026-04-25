@@ -147,6 +147,46 @@ Mid-flight observations (~17 min in):
     log lines with empty error messages — ollama-side timeouts/
     crashes, not actionable from app side.
 
+Final results (~30 min in, runs at or near wall-clock cap):
+  blackboard           live   items=11 done=1   findings=0  tokens=527K
+  council              live   items=0  done=0   findings=0  tokens=986K
+  map-reduce           live   items=1  done=0   findings=0  tokens=456K
+  orchestrator-worker  live   items=5  done=2   findings=0  tokens=322K
+  role-differentiated  error  items=0  done=0   findings=0  tokens=50K   (early planner-silent abort)
+  debate-judge         live   items=0  done=0   findings=0  tokens=437K
+  critic-loop          error  items=1  done=1   findings=1  tokens=270K  (degraded-completion fired)
+  deliberate-execute   error  items=2  done=2   findings=2  tokens=874K  (degraded-completion ×2)
+
+Total board.done across runs: 6. Total findings (degraded-completion):
+3. Total tokens: ~3.95M. The 3 findings ARE today's #73 plumbing
+firing correctly in production:
+  - critic-loop:        "iter 1/3 worker-wait (reason: silent)"
+  - deliberate-execute: "draft-harvest (too-few-drafts (1))"
+  - council (via delib-exec phase 1): "round 2/3 draft-fan-in
+    (too-few-drafts (0/3))"
+
+This is real validation that the reliability ship works under load.
+
+**Test coverage growth this session:**
+
+  78 → 194 tests (+116, +149%)
+  6 → 14 test files
+  ~1954 lines of test code
+
+New test files (this session, 13:00-13:35 local):
+  run-guard.test.ts                   (7)  — withRunGuard branches
+  critic-loop-verdict.test.ts        (10)  — yaml + legacy parser
+  debate-judge-verdict.test.ts       (14)  — verdict + I2 math
+  council-convergence.test.ts         (7)  — meanPairwiseJaccard
+  deliberate-execute-classify.test.ts (12) — I4 + I1 verifier
+  coordinator-helpers.test.ts        (28)  — pure helpers
+  transform.test.ts                  (17)  — diff parser
+  pricing.test.ts                    (12)  — priceFor / budget
+  silent-session.test.ts              (9)  — health chip detector
+
+Surface change: ~12 functions promoted to `export` (stable contracts;
+tests own them now).
+
 ### 2026-04-25 evening — reliability hardening + broad live validation
 
 Eight tasks closed, every behavioral change grounded by 16 spawned runs.
