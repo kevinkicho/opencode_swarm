@@ -34,6 +34,7 @@ import {
 } from '../opencode-server';
 import { publishExports } from '../hmr-exports';
 import { waitForSessionIdle } from './coordinator';
+import { recordPartialOutcome } from '../degraded-completion';
 import { insertBoardItem, listBoardItems } from './store';
 import {
   computeDelta,
@@ -694,6 +695,54 @@ export function latestTodosFrom(
   return latest;
 }
 
+// #88 — partial-outcome summary for planner-sweep failures. Captures
+// the board state at the moment the sweep aborted so the resulting
+// `finding` row carries enough context for a human (or future-Claude)
+// to understand WHAT survived. Reads in-memory cached state — never
+// hits opencode — so it's safe to call from inside a failure path.
+function buildPlannerPartialSummary(
+  swarmRunID: string,
+  sessionID: string,
+  reason: string,
+): string {
+  const items = listBoardItems(swarmRunID);
+  const counts = {
+    todo: items.filter((i) => i.kind === 'todo').length,
+    todoDone: items.filter((i) => i.kind === 'todo' && i.status === 'done').length,
+    todoOpen: items.filter((i) => i.kind === 'todo' && i.status === 'open').length,
+    criterion: items.filter((i) => i.kind === 'criterion').length,
+    finding: items.filter((i) => i.kind === 'finding').length,
+    other: items.filter(
+      (i) => i.kind !== 'todo' && i.kind !== 'criterion' && i.kind !== 'finding',
+    ).length,
+  };
+  const parts: string[] = [];
+  parts.push(
+    `Planner sweep aborted on session ${sessionID.slice(-8)} (reason: ${reason}).`,
+  );
+  parts.push('');
+  parts.push('Board state at sweep abort:');
+  parts.push(`  todos: ${counts.todo} (${counts.todoDone} done, ${counts.todoOpen} open)`);
+  parts.push(`  criteria: ${counts.criterion}`);
+  parts.push(`  findings: ${counts.finding}`);
+  if (counts.other > 0) parts.push(`  other: ${counts.other}`);
+  if (counts.todo === 0 && counts.criterion === 0) {
+    parts.push('');
+    parts.push(
+      'Board was empty before this sweep — nothing useful to recover. ' +
+        'The run never seeded work and will exit with no claimable items.',
+    );
+  } else {
+    parts.push('');
+    parts.push(
+      'Pre-sweep board state survives. The run can be resumed manually via ' +
+        '`POST /api/swarm/run/<id>/board/sweep` once the underlying issue ' +
+        '(silent worker / ollama down / etc.) is resolved.',
+    );
+  }
+  return parts.join('\n');
+}
+
 export async function runPlannerSweep(
   swarmRunID: string,
   opts: {
@@ -819,6 +868,20 @@ export async function runPlannerSweep(
           `session may keep burning tokens`,
       );
     }
+    // #88 — record a partial-outcome finding before re-throwing so the
+    // run carries a durable record of what survived the sweep. Today's
+    // #73 plumbing only wraps iterative orchestrator LOOPS; this path
+    // is the planner sweep, used by every blackboard-family pattern
+    // (blackboard / orchestrator-worker / role-differentiated /
+    // deliberate-execute phase 3). Without this, a planner-side silent
+    // abort makes the run go to status=error with NO finding row —
+    // the run "just died" with nothing to read on the board.
+    recordPartialOutcome(swarmRunID, {
+      pattern: meta.pattern,
+      phase: 'planner-sweep',
+      reason: waited.reason,
+      summary: buildPlannerPartialSummary(swarmRunID, sessionID, waited.reason),
+    });
     if (waited.reason === 'timeout') {
       throw new Error(`planner sweep timed out after ${timeoutMs}ms`);
     }
@@ -881,6 +944,7 @@ export async function runPlannerSweep(
   // preview UI (ordered by createdAtMs in JS land) consistent without
   // needing to also know about the SQL tiebreaker.
   const baseMs = Date.now();
+  const startT = Date.now();
   const items: BoardItem[] = [];
   let offset = 0;
   let droppedCriteria = 0;
@@ -931,6 +995,18 @@ export async function runPlannerSweep(
     offset += 1;
     items.push(item);
   }
+  const elapsedMs = Date.now() - startT;
+  const criteriaCount = items.filter((i) => i.kind === 'criterion').length;
+  console.log(
+    JSON.stringify({
+      event: 'planner-sweep-complete',
+      swarmRunID,
+      itemCount: items.length,
+      criteriaCount,
+      droppedCriteriaCount: droppedCriteria,
+      elapsedMs,
+    }),
+  );
 
   // PATTERN_DESIGN/role-differentiated.md I3 — dispatch role-notes
   // after the board insert. Each note is posted to the matching
