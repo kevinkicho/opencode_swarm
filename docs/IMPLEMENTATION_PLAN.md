@@ -23,8 +23,8 @@ Safe, isolated, no architectural risk.
 | 0.2 | `latest ↓` button two-phase synchronous snap (no smooth-scroll race) | STATUS.md | 15m | **SHIPPED** (c041edd) |
 | 0.3 | Auto-ticker startup-cleanup skips runs with recent activity / open work | STATUS.md | 30m | **SHIPPED** (c041edd) |
 | 0.4 | Retry-exhausted `[retry:N]` chip on board rows (F9 from postmortem) | POSTMORTEMS | 30m | **SHIPPED** (c041edd) |
-| 0.5 | Reconcile `opencode.json` model context overrides (F6) | POSTMORTEMS | 15m | PROPOSED — outside repo, needs user-side edit |
-| 0.6 | Add `OPENCODE_LOG=debug` to launcher (F3) — gates F5 below | POSTMORTEMS | 5m | PROPOSED — outside repo (.ps1 launcher), needs user-side edit |
+| 0.5 | Reconcile `opencode.json` model context overrides (F6) | POSTMORTEMS | 15m | **VERIFIED** (2026-04-25) — config edit + restart confirmed runtime returns `context: 262144` for nemotron. |
+| 0.6 | Add `--log-level DEBUG` to launcher (F3) — gates F5 below | POSTMORTEMS | 5m | **VERIFIED** (2026-04-25) — `OPENCODE_LOG` env var was wrong; actual flag is `--log-level DEBUG` per `opencode web --help`. `.ps1` updated, new log shows DEBUG entries flowing. F5 is now unblocked. |
 | 0.7 | Dev wrapper orphan handling — make scripts/dev.mjs detach cleanly | STATUS.md | 1h | **SHIPPED** (next commit) — child spawned with `detached: true` (own process group); kill propagates via `process.kill(-pid, signal)` group-kill on SIGINT/SIGTERM/SIGHUP; `process.stdin` 'end' event triggers SIGTERM-then-SIGKILL group teardown when parent dies without forwarding a signal (orphan-via-reparenting case). Verified: killing the npm parent now cleanly tears down both the shell middleman AND the next-server grandchild. Port released; no stale processes. |
 
 **Order rationale:** all are independent, ship as separate commits, ~30m each. Do these first to clear cruft before deeper UI work.
