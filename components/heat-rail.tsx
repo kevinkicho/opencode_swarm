@@ -16,7 +16,8 @@
 // in heat-rail/sub-components.tsx. This file owns the main HeatRail
 // component (state + composition) only.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { Agent } from '@/lib/swarm-types';
 import {
@@ -65,41 +66,30 @@ export function HeatRail({
     return [...data].sort((a, b) => b.editCount - a.editCount);
   }, [heat, filter, sortOrder]);
 
-  const [workspaceFiles, setWorkspaceFiles] = useState<string[] | null>(null);
-  const [workspaceFilesError, setWorkspaceFilesError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (view !== 'all' || !swarmRunID) return;
-    if (workspaceFiles !== null) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(
-          `/api/swarm/run/${encodeURIComponent(swarmRunID)}/tree`,
-          { cache: 'no-store' },
-        );
-        if (!res.ok) {
-          if (!cancelled) setWorkspaceFilesError(`tree fetch failed (${res.status})`);
-          return;
-        }
-        const json = (await res.json()) as { paths?: string[] };
-        if (cancelled) return;
-        setWorkspaceFiles(json.paths ?? []);
-        setWorkspaceFilesError(null);
-      } catch (err) {
-        if (cancelled) return;
-        setWorkspaceFilesError(err instanceof Error ? err.message : String(err));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [view, swarmRunID, workspaceFiles]);
-
-  useEffect(() => {
-    setWorkspaceFiles(null);
-    setWorkspaceFilesError(null);
-  }, [swarmRunID]);
+  // Workspace tree (cold-files view). Migrated to TanStack Query
+  // (#109) — multiple heat-rails sharing the same swarmRunID dedup
+  // automatically, and per-run cache invalidation comes for free.
+  // Long staleTime because the workspace tree is effectively static
+  // for the run's duration.
+  const treeQuery = useQuery({
+    queryKey: ['swarm-run', swarmRunID, 'tree'],
+    queryFn: async ({ signal }): Promise<string[]> => {
+      const res = await fetch(
+        `/api/swarm/run/${encodeURIComponent(swarmRunID!)}/tree`,
+        { cache: 'no-store', signal },
+      );
+      if (!res.ok) throw new Error(`tree fetch failed (${res.status})`);
+      const json = (await res.json()) as { paths?: string[] };
+      return json.paths ?? [];
+    },
+    enabled: view === 'all' && !!swarmRunID,
+    staleTime: 5 * 60_000,
+    retry: false,
+  });
+  const workspaceFiles = treeQuery.data ?? null;
+  const workspaceFilesError = treeQuery.error
+    ? (treeQuery.error as Error).message
+    : null;
 
   const filteredWorkspaceFiles = useMemo(() => {
     if (!filter || !workspaceFiles) return workspaceFiles;

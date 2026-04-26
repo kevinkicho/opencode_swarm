@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardAgent, BoardItem } from './types';
 
 // Mirror of TickerSnapshot from lib/server/blackboard/auto-ticker.ts —
@@ -149,6 +150,10 @@ const DERIVED_ACCENTS: BoardAgent['accent'][] = ['molten', 'mint', 'iris', 'ambe
 // Ticker observability + control. Polls at a slower cadence than the
 // board itself (5s vs 2s) because ticker state changes on the tick
 // boundary (10s default) — no value in outrunning that.
+//
+// Migrated to TanStack Query (#109) — multiple consumers (topbar,
+// strategy rail, ticker chip) share one cache entry instead of each
+// running its own poller.
 const TICKER_POLL_MS = 5000;
 
 export interface LiveTicker {
@@ -159,79 +164,66 @@ export interface LiveTicker {
   busy: boolean;
 }
 
-export function useLiveTicker(swarmRunID: string | null): LiveTicker {
-  const [state, setState] = useState<TickerState>({ state: 'none' });
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const cancelledRef = useRef(false);
+const tickerQueryKey = (swarmRunID: string) =>
+  ['swarm', 'ticker', swarmRunID] as const;
 
-  const fetchOnce = useCallback(async () => {
-    if (!swarmRunID) return;
-    try {
+async function fetchTicker(swarmRunID: string): Promise<TickerState> {
+  const r = await fetch(`/api/swarm/run/${swarmRunID}/board/ticker`, {
+    cache: 'no-store',
+  });
+  const data = await r.json();
+  if (!r.ok) {
+    throw new Error((data as { error?: string }).error ?? `HTTP ${r.status}`);
+  }
+  return data as TickerState;
+}
+
+export function useLiveTicker(swarmRunID: string | null): LiveTicker {
+  const queryClient = useQueryClient();
+  const q = useQuery({
+    queryKey: swarmRunID ? tickerQueryKey(swarmRunID) : ['swarm', 'ticker', '__none__'],
+    queryFn: () => fetchTicker(swarmRunID!),
+    enabled: !!swarmRunID,
+    refetchInterval: TICKER_POLL_MS,
+    placeholderData: (prev) => prev,
+    retry: false,
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (action: 'start' | 'stop') => {
+      if (!swarmRunID) throw new Error('no swarmRunID');
       const r = await fetch(`/api/swarm/run/${swarmRunID}/board/ticker`, {
-        cache: 'no-store',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
       });
       const data = await r.json();
-      if (cancelledRef.current) return;
       if (!r.ok) {
-        setError((data as { error?: string }).error ?? `HTTP ${r.status}`);
-        return;
+        throw new Error((data as { error?: string }).error ?? `HTTP ${r.status}`);
       }
-      setState(data as TickerState);
-      setError(null);
-    } catch (e) {
-      if (cancelledRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [swarmRunID]);
-
-  useEffect(() => {
-    cancelledRef.current = false;
-    if (!swarmRunID) {
-      setState({ state: 'none' });
-      setError(null);
-      return;
-    }
-    fetchOnce();
-    const timer = setInterval(fetchOnce, TICKER_POLL_MS);
-    return () => {
-      cancelledRef.current = true;
-      clearInterval(timer);
-    };
-  }, [swarmRunID, fetchOnce]);
-
-  const act = useCallback(
-    async (action: 'start' | 'stop') => {
-      if (!swarmRunID || busy) return;
-      setBusy(true);
-      try {
-        const r = await fetch(`/api/swarm/run/${swarmRunID}/board/ticker`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action }),
-        });
-        const data = await r.json();
-        if (!r.ok) {
-          setError((data as { error?: string }).error ?? `HTTP ${r.status}`);
-          return;
-        }
-        setState(data as TickerState);
-        setError(null);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(false);
+      return data as TickerState;
+    },
+    onSuccess: (data) => {
+      if (swarmRunID) {
+        queryClient.setQueryData(tickerQueryKey(swarmRunID), data);
       }
     },
-    [swarmRunID, busy],
-  );
+  });
+
+  const state: TickerState = q.data ?? { state: 'none' };
+  const errorObj = mutation.error ?? q.error;
+  const error = errorObj instanceof Error ? errorObj.message : null;
 
   return {
-    state,
+    state: swarmRunID ? state : { state: 'none' },
     error,
-    start: () => act('start'),
-    stop: () => act('stop'),
-    busy,
+    start: async () => {
+      await mutation.mutateAsync('start').catch(() => undefined);
+    },
+    stop: async () => {
+      await mutation.mutateAsync('stop').catch(() => undefined);
+    },
+    busy: mutation.isPending,
   };
 }
 

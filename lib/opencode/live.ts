@@ -510,53 +510,39 @@ export function useSessionDiff(
   };
 }
 
-// Polling hook — fires immediately, then every `intervalMs`. Aborts the in-flight
-// request on unmount / interval-change. Never shows stale data with a new error.
+// Polling hook — fires immediately, then every `intervalMs`. TanStack
+// Query handles the abort + cleanup automatically; multiple consumers
+// share one cache entry. Never shows stale data with a new error
+// because TanStack Query's keepPreviousData semantics are off by
+// default for refetch.
+//
+// Migrated to TanStack Query (#109).
 export function useLiveSessions(intervalMs = 3000): {
   data: LiveSnapshot | null;
   error: string | null;
   loading: boolean;
 } {
-  const [data, setData] = useState<LiveSnapshot | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    let controller = new AbortController();
-
-    async function poll() {
-      controller.abort();
-      controller = new AbortController();
-      try {
-        const [projects, sessions] = await Promise.all([
-          getProjectsBrowser({ signal: controller.signal }),
-          getAllSessionsBrowser({ signal: controller.signal }),
-        ]);
-        if (cancelled) return;
-        setData({ projects, sessions, lastUpdated: Date.now() });
-        setError(null);
-      } catch (err) {
-        if (cancelled) return;
-        if ((err as Error).name === 'AbortError') return;
-        setError((err as Error).message);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    poll();
-    const id = setInterval(poll, intervalMs);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      clearInterval(id);
-    };
-  }, [intervalMs]);
-
-  return { data, error, loading };
+  const q = useQuery({
+    queryKey: LIVE_SESSIONS_QUERY_KEY,
+    queryFn: async ({ signal }): Promise<LiveSnapshot> => {
+      const [projects, sessions] = await Promise.all([
+        getProjectsBrowser({ signal }),
+        getAllSessionsBrowser({ signal }),
+      ]);
+      return { projects, sessions, lastUpdated: Date.now() };
+    },
+    refetchInterval: intervalMs,
+    placeholderData: (prev) => prev,
+    retry: false,
+  });
+  return {
+    data: q.data ?? null,
+    error: q.error ? (q.error as Error).message : null,
+    loading: q.isLoading,
+  };
 }
+
+export const LIVE_SESSIONS_QUERY_KEY = ['opencode', 'live-sessions'] as const;
 
 // --- Permissions ---------------------------------------------------------
 // opencode emits `permission.asked` when a tool call needs approval and blocks
