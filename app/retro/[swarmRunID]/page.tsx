@@ -5,15 +5,21 @@
 // directives needed beyond Next's default (which is dynamic because of
 // the URL param).
 //
-// If a run has no rollup yet, the view renders an "empty" state with the
-// exact curl command to generate one. That's intentional — running the
-// rollup endpoint is a conscious act (it's a reducer over live opencode
-// state), so we don't auto-trigger it from a page load.
+// If a run has no rollup yet, the view renders the empty state with a
+// "generate rollup" button (Q20+Q24). Newer runs auto-fire a rollup at
+// stop time so the empty state is mostly hit on older runs or aborted
+// stops where the rollup couldn't complete.
+//
+// Q40: ticker snapshot is also fetched and passed through so the retro
+// view can surface "stopped at min N · <stopReason>" on failure-mode
+// runs (opencode-frozen, zen-rate-limit, replan-loop-exhausted). Pulled
+// from the persisted SQLite snapshot (Q21 path) — survives dev reloads.
 
 import type { Metadata } from 'next';
 
 import { RetroView } from '@/components/retro-view';
 import { getRetro } from '@/lib/server/memory/reader';
+import { getTickerSnapshot } from '@/lib/server/blackboard/auto-ticker';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -30,11 +36,17 @@ export function generateMetadata({ params }: PageProps): Metadata {
 
 export default function RetroPage({ params }: PageProps) {
   const data = getRetro(params.swarmRunID);
+  // getTickerSnapshot is non-throwing — returns null when the run has
+  // no ticker (e.g., a non-blackboard pattern, or the registry is fresh
+  // post-process-restart and the run completed before that). Null is
+  // fine; the retro view's failure header simply doesn't render.
+  const ticker = getTickerSnapshot(params.swarmRunID);
   return (
     <RetroView
       swarmRunID={params.swarmRunID}
       retro={data?.retro ?? null}
       agentRollups={data?.agentRollups ?? []}
+      ticker={ticker}
     />
   );
 }

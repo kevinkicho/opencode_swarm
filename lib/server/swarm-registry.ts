@@ -568,22 +568,41 @@ export async function deriveRunRow(
     }
   }
 
-  // #7.Q28 — auto-ticker activity overrides per-session "between turns"
-  // idleness. Empirical: a 60-min orchestrator-worker run shows every
-  // session as `idle` whenever the workers complete a turn between
-  // dispatches (their trailing assistant has time.completed set). The
-  // per-session classifier is correct at that microsecond, but the
-  // run-level answer is wrong — the ticker is actively dispatching, work
-  // IS happening. Promote to `live` whenever an active ticker exists.
-  // Stopped tickers don't override (the run really is done at that
-  // point). Dynamic import keeps swarm-registry decoupled from the
-  // ticker module's globalThis registry.
+  // #7.Q28 + #7.Q35 — ticker-snapshot consultation. Two corrections:
+  //
+  // Q28 (live-during-active): per-session "between turns" idleness
+  // shouldn't classify a run that's still being dispatched as `idle`.
+  // Empirical: a 60-min orchestrator-worker run shows every session as
+  // `idle` whenever the workers complete a turn between dispatches
+  // (their trailing assistant has time.completed set). The per-session
+  // classifier is correct at that microsecond; the run-level answer
+  // isn't. Promote to `live` whenever a non-stopped ticker exists.
+  //
+  // Q35 (failure-vs-clean stop distinction): post-Q27, MessageAbortedError
+  // sessions classify as `idle`. But the ticker can stop for many reasons
+  // — graceful (wall-clock-cap / commits-cap / todos-cap / manual /
+  // auto-idle / operator-hard-stop) or failure (opencode-frozen /
+  // zen-rate-limit / replan-loop-exhausted). Without distinguishing,
+  // a silently-frozen run looks identical to a successfully-capped one
+  // in the picker. Promote `idle` → `error` when the stopReason is in
+  // the failure set so the picker's dot color tells truth.
+  //
+  // Dynamic import keeps swarm-registry decoupled from the ticker
+  // module's globalThis registry.
   if (status === 'idle') {
     try {
       const { getTickerSnapshot } = await import('./blackboard/auto-ticker');
       const ticker = getTickerSnapshot(meta.swarmRunID);
-      if (ticker && !ticker.stopped) {
-        status = 'live';
+      if (ticker) {
+        if (!ticker.stopped) {
+          status = 'live';
+        } else if (
+          ticker.stopReason === 'opencode-frozen' ||
+          ticker.stopReason === 'zen-rate-limit' ||
+          ticker.stopReason === 'replan-loop-exhausted'
+        ) {
+          status = 'error';
+        }
       }
     } catch {
       // ticker registry unreachable — keep idle. The picker already

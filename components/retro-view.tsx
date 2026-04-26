@@ -23,11 +23,43 @@
 import clsx from 'clsx';
 import Link from 'next/link';
 import type { AgentRollup, RunRetro } from '@/lib/server/memory/types';
+import type { TickerSnapshot } from '@/lib/blackboard/live';
 
 interface Props {
   swarmRunID: string;
   retro: RunRetro | null;
   agentRollups: AgentRollup[];
+  // #7.Q40 — ticker snapshot for failure-mode runs. When stopped with
+  // a failure stopReason (opencode-frozen / zen-rate-limit /
+  // replan-loop-exhausted), the header surfaces a prominent chip
+  // showing "stopped at min N · <reason>" so the user doesn't have
+  // to read the retro body to find out a run silently died. Null when
+  // the run has no ticker (non-blackboard pattern, fresh process post-
+  // restart, etc.) — header simply omits the failure chip.
+  ticker?: TickerSnapshot | null;
+}
+
+// Stop reasons that indicate the run hit a failure mode (vs a graceful
+// cap or operator action). Mirrors the set used in deriveRunRow's Q35
+// classifier — keep these in sync if either side adds a new reason.
+const FAILURE_STOP_REASONS = new Set<string>([
+  'opencode-frozen',
+  'zen-rate-limit',
+  'replan-loop-exhausted',
+]);
+
+function isFailureStop(ticker: TickerSnapshot | null | undefined): boolean {
+  if (!ticker || !ticker.stopped || !ticker.stopReason) return false;
+  return FAILURE_STOP_REASONS.has(ticker.stopReason);
+}
+
+function fmtMinutes(ms: number): string {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm ? `${h}h ${rm}m` : `${h}h`;
 }
 
 function fmtDuration(ms: number): string {
@@ -94,14 +126,14 @@ const PLAN_STATUS_TONE: Record<string, { dot: string; text: string }> = {
   abandoned:   { dot: 'bg-fog-700', text: 'text-fog-600 line-through' },
 };
 
-export function RetroView({ swarmRunID, retro, agentRollups }: Props) {
+export function RetroView({ swarmRunID, retro, agentRollups, ticker }: Props) {
   if (!retro && agentRollups.length === 0) {
     return <EmptyRetro swarmRunID={swarmRunID} />;
   }
 
   return (
     <div className="min-h-screen bg-ink-900 text-fog-100 flex flex-col">
-      <Header retro={retro} swarmRunID={swarmRunID} />
+      <Header retro={retro} swarmRunID={swarmRunID} ticker={ticker} />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto max-w-[960px] py-6 px-5 space-y-6">
           {retro && <RunOverview retro={retro} />}
@@ -116,8 +148,24 @@ export function RetroView({ swarmRunID, retro, agentRollups }: Props) {
   );
 }
 
-function Header({ retro, swarmRunID }: { retro: RunRetro | null; swarmRunID: string }) {
+function Header({
+  retro,
+  swarmRunID,
+  ticker,
+}: {
+  retro: RunRetro | null;
+  swarmRunID: string;
+  ticker?: TickerSnapshot | null;
+}) {
   const tone = retro ? OUTCOME_TONE[retro.outcome] : OUTCOME_TONE.partial;
+  // #7.Q40 — failure chip surfaces when the ticker stopped with a
+  // failure-mode reason. Computes minute-mark from the ticker's own
+  // start/stop timestamps so it survives outcome-tone churn.
+  const failure = isFailureStop(ticker);
+  const failureMinutes =
+    failure && ticker?.stoppedAtMs && ticker?.startedAtMs
+      ? fmtMinutes(ticker.stoppedAtMs - ticker.startedAtMs)
+      : null;
   return (
     <header className="h-10 hairline-b bg-ink-850/80 backdrop-blur sticky top-0 z-10 flex items-center gap-3 px-4">
       <Link
@@ -130,6 +178,17 @@ function Header({ retro, swarmRunID }: { retro: RunRetro | null; swarmRunID: str
       <span className="font-mono text-[10.5px] tabular-nums text-fog-400 truncate">
         {swarmRunID}
       </span>
+      {failure && (
+        <span
+          className="ml-2 inline-flex items-center gap-1.5 h-5 px-2 rounded font-mono text-[10px] uppercase tracking-widest2 bg-rust/15 text-rust border border-rust/30 shrink-0"
+          title={`run stopped with failure reason: ${ticker?.stopReason ?? '(unknown)'}`}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-rust" />
+          {failureMinutes ? `stopped at ${failureMinutes}` : 'stopped'}
+          <span className="text-rust/70">·</span>
+          <span>{ticker?.stopReason}</span>
+        </span>
+      )}
       {retro && (
         <span className="flex items-center gap-1.5 ml-auto shrink-0">
           <span className={clsx('w-1.5 h-1.5 rounded-full', tone.dot)} />

@@ -22,7 +22,8 @@ export interface TickerSnapshot {
     | 'wall-clock-cap'
     | 'commits-cap'
     | 'todos-cap'
-    | 'replan-loop-exhausted';
+    | 'replan-loop-exhausted'
+    | 'operator-hard-stop';
   consecutiveIdle: number;
   idleThreshold: number;
   lastOutcome?:
