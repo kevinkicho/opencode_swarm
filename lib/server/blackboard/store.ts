@@ -295,11 +295,12 @@ export function deleteBoardItems(
   itemIds: string[],
 ): number {
   if (itemIds.length === 0) return 0;
-  const stmt = blackboardDb().prepare(
+  const db = blackboardDb();
+  const stmt = db.prepare(
     'DELETE FROM board_items WHERE swarm_run_id = ? AND id = ?',
   );
   let deleted = 0;
-  const tx = blackboardDb().transaction((ids: string[]) => {
+  const tx = db.transaction((ids: string[]) => {
     for (const id of ids) {
       const r = stmt.run(swarmRunID, id);
       deleted += r.changes;
@@ -307,4 +308,95 @@ export function deleteBoardItems(
   });
   tx(itemIds);
   return deleted;
+}
+
+// Bulk insert a sweep's items in a single SQLite transaction. Used in
+// preference to N×insertBoardItem when the planner emits a batch
+// (avoids N tx commits + N inserted-event emits in tight succession).
+// INSERT OR IGNORE matches the per-item insert's idempotency contract:
+// rows whose id already exists are silently skipped, so a retry of the
+// same sweep doesn't double-seed. Returns the items that actually
+// landed (so callers can dispatch downstream events for new rows only).
+export function bulkInsertBoardItems(
+  swarmRunID: string,
+  inputs: Array<Omit<BoardItem, 'createdAtMs' | 'completedAtMs' | 'staleSinceSha'> & {
+    createdAtMs?: number;
+  }>,
+): BoardItem[] {
+  if (inputs.length === 0) return [];
+  const db = blackboardDb();
+  const stmt = db.prepare(
+    `INSERT OR IGNORE INTO board_items
+     (id, swarm_run_id, kind, status, content, owner_agent_id, note,
+      file_hashes_json, stale_since_sha, created_ms, completed_ms,
+      requires_verification, preferred_role, expected_files_json,
+      source_drafts_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+  );
+  const items: BoardItem[] = [];
+  const tx = db.transaction(() => {
+    for (const input of inputs) {
+      const createdAtMs = input.createdAtMs ?? Date.now();
+      const completedAtMs = input.status === 'done' ? createdAtMs : null;
+      const result = stmt.run(
+        input.id,
+        swarmRunID,
+        input.kind,
+        input.status,
+        input.content,
+        input.ownerAgentId ?? null,
+        input.note ?? null,
+        input.fileHashes ? JSON.stringify(input.fileHashes) : null,
+        createdAtMs,
+        completedAtMs,
+        input.requiresVerification ? 1 : 0,
+        input.preferredRole ?? null,
+        input.expectedFiles && input.expectedFiles.length > 0
+          ? JSON.stringify(input.expectedFiles)
+          : null,
+        input.sourceDrafts && input.sourceDrafts.length > 0
+          ? JSON.stringify(input.sourceDrafts)
+          : null,
+      );
+      if (result.changes === 0) continue;
+      const item = getBoardItem(swarmRunID, input.id);
+      if (!item) continue;
+      items.push(item);
+    }
+  });
+  tx();
+  for (const item of items) {
+    emitBoardEvent(swarmRunID, { type: 'item.inserted', item });
+  }
+  return items;
+}
+
+// Bulk reopen for items currently in 'stale' status. Used by the
+// CAS-drift replan path in coordinator.ts when a re-sweep wants to
+// re-dispatch previously-staled items in a single transaction.
+// Status guard (`AND status = 'stale'`) means non-stale ids are
+// silently skipped — concurrent transitions can't double-rollback.
+// Resets owner / file-hashes / note so the reopened item presents
+// as a clean opening to the next claimer. Returns the count of
+// rows actually updated.
+export function bulkReopenStaleItems(
+  swarmRunID: string,
+  itemIds: string[],
+): number {
+  if (itemIds.length === 0) return 0;
+  const db = blackboardDb();
+  const stmt = db.prepare(
+    `UPDATE board_items
+     SET status = 'open', owner_agent_id = NULL, file_hashes_json = NULL, note = NULL
+     WHERE swarm_run_id = ? AND id = ? AND status = 'stale'`,
+  );
+  let updated = 0;
+  const tx = db.transaction((ids: string[]) => {
+    for (const id of ids) {
+      const r = stmt.run(swarmRunID, id);
+      updated += r.changes;
+    }
+  });
+  tx(itemIds);
+  return updated;
 }
