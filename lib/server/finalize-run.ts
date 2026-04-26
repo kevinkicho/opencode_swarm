@@ -38,4 +38,23 @@ export async function finalizeRun(
   console.log(
     `[${context}] ${swarmRunID}: finalized — aborted ${ok}/${targets.length} session(s)`,
   );
+
+  // After aborts settle, fire-and-forget a rollup so /retro/<id> lands
+  // populated on every stopped run without a manual POST to the rollup
+  // endpoint (#7.Q20 + #7.Q24). Dynamic import keeps finalize-run.ts's
+  // static deps small; a slow rollup doesn't gate finalize.
+  void (async () => {
+    try {
+      const { generateRollupById } = await import('./memory/rollup');
+      await generateRollupById(swarmRunID);
+      console.log(
+        `[${context}] ${swarmRunID}: rollup generated post-finalize`,
+      );
+    } catch (err) {
+      console.warn(
+        `[${context}] ${swarmRunID}: rollup generation failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  })();
 }

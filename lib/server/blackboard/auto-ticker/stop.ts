@@ -75,6 +75,12 @@ export function stopAutoTicker(
   // the session no longer exists the stop still completes. We never
   // block the stop path on opencode reachability — that would defeat
   // the point of the liveness watchdog.
+  //
+  // After aborts settle, fire-and-forget a rollup so the retro page
+  // (`/retro/<swarmRunID>`) lands populated on every stopped run
+  // without requiring a manual `POST /api/swarm/memory/rollup`
+  // (#7.Q20 + #7.Q24). Dynamic import keeps stop.ts's static
+  // dependency graph tight; a slow rollup doesn't gate the stop.
   void (async () => {
     const meta = await getRun(swarmRunID).catch(() => null);
     if (!meta) return;
@@ -90,5 +96,18 @@ export function stopAutoTicker(
     console.log(
       `[board/auto-ticker] ${swarmRunID}: stop(${reason}) aborted ${targets.length} session(s)`,
     );
+
+    try {
+      const { generateRollupById } = await import('../../memory/rollup');
+      await generateRollupById(swarmRunID);
+      console.log(
+        `[board/auto-ticker] ${swarmRunID}: rollup generated post-stop`,
+      );
+    } catch (err) {
+      console.warn(
+        `[board/auto-ticker] ${swarmRunID}: rollup generation failed:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    }
   })();
 }
