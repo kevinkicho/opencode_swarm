@@ -35,11 +35,35 @@ import { recordPartialOutcome } from './degraded-completion';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '../opencode/types';
 
-// Default auto-round count. 3 = R1 divergent + R2 exchange + R3 converge,
-// which is the minimum shape that gets to "shared conclusions." Higher
-// counts yield diminishing returns: by R4 agents mostly restate R3.
+// Default auto-round count when teamSize is small (≤ 4). 3 = R1
+// divergent + R2 exchange + R3 converge, which is the minimum shape
+// that gets to "shared conclusions." Higher counts yield diminishing
+// returns: by R4 agents mostly restate R3.
 // Configurable later via request body (`rounds`) or run bounds.
 const DEFAULT_MAX_ROUNDS = 3;
+
+// Scale-aware round cap (#98). The MAXTEAM-2026-04-26 stress test
+// found council-style deliberation at teamSize=8 ran 24 turns of
+// cross-talk (8 members × 3 rounds) and never converged within the
+// 30-min cap; deliberate-execute's phase-1 council got stuck for the
+// same reason and never reached synthesis. With more members, each
+// round already carries more diverse input, so we drop the round
+// count to compensate. Larger pools converge or hit the convergence
+// auto-stop threshold (jaccard ≥ 0.85) faster, OR they don't —
+// either way, fewer rounds gets us to phase 2 before wall-clock.
+//
+// Empirical envelope (assuming ~1-2 min/turn × N members per round):
+//   teamSize 2-4 × 3 rounds = 6-12 turns ≈ 6-24 min  ✓ within cap
+//   teamSize 5-6 × 2 rounds = 10-12 turns ≈ 10-24 min  ✓ within cap
+//   teamSize 7-8 × 2 rounds = 14-16 turns ≈ 14-32 min  ⚠ tight
+//                  × 3 rounds = 21-24 turns ≈ 21-48 min  ✗ stress test verified
+//
+// The user can still override via opts.maxRounds; this just sets the
+// default that fires when no override is supplied.
+export function recommendedDeliberationRounds(teamSize: number): number {
+  if (teamSize >= 5) return 2;
+  return DEFAULT_MAX_ROUNDS;
+}
 
 // Per-round wait ceiling. 10 min was the spec target
 // (PATTERN_DESIGN/council.md I4); empirically council members reply in
@@ -160,8 +184,11 @@ export async function runCouncilRounds(
   swarmRunID: string,
   opts: { maxRounds?: number } = {},
 ): Promise<void> {
-  const maxRounds = opts.maxRounds ?? DEFAULT_MAX_ROUNDS;
-  if (maxRounds < 2) return;
+  // Default round cap is teamSize-aware (#98). Caller's opts.maxRounds
+  // wins when set; otherwise we look up meta.sessionIDs.length below
+  // (after withRunGuard hands us the meta) and pick the recommended
+  // value for that size.
+  const maxRoundsOverride = opts.maxRounds;
 
   // Council accepts both 'council' (standalone) and 'deliberate-execute'
   // (when called as that pattern's phase-1 deliberation).
@@ -180,6 +207,24 @@ export async function runCouncilRounds(
     // reconcile across members. The POST handler already clamps to
     // teamSize ≥ 2 for council, but defend anyway.
     return;
+  }
+
+  // Resolve the round cap now that we have meta.sessionIDs.length.
+  // Override (caller-supplied) wins; otherwise use the teamSize-aware
+  // recommendation. minRounds=2 because a single-round council is
+  // just an unmoderated R1 fan-out — no exchange phase, no real
+  // council shape.
+  const maxRounds = Math.max(
+    2,
+    maxRoundsOverride ?? recommendedDeliberationRounds(meta.sessionIDs.length),
+  );
+  if (
+    maxRoundsOverride === undefined &&
+    maxRounds < DEFAULT_MAX_ROUNDS
+  ) {
+    console.log(
+      `[council] run ${swarmRunID}: scale-aware round cap = ${maxRounds} rounds for teamSize=${meta.sessionIDs.length} (#98). Override via opts.maxRounds.`,
+    );
   }
 
   // Snapshot the set of known message IDs per session. The directive

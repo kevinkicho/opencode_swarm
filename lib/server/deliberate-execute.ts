@@ -67,7 +67,7 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
-import { runCouncilRounds } from './council';
+import { runCouncilRounds, recommendedDeliberationRounds } from './council';
 import { deleteBoardItems, insertBoardItem, listBoardItems } from './blackboard/store';
 import { latestTodosFrom, mintItemId } from './blackboard/planner';
 import { startAutoTicker } from './blackboard/auto-ticker';
@@ -222,10 +222,10 @@ function seedTodosFromExtract(
   return ids;
 }
 
-// How many rounds of deliberation before synthesis. Uses the same
-// default as council — 3 rounds gets to shared conclusions on most
-// missions without looping into diminishing returns.
-const DEFAULT_DELIBERATION_ROUNDS = 3;
+// How many rounds of deliberation before synthesis. Defers to the
+// council module's scale-aware default (`recommendedDeliberationRounds`)
+// so the same per-teamSize policy lights up here. Caller-supplied
+// `opts.deliberationRounds` still wins. (#98)
 
 function extractLatestAssistantText(
   messages: OpencodeMessage[],
@@ -334,7 +334,8 @@ export async function runDeliberateExecuteKickoff(
   // all" branch since it starts council-style). runCouncilRounds adds
   // R2/R3+ peer-revise on top of that Round-1 fan-out.
   const rounds =
-    opts.deliberationRounds ?? DEFAULT_DELIBERATION_ROUNDS;
+    opts.deliberationRounds ??
+    recommendedDeliberationRounds(meta.sessionIDs.length);
   console.log(
     `[deliberate-execute] run ${swarmRunID}: deliberation phase — up to ${rounds} rounds`,
   );

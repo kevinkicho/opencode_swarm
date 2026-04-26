@@ -28,6 +28,31 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — council & deliberate-execute scale-aware round cap (#98)
+
+MAXTEAM-2026-04-26 found council at teamSize=8 ran 24 turns of cross-
+talk × 3 rounds without converging in the 30-min wall-clock cap.
+Deliberate-execute's phase-1 council got stuck for the same reason
+and never reached synthesis (3.4M tokens / 0 done at test stop).
+
+**Fix:** new `recommendedDeliberationRounds(teamSize)` helper exported
+from `lib/server/council.ts`. teamSize ≤ 4 → 3 rounds (default
+preserved); teamSize ≥ 5 → 2 rounds. `runCouncilRounds` and
+deliberate-execute's phase-1 both use it as the default when no
+explicit `maxRounds` is supplied. Empirical envelope:
+`teamSize × rounds × ~1-2 min/turn` now stays under 30 min for every
+size we accept. Caller-supplied `opts.maxRounds` still wins.
+
+The recommendedMax for council and deliberate-execute (5 and 4 from
+#101 / #103) already keep most operators in safe territory; this fix
+adds belt-and-braces protection for the high end. New log line at
+kickoff when the cap fires:
+`[council] run <id>: scale-aware round cap = 2 rounds for teamSize=N (#98)`.
+
+Tests: `recommendedDeliberationRounds` covered in
+`council-convergence.test.ts` — 4 tests verifying the boundary at 5
+and the floor at 2.
+
 ### 2026-04-26 — map-reduce synthesis-prompt overflow guard (#97)
 
 MAXTEAM-2026-04-26 found map-reduce at teamSize=8 burning 10M+ tokens

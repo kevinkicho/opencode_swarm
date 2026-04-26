@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { meanPairwiseJaccard } from '../council';
+import { meanPairwiseJaccard, recommendedDeliberationRounds } from '../council';
 
 // meanPairwiseJaccard powers the council I1 auto-stop convergence
 // detection. When the mean pairwise jaccard similarity between member
@@ -71,5 +71,41 @@ describe('meanPairwiseJaccard — convergence math', () => {
     const sim = meanPairwiseJaccard(['a b c', 'd e f']);
     // Both texts tokenize to empty sets (tokens too short) — pair skipped.
     expect(sim).toBeNull();
+  });
+});
+
+// recommendedDeliberationRounds enforces the #98 fix: at teamSize ≥ 5
+// we cap rounds at 2 because 8-way × 3 rounds doesn't converge inside
+// the wall-clock cap (MAXTEAM-2026-04-26 stress test). Drift here
+// either re-opens that hole or starves small councils of round-budget.
+describe('recommendedDeliberationRounds', () => {
+  it('returns 3 for small teams (2-4)', () => {
+    expect(recommendedDeliberationRounds(2)).toBe(3);
+    expect(recommendedDeliberationRounds(3)).toBe(3);
+    expect(recommendedDeliberationRounds(4)).toBe(3);
+  });
+
+  it('returns 2 for teams of 5 or more', () => {
+    expect(recommendedDeliberationRounds(5)).toBe(2);
+    expect(recommendedDeliberationRounds(6)).toBe(2);
+    expect(recommendedDeliberationRounds(7)).toBe(2);
+    expect(recommendedDeliberationRounds(8)).toBe(2);
+  });
+
+  it('boundary lands at 5 (the recommendedMax for council)', () => {
+    // Encodes the relationship: at the council recommendedMax (5),
+    // we already drop to 2 rounds — tightening below the recommended
+    // ceiling so even a "fine" teamSize gets the convergence-friendly
+    // round count.
+    expect(recommendedDeliberationRounds(4)).toBe(3);
+    expect(recommendedDeliberationRounds(5)).toBe(2);
+  });
+
+  it('returns at least 2 for any reasonable input', () => {
+    // The minimum council is 2 sessions × 2 rounds = R1 + R2 exchange.
+    // Below that there's no real exchange phase.
+    for (let n = 2; n <= 12; n += 1) {
+      expect(recommendedDeliberationRounds(n)).toBeGreaterThanOrEqual(2);
+    }
   });
 });
