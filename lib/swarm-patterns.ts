@@ -141,11 +141,13 @@ export function teamSizeWarningMessage(
 // pre-fill them. Caller-supplied values always win — this only fires
 // for unset fields. See route.ts::applyPatternDefaults.
 //
-// Three ollama-tier models power the defaults (user's 2026-04-24
-// recommendation table):
-//   glm-5.1:cloud          — balanced, fast, good at structured JSON
-//   gemma4:31b-cloud       — instruction-tuned, solid code, parallel-friendly
-//   nemotron-3-super:cloud — strongest reasoning tier, slower
+// Two ollama-tier models power the defaults after 2026-04-25 evening
+// directive ("all agents other than planner → gemma4:31b-cloud"):
+//   glm-5.1:cloud    — planner seat only (blackboard session[0]); fast
+//                      structured-JSON for the planning sweep
+//   gemma4:31b-cloud — every other seat across every pattern
+// nemotron-3-super:cloud is no longer a default, but stays in
+// model-catalog.ts so a user can still pick it explicitly per run.
 //
 // `teamModels(n)` returns a length-`n` array; session[0] is planner-
 // shaped for blackboard-family patterns, synthesizer for map-reduce,
@@ -154,7 +156,6 @@ export function teamSizeWarningMessage(
 // orchestrator module; this table matches them.
 const GLM = 'ollama/glm-5.1:cloud';
 const GEMMA = 'ollama/gemma4:31b-cloud';
-const NEMOTRON = 'ollama/nemotron-3-super:cloud';
 
 export interface PatternDefaults {
   teamModels?: (teamSize: number) => string[];
@@ -174,33 +175,37 @@ export interface PatternDefaults {
 }
 
 export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
-  // Even the baseline pattern gets a default now — without teamModels
-  // pinning, the session falls back to opencode.json's root model which
-  // is typically a zen/go-tier default. For ollama-only runs we want
-  // the baseline on GLM (fastest of the three) for calibration.
+  // Baseline pattern: no explicit planner seat, so every session runs on
+  // GEMMA per the 2026-04-25 evening directive ("all agents other than
+  // planner → gemma4:31b-cloud, all going forward").
   none: {
-    teamModels: (n) => Array(n).fill(GLM),
+    teamModels: (n) => Array(n).fill(GEMMA),
   },
   blackboard: {
     // session[0] = planner (display-only role); sessions[1..N-1] = workers.
+    // Per 2026-04-25 evening directive, the planner is the only seat
+    // allowed to deviate from GEMMA. Keep GLM here — fast structured-JSON
+    // for the planner sweep — but flip critic/auditor down to GEMMA so
+    // the rest of the run is monoculture.
     teamModels: (n) => [GLM, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
-    criticModel: GLM,
+    criticModel: GEMMA,
     verifierModel: GEMMA,
-    auditorModel: NEMOTRON,
+    auditorModel: GEMMA,
   },
   'map-reduce': {
-    // Mappers on GEMMA (parallel-redundant slice work — GEMMA handles
-    // it fine). Synthesizer pinned to GLM via synthesisModel: the
-    // 2026-04-25 validation showed GEMMA reliably produced silent
-    // turns when the synth prompt embedded ~30K tokens of N mapper
-    // drafts (run_modytfez_frfs8l: synth item bounced repeatedly,
-    // synthesis never landed). GLM-5.1 has the same context limit
-    // (202K) and didn't show step-loop fragility in any 2026-04-25
-    // run, so it's the lowest-risk pin for this seat. Falls back to
-    // GEMMA on the claiming session if synthesisModel is absent —
-    // user override via meta.synthesisModel still wins.
+    // Mappers + synthesizer all on GEMMA per 2026-04-25 evening
+    // directive ("all agents other than planner → GEMMA"). Map-reduce
+    // has no explicit planner seat — the synth coordinator is closest
+    // but still under the rule.
+    //
+    // Known risk to watch (history): GEMMA reliably produced silent
+    // turns when an earlier validation embedded ~30K tokens of mapper
+    // drafts in the synth prompt (run_modytfez_frfs8l, 2026-04-25
+    // morning). Synth was previously pinned to GLM to skirt that. If
+    // synth bounces repeatedly under the new monoculture, override
+    // via meta.synthesisModel on a per-run basis or revert this pin.
     teamModels: (n) => Array(n).fill(GEMMA),
-    synthesisModel: GLM,
+    synthesisModel: GEMMA,
   },
   council: {
     // All drafters on GEMMA. Was NEMOTRON — flipped 2026-04-25.
@@ -233,53 +238,27 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     teamModels: (n) => Array(n).fill(GEMMA),
   },
   'role-differentiated': {
-    // Role-indexed defaults. All roles on GEMMA after 2026-04-25
-    // swap — was {architect/reviewer/security: NEMOTRON, ...GEMMA,
-    // docs: GLM}. NEMOTRON's step-loop cost behaviour (see
-    // orchestrator-worker + council comments) made it expensive in
-    // any drafting seat; flipped uniformly here for consistency.
-    // teamRoles rotates through the canonical role list when the
-    // request doesn't supply its own.
-    teamModels: (n) => {
-      const roles = ['architect', 'builder', 'tester', 'reviewer', 'security', 'docs', 'ux', 'data'];
-      const roleModel: Record<string, string> = {
-        architect: GEMMA,
-        reviewer: GEMMA,
-        security: GEMMA,
-        builder: GEMMA,
-        tester: GEMMA,
-        ux: GEMMA,
-        data: GEMMA,
-        docs: GLM,
-      };
-      const out: string[] = [];
-      for (let i = 0; i < n; i += 1) {
-        const role = roles[i % roles.length];
-        out.push(roleModel[role] ?? GEMMA);
-      }
-      return out;
-    },
+    // All roles on GEMMA per 2026-04-25 evening directive. Was
+    // {docs: GLM, ...GEMMA}; the docs lane was on GLM for cost but
+    // monoculture wins under the new rule. teamRoles rotates through
+    // the canonical role list when the request doesn't supply its own.
+    teamModels: (n) => Array(n).fill(GEMMA),
     teamRoles: ['architect', 'builder', 'tester', 'reviewer', 'security', 'docs', 'ux', 'data'],
   },
   'debate-judge': {
-    // Judge on GEMMA, generators rotate GEMMA / GLM. Was NEMOTRON
-    // judge + cycle including NEMOTRON — swapped 2026-04-25 to
-    // skirt the step-loop cost issue (see orchestrator-worker
-    // comment). Two-model rotation still gives draft divergence;
-    // monoculture risk is low because judge differs from generators.
-    teamModels: (n) => {
-      const generatorCycle = [GEMMA, GLM];
-      const out: string[] = [GEMMA]; // judge
-      for (let i = 1; i < n; i += 1) {
-        out.push(generatorCycle[(i - 1) % generatorCycle.length]);
-      }
-      return out;
-    },
+    // Judge + generators all on GEMMA per 2026-04-25 evening directive.
+    // Generators previously rotated GEMMA / GLM for draft divergence;
+    // monoculture risk now exists but the user accepted it as a tradeoff
+    // for uniformity. If draft variance collapses noticeably, revisit.
+    teamModels: (n) => Array(n).fill(GEMMA),
   },
   'critic-loop': {
-    // session[0] = worker (gemma4 — code), session[1] = critic (glm —
-    // fast iteration cycle). Pattern requires exactly teamSize=2.
-    teamModels: () => [GEMMA, GLM],
+    // session[0] = worker, session[1] = critic — both on GEMMA per
+    // 2026-04-25 evening directive. Critic was previously GLM for
+    // fast iteration cadence; the cost/latency hit of running GEMMA
+    // on the critic seat is accepted under the new rule. Pattern
+    // requires exactly teamSize=2.
+    teamModels: () => [GEMMA, GEMMA],
   },
   'deliberate-execute': {
     // Council-style deliberation then blackboard-style execution on
