@@ -462,6 +462,40 @@ function extractLatestAssistantText(messages: OpencodeMessage[]): string | null 
   return null;
 }
 
+// Per-draft soft cap on what we feed into the synthesis prompt
+// (#97 fix). Without this, a single verbose mapper can swallow the
+// entire synthesizer context window — the MAXTEAM-2026-04-26 stress
+// test showed teamSize=8 mappers producing ~1.3M tokens each, so the
+// concatenated synth prompt overflowed every available model's
+// context. Capping at 80K chars per mapper (~20K tokens) keeps the
+// total bounded: 8 mappers × 80K = 640K chars (~160K tokens) which
+// fits in GLM's 202K-token context with synth-prompt scaffolding
+// overhead. At the recommended teamSize ≤ 5 the cap rarely triggers
+// (mappers focused on a single slice tend to land well under it).
+//
+// The truncation is intentionally character-based, not token-based —
+// no tokenizer dependency, predictable upper bound, and reasonably
+// portable across models. Trimmed text gets a clear footer so the
+// synthesizer knows the input was capped.
+const MAX_DRAFT_CHARS_FOR_SYNTHESIS = 80_000;
+
+export function truncateDraftForSynthesis(text: string): {
+  text: string;
+  truncated: boolean;
+} {
+  if (text.length <= MAX_DRAFT_CHARS_FOR_SYNTHESIS) {
+    return { text, truncated: false };
+  }
+  const head = text.slice(0, MAX_DRAFT_CHARS_FOR_SYNTHESIS).trimEnd();
+  const omitted = text.length - MAX_DRAFT_CHARS_FOR_SYNTHESIS;
+  return {
+    text:
+      head +
+      `\n\n*[…truncated for synthesis: ${omitted.toLocaleString()} additional chars omitted to fit synthesizer context. Reduce teamSize or have mappers produce more focused drafts to avoid truncation.]*`,
+    truncated: true,
+  };
+}
+
 function buildSynthesisPrompt(
   drafts: Array<{ sessionID: string; text: string | null }>,
   baseDirective: string | undefined,
@@ -471,13 +505,21 @@ function buildSynthesisPrompt(
     ? `Original directive: ${baseDirective.trim()}`
     : 'The council was given a split-scope directive and each member covered its own slice.';
 
+  let truncatedCount = 0;
   const blocks = drafts.map((d, i) => {
     const label = `Member ${i + 1} (${d.sessionID.slice(-8)})`;
     if (d.text === null) {
       return `### ${label}\n\n*(no final draft — session did not produce a text output in time)*`;
     }
-    return `### ${label}\n\n${d.text.trim()}`;
+    const { text, truncated } = truncateDraftForSynthesis(d.text.trim());
+    if (truncated) truncatedCount += 1;
+    return `### ${label}\n\n${text}`;
   });
+  if (truncatedCount > 0) {
+    console.warn(
+      `[map-reduce] synthesis prompt — ${truncatedCount}/${drafts.length} draft(s) truncated to ${MAX_DRAFT_CHARS_FOR_SYNTHESIS.toLocaleString()} chars to fit synthesizer context (#97). Consider reducing teamSize (recommendedMax for map-reduce is 5).`,
+    );
+  }
 
   const presentCount = drafts.filter((d) => d.text !== null).length;
   // PATTERN_DESIGN/map-reduce.md I3 — surface partial-map state to the
@@ -662,7 +704,12 @@ async function runSynthesisCriticGate(
 
     const criticPrompt = buildCriticPrompt(synthesisText, drafts);
     try {
-      await postSessionMessageServer(criticSID, meta.workspace, criticPrompt);
+      await postSessionMessageServer(
+        criticSID,
+        meta.workspace,
+        criticPrompt,
+        { model: meta.teamModels?.[meta.sessionIDs.indexOf(criticSID)] },
+      );
     } catch (err) {
       console.warn(
         `[map-reduce] run ${swarmRunID} — critic prompt post failed:`,

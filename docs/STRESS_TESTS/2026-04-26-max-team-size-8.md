@@ -170,7 +170,7 @@ These recommendations feed task #101 (kickoff WARN) + task #103
 |---|---|---|
 | #95 | debate-judge: investigate why error-state didn't fire #73 partial-outcome | pending |
 | #96 | role-differentiated: silent stop after 3 done — needs richer log trail | pending |
-| #97 | map-reduce at teamSize 8: synthesis-starved, 0 done despite 10M+ tokens | pending |
+| #97 | map-reduce at teamSize 8: synthesis-starved, 0 done despite 10M+ tokens | **shipped 2026-04-26** — per-draft 80K-char cap in `buildSynthesisPrompt` keeps total bounded for any teamSize |
 | #98 | deliberate-execute at teamSize 8: stuck in deliberation phase | pending |
 | #99 | blackboard at teamSize 8: planner sweep cycles without seeding board | pending |
 | #100 | critic-loop: 955K-token worker turn never completes | **shipped 2026-04-26** — root cause: `waitForSessionIdle` deadline path didn't abort. See `docs/POSTMORTEMS/2026-04-26-critic-loop-runaway-token.md` |

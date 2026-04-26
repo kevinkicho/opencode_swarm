@@ -28,6 +28,28 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — map-reduce synthesis-prompt overflow guard (#97)
+
+MAXTEAM-2026-04-26 found map-reduce at teamSize=8 burning 10M+ tokens
+across 8 mappers with 0 done items — the synthesis claim never
+landed because the concatenated drafts overflowed every model's
+context window.
+
+**Fix:** `buildSynthesisPrompt` now caps each individual mapper's
+draft at 80,000 chars (~20K tokens) before concatenation. With 8
+mappers that bounds the synth prompt at ~640K chars (~160K tokens),
+which fits in GLM's 202K-token context with synth-prompt scaffolding
+overhead. At the recommended `teamSize ≤ 5` (the picker hint from
+#103) the cap rarely triggers — focused mappers tend to land well
+under it. New `truncateDraftForSynthesis` helper is exported and
+unit-tested in `lib/server/__tests__/map-reduce-truncate.test.ts`.
+
+When truncation fires, the synthesizer sees a clear marker per
+truncated draft (`*[…truncated for synthesis: N additional chars
+omitted…]*`) AND a dev-log warning surfaces the count + the
+recommendedMax hint, so operators can tune teamSize down for the
+next run.
+
 ### 2026-04-26 — critic-loop runaway-token leak fixed (#100)
 
 The MAXTEAM-2026-04-26 stress test caught a critic-loop run
