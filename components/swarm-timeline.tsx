@@ -10,6 +10,10 @@ import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 import { TimelineFlow, TIMELINE_GUTTER_WIDTH } from './timeline-flow';
+import {
+  TimelineInteractionProvider,
+  type TimelineInteractionValue,
+} from './swarm-timeline/interaction-context';
 import { partMeta, partHex, partOrder, toolMeta, isCrossLane } from '@/lib/part-taxonomy';
 import { compact } from '@/lib/format';
 import { useBackendStale } from '@/lib/opencode/live';
@@ -110,6 +114,21 @@ export function SwarmTimeline({
   const [partFilter, setPartFilter] = useState<Set<PartType>>(() => new Set());
   const { clockSec } = usePlayback();
   const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // HARDENING_PLAN.md#C7 — TimelineInteractionContext value. Pre-fix
+  // onFocus / onSelectAgent / roleNames were drilled 4-5 levels deep
+  // through TimelineFlow → EventCard/ChipCard → TimelineNodeCard. The
+  // provider hangs them off the subtree so consumers read via hook.
+  // Stable identity via useMemo so subtree memoization isn't busted
+  // every render.
+  const interactionValue: TimelineInteractionValue = useMemo(
+    () => ({
+      onFocus,
+      onSelectAgent,
+      roleNames: roleNames ?? new Map(),
+    }),
+    [onFocus, onSelectAgent, roleNames],
+  );
   // When the dev backend has been unreachable long enough, the lane
   // status circles should stop pulsing — their "live" animation is
   // stale data after the SSE feed drops. See useBackendStale docs.
@@ -503,26 +522,27 @@ export function SwarmTimeline({
               height: totalHeight,
             }}
           >
-            <TimelineFlow
-              agents={agents}
-              agentOrder={agentOrder}
-              agentIndex={agentIndex}
-              agentMap={agentMap}
-              rows={rows}
-              rowHeights={rowHeights}
-              allMessages={messages}
-              focusedId={focusedId}
-              onFocus={onFocus}
-              onClearFocus={onClearFocus}
-              selectedAgentId={selectedAgentId}
-              clockSec={clockSec}
-              totalWidth={Math.max(totalWidth, 800)}
-              totalHeight={totalHeight}
-              scrollRef={scrollRef}
-              scrollMargin={HEADER_HEIGHT + TOP_PAD}
-              todoByTaskMessageId={todoByTaskMessageId}
-              onJumpToTodo={onJumpToTodo}
-            />
+            <TimelineInteractionProvider value={interactionValue}>
+              <TimelineFlow
+                agents={agents}
+                agentOrder={agentOrder}
+                agentIndex={agentIndex}
+                agentMap={agentMap}
+                rows={rows}
+                rowHeights={rowHeights}
+                allMessages={messages}
+                focusedId={focusedId}
+                onClearFocus={onClearFocus}
+                selectedAgentId={selectedAgentId}
+                clockSec={clockSec}
+                totalWidth={Math.max(totalWidth, 800)}
+                totalHeight={totalHeight}
+                scrollRef={scrollRef}
+                scrollMargin={HEADER_HEIGHT + TOP_PAD}
+                todoByTaskMessageId={todoByTaskMessageId}
+                onJumpToTodo={onJumpToTodo}
+              />
+            </TimelineInteractionProvider>
           </div>
         </div>
       </div>

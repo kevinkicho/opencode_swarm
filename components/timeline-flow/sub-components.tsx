@@ -25,18 +25,19 @@ import {
   type DropLayout,
   type EventLayout,
 } from './types';
+import { useTimelineInteraction } from '../swarm-timeline/interaction-context';
 
 export function ChipCard({
   chip,
   y,
   focused,
-  onFocus,
 }: {
   chip: ChipLayout;
   y: number;
   focused: boolean;
-  onFocus: (id: string) => void;
 }) {
+  // HARDENING_PLAN.md#C7 — onFocus from TimelineInteractionContext.
+  const { onFocus } = useTimelineInteraction();
   const m = chip.msg;
   const streaming = chip.phase === 'streaming';
   const width = LANE_WIDTH - CHIP_INSET * 2;
@@ -193,7 +194,6 @@ export function EventCard({
   allMessages,
   agentMap,
   focused,
-  onFocus,
   todoByTaskMessageId,
   onJumpToTodo,
 }: {
@@ -202,10 +202,11 @@ export function EventCard({
   allMessages: AgentMessage[];
   agentMap: Map<string, Agent>;
   focused: boolean;
-  onFocus: (id: string) => void;
   todoByTaskMessageId: Map<string, TodoItem>;
   onJumpToTodo: (todoId: string) => void;
 }) {
+  // HARDENING_PLAN.md#C7 — onFocus from TimelineInteractionContext.
+  const { onFocus } = useTimelineInteraction();
   const { msg, cardX, accent, isIO, phase, progress, fromName, toNames, dimmed } = evt;
   const labelTop = eventLabel(msg);
   const secondary = msg.toolName ? partMeta[msg.part].label : null;

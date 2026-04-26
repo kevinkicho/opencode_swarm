@@ -15,6 +15,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 import { buildRow } from './timeline-flow/build-row';
+import { useTimelineInteraction } from './swarm-timeline/interaction-context';
 import {
   CHIP_GAP,
   CHIP_HEIGHT,
@@ -49,7 +50,6 @@ export function TimelineFlow({
   rowHeights,
   allMessages,
   focusedId,
-  onFocus,
   onClearFocus,
   selectedAgentId,
   clockSec,
@@ -68,7 +68,9 @@ export function TimelineFlow({
   rowHeights: number[];
   allMessages: AgentMessage[];
   focusedId: string | null;
-  onFocus: (id: string) => void;
+  // HARDENING_PLAN.md#C7 — onFocus pulled from
+  // TimelineInteractionContext via useTimelineInteraction() rather
+  // than drilled here.
   onClearFocus: () => void;
   selectedAgentId: string | null;
   clockSec: number;
@@ -79,6 +81,9 @@ export function TimelineFlow({
   todoByTaskMessageId: Map<string, TodoItem>;
   onJumpToTodo: (todoId: string) => void;
 }) {
+  // HARDENING_PLAN.md#C7 — interaction handlers via context, not props.
+  const { onFocus } = useTimelineInteraction();
+
   const estimateSize = useCallback(
     (i: number) => rowHeights[i] ?? ROW_HEIGHT,
     [rowHeights],
@@ -244,7 +249,6 @@ export function TimelineFlow({
             allMessages={allMessages}
             agentMap={agentMap}
             focused={focusedId === row.event.id}
-            onFocus={onFocus}
             todoByTaskMessageId={todoByTaskMessageId}
             onJumpToTodo={onJumpToTodo}
           />
@@ -261,7 +265,6 @@ export function TimelineFlow({
             chip={c}
             y={chipBaseY + i * (CHIP_HEIGHT + CHIP_GAP)}
             focused={focusedId === c.msg.id}
-            onFocus={onFocus}
           />
         ));
       })}
