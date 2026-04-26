@@ -10,6 +10,8 @@
 //
 // Extracted from coordinator.ts in #107 phase 2.
 
+import 'server-only';
+
 import { transitionStatus } from '../store';
 import type { BoardItem } from '../../../blackboard/types';
 

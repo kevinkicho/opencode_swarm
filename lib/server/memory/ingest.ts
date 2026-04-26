@@ -10,6 +10,8 @@
 // recall needs to answer "when was permission X granted?", add a targeted
 // table — don't bolt it into `parts`.
 
+import 'server-only';
+
 import path from 'node:path';
 
 import { memoryDb } from './db';

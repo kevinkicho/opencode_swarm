@@ -4,6 +4,8 @@
 // stopAutoTicker / lifecycle / tier-escalation so each can import this
 // without circular dependencies.
 
+import 'server-only';
+
 import { getRun } from '../../swarm-registry';
 import { listBoardItems, transitionStatus } from '../store';
 import { auditCriteria } from '../auditor';

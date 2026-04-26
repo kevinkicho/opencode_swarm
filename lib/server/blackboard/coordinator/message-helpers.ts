@@ -5,6 +5,8 @@
 // already covers extractLatestErrorText, and the rest are simple
 // enough that the tests-by-grep contract suffices.
 
+import 'server-only';
+
 import type { OpencodeMessage } from '../../../opencode/types';
 import type { BoardItem } from '../../../blackboard/types';
 import { extractRetryFailureReason } from './retry';

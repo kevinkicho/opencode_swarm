@@ -65,6 +65,8 @@
 // implementation speed — architectural decisions, multi-component
 // features, anything where "get the plan right" is the critical path.
 
+import 'server-only';
+
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { runCouncilRounds, recommendedDeliberationRounds } from './council';

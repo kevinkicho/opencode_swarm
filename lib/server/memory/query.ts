@@ -27,6 +27,8 @@
 // cursor in the request shape (not exposed at v1 — single-page fetch is
 // sufficient for prototype usage).
 
+import 'server-only';
+
 import { memoryDb } from './db';
 import type {
   AgentRollup,

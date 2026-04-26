@@ -12,6 +12,8 @@
 // into per-concern files would mean three ~30-line files with lots of
 // import boilerplate.
 
+import 'server-only';
+
 import { getRun } from '../../swarm-registry';
 import { listBoardItems } from '../store';
 import { listPlanRevisions } from '../plan-revisions';

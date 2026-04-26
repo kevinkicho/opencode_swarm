@@ -240,6 +240,136 @@ moments (F1 watchdog firing). Marked accordingly.
 
 ---
 
+## Phase 8 — Hardening (the bible) · ~75-110h cumulative
+
+Operationalizes `docs/HARDENING_PLAN.md` Part VI rollout into commit-sized
+work items. Five waves: Resilience floor → Durability floor → Test the
+keystones → Efficiency wins → Capability decomp.
+
+**Test infrastructure is in place.** 17 hardening test files were
+authored alongside the bible; each item below names the test that should
+flip from `target`/`scaffold` to `passing` when the fix lands. See
+`tests/HARDENING_VALIDATION.md` for the rubric. Targets fail by design
+today; scaffolds skip until the corresponding module ships.
+
+**Verification gate per wave:** after every wave, run `npm test` and
+confirm the expected lints flip green. This is the integrity proof —
+the failure messages cite the plan item directly so the operator knows
+exactly what was hardened.
+
+### Wave 1 — Resilience floor · ~5-7h
+
+Stop the bleeding. After this wave, no more 201-zombies, no more silent
+schema-drift surprises, no more silent orphan kills. **Do this first.**
+
+| # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
+|---|---|---|---|---|---|
+| 8.W1.1 | Forensic-log on auto-ticker orphan-cleanup | #R3 | 15m | `orphan-cleanup-log.test.ts` (un-skip) | PENDING |
+| 8.W1.2 | Pattern-kickoff sync-throw → 5xx + gateFailures field | #R1 | 2-3h | `tests/integration/kickoff-fail-open.test.ts` (un-skip) | PENDING |
+| 8.W1.3 | Add `lib/opencode/validate-part.ts` runtime SDK validator | #R2 | 1h | `lib/opencode/__tests__/validate-part.test.ts` (un-skip) | PENDING |
+| 8.W1.4 | Capture 4-6 opencode JSON fixtures into `lib/opencode/__fixtures__/` | #D7 | 1-2h | (none — pairs with 8.W1.5) | PENDING |
+| 8.W1.5 | Drive transformers through fixture corpus | #D4 #3 | 1-2h | `lib/opencode/__tests__/transform-fixtures.test.ts` (un-skip) | PENDING |
+| 8.W1.6 | Exhaustive switch on `lib/blackboard/live.ts:120` | #R2 | 15m | (covered by validate-part) | PENDING |
+
+**Commits this wave produces:** ~3 (one for R3 + R1; one for R2 validator + fixtures + transformer tests; one for the live.ts switch).
+
+### Wave 2 — Durability floor · ~6-9h
+
+Lock down the failure-mode invariants. Mostly mechanical edits — can
+parallelize across two sittings.
+
+| # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
+|---|---|---|---|---|---|
+| 8.W2.1 | `atomicWriteFile` helper + per-run mutex; rewrite meta.json sites | #D1 | 1-2h | `lib/server/__tests__/atomic-write.test.ts` (un-skip) | PENDING |
+| 8.W2.2 | globalThis-key the 3 lock maps (critic / verifier / auditor) | #D2 | 30m | `lock-hmr-survival.test.ts` (3 sub-tests flip) | PENDING |
+| 8.W2.3 | `import 'server-only';` on all 64 server modules | #D6 | 30m | `server-only-imports.test.ts` flips | PENDING |
+| 8.W2.4 | `lib/opencode/errors.ts` typed errors + replace 8 throws + 2 substring matches | #R4 | 1-2h | `lib/opencode/__tests__/errors.test.ts` (un-skip) | PENDING |
+| 8.W2.5 | `swarm-registry-validate.ts` for meta.json + events.ndjson + memory union | #R7 | 1-2h | `swarm-registry-validate.test.ts` (un-skip) | PENDING |
+| 8.W2.6 | API error-response shape standardization (15 sites → `{error, detail?, hint?}`) | #R5 | 2-3h | `api-error-shape.test.ts` flips | PENDING |
+| 8.W2.7 | `parseFooBody` validators for the 4 untyped routes | #R6 | 1-2h | `route-body-validation.test.ts` flips | PENDING |
+| 8.W2.8 | Auto-ticker `resweepInFlight` CAS-tighten + `ensureSlots` idempotence note | #D8 | 30m | new `auto-ticker/__tests__/tick.test.ts` covers concurrent tickSession | PENDING |
+| 8.W2.9 | Per-swarmRunID dispatch mutex around `tickCoordinator` | #D9 | 1h | dispatch test (W3.1) covers concurrent-call serialization | PENDING |
+
+**Commits this wave produces:** ~6-8 (each item is a clean independent commit).
+
+### Wave 3 — Test the keystones · ~13-18h
+
+Durability through regression detection. After this wave, the next
+refactor (Wave 5) doesn't ship blind.
+
+| # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
+|---|---|---|---|---|---|
+| 8.W3.0 | Lifecycle test for `swarm-registry` (already shipped) | #D4 #1 | (done) | `swarm-registry-lifecycle.test.ts` (passing) | **SHIPPED** |
+| 8.W3.1 | Tests for `tickCoordinator` (covers Q34 silent-drop class) | #D4 #2 | 3-4h | `coordinator/__tests__/dispatch.test.ts` (un-skip) | PENDING |
+| 8.W3.2 | 6 missing pattern integration tests (orchestrator-worker, role-differentiated, critic-loop, debate-judge, council, map-reduce, deliberate-execute) | #D4 #4 | 4-6h | `tests/integration/<pattern>.test.ts` (un-skip × 7) | PENDING |
+| 8.W3.3 | Tests for `runPlannerSweep` | #D4 #5 | 2h | `planner-sweep.test.ts` (un-skip) | PENDING |
+| 8.W3.4 | Postmortem ledger template update + audit existing | #D5 | 30m | `postmortem-ledger.test.ts` (passing) | (lint already passes; just template + retroactive audit) |
+| 8.W3.5 | LRU helper + cap unbounded caches (5 caches) | #D3 | 1-2h | `lib/server/__tests__/lru.test.ts` (un-skip) | PENDING |
+
+**Commits this wave produces:** ~4 (group integration tests by 3-pattern batches).
+
+### Wave 4 — Efficiency wins · ~8-11h
+
+User-facing payoff. After this wave the page feels snappier and dev
+cycles tighten.
+
+| # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
+|---|---|---|---|---|---|
+| 8.W4.1 | `getSessionMessagesServer` in-flight + 500ms TTL dedup | #E1 | 1h | (manual: 16→8 probes on 8-session snapshot) | PENDING |
+| 8.W4.2 | Migrate 4 raw `/api/swarm/run` fetches to `useSwarmRuns` | #E2 | 30m | `raw-fetch-audit.test.ts` flips | PENDING |
+| 8.W4.3 | `BackendHealthProvider` Context (kill 3-poller waste) | #E3 | 30m | (manual: 1× /health/5s instead of N×) | PENDING |
+| 8.W4.4 | Parallelize 3 `sha7` await loops in `dispatch.ts` | #E5 | 30m | (covered by W3.1 dispatch test) | PENDING |
+| 8.W4.5 | `board/ticker` Q46-style import-graph fix | #E6 | 30m | (manual: cold-compile probe ≤200 modules) | PENDING |
+| 8.W4.6 | Audit other multi-method routes for same pattern | #E7 | 1-2h | (audit notes only) | PENDING |
+| 8.W4.7 | Fold ticker + strategy frames into `/board/events` SSE; drop 2 polls | #E4 | 2-3h | (manual: Network panel shows 1 SSE not 3 polls) | PENDING |
+| 8.W4.8 | `useMutation` migration for 4 POST raw-fetch sites | #E9 | 2-3h | (manual: each mutation has uniform pending/error/disabled state) | PENDING |
+
+**Commits this wave produces:** ~6 (E5 piggybacks on W3.1; E6+E7 group; E4 standalone; E9 standalone).
+
+### Wave 5 — Capability decomp · ~40-60h
+
+The seams future work depends on. Sequence by cascade-risk highest first.
+Do incrementally — each item is independently mergeable.
+
+| # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
+|---|---|---|---|---|---|
+| 8.W5.1 | Split `swarm-registry.ts` along fs/derive seam (closes Q47) | #C3 | 2-3h | `swarm-registry-lifecycle.test.ts` stays green | PENDING |
+| 8.W5.2 | Decompose `tickCoordinator` into 5 helpers | #C4 | 4-5h | dispatch tests (W3.1) pass per-helper | PENDING |
+| 8.W5.3 | Split `app/api/swarm/run/route.ts` (1076 → ≤250 LOC + per-pattern kickoff table) | #C2 | 3-4h | (no test regression; manual: route file ≤250) | PENDING |
+| 8.W5.4 | Delete/namespace 8 orphan endpoints | #C9 | 1-2h | (manual: route count 20 → ≤14) | PENDING |
+| 8.W5.5 | `lib/api-types.ts` lift 6 inline route interfaces | #C5 | 1-2h | (manual: client + server share types) | PENDING |
+| 8.W5.6 | `lib/config.ts` typed env-var module | #C5 | 1-2h | (manual: `grep process.env` in lib/app drops to 1 file) | PENDING |
+| 8.W5.6b | `lib/server/pattern-tunables.ts` consolidate ~20 magic numbers | #C18 | 2-3h | (manual: pattern files import constants instead of inlining) | PENDING |
+| 8.W5.7 | Lift `extractLatestAssistantText` to `harvest-drafts.ts` (delete 5 dupes) | #C1 | 1h | (manual: grep returns 1 def) | PENDING |
+| 8.W5.8 | Move `parseVerdict` server-side only; client reads structured field | #C16 | 30m | (manual: `parseVerdict` in 0 .tsx files) | PENDING |
+| 8.W5.9 | `components/rails/_shared.ts` rail helpers consolidation | #C15 | 1-2h | (manual: grep `function wrap` in components/ returns 1) | PENDING |
+| 8.W5.10 | `app/page.tsx` extract `useSwarmView` + `useDiffStats` hooks | #C6 + #E8 | 3-4h | (manual: page.tsx ≤1050 LOC, hook count ≤22) | PENDING |
+| 8.W5.11 | `swarm-timeline.tsx` add `TimelineInteractionContext` | #C7 | 1-2h | (manual: prop list shrinks ≥3) | PENDING |
+| 8.W5.12 | Split `lib/opencode/live.ts` into 6 hook files | #C10 | 4-6h | each new file ≤300 LOC | PENDING |
+| 8.W5.13 | Split `lib/opencode/transform.ts` into per-transformer files | #C11 | 3-4h | each new file ≤300 LOC | PENDING |
+| 8.W5.14 | Split `lib/server/blackboard/planner.ts` into 4 files | #C12 | 3-5h | each new file ≤400 LOC | PENDING |
+| 8.W5.15 | Split `lib/server/memory/rollup.ts` (capture/compute/persist) | #C13 | 2-3h | each new file ≤250 LOC | PENDING |
+| 8.W5.16 | Decompose `new-run-modal` + `spawn-agent-modal` + `routing-modal` | #C8 | 4-5h | each ≤500 LOC; modal opens cleanly | PENDING |
+| 8.W5.17 | Close 2 import cycles | #C17 | 30m | `import-cycles.test.ts` flips | PENDING |
+| 8.W5.18 | Remaining UI decomp (retro-view + turn-cards + agent-roster + etc.) | #C14 | 6-10h | each ≤500 LOC | PENDING |
+
+**Commits this wave produces:** ~15-18 (one per item; some can group).
+
+### Stop conditions (anti-scope-creep)
+
+Before adding work to this phase, check the bible's stop conditions
+(HARDENING_PLAN.md Part VI):
+
+- ❌ Do NOT introduce a polymorphic `runPattern(...)` interface
+- ❌ Do NOT add Zod (the existing manual validator idiom is sufficient)
+- ❌ Do NOT add Server Actions (current `'use client'` + explicit `/api/` pattern is intentional)
+- ❌ Do NOT optimize past the cumulative-impact targets in Part V — past that, complexity costs more than the user-visible win
+
+If a proposal hits one of these, write up why this case is the exception
+in the proposal itself; otherwise close as out-of-scope.
+
+---
+
 ## Total Estimate
 
 | Phase | Items | Effort |
@@ -251,10 +381,15 @@ moments (F1 watchdog firing). Marked accordingly.
 | 4 — Pattern mechanics | ~20 | ~50h |
 | 5 — Ad-hoc UI | 2 | ~5h |
 | 6 — Perf + UX | 9 | ~18h |
-| 7 — Live-test backlog | 19 | ~18h (Q19 is a 6h architectural refactor) |
-| **Total** | **~72** | **~133 hours** |
+| 7 — Live-test backlog | 19 | ~18h |
+| 8 — Hardening (5 waves) | 43 | ~80-118h |
+| **Total** | **~115** | **~215-253 hours** |
 
-That's roughly 2.5-3 weeks of focused work. We can ship in increments — every Phase-0 fix and every Phase-1 tab is independently mergeable.
+Hardening Phase 8 nearly doubles the plan. That's accurate — it's the
+structural debt accumulated through Q1-Q47. We don't need to do it all
+at once: Wave 1 alone (5-7h) closes the worst incident classes. Wave 2-3
+together (17-24h) puts the test floor in place. Waves 4-5 are the
+investment for "feels good to work in."
 
 ---
 
@@ -267,6 +402,13 @@ That's roughly 2.5-3 weeks of focused work. We can ship in increments — every 
 **Week 3:** Phase 4 mechanics gaps (~50h) — backend hardening based on what real runs reveal once the new observability is in place.
 
 **Week 4 (optional):** Phase 6 perf migration if there's still latency the user feels.
+
+**Hardening track (parallel to weeks above, or after):**
+
+- **Hardening week 1:** Wave 1 (Resilience floor, 5-7h) + Wave 2 (Durability floor, 4-6h) = ~10-13h. Ship early in any week — these are the highest-leverage low-effort items in the entire plan.
+- **Hardening week 2:** Wave 3 (Test the keystones, 13-18h). Sets up Wave 5 to ship safely.
+- **Hardening week 3:** Wave 4 (Efficiency, 5-8h). User-facing payoff after the floor is solid.
+- **Hardening weeks 4-7:** Wave 5 (Capability decomp). Incremental — one or two items per session, validated by the test floor each time.
 
 ---
 

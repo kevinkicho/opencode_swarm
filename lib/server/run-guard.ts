@@ -28,6 +28,8 @@
 // Wrapping the whole thing in finalizeRun would double-fire on phase
 // transitions.
 
+import 'server-only';
+
 import { finalizeRun } from './finalize-run';
 import { getRun } from './swarm-registry';
 import { recordPartialOutcome } from './degraded-completion';

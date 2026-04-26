@@ -5,6 +5,8 @@
 // stopAutoTicker without import cycles. Lifecycle's startAutoTicker
 // also imports from here.
 
+import 'server-only';
+
 import { abortSessionServer } from '../../opencode-server';
 import { getRun } from '../../swarm-registry';
 import { persistTickerSnapshot } from '../ticker-snapshots';

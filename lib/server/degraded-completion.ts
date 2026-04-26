@@ -17,6 +17,8 @@
 // (the picker skips kind!='todo'), so it's safe to insert at any
 // orchestrator-controlled point without race risk.
 
+import 'server-only';
+
 import { mintItemId } from './blackboard/planner';
 import { insertBoardItem } from './blackboard/store';
 

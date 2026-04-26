@@ -15,6 +15,8 @@
 //
 // This module is server-only — do not import from 'use client' code.
 
+import 'server-only';
+
 import { createReadStream, promises as fs } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';

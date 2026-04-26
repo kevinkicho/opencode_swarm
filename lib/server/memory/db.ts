@@ -8,6 +8,8 @@
 // Server-only. Import from API routes, scripts, and rollup/ingest modules;
 // never from a 'use client' file.
 
+import 'server-only';
+
 import Database from 'better-sqlite3';
 import type { Database as DB } from 'better-sqlite3';
 import { readFileSync, mkdirSync } from 'node:fs';

@@ -5,6 +5,8 @@
 //
 // Extracted from auto-ticker.ts in #106 phase 5.
 
+import 'server-only';
+
 import { liveExports } from '../../hmr-exports';
 import { getRun } from '../../swarm-registry';
 import { maybeRunAudit } from './audit';

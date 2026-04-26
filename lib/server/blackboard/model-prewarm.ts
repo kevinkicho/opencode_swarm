@@ -27,6 +27,8 @@
 // `baseURL` which is from opencode's POV (always `127.0.0.1:11434`
 // because opencode and ollama are co-located on Windows).
 
+import 'server-only';
+
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 const WARMUP_TIMEOUT_MS = 120_000; // 2 min — covers nemotron's ~65s + buffer
 const WARMUP_PROMPT = 'hi';

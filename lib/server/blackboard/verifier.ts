@@ -24,6 +24,8 @@
 // See SWARM_PATTERNS.md "Tiered execution" companion layer #2 and
 // memory/project_ambition_ratchet.md for the design decision context.
 
+import 'server-only';
+
 import {
   abortSessionServer,
   getSessionMessagesServer,
@@ -58,20 +60,32 @@ export interface VerifierReviewResult {
 }
 
 // Per-run mutex (same pattern as critic.ts).
-const verifierLocks = new Map<string, Promise<unknown>>();
+//
+// HARDENING_PLAN.md#D2 — pinned on globalThis so HMR doesn't reset
+// the lock map mid-flight.
+const VERIFIER_LOCKS_KEY = Symbol.for('opencode_swarm.verifierLocks.v1');
+function verifierLocks(): Map<string, Promise<unknown>> {
+  const g = globalThis as { [VERIFIER_LOCKS_KEY]?: Map<string, Promise<unknown>> };
+  const slot = g[VERIFIER_LOCKS_KEY];
+  if (slot instanceof Map) return slot;
+  const next = new Map<string, Promise<unknown>>();
+  g[VERIFIER_LOCKS_KEY] = next;
+  return next;
+}
 
 async function withVerifierLock<T>(
   swarmRunID: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const prior = verifierLocks.get(swarmRunID) ?? Promise.resolve();
+  const locks = verifierLocks();
+  const prior = locks.get(swarmRunID) ?? Promise.resolve();
   const next = prior.then(fn, fn) as Promise<T>;
-  verifierLocks.set(swarmRunID, next);
+  locks.set(swarmRunID, next);
   try {
     return await next;
   } finally {
-    if (verifierLocks.get(swarmRunID) === next) {
-      verifierLocks.delete(swarmRunID);
+    if (locks.get(swarmRunID) === next) {
+      locks.delete(swarmRunID);
     }
   }
 }

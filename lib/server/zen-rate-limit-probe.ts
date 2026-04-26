@@ -17,6 +17,8 @@
 // opencode/log/ by convention (see memory/reference_opencode_port.md).
 // Overridable via OPENCODE_LOG_DIR env for other hosts.
 
+import 'server-only';
+
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 

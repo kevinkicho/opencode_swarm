@@ -15,6 +15,8 @@
 // an in-flight turn cancels it. Safe to call at any point — matches
 // the behavior of the ticker's abort-sessions path.
 
+import 'server-only';
+
 import { getRun } from './swarm-registry';
 import { abortSessionServer } from './opencode-server';
 

@@ -12,6 +12,8 @@
 //
 // Server-only.
 
+import 'server-only';
+
 import { blackboardDb } from './db';
 
 export interface PersistedTickerSnapshot {

@@ -14,6 +14,8 @@
 //
 // Extracted from coordinator.ts in #107 phase 5.
 
+import 'server-only';
+
 const CAS_REPLAN_MIN_INTERVAL_MS = 60 * 1000;
 
 export async function scheduleCasDriftReplan(

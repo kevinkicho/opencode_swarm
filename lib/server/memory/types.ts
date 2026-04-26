@@ -13,6 +13,8 @@
 // "show me all retros for workspace X newer than T" — don't need to parse
 // the blob. The blob is authoritative; columns are denormalized pointers.
 
+import 'server-only';
+
 export interface AgentRollup {
   kind: 'agent';
   swarmRunID: string;

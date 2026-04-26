@@ -18,6 +18,8 @@
 //     exhausted" note in the transcript)
 //   - worker errors / per-turn timeout (→ done, escalate to human)
 
+import 'server-only';
+
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { withRunGuard } from './run-guard';

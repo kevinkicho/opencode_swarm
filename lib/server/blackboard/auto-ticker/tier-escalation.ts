@@ -9,6 +9,8 @@
 //
 // Extracted from auto-ticker.ts in #106 phase 3e.
 
+import 'server-only';
+
 import { updateRunMeta } from '../../swarm-registry';
 import { listBoardItems } from '../store';
 import { attemptColdFileSeeding } from '../cold-file-seed';

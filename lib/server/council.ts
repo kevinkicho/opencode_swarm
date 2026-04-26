@@ -28,6 +28,8 @@
 // Stops on: maxRounds reached, <2 drafts present at any round boundary,
 // per-round wait timeout fired for all sessions, or a fetch throws.
 
+import 'server-only';
+
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { harvestDrafts, snapshotKnownIDs } from './harvest-drafts';

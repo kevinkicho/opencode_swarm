@@ -15,6 +15,8 @@
 // Defaults live here rather than .env so a fresh clone just works;
 // override via env when needed.
 
+import 'server-only';
+
 import { promises as fs, createReadStream, createWriteStream } from 'node:fs';
 import { createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';

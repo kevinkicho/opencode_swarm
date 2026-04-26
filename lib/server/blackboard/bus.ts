@@ -8,6 +8,8 @@
 // HMR safety: pin the subscriber map on `globalThis` so route reloads
 // don't orphan open streams. Matches the pattern used by `auto-ticker.ts`.
 
+import 'server-only';
+
 import type { BoardItem } from '@/lib/blackboard/types';
 
 export type BoardEvent =

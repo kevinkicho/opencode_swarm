@@ -18,6 +18,8 @@
 // Matches the auto-ticker DEFAULT_WALLCLOCK_MINUTES so user expectation
 // is consistent across patterns.
 
+import 'server-only';
+
 import type { SwarmRunMeta } from '@/lib/swarm-run-types';
 
 export const DEFAULT_NONTICKER_WALLCLOCK_MINUTES = 60;

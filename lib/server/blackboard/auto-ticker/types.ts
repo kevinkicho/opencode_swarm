@@ -7,6 +7,8 @@
 // only constants read by multiple modules (or by the public snapshot
 // surface) live here.
 
+import 'server-only';
+
 import type { TickOutcome } from '../coordinator';
 
 // ─── Cross-module constants ──────────────────────────────────────────

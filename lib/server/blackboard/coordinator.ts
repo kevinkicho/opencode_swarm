@@ -18,6 +18,8 @@
 //
 // Server-only. Never imported from client code.
 
+import 'server-only';
+
 import { publishExports } from '../hmr-exports';
 import {
   COORDINATOR_EXPORTS_KEY,

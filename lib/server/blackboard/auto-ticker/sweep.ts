@@ -10,6 +10,8 @@
 //
 // Extracted from auto-ticker.ts in #106 phase 4.
 
+import 'server-only';
+
 import { listBoardItems } from '../store';
 import { livePlanner } from './live-exports';
 import {

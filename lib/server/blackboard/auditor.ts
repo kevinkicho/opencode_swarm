@@ -32,6 +32,8 @@
 //   `open` for the next audit pass. Never block the run on an auditor
 //   malfunction.
 
+import 'server-only';
+
 import {
   abortSessionServer,
   getSessionMessagesServer,
@@ -86,20 +88,32 @@ export interface AuditResult {
 
 // Per-run mutex. Same pattern + rationale as critic.ts's mutex:
 // opencode won't accept concurrent prompts on the same session.
-const auditLocks = new Map<string, Promise<unknown>>();
+//
+// HARDENING_PLAN.md#D2 — pinned on globalThis so HMR doesn't reset
+// the lock map mid-flight.
+const AUDIT_LOCKS_KEY = Symbol.for('opencode_swarm.auditLocks.v1');
+function auditLocks(): Map<string, Promise<unknown>> {
+  const g = globalThis as { [AUDIT_LOCKS_KEY]?: Map<string, Promise<unknown>> };
+  const slot = g[AUDIT_LOCKS_KEY];
+  if (slot instanceof Map) return slot;
+  const next = new Map<string, Promise<unknown>>();
+  g[AUDIT_LOCKS_KEY] = next;
+  return next;
+}
 
 async function withAuditLock<T>(
   swarmRunID: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const prior = auditLocks.get(swarmRunID) ?? Promise.resolve();
+  const locks = auditLocks();
+  const prior = locks.get(swarmRunID) ?? Promise.resolve();
   const next = prior.then(fn, fn) as Promise<T>;
-  auditLocks.set(swarmRunID, next);
+  locks.set(swarmRunID, next);
   try {
     return await next;
   } finally {
-    if (auditLocks.get(swarmRunID) === next) {
-      auditLocks.delete(swarmRunID);
+    if (locks.get(swarmRunID) === next) {
+      locks.delete(swarmRunID);
     }
   }
 }

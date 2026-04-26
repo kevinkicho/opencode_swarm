@@ -16,6 +16,8 @@
 // tab. These shapers preserve observable end-state while collapsing the
 // update-frequency and per-frame payload.
 
+import 'server-only';
+
 import type { SwarmRunEvent } from '@/lib/swarm-run-types';
 
 const MESSAGE_UPDATED = 'message.updated';

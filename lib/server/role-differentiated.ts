@@ -14,6 +14,8 @@
 // list. The template is opinionated but easy to override via
 // teamRoles in the request body.
 
+import 'server-only';
+
 import { postSessionMessageServer } from './opencode-server';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { runPlannerSweep } from './blackboard/planner';

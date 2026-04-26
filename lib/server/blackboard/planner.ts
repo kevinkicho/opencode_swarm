@@ -21,6 +21,8 @@
 //
 // Server-only. Not imported from client code.
 
+import 'server-only';
+
 import { randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';

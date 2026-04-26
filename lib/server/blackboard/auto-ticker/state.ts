@@ -8,6 +8,8 @@
 // + shutdown-hook initialization happens lazily on the first
 // `tickers()` call (HMR-stable via globalThis symbols).
 
+import 'server-only';
+
 import { deriveRunRow, getRun, listRuns } from '../../swarm-registry';
 import { abortSessionServer } from '../../opencode-server';
 import { pruneDemoLog } from '../../demo-log-retention';
@@ -41,6 +43,38 @@ const STARTUP_CLEANUP_HORIZON_MS = 48 * 60 * 60 * 1000;
 // queue item.
 const STARTUP_CLEANUP_RECENT_ACTIVITY_MS = 5 * 60 * 1000;
 
+// HARDENING_PLAN.md#R3 — extracted from the inline loop in `tickers()`
+// so the orphan-vs-alive decision is independently testable. Returns
+// `'alive'` when the run was active inside RECENT_ACTIVITY_MS; returns
+// `'orphan'` otherwise (including when deriveRunRow throws — see the
+// catch's forensic warn).
+import type { SwarmRunMeta } from '../../../swarm-run-types';
+export async function classifyMetaForCleanup(
+  meta: SwarmRunMeta,
+  now: number = Date.now(),
+): Promise<'alive' | 'orphan'> {
+  const recentActivityCutoff = now - STARTUP_CLEANUP_RECENT_ACTIVITY_MS;
+  try {
+    const row = await deriveRunRow(meta);
+    const lastActive = row.lastActivityTs ?? meta.createdAt;
+    if (lastActive >= recentActivityCutoff) return 'alive';
+    return 'orphan';
+  } catch (err) {
+    // If we can't compute status (opencode unreachable for this run's
+    // sessions, etc.), be conservative — fall through and treat as an
+    // orphan. Status-unknown is closer to dead than alive.
+    //
+    // R3 — log the failure so a transient opencode hiccup that kills a
+    // live run leaves a forensic trail. Pre-fix this catch was empty,
+    // killing alive runs silently on every restart.
+    console.warn(
+      `[board/auto-ticker] orphan-cleanup: deriveRunRow threw for ${meta.swarmRunID} — treating as orphan; reason:`,
+      err instanceof Error ? err.message : err,
+    );
+    return 'orphan';
+  }
+}
+
 export function tickers(): TickerMap {
   const g = globalThis as GlobalWithTickers;
   if (!g[globalTickerKey]) g[globalTickerKey] = new Map();
@@ -67,23 +101,14 @@ export function tickers(): TickerMap {
           // are usually only a handful of recent runs and we don't
           // want to flood opencode with N parallel session lookups
           // before the actual cleanup work.
-          const recentActivityCutoff =
-            Date.now() - STARTUP_CLEANUP_RECENT_ACTIVITY_MS;
           const orphans: typeof recent = [];
           let skippedAlive = 0;
+          const now = Date.now();
           for (const meta of recent) {
-            try {
-              const row = await deriveRunRow(meta);
-              const lastActive = row.lastActivityTs ?? meta.createdAt;
-              if (lastActive >= recentActivityCutoff) {
-                skippedAlive += 1;
-                continue;
-              }
-            } catch {
-              // If we can't compute status (opencode unreachable for
-              // this run's sessions, etc.), be conservative — fall
-              // through and treat as an orphan. Status-unknown is
-              // closer to dead than alive.
+            const verdict = await classifyMetaForCleanup(meta, now);
+            if (verdict === 'alive') {
+              skippedAlive += 1;
+              continue;
             }
             orphans.push(meta);
           }

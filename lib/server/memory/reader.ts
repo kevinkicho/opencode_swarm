@@ -8,6 +8,8 @@
 // tokens, capping limits. For page-level reads we want the full AgentRollup
 // / RunRetro blobs back as-is.
 
+import 'server-only';
+
 import { memoryDb } from './db';
 import type { AgentRollup, RunRetro } from './types';
 

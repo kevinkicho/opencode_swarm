@@ -7,6 +7,8 @@
 //
 // Extracted from auto-ticker.ts in #106 phase 3f.
 
+import 'server-only';
+
 import { deriveRunRow, getRun } from '../../swarm-registry';
 import {
   detectRecentZen429,

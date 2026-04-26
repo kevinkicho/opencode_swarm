@@ -15,6 +15,8 @@
 // fanning out calls here without touching the browser's expectation of what
 // an opencode session looks like.
 
+import 'server-only';
+
 import { opencodeFetch } from '../opencode/client';
 import type { OpencodeSession } from '../opencode/client';
 import type { OpencodeBuiltinAgent, OpencodeMessage } from '../opencode/types';

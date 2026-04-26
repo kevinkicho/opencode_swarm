@@ -13,6 +13,8 @@
 // legible quality signal: choosing between two API shapes, picking a
 // refactor approach, deciding an architectural tradeoff.
 
+import 'server-only';
+
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';

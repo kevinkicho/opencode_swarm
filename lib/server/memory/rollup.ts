@@ -16,6 +16,8 @@
 // rolling up the same run twice with more events should give a strictly
 // better summary, not accumulate stale artifacts.
 
+import 'server-only';
+
 import crypto from 'node:crypto';
 
 import { memoryDb } from './db';

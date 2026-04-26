@@ -17,6 +17,8 @@
 // Deterministic: no LLM call, just fs + heat. Cheap (~ms on small
 // repos, capped on large repos by the recursion cost). Server-only.
 
+import 'server-only';
+
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 

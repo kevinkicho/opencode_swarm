@@ -10,6 +10,8 @@
 // Extracted from auto-ticker.ts in #106 phase 3e so tier-escalation and
 // sweep modules can share these wrappers without re-defining them.
 
+import 'server-only';
+
 import { liveExports } from '../../hmr-exports';
 import {
   COORDINATOR_EXPORTS_KEY,

@@ -12,6 +12,8 @@
 // gate at app/api/opencode/[...path]/route.ts owns that dimension
 // (it 402s the prompt before the model turn spends tokens).
 
+import 'server-only';
+
 import { getRun } from '../../swarm-registry';
 import { listBoardItems } from '../store';
 import { stopAutoTicker } from './stop';

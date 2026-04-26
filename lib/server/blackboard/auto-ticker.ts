@@ -38,6 +38,8 @@
 //
 // Server-only. Not imported from client code.
 
+import 'server-only';
+
 import { liveExports, publishExports } from '../hmr-exports';
 import {
   AUTO_TICKER_EXPORTS_KEY,

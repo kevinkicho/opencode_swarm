@@ -17,6 +17,8 @@
 //
 // Not called from the route layer — only the watchdog consumes this.
 
+import 'server-only';
+
 import { spawn } from 'node:child_process';
 
 // 10 min: long enough that the STARTUP_GRACE (15 min) has clearly

@@ -5,6 +5,8 @@
 // place; the public surface re-exports happen back in coordinator.ts
 // to keep external callers' import paths unchanged.
 
+import 'server-only';
+
 import type { OpencodeMessage } from '../../../opencode/types';
 
 // Shared key for HMR-resilient consumer lookups (see lib/server/hmr-exports.ts).

@@ -27,6 +27,8 @@
 // revisions on a focused target, so a shorter timeout catches hung
 // turns faster without losing legitimate work. Patterns not in the map
 // fall back to DEFAULT_TURN_TIMEOUT_MS.
+import 'server-only';
+
 const DEFAULT_TURN_TIMEOUT_MS = 10 * 60_000;
 const TURN_TIMEOUTS_MS: Record<string, number> = {
   blackboard: 10 * 60_000,

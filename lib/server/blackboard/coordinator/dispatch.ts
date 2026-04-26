@@ -24,6 +24,8 @@
 // Server-only. Never imported from client code. Extracted from
 // coordinator.ts in #107 phase 5.
 
+import 'server-only';
+
 import path from 'node:path';
 
 import { getRun } from '../../swarm-registry';

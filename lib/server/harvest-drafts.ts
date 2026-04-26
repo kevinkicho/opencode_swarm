@@ -20,6 +20,8 @@
 //
 // Extracted from map-reduce.ts + council.ts in #110.
 
+import 'server-only';
+
 import { getSessionMessagesServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
 import type { SwarmRunMeta } from '@/lib/swarm-run-types';

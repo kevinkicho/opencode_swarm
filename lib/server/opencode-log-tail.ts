@@ -28,6 +28,8 @@
 // loader chain doesn't resolve `node:` URIs in dev mode, even though
 // Node itself accepts both. The `node:` form would block any API
 // route that transitively imports this file.
+import 'server-only';
+
 import { existsSync, readdirSync, statSync, openSync, closeSync, readSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';

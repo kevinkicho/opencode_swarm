@@ -40,6 +40,8 @@
 // for a 2-line helper. At runtime, symbol-keyed globalThis access is a
 // standard ES pattern.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+import 'server-only';
+
 type AnyGlobal = any;
 
 export function publishExports<T>(key: symbol, exports: T): void {

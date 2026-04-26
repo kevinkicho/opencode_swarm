@@ -34,6 +34,8 @@
 // See SWARM_PATTERNS.md "Tiered execution" companion layer #1 and
 // memory/project_ambition_ratchet.md for the decision context.
 
+import 'server-only';
+
 import {
   abortSessionServer,
   getSessionMessagesServer,
@@ -72,22 +74,35 @@ export interface CriticReviewResult {
 // prompts on the same session; without serialization, two worker ticks
 // committing at once would both try to post to the critic and one would
 // 409. The second would fail-open (accept) and we'd miss its review.
-const criticLocks = new Map<string, Promise<unknown>>();
+//
+// HARDENING_PLAN.md#D2 — pinned on globalThis so Next.js HMR doesn't
+// reset the lock map mid-flight. Pre-fix this was a plain `const Map`;
+// any module reload would let a second concurrent review through.
+const CRITIC_LOCKS_KEY = Symbol.for('opencode_swarm.criticLocks.v1');
+function criticLocks(): Map<string, Promise<unknown>> {
+  const g = globalThis as { [CRITIC_LOCKS_KEY]?: Map<string, Promise<unknown>> };
+  const slot = g[CRITIC_LOCKS_KEY];
+  if (slot instanceof Map) return slot;
+  const next = new Map<string, Promise<unknown>>();
+  g[CRITIC_LOCKS_KEY] = next;
+  return next;
+}
 
 async function withCriticLock<T>(
   swarmRunID: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const prior = criticLocks.get(swarmRunID) ?? Promise.resolve();
+  const locks = criticLocks();
+  const prior = locks.get(swarmRunID) ?? Promise.resolve();
   // Chain via catch+then so a prior rejection doesn't poison the chain —
   // each review runs after the prior one settles regardless of outcome.
   const next = prior.then(fn, fn) as Promise<T>;
-  criticLocks.set(swarmRunID, next);
+  locks.set(swarmRunID, next);
   try {
     return await next;
   } finally {
-    if (criticLocks.get(swarmRunID) === next) {
-      criticLocks.delete(swarmRunID);
+    if (locks.get(swarmRunID) === next) {
+      locks.delete(swarmRunID);
     }
   }
 }

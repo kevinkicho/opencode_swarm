@@ -19,6 +19,8 @@
 //
 // Extracted from coordinator.ts in #107 phase 3.
 
+import 'server-only';
+
 import type { FileHeat } from '../../../opencode/transform';
 
 const HEAT_HALF_LIFE_DEFAULT_MS = 30 * 60 * 1000;

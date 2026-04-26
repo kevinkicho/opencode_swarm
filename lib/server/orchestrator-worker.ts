@@ -19,6 +19,8 @@
 // session 0 at run start, and (b) the auto-ticker's orchestrator
 // exclusion which routes dispatch only to sessions 1..N-1.
 
+import 'server-only';
+
 import { postSessionMessageServer } from './opencode-server';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { runPlannerSweep } from './blackboard/planner';

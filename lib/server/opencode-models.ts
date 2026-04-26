@@ -15,6 +15,8 @@
 //
 // Server-only.
 
+import 'server-only';
+
 import { opencodeFetch } from '../opencode/client';
 
 interface ModelInfoWire {

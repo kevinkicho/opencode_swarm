@@ -14,6 +14,8 @@
 // operator decides whether to hard-stop (#105) or wait. Pure helper so
 // it's unit-testable without orchestration scaffolding.
 
+import 'server-only';
+
 export interface StuckDetectorInput {
   tokensTotal: number;
   // Wall-clock age of the run, in milliseconds. Usually

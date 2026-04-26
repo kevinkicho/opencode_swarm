@@ -8,6 +8,8 @@
 // Import only from server code (API routes, scripts). The DB singleton
 // enforces this at runtime by the __dirname path resolution.
 
+import 'server-only';
+
 import { blackboardDb } from './db';
 import { emitBoardEvent } from './bus';
 import type {

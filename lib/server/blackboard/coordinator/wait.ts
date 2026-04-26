@@ -25,6 +25,8 @@
 //
 // Extracted from coordinator.ts in #107 phase 4.
 
+import 'server-only';
+
 import { abortSessionServer, getSessionMessagesServer } from '../../opencode-server';
 import type { OpencodeMessage } from '../../../opencode/types';
 
