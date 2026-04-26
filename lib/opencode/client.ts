@@ -17,6 +17,7 @@ import {
   isOpencodeProjectArray,
   isOpencodeSessionArray,
 } from './validators';
+import { OpencodeHttpError } from './errors';
 
 export type {
   OpencodeProject,
@@ -60,7 +61,7 @@ export async function opencodeFetch(path: string, init: RequestInit = {}): Promi
 export async function getProjects(): Promise<OpencodeProject[]> {
   const path = '/project';
   const res = await opencodeFetch(path);
-  if (!res.ok) throw new Error(`opencode ${path} -> HTTP ${res.status}`);
+  if (!res.ok) throw new OpencodeHttpError(path, res.status);
   return parseOpencodeJSON(res, isOpencodeProjectArray, `GET ${path}`);
 }
 
@@ -68,7 +69,7 @@ export async function getSessionsByDirectory(directory: string): Promise<Opencod
   const qs = new URLSearchParams({ directory });
   const path = `/session?${qs.toString()}`;
   const res = await opencodeFetch(path);
-  if (!res.ok) throw new Error(`opencode ${path} -> HTTP ${res.status}`);
+  if (!res.ok) throw new OpencodeHttpError(path, res.status);
   return parseOpencodeJSON(res, isOpencodeSessionArray, `GET ${path}`);
 }
 
@@ -97,6 +98,6 @@ export async function getAllSessions(): Promise<OpencodeSession[]> {
 export async function getSessionMessages(sessionId: string): Promise<OpencodeMessage[]> {
   const path = `/session/${encodeURIComponent(sessionId)}/message`;
   const res = await opencodeFetch(path);
-  if (!res.ok) throw new Error(`opencode ${path} -> HTTP ${res.status}`);
+  if (!res.ok) throw new OpencodeHttpError(path, res.status);
   return parseOpencodeJSON(res, isOpencodeMessageArray, `GET ${path}`);
 }

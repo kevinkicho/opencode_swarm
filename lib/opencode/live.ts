@@ -19,10 +19,11 @@ import type {
   SwarmRunListRow,
   SwarmRunMeta,
 } from '../swarm-run-types';
+import { OpencodeHttpError } from './errors';
 
 async function getJsonBrowser<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api/opencode${path}`, { ...init, cache: 'no-store' });
-  if (!res.ok) throw new Error(`opencode ${path} -> HTTP ${res.status}`);
+  if (!res.ok) throw new OpencodeHttpError(path, res.status);
   const body = await res.json();
   if (body && typeof body === 'object' && !Array.isArray(body) && 'value' in body) {
     return (body as { value: T }).value;
@@ -254,7 +255,7 @@ export async function postSessionMessageBrowser(
         // malformed 402 body — fall through to the generic error below
       }
     }
-    throw new Error(`opencode prompt -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`);
+    throw new OpencodeHttpError('prompt', res.status, detail || undefined);
   }
 }
 

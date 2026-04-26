@@ -24,6 +24,10 @@ const LEGACY_FIELDS = new Set(['message']);
 const DISCRIMINATOR_FIELDS = new Set([
   'currentStatus', // board CAS conflict signal
   'swarmRunID', 'costTotal', 'costCap', // CostCapError serialized form
+  'sessionIDs', // R1 kickoff-failed body — list of orphaned sessions for cleanup
+  'orphanSessionIDs', // session-create-failure variant of the same
+  'attempts', // session-spawn count when 0 of N succeeded
+  'target', // opencode-proxy unreachable target URL
 ]);
 
 interface Violation {
@@ -45,47 +49,75 @@ function findResponseJsonErrorSites(file: string, src: string): Violation[] {
   const violations: Violation[] = [];
   const lines = src.split('\n');
 
-  // Collect Response.json({ ... }) calls that contain an `error:` key.
-  // We tolerate template-literal-spanning by looking at a 6-line window.
+  // Walk every Response.json(...) call. For each, extract the immediate
+  // object literal that follows (not a window — multi-line bodies are
+  // captured by tracking brace depth). Validate fields ONLY if the
+  // body itself contains an `error:` key — success responses with
+  // arbitrary shapes (`{ items, results, runs }`) shouldn't be checked.
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (!line.includes('Response.json(')) continue;
-    const window = lines.slice(i, Math.min(i + 8, lines.length)).join('\n');
-    if (!window.includes('error:')) continue;
+    const respIdx = line.indexOf('Response.json(');
+    if (respIdx < 0) continue;
 
-    // Extract the object literal — between the first `{` and matching `}`
-    const startIdx = window.indexOf('{');
-    if (startIdx < 0) continue;
+    // Find the start of the object literal: `Response.json({ ... }`.
+    // The literal may start on this line after the `(` or on the next
+    // line if the call uses a multi-line argument layout.
+    const after = line.slice(respIdx + 'Response.json('.length);
+    let bodyStart = -1;
+    let startLine = i;
+    if (after.includes('{')) {
+      bodyStart = src.split('\n').slice(0, i).join('\n').length + respIdx +
+        'Response.json('.length + after.indexOf('{');
+    } else {
+      // Look ahead for the first '{' in subsequent lines.
+      for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+        const idx = lines[j].indexOf('{');
+        if (idx >= 0) {
+          startLine = j;
+          bodyStart = src.split('\n').slice(0, j).join('\n').length + idx;
+          break;
+        }
+      }
+    }
+    if (bodyStart < 0) continue;
+
+    // Walk from bodyStart to the matching closing brace.
     let depth = 0;
-    let endIdx = -1;
-    for (let j = startIdx; j < window.length; j++) {
-      const c = window[j];
+    let bodyEnd = -1;
+    for (let j = bodyStart; j < src.length; j++) {
+      const c = src[j];
       if (c === '{') depth++;
       else if (c === '}') {
         depth--;
-        if (depth === 0) { endIdx = j; break; }
+        if (depth === 0) {
+          bodyEnd = j;
+          break;
+        }
       }
     }
-    if (endIdx < 0) continue;
-    const body = window.slice(startIdx + 1, endIdx);
+    if (bodyEnd < 0) continue;
+    const body = src.slice(bodyStart + 1, bodyEnd);
 
-    // Pull out the keys at the top level — naive but enough for the
-    // small object shapes we use. Skip nested objects.
+    // Skip success-response shapes that don't carry an `error:` field.
+    // Top-level only — a nested `error:` inside a payload object isn't
+    // the response discriminator.
     const keys = extractTopLevelKeys(body);
+    if (!keys.includes('error')) continue;
+
     for (const k of keys) {
       if (CANONICAL_FIELDS.has(k)) continue;
       if (DISCRIMINATOR_FIELDS.has(k)) continue;
       if (LEGACY_FIELDS.has(k)) {
         violations.push({
           file: file.replace(REPO_ROOT + '/', ''),
-          line: i + 1,
+          line: startLine + 1,
           excerpt: line.trim(),
           reason: `legacy field '${k}' — fold into 'detail' (R5)`,
         });
       } else {
         violations.push({
           file: file.replace(REPO_ROOT + '/', ''),
-          line: i + 1,
+          line: startLine + 1,
           excerpt: line.trim(),
           reason: `unrecognized error-response field '${k}' — add to CANONICAL_FIELDS or DISCRIMINATOR_FIELDS with justification, or rename`,
         });

@@ -45,7 +45,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return Response.json({ results });
   } catch (err) {
     return Response.json(
-      { error: 'reindex failed', message: (err as Error).message },
+      { error: 'reindex failed', detail: (err as Error).message },
       { status: 500 }
     );
   }

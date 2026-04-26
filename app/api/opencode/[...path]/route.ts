@@ -134,7 +134,7 @@ async function proxy(
     upstream = await opencodeFetch(target, init);
   } catch (err) {
     return Response.json(
-      { error: 'opencode unreachable', target, message: (err as Error).message },
+      { error: 'opencode unreachable', target, detail: (err as Error).message },
       { status: 502 }
     );
   }

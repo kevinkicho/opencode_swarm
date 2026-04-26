@@ -27,6 +27,7 @@ import {
   validateSwarmRunEvent,
   validateSwarmRunMeta,
 } from './swarm-registry-validate';
+import { atomicWriteFile, withKeyedMutex } from './atomic-write';
 import { priceFor } from '../opencode/pricing';
 import type {
   OpencodeMessage,
@@ -198,7 +199,9 @@ export async function createRun(
     teamModels: extras.teamModels,
   };
   await fs.mkdir(runDir(swarmRunID), { recursive: true });
-  await fs.writeFile(metaPath(swarmRunID), JSON.stringify(meta, null, 2), 'utf8');
+  // HARDENING_PLAN.md#D1 — atomic-rename write so a crash mid-write
+  // doesn't leave a 0-byte meta.json that getRun parse-throws on.
+  await atomicWriteFile(metaPath(swarmRunID), JSON.stringify(meta, null, 2));
   // Touch events.ndjson so the multiplexer can append without a separate
   // existence check. An empty file is a valid NDJSON (zero records).
   await fs.writeFile(eventsPath(swarmRunID), '', { flag: 'a' });
@@ -290,11 +293,14 @@ export async function getRun(swarmRunID: string): Promise<SwarmRunMeta | null> {
 }
 
 // Read-modify-write of meta.json for post-create mutations. The file
-// is small (< 2 KB even for the largest configs) and writes are
-// single-process single-writer (Next.js dev), so a naive read-parse-
-// merge-write is fine. Callers should keep patches narrow — only the
-// ambition-ratchet uses this today to persist currentTier; adding new
-// fields means extending SwarmRunMeta in swarm-run-types.ts first.
+// is small (< 2 KB even for the largest configs).
+//
+// HARDENING_PLAN.md#D1 — wrapped in a per-swarmRunID mutex so two
+// concurrent updateRunMeta calls don't lost-update each other. Pre-fix
+// the read-modify-write was unsynchronized: caller A reads { tier: 1 },
+// caller B reads { tier: 1 }, both modify, A writes { tier: 2 }, B
+// writes { tier: 1, ... } overwriting A. Plus atomicWriteFile so a
+// crash mid-write doesn't leave a 0-byte meta.json.
 //
 // Returns the new meta on success or null if the run doesn't exist /
 // the file is malformed. Silently no-ops on missing — the caller
@@ -303,17 +309,19 @@ export async function updateRunMeta(
   swarmRunID: string,
   patch: Partial<SwarmRunMeta>,
 ): Promise<SwarmRunMeta | null> {
-  const current = await getRun(swarmRunID);
-  if (!current) return null;
-  const next: SwarmRunMeta = { ...current, ...patch };
-  await fs.writeFile(metaPath(swarmRunID), JSON.stringify(next, null, 2), 'utf8');
-  // Replace cache entry with the freshly-written value so subsequent
-  // getRun calls within the TTL window see the update without a re-read.
-  metaCache().set(swarmRunID, { value: next, fetchedAt: Date.now() });
-  // listRuns cache is keyed on the whole list — invalidate so the
-  // picker reflects this update on its next poll.
-  delete listCache()[globalListCacheKey];
-  return next;
+  return withKeyedMutex(`meta:${swarmRunID}`, async () => {
+    const current = await getRun(swarmRunID);
+    if (!current) return null;
+    const next: SwarmRunMeta = { ...current, ...patch };
+    await atomicWriteFile(metaPath(swarmRunID), JSON.stringify(next, null, 2));
+    // Replace cache entry with the freshly-written value so subsequent
+    // getRun calls within the TTL window see the update without a re-read.
+    metaCache().set(swarmRunID, { value: next, fetchedAt: Date.now() });
+    // listRuns cache is keyed on the whole list — invalidate so the
+    // picker reflects this update on its next poll.
+    delete listCache()[globalListCacheKey];
+    return next;
+  });
 }
 
 // Enumerate every run under ROOT/runs by reading each meta.json. Returns

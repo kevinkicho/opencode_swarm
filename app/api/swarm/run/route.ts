@@ -651,7 +651,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return Response.json(
       {
         error: 'opencode session create failed',
-        message: `0 of ${teamSize} sessions spawned — opencode may be offline`,
+        detail: `0 of ${teamSize} sessions spawned — opencode may be offline`,
         attempts: teamSize,
       },
       { status: 502 }
@@ -851,7 +851,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return Response.json(
       {
         error: 'swarm-run registry write failed',
-        message: (err as Error).message,
+        detail: (err as Error).message,
         orphanSessionIDs: sessionIDs,
       },
       { status: 500 }
@@ -1066,7 +1066,7 @@ export async function GET(): Promise<Response> {
     return Response.json({ runs: rows });
   } catch (err) {
     return Response.json(
-      { error: 'run list failed', message: (err as Error).message },
+      { error: 'run list failed', detail: (err as Error).message },
       { status: 500 }
     );
   }

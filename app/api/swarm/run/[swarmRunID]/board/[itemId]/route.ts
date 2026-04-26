@@ -45,6 +45,42 @@ async function sha7(absPath: string): Promise<string> {
   return createHash('sha1').update(buf).digest('hex').slice(0, 7);
 }
 
+// HARDENING_PLAN.md#R6 — read+parse a request body, returning a tagged
+// result instead of throwing. Caller branches on `ok` and emits 400 with
+// the human-readable reason, never propagating undefined-shaped data.
+async function readJson(req: NextRequest): Promise<unknown> {
+  try {
+    return await req.json();
+  } catch {
+    return undefined;
+  }
+}
+
+function parseActionBody(
+  raw: unknown,
+): { ok: true; body: ActionBody & { action: Action } } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: false, error: 'invalid JSON body' };
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return { ok: false, error: 'body must be a JSON object' };
+  }
+  const r = raw as Record<string, unknown>;
+  if (typeof r.action !== 'string' || !ACTIONS.has(r.action as Action)) {
+    return {
+      ok: false,
+      error: `action must be one of: ${[...ACTIONS].join(', ')}`,
+    };
+  }
+  // Optional fields — type-check only when present. Per-action handlers
+  // below validate semantic requirements (e.g., claim requires
+  // ownerAgentId).
+  for (const k of ['ownerAgentId', 'note', 'sessionID', 'workerSessionID'] as const) {
+    if (k in r && r[k] !== undefined && typeof r[k] !== 'string') {
+      return { ok: false, error: `${k} must be a string when present` };
+    }
+  }
+  return { ok: true, body: r as unknown as ActionBody & { action: Action } };
+}
+
 interface ActionBody {
   action?: string;
   ownerAgentId?: string;
@@ -76,20 +112,17 @@ export async function POST(
     return Response.json({ error: 'swarm run not found' }, { status: 404 });
   }
 
-  let body: ActionBody;
-  try {
-    body = (await req.json()) as ActionBody;
-  } catch {
-    return Response.json({ error: 'invalid JSON body' }, { status: 400 });
+  // HARDENING_PLAN.md#R6 — validate shape before trusting fields.
+  // Pre-fix: the cast `(await req.json()) as ActionBody` trusted the
+  // shape and the per-action handlers below did partial typeof checks.
+  // The parseActionBody helper makes the top-level discriminator
+  // contract explicit; per-action checks handle the per-action fields.
+  const parsed = parseActionBody(await readJson(req));
+  if (!parsed.ok) {
+    return Response.json({ error: parsed.error }, { status: 400 });
   }
-
-  if (typeof body.action !== 'string' || !ACTIONS.has(body.action as Action)) {
-    return Response.json(
-      { error: `action must be one of: ${[...ACTIONS].join(', ')}` },
-      { status: 400 },
-    );
-  }
-  const action = body.action as Action;
+  const body = parsed.body;
+  const action = body.action;
 
   const item = getBoardItem(params.swarmRunID, params.itemId);
   if (!item) {
