@@ -28,6 +28,40 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — error-path findings: withRunGuard fallback + coordinator error-text (#95 + #96)
+
+Two related gaps from MAXTEAM-2026-04-26 closed in one pass:
+
+**#95 — `withRunGuard` fallback partial-outcome**
+
+debate-judge teamSize=8 went `status=error` with 944K tokens and **0
+findings** because the orchestrator threw an unhandled exception
+that bubbled past the orchestrator's own recordPartialOutcome sites
+into the route's bare `.catch()`. `withRunGuard` had a try/finally
+shell but no error-catch.
+
+Fixed by adding a try/catch inside `withRunGuard` that records a
+`<context> (unhandled-exception)` partial-outcome with the error
+message, then re-throws so the route-level logging still fires.
+Covers council, critic-loop, debate-judge, map-reduce — all four
+patterns that route through `withRunGuard`.
+
+**#96 — Coordinator error-text extraction**
+
+role-differentiated teamSize=8 reported `status=error` after 3 done
+with no log line explaining the stop. Root cause: the coordinator's
+worker-dispatch wait-result mapped `reason='error'` to the generic
+string `'turn errored'`, dropping opencode's actual `info.error`
+text (the field that carries "rate limit", "context exceeded",
+model-specific provider errors, etc.).
+
+Fixed by re-fetching the session messages on the error branch and
+extracting the latest assistant message's `info.error.message`
+field. The stale-note now carries
+`turn errored: <provider error excerpt>` so the operator sees the
+real reason on the board, and `retryOrStale`'s log line surfaces
+the same string.
+
 ### 2026-04-26 — planner-sweep zero-todo findings (#99)
 
 MAXTEAM-2026-04-26 found blackboard at teamSize=8 burning 1.2M tokens

@@ -168,8 +168,8 @@ These recommendations feed task #101 (kickoff WARN) + task #103
 
 | Task | Subject | Status |
 |---|---|---|
-| #95 | debate-judge: investigate why error-state didn't fire #73 partial-outcome | pending |
-| #96 | role-differentiated: silent stop after 3 done — needs richer log trail | pending |
+| #95 | debate-judge: investigate why error-state didn't fire #73 partial-outcome | **shipped 2026-04-26** — `withRunGuard` now records fallback partial-outcome on unhandled exceptions, covering all 4 patterns it wraps |
+| #96 | role-differentiated: silent stop after 3 done — needs richer log trail | **shipped 2026-04-26** — coordinator's worker-dispatch now extracts opencode `info.error` text into the stale-note when wait returns `reason='error'` |
 | #97 | map-reduce at teamSize 8: synthesis-starved, 0 done despite 10M+ tokens | **shipped 2026-04-26** — per-draft 80K-char cap in `buildSynthesisPrompt` keeps total bounded for any teamSize |
 | #98 | deliberate-execute at teamSize 8: stuck in deliberation phase | **shipped 2026-04-26** — scale-aware round cap in `recommendedDeliberationRounds(teamSize)` → 2 rounds at teamSize ≥ 5 |
 | #99 | blackboard at teamSize 8: planner sweep cycles without seeding board | **shipped 2026-04-26** — `runPlannerSweep` now records operator-visible findings for both no-todowrite-call and all-todos-filtered cases with assistant excerpt + remediation hint |

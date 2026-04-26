@@ -1230,7 +1230,7 @@ export async function tickCoordinator(
   );
 
   if (!waited.ok) {
-    const reason =
+    let reason =
       waited.reason === 'timeout'
         ? 'turn timed out'
         : waited.reason === 'silent'
@@ -1240,6 +1240,34 @@ export async function tickCoordinator(
             : waited.reason === 'tool-loop'
               ? 'tool-loop'
               : 'turn errored';
+    // #96 — for the generic 'error' branch, re-fetch the session and
+    // extract the actual provider-level error string so the stale-note
+    // (and the operator-visible board) carries something more useful
+    // than 'turn errored'. This is the path that bit role-differentiated
+    // in the MAXTEAM-2026-04-26 stress test: status=error, no log line
+    // explaining what went wrong. Now the reason field carries
+    // "turn errored: <opencode info.error excerpt>".
+    if (waited.reason === 'error') {
+      try {
+        const after = await getSessionMessagesServer(sessionID, meta.workspace);
+        let errorText: string | undefined;
+        for (let i = after.length - 1; i >= 0; i -= 1) {
+          const m = after[i];
+          if (knownIDs.has(m.info.id)) continue;
+          if (m.info.role !== 'assistant') continue;
+          if (m.info.error) {
+            const errInfo = m.info.error as { name?: string; message?: string };
+            errorText = errInfo.message || errInfo.name || JSON.stringify(m.info.error);
+            break;
+          }
+        }
+        if (errorText) {
+          reason = `turn errored: ${errorText.slice(0, 160)}`;
+        }
+      } catch {
+        // Best-effort enrichment — fall through with the generic reason.
+      }
+    }
     // On timeout, abort the opencode turn eagerly. Without this the turn
     // keeps consuming tokens in the background for up to
     // ZOMBIE_TURN_THRESHOLD_MS (10 min) before the picker catches it on
