@@ -21,6 +21,8 @@ import {
   stripCriterionTag,
   stripFromTag,
   stripRoleNoteTag,
+  buildZeroTodoSummary,
+  buildAllFilteredSummary,
 } from '../planner';
 
 describe('stripVerifyTag', () => {
@@ -347,5 +349,66 @@ describe('compose: full prefix chain', () => {
       files: ['a.ts'],
       drafts: [1, 2],
     });
+  });
+});
+
+// #99 — operator-visible findings for planner sweeps that produced
+// no work. Drift in these strings either fails to point operators at
+// the right fix path (rephrase directive vs. switch pattern), or
+// erases the assistant's reply excerpt — the only signal showing
+// what the planner actually said.
+
+describe('buildZeroTodoSummary', () => {
+  it('quotes the assistant excerpt when provided', () => {
+    const out = buildZeroTodoSummary('I will think about this carefully...');
+    expect(out).toMatch(/Assistant reply excerpt: "I will think about this/);
+    expect(out).toMatch(/did not call todowrite/);
+  });
+
+  it('handles null excerpt gracefully', () => {
+    const out = buildZeroTodoSummary(null);
+    expect(out).toMatch(/Assistant produced no extractable text/);
+    expect(out).not.toMatch(/excerpt: ""/);
+  });
+
+  it('always includes the operator-action remediation hint', () => {
+    const a = buildZeroTodoSummary('foo');
+    const b = buildZeroTodoSummary(null);
+    for (const out of [a, b]) {
+      expect(out).toMatch(/Operator action:/);
+      expect(out).toMatch(/rephrase the directive/);
+      expect(out).toMatch(/switch to a different pattern/);
+    }
+  });
+
+  it('lists the three common-causes bullets', () => {
+    const out = buildZeroTodoSummary('any');
+    expect(out).toMatch(/Directive was abstract/);
+    expect(out).toMatch(/structured todowrite call \(model regression\)/);
+    expect(out).toMatch(/missing files/);
+  });
+});
+
+describe('buildAllFilteredSummary', () => {
+  it('reports the totals correctly', () => {
+    const out = buildAllFilteredSummary(8, 5);
+    expect(out).toMatch(/with 8 item\(s\)/);
+    expect(out).toMatch(/Dropped criteria: 5/);
+  });
+
+  it('points at the strategy tab + the enableCriticGate escape hatch', () => {
+    const out = buildAllFilteredSummary(3, 3);
+    expect(out).toMatch(/strategy tab/);
+    expect(out).toMatch(/enableCriticGate: false/);
+  });
+
+  it('mentions the isViableCriterion gate', () => {
+    const out = buildAllFilteredSummary(2, 2);
+    expect(out).toMatch(/isViableCriterion/);
+  });
+
+  it('handles zero dropped (e.g., all empty content)', () => {
+    const out = buildAllFilteredSummary(4, 0);
+    expect(out).toMatch(/Dropped criteria: 0/);
   });
 });

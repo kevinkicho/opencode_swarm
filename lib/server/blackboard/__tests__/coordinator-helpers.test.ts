@@ -6,7 +6,9 @@ import {
   extractPathTokens,
   pathOverlaps,
   relativizeToWorkspace,
+  extractLatestErrorText,
 } from '../coordinator';
+import type { OpencodeMessage } from '../../../opencode/types';
 
 // Pure-helper tests for the coordinator's internal logic. These are
 // the functions whose silent drift would corrupt the dispatch / retry
@@ -191,5 +193,108 @@ describe('relativizeToWorkspace — path normalization', () => {
   it('handles workspace-root file', () => {
     const out = relativizeToWorkspace('/work/repo', '/work/repo/README.md');
     expect(out).toBe('README.md');
+  });
+});
+
+// extractLatestErrorText is the #96 fix that enriches the worker-dispatch
+// stale-note with the actual opencode info.error text instead of the
+// generic "turn errored". Drift here either drops useful provider error
+// detail (rate-limit, context-exceeded, model-specific) on the floor —
+// the exact hole that bit role-differentiated in MAXTEAM-2026-04-26 —
+// or surfaces unfiltered stale errors from before the dispatch window.
+
+function makeMsg(overrides: Partial<{
+  id: string;
+  role: 'user' | 'assistant';
+  error: unknown;
+}>): OpencodeMessage {
+  const id = overrides.id ?? 'm1';
+  return {
+    info: {
+      id,
+      role: overrides.role ?? 'assistant',
+      time: { created: 0, completed: null },
+      error: overrides.error,
+    },
+    parts: [],
+  } as unknown as OpencodeMessage;
+}
+
+describe('extractLatestErrorText', () => {
+  it('returns undefined for empty messages', () => {
+    expect(extractLatestErrorText([], new Set())).toBeUndefined();
+  });
+
+  it('returns undefined when no message has info.error', () => {
+    const msgs = [makeMsg({ id: 'a' }), makeMsg({ id: 'b' })];
+    expect(extractLatestErrorText(msgs, new Set())).toBeUndefined();
+  });
+
+  it('extracts opencode info.error.message when present', () => {
+    const msgs = [
+      makeMsg({ id: 'a' }),
+      makeMsg({
+        id: 'b',
+        error: { name: 'ProviderAuthError', message: 'rate limit exceeded' },
+      }),
+    ];
+    expect(extractLatestErrorText(msgs, new Set())).toBe('rate limit exceeded');
+  });
+
+  it('falls back to error.name when message is absent', () => {
+    const msgs = [
+      makeMsg({
+        id: 'a',
+        error: { name: 'ContextLimitError' },
+      }),
+    ];
+    expect(extractLatestErrorText(msgs, new Set())).toBe('ContextLimitError');
+  });
+
+  it('falls back to JSON.stringify when both name and message absent', () => {
+    const msgs = [
+      makeMsg({
+        id: 'a',
+        error: { code: 502 },
+      }),
+    ];
+    expect(extractLatestErrorText(msgs, new Set())).toBe('{"code":502}');
+  });
+
+  it('skips messages in knownIDs (filters pre-dispatch stale errors)', () => {
+    const msgs = [
+      makeMsg({
+        id: 'old',
+        error: { message: 'OLD ERROR FROM PRIOR DISPATCH' },
+      }),
+      makeMsg({
+        id: 'new',
+        error: { message: 'NEW ERROR FROM THIS DISPATCH' },
+      }),
+    ];
+    expect(extractLatestErrorText(msgs, new Set(['old']))).toBe(
+      'NEW ERROR FROM THIS DISPATCH',
+    );
+  });
+
+  it('walks tail-to-head — latest error wins', () => {
+    const msgs = [
+      makeMsg({ id: 'a', error: { message: 'first' } }),
+      makeMsg({ id: 'b' }),
+      makeMsg({ id: 'c', error: { message: 'second' } }),
+      makeMsg({ id: 'd' }),
+    ];
+    expect(extractLatestErrorText(msgs, new Set())).toBe('second');
+  });
+
+  it('skips non-assistant messages even when they have error fields', () => {
+    const msgs = [
+      makeMsg({
+        id: 'a',
+        role: 'user',
+        error: { message: 'user error somehow' },
+      }),
+    ];
+    expect(extractLatestErrorText(msgs, new Set())).toBeUndefined();
   });
 });

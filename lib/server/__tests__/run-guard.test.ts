@@ -12,12 +12,17 @@ vi.mock('../swarm-registry', () => ({
 vi.mock('../finalize-run', () => ({
   finalizeRun: vi.fn(),
 }));
+vi.mock('../degraded-completion', () => ({
+  recordPartialOutcome: vi.fn(),
+}));
 
 const { getRun } = await import('../swarm-registry');
 const { finalizeRun } = await import('../finalize-run');
+const { recordPartialOutcome } = await import('../degraded-completion');
 
 const mockGetRun = vi.mocked(getRun);
 const mockFinalizeRun = vi.mocked(finalizeRun);
+const mockRecordPartialOutcome = vi.mocked(recordPartialOutcome);
 
 const fakeMeta = (overrides: Partial<SwarmRunMeta> = {}): SwarmRunMeta =>
   ({
@@ -35,6 +40,7 @@ beforeEach(() => {
   mockGetRun.mockReset();
   mockFinalizeRun.mockReset();
   mockFinalizeRun.mockResolvedValue(undefined);
+  mockRecordPartialOutcome.mockReset();
 });
 afterEach(() => {
   vi.restoreAllMocks();
@@ -133,6 +139,66 @@ describe('withRunGuard', () => {
     ).rejects.toThrow('boom');
 
     expect(mockFinalizeRun).toHaveBeenCalledWith('run_x', 'critic-loop');
+  });
+
+  // #95 — fallback partial-outcome on unhandled exception. The guard
+  // catches anything the orchestrator body threw, records a finding so
+  // status=error runs always carry a board row, then re-throws so the
+  // route's existing logging still fires.
+  it('records partial-outcome with the error message when body throws', async () => {
+    mockGetRun.mockResolvedValue(fakeMeta({ pattern: 'debate-judge' }));
+    const body = vi
+      .fn()
+      .mockRejectedValue(new Error('opencode 502 mid-round'));
+
+    await expect(
+      withRunGuard(
+        'run_test_x',
+        { expectedPattern: 'debate-judge', context: 'debate-judge' },
+        body,
+      ),
+    ).rejects.toThrow('opencode 502 mid-round');
+
+    expect(mockRecordPartialOutcome).toHaveBeenCalledTimes(1);
+    const [runID, payload] = mockRecordPartialOutcome.mock.calls[0];
+    expect(runID).toBe('run_test_x');
+    expect(payload.pattern).toBe('debate-judge');
+    expect(payload.phase).toBe('debate-judge (unhandled-exception)');
+    expect(payload.reason).toContain('opencode 502');
+    expect(payload.summary).toContain('opencode 502 mid-round');
+  });
+
+  it('does NOT record partial-outcome when body resolves cleanly', async () => {
+    mockGetRun.mockResolvedValue(fakeMeta({ pattern: 'council' }));
+    const body = vi.fn().mockResolvedValue(undefined);
+
+    await withRunGuard(
+      'run_x',
+      { expectedPattern: 'council', context: 'council' },
+      body,
+    );
+
+    expect(mockRecordPartialOutcome).not.toHaveBeenCalled();
+    expect(mockFinalizeRun).toHaveBeenCalledOnce();
+  });
+
+  it('still re-throws even if recordPartialOutcome itself throws', async () => {
+    // Belt-and-braces: a failure in the recording path shouldn't
+    // swallow the original error. The route's catch needs to see
+    // the actual exception, not a meta-error from the fallback.
+    mockGetRun.mockResolvedValue(fakeMeta({ pattern: 'map-reduce' }));
+    mockRecordPartialOutcome.mockImplementation(() => {
+      throw new Error('record-failed');
+    });
+    const body = vi.fn().mockRejectedValue(new Error('original-error'));
+
+    await expect(
+      withRunGuard(
+        'run_x',
+        { expectedPattern: 'map-reduce', context: 'map-reduce' },
+        body,
+      ),
+    ).rejects.toThrow('original-error');
   });
 
   it('forwards body return value when it returns a value', async () => {

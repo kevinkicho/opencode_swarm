@@ -436,6 +436,29 @@ function isAssistantComplete(m: OpencodeMessage): boolean {
   return m.info.role === 'assistant' && !!m.info.time.completed;
 }
 
+// #96 — extracts the most recent assistant `info.error` message text
+// among NEW messages (not in knownIDs). Used by the worker dispatch
+// path to enrich the stale-note from the generic "turn errored" to
+// "turn errored: <provider error excerpt>". Walks tail-to-head so
+// the LATEST errored turn wins when a session has multiple. The
+// `knownIDs` filter is the same set the dispatch path passes to
+// waitForSessionIdle — only counts errors that appeared during the
+// dispatch's wait window. Pure (no I/O) so callers can unit-test it.
+export function extractLatestErrorText(
+  messages: OpencodeMessage[],
+  knownIDs: Set<string>,
+): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i];
+    if (knownIDs.has(m.info.id)) continue;
+    if (m.info.role !== 'assistant') continue;
+    if (!m.info.error) continue;
+    const errInfo = m.info.error as { name?: string; message?: string };
+    return errInfo.message || errInfo.name || JSON.stringify(m.info.error);
+  }
+  return undefined;
+}
+
 function isAssistantInFlight(m: OpencodeMessage): boolean {
   return (
     m.info.role === 'assistant' &&
@@ -1250,17 +1273,7 @@ export async function tickCoordinator(
     if (waited.reason === 'error') {
       try {
         const after = await getSessionMessagesServer(sessionID, meta.workspace);
-        let errorText: string | undefined;
-        for (let i = after.length - 1; i >= 0; i -= 1) {
-          const m = after[i];
-          if (knownIDs.has(m.info.id)) continue;
-          if (m.info.role !== 'assistant') continue;
-          if (m.info.error) {
-            const errInfo = m.info.error as { name?: string; message?: string };
-            errorText = errInfo.message || errInfo.name || JSON.stringify(m.info.error);
-            break;
-          }
-        }
+        const errorText = extractLatestErrorText(after, knownIDs);
         if (errorText) {
           reason = `turn errored: ${errorText.slice(0, 160)}`;
         }
