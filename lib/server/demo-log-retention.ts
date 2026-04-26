@@ -101,8 +101,9 @@ export async function pruneDemoLog(): Promise<PruneSummary> {
         await fs.rm(runDir, { recursive: true, force: true });
         summary.deleted += 1;
       }
-    } catch {
+    } catch (err) {
       summary.errors += 1;
+      console.error(`Error pruning demo-log directory ${runDir}:`, err);
     }
   }
   return summary;

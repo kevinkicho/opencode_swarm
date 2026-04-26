@@ -170,8 +170,8 @@ Invariants:
   `blackboard`, `council`, `map-reduce` (self-organizing), plus
   `orchestrator-worker`, `role-differentiated`, `debate-judge`,
   `critic-loop`, `deliberate-execute` (hierarchical — see §1.5.1).
-  Stigmergy is still unimplemented — it's a layer over blackboard, not
-  a separate dispatch path. Each pattern's POST body shape is in
+  Stigmergy is an additional signal used by blackboard workers to weight
+  picks, not a separate dispatch path. Each pattern's POST body shape is in
   `SwarmRunRequest`; see `SWARM_PATTERNS.md` for per-pattern invariants.
 - **L0 events.ndjson is the authoritative replay source**, not the live
   SSE stream. Future analytics / rollup workers read from disk; the live

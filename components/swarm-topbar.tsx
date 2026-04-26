@@ -6,7 +6,7 @@ import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TickerState } from '@/lib/blackboard/live';
 import type { BoardItem } from '@/lib/blackboard/types';
-import { IconLogo, IconAgent, IconSettings } from './icons';
+import { IconLogo, IconAgent, IconSettings, IconCopy } from './icons';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
@@ -281,12 +281,23 @@ function RunAnchorChip({
                 </span>
               </span>
             )}
-            <span
-              className="ml-auto font-mono text-[10px] text-fog-600 tabular-nums truncate max-w-[220px]"
-              title={meta.swarmRunID}
-            >
-              {meta.swarmRunID}
-            </span>
+             <span
+               className="ml-auto font-mono text-[10px] text-fog-600 tabular-nums truncate max-w-[220px] flex items-center gap-1.5"
+               title={meta.swarmRunID}
+             >
+               {meta.swarmRunID}
+               <button
+                 onClick={(e) => {
+                   e.stopPropagation();
+                   navigator.clipboard.writeText(meta.swarmRunID);
+                 }}
+                 className="p-0.5 rounded hover:bg-ink-700 transition-colors text-fog-600 hover:text-fog-300"
+                 title="copy run id"
+               >
+                 <IconCopy size={10} />
+               </button>
+             </span>
+
           </div>
           <div className="px-3 py-2 hairline-b grid grid-cols-[78px_1fr] gap-y-1.5 gap-x-3 items-baseline">
             <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">

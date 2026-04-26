@@ -1,6 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
+import { Tooltip } from './ui/tooltip';
 import { IconLogo, IconChevron, IconSpark } from './icons';
 import type { SessionMeta } from '@/lib/types';
 import { compact } from '@/lib/format';
@@ -32,12 +33,14 @@ export function Topbar({ meta, onOpenPalette }: { meta: SessionMeta; onOpenPalet
       </nav>
 
       <div className="ml-auto flex items-center gap-3 pr-4 h-full">
-        <button
-          onClick={onOpenPalette}
-          className="group flex items-center gap-2 px-2.5 h-7 rounded-md bg-ink-800 hairline hover:border-ink-500 transition"
-        >
-          <span className="font-mono text-2xs text-fog-500 tracking-wider">filter jump branch</span>
-        </button>
+         <Tooltip content="Quick jump to branch, filter, or command">
+           <button
+             onClick={onOpenPalette}
+             className="group flex items-center gap-2 px-2.5 h-7 rounded-md bg-ink-800 hairline hover:border-ink-500 transition"
+           >
+             <span className="font-mono text-2xs text-fog-500 tracking-wider">filter jump branch</span>
+           </button>
+         </Tooltip>
 
         <div className="flex items-center gap-2 px-2.5 h-7 rounded-md hairline bg-ink-800">
           <span className="relative flex items-center">

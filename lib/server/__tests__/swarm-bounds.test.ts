@@ -3,6 +3,7 @@ import {
   isWallClockExpired,
   effectiveMinutesCap,
   formatWallClockState,
+  getWallClockRatio,
   DEFAULT_NONTICKER_WALLCLOCK_MINUTES,
 } from '../swarm-bounds';
 
@@ -69,5 +70,13 @@ describe('formatWallClockState', () => {
         NOW,
       ),
     ).toBe('5min/60min cap');
+  });
+});
+
+describe('getWallClockRatio', () => {
+  it('returns correct ratio', () => {
+    expect(getWallClockRatio({ bounds: { minutesCap: 60 } }, NOW - minutes(30), NOW)).toBe(0.5);
+    expect(getWallClockRatio({ bounds: { minutesCap: 60 } }, NOW - minutes(60), NOW)).toBe(1.0);
+    expect(getWallClockRatio({ bounds: { minutesCap: 60 } }, NOW - minutes(90), NOW)).toBe(1.5);
   });
 });

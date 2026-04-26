@@ -79,4 +79,4 @@ Opening a PR? Read `DESIGN.md` §12 (surface contracts) and `WHAT_THIS_PROJECT_I
 
 ## License
 
-TBD
+MIT

@@ -27,7 +27,7 @@
 // surrounded by spaces and have longer content.
 
 const PROTOCOL_TOKEN_RE =
-  /<\|[A-Za-z0-9_]{1,40}\|>|<\/?antml:[a-zA-Z_]{1,40}>/g;
+  /<\|[A-Za-z0-9_]{1,40}\|>|<\/?antml:[a-zA-Z_]{1,40}>|<\|endoftext\|>|<\|endofcompletion\|>/g;
 
 export function stripProtocolTokens(text: string): string {
   if (!text) return text;

@@ -122,6 +122,7 @@ export function LeftTabs({
   useEffect(() => {
     if (!boardSwarmRunID && tab === 'board') setTab('plan');
     if (heat.length === 0 && tab === 'heat') setTab('plan');
+    if (heat.length > 0 && tab === 'plan') setTab('heat');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardSwarmRunID, heat.length, tab]);
 

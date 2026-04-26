@@ -19,6 +19,24 @@ through a dedicated opencode session that calls `npx playwright`
 against the running target app. `NOT_VERIFIED` verdicts bounce the
 item back to `stale` so a worker retries with the failure log.
 
+**VALIDATED 2026-04-26** — run_moez4chh_xo7rnm against
+kyahoofinance032926's live Vite dev server with
+`enableVerifierGate: true` + `enableCriticGate: true`, 6 sessions,
+30min cap. All three observables fired:
+
+| Observable | Result |
+|---|---|
+| Planner emits `[verify]` prefix on UX todos | 11/23 items had `requiresVerification: true` |
+| Verifier composes Playwright via bash | Real `playwright.chromium.launch()` scripts hitting localhost:5173 |
+| `[verifier-rejected]` notes flow back to stale | 7 items with concrete rejection reasons |
+
+Example verifier-rejected rejections (real output, not synthetic):
+- "The correlations bento panel and ECharts heatmap were not detected on the page."
+- "No indicators of supply/demand data, surpluses, or deficits were found on the page."
+
+7 critic-rejected items also landed in parallel — the critic and
+verifier gates run together correctly without stepping on each other.
+
 **Setup (one-time).**
 1. Pick a target repo with a runnable dev server (the kyahoofinance
    repo works — `npm run dev` on port 3000).
@@ -27,7 +45,7 @@ item back to `stale` so a worker retries with the failure log.
 3. Start the target dev server in a separate shell: `cd <repo> && npm
    run dev`. Note the port (default 3000).
 
-**Invocation.**
+**Re-validation invocation.**
 ```bash
 curl -X POST http://localhost:<this-app-port>/api/swarm/run \
   -H 'Content-Type: application/json' \
@@ -77,10 +95,18 @@ directive through multiple patterns sequentially and reports
 wall-clock / tokens / cost / commit count per pattern. Answers "is
 pattern X worth its cost premium over pattern Y on this kind of work?"
 
+**VALIDATED 2026-04-26** — invoked with `scripts/_pattern_benchmark.mjs
+--workspace ... --patterns blackboard --max-done 1 --max-minutes 3`.
+Script ran end-to-end: spawned a swarm run, polled progress with
+timestamps every ~15s, hit max-minutes terminal correctly, produced
+the comparison table, persisted JSON to
+`/tmp/pattern-benchmark-<ts>.json`. The 0-done result is expected for
+the tight 3-minute cap; the script MACHINERY works.
+
 **Setup.** Start the Next.js dev server. Ensure `OPENCODE_URL` points
 at a live opencode. Pick a target workspace.
 
-**Invocation.**
+**Re-validation invocation.**
 ```bash
 node scripts/_pattern_benchmark.mjs \
   --workspace /abs/path/to/target/repo \

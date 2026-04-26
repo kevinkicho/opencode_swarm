@@ -35,8 +35,23 @@ export function isWallClockExpired(
   nowMs: number = Date.now(),
 ): boolean {
   const cap = effectiveMinutesCap(meta);
-  const elapsedMin = (nowMs - startedAtMs) / 60_000;
+  const elapsedMs = nowMs - startedAtMs;
+  if (elapsedMs < 0) {
+    console.warn(`[swarm-bounds] Negative elapsed time detected: ${elapsedMs}ms. Clock drift or system time change?`);
+  }
+  const elapsedMin = elapsedMs / 60_000;
   return elapsedMin >= cap;
+}
+
+// Returns the current elapsed time in minutes against the cap.
+// Returns a number from 0 to 1+, where 1.0 means exactly at the cap.
+export function getWallClockRatio(
+  meta: Pick<SwarmRunMeta, 'bounds'>,
+  startedAtMs: number,
+  nowMs: number = Date.now(),
+): number {
+  const cap = effectiveMinutesCap(meta);
+  return (nowMs - startedAtMs) / (60_000 * cap);
 }
 
 // Convenience for log messages — formats elapsed minutes alongside cap.

@@ -48,6 +48,30 @@ startOpencodeLogTail();
 const PROMPT_REFUSE_RATIO = 0.85;
 const PROMPT_WARN_RATIO = 0.6;
 
+// F7 context-size cache. The assembled-context check (layer 2) calls
+// getSessionMessagesServer on every dispatch to find the latest
+// baselineTokens. When the coordinator dispatches multiple claims from a
+// single tick (~10s cadence), the session's context barely changes
+// between calls — the same assistant turn sits at the tail. Caching the
+// baseline per session for PROMPT_WARN_COOLDOWN_MS avoids N redundant
+// HTTP round-trips to opencode during rapid sequential claims.
+const PROMPT_WARN_COOLDOWN_MS = 60_000;
+
+interface BaselineCacheEntry {
+  tokens: number;
+  fetchedAt: number;
+}
+
+const globalBaselineKey = Symbol.for('opencode_swarm.promptPreflight.baselineCache');
+type GlobalWithBaseline = typeof globalThis & {
+  [globalBaselineKey]?: Map<string, BaselineCacheEntry>;
+};
+function baselineCache(): Map<string, BaselineCacheEntry> {
+  const g = globalThis as GlobalWithBaseline;
+  if (!g[globalBaselineKey]) g[globalBaselineKey] = new Map();
+  return g[globalBaselineKey]!;
+}
+
 // Create a session scoped to `directory`. Opencode's POST /session accepts
 // an optional { title } body; omitting it lets opencode mint a placeholder
 // title that we'll overwrite once the first model turn produces a better one.
@@ -197,33 +221,41 @@ export async function postSessionMessageServer(
     if (limit !== null) {
       const newTokens = estimateTokens(text);
 
-      // Layer (2): assembled-context projection
+      // Layer (2): assembled-context projection. Check the per-session
+      // cache first — during rapid sequential claims the session's context
+      // barely changes between dispatches, so a 60s-old baseline is a
+      // close enough approximation and saves a full messages HTTP round-
+      // trip per claim.
       let baselineTokens = 0;
-      try {
-        const messages = await getSessionMessagesServer(sessionId, directory);
-        // Walk back from newest to find the latest completed assistant
-        // turn. Its tokens.input is the assembled-context size opencode
-        // produced on that call — closely tracks what the NEXT call's
-        // input will be (history grows by ~1 user message + 1 assistant
-        // response per turn, both of which are typically much smaller
-        // than the running history total).
-        for (let i = messages.length - 1; i >= 0; i -= 1) {
-          const m = messages[i];
-          if (m.info.role !== 'assistant') continue;
-          if (!m.info.time.completed) continue;
-          const t = m.info.tokens;
-          if (!t) continue;
-          baselineTokens =
-            (t.input ?? 0) +
-            (t.cache?.read ?? 0) +
-            (t.cache?.write ?? 0) +
-            (t.output ?? 0);
-          break;
+      let baselineFromCache = false;
+      const now = Date.now();
+      const cached = baselineCache().get(sessionId);
+      if (cached && now - cached.fetchedAt < PROMPT_WARN_COOLDOWN_MS) {
+        baselineTokens = cached.tokens;
+        baselineFromCache = true;
+      }
+      if (!baselineFromCache) {
+        try {
+          const messages = await getSessionMessagesServer(sessionId, directory);
+          for (let i = messages.length - 1; i >= 0; i -= 1) {
+            const m = messages[i];
+            if (m.info.role !== 'assistant') continue;
+            if (!m.info.time.completed) continue;
+            const t = m.info.tokens;
+            if (!t) continue;
+            baselineTokens =
+              (t.input ?? 0) +
+              (t.cache?.read ?? 0) +
+              (t.cache?.write ?? 0) +
+              (t.output ?? 0);
+            break;
+          }
+          baselineCache().set(sessionId, { tokens: baselineTokens, fetchedAt: now });
+        } catch {
+          // Message fetch failed (transient opencode hiccup) — fall back
+          // to layer (1) only. We don't want a probe failure to block
+          // dispatch.
         }
-      } catch {
-        // Message fetch failed (transient opencode hiccup) — fall back
-        // to layer (1) only. We don't want a probe failure to block
-        // dispatch.
       }
 
       const projectedTokens = baselineTokens + newTokens;

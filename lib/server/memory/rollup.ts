@@ -196,6 +196,7 @@ function reduceSession(
   let toolCalls = 0;
   let retries = 0;
   let compactions = 0;
+  let toolSuccessRate = 0;
   let costUSD = 0;
   let startMs: number | null = null;
   let endMs: number | null = null;
@@ -246,8 +247,18 @@ function reduceSession(
         spawned,
         planState,
         sessionOriginTodoID,
-        onToolCall: () => (toolCalls += 1),
-        onRetry: () => (retries += 1),
+        onToolCall: () => {
+          toolCalls += 1;
+          // Recalculate success rate whenever a tool call happens
+          const total = toolCalls + retries;
+          toolSuccessRate = total > 0 ? (toolCalls - retries) / total : 0;
+        },
+        onRetry: () => {
+          retries += 1;
+          // Recalculate success rate whenever a retry happens
+          const total = toolCalls + retries;
+          toolSuccessRate = total > 0 ? (toolCalls - retries) / total : 0;
+        },
         onCompaction: () => (compactions += 1),
       });
     }
@@ -269,7 +280,7 @@ function reduceSession(
     agent: { name: agentName, model: agentModel ?? '' },
     closedAt: endMs ?? Date.now(),
     outcome,
-    counters: { tokensIn, tokensOut, toolCalls, retries, compactions },
+    counters: { tokensIn, tokensOut, toolCalls, retries, compactions, toolSuccessRate },
     artifacts,
     failures,
     decisions,

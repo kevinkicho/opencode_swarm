@@ -22,8 +22,7 @@
 // Non-destructive by default — passing --dry-run is optional; the script
 // refuses to actually modify anything unless --yes is also set.
 
-import { readdirSync, statSync, readFileSync, writeFileSync, unlinkSync, rmSync } from 'node:fs';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { readdirSync, statSync, readFileSync, writeFileSync, unlinkSync, rmSync, createReadStream, createWriteStream } from 'node:fs';
 import { createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
@@ -40,6 +39,7 @@ function parseArgs() {
     days: 30,
     yes: false,
     dryRun: true, // default on; flipped off by --yes
+    stats: false,
   };
   for (let i = 0; i < args.length; i += 1) {
     const a = args[i];
@@ -47,6 +47,7 @@ function parseArgs() {
     else if (a === '--delete') opts.delete = true;
     else if (a === '--days') opts.days = Number(args[++i]);
     else if (a === '--dry-run') opts.dryRun = true;
+    else if (a === '--stats') opts.stats = true;
     else if (a === '--yes') {
       opts.yes = true;
       opts.dryRun = false;
@@ -222,12 +223,20 @@ async function main() {
     process.exit(0);
   }
 
+  if (opts.stats) {
+    console.log(`Current disk usage: ${fmtBytes(dirSize(ROOT))}`);
+  }
+
   console.log(
     `demo-log pruner${opts.dryRun ? ' — DRY RUN (pass --yes to actually modify)' : ''}`,
   );
   console.log(`  root: ${ROOT}`);
   if (opts.compress) await runCompress(opts);
   if (opts.delete) runDelete(opts);
+
+  if (opts.stats && !opts.dryRun) {
+    console.log(`Post-prune disk usage: ${fmtBytes(dirSize(ROOT))}`);
+  }
 }
 
 main().catch((err) => {

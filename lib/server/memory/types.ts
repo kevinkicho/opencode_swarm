@@ -30,6 +30,7 @@ export interface AgentRollup {
     toolCalls: number;
     retries: number;
     compactions: number;
+    toolSuccessRate?: number;
   };
   artifacts: Array<{
     type: 'patch' | 'file' | 'commit';

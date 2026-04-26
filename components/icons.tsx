@@ -169,6 +169,13 @@ export const IconTerminal = (p: IconProps) => (
   </svg>
 );
 
+export const IconCopy = (p: IconProps) => (
+  <svg {...base(p)}>
+    <rect x="9" y="3" width="12" height="12" rx="2" strokeWidth={1.5} />
+    <rect x="3" y="9" width="12" height="12" rx="2" strokeWidth={1.5} />
+  </svg>
+);
+
 export const IconLogo = (p: IconProps) => (
   <svg {...base(p)} viewBox="0 0 24 24">
     <path d="M4 6L12 2l8 4v12l-8 4-8-4z" />
