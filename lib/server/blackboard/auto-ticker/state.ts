@@ -12,7 +12,7 @@ import { deriveRunRow, getRun, listRuns } from '../../swarm-registry';
 import { abortSessionServer } from '../../opencode-server';
 import { pruneDemoLog } from '../../demo-log-retention';
 import { readTickerSnapshot } from '../ticker-snapshots';
-import { MAX_TIER } from '../planner';
+import { MAX_TIER } from './types';
 import type { TickOutcome } from '../coordinator';
 import {
   globalBootCleanupKey,

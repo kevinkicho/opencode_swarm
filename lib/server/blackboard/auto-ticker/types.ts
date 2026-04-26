@@ -46,6 +46,16 @@ export const PERIODIC_DRAIN_TIER_THRESHOLD = 2;
 // reasoning about them.
 export const MIN_MS_BETWEEN_SWEEPS = 2 * 60 * 1000;
 
+// Ambition-ratchet ceiling. Re-exported here (canonical home is
+// blackboard/planner.ts) so the auto-ticker's lightweight read paths
+// can import it without statically pulling the entire planner module
+// graph. Pre-2026-04-26: state.ts imported `MAX_TIER` from planner.ts,
+// which dragged the whole planner (and transitively the coordinator)
+// into every route that touched the ticker — `/board/ticker` was
+// compiling 1339 modules instead of ~200. Keeping the constant in
+// types.ts (a leaf module with no runtime imports) breaks the chain.
+export const MAX_TIER = 5;
+
 // ─── StopReason ──────────────────────────────────────────────────────
 
 export type StopReason =

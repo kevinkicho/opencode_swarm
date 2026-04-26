@@ -19,7 +19,10 @@ import type { Metadata } from 'next';
 
 import { RetroView } from '@/components/retro-view';
 import { getRetro } from '@/lib/server/memory/reader';
-import { getTickerSnapshot } from '@/lib/server/blackboard/auto-ticker';
+// Read-only path: import directly from auto-ticker/state to skip the
+// lifecycle module's heavy transitive chain (coordinator + planner).
+// Same reason as /snapshot route — cuts retro page compile cost.
+import { getTickerSnapshot } from '@/lib/server/blackboard/auto-ticker/state';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';

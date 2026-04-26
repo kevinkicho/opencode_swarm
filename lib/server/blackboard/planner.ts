@@ -137,7 +137,11 @@ export function isViableCriterion(content: string): boolean {
 // tier's class. The order is load-bearing — planners that jump tiers
 // without earning them tend to hallucinate ambition. MAX_TIER is the
 // safety valve; runs do eventually stop past tier 5.
-export const MAX_TIER = 5;
+//
+// 2026-04-26: canonical home moved to auto-ticker/types.ts so the
+// ticker's lightweight read paths don't drag this giant planner
+// module. Re-exported here for back-compat with existing call sites.
+export { MAX_TIER } from './auto-ticker/types';
 export const TIER_LADDER: ReadonlyArray<{ tier: number; name: string; shape: string }> = [
   { tier: 1, name: 'Polish', shape: 'small fixes, test gaps, doc corrections, tightening existing functionality' },
   { tier: 2, name: 'Structural', shape: 'refactors for maintainability, architecture improvements, complexity reduction' },

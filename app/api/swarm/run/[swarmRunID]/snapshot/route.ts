@@ -29,7 +29,12 @@ import {
   getRun,
 } from '@/lib/server/swarm-registry';
 import { listBoardItems } from '@/lib/server/blackboard/store';
-import { getTickerSnapshot } from '@/lib/server/blackboard/auto-ticker';
+// Read-only path: import directly from `auto-ticker/state` instead of the
+// auto-ticker index. The index transitively pulls tick.ts → coordinator →
+// planner, dragging ~1100 unnecessary modules into this route's compile.
+// state.ts has only state + persisted-snapshot reader as deps. Cuts the
+// snapshot route compile from ~1310 modules to ~200.
+import { getTickerSnapshot } from '@/lib/server/blackboard/auto-ticker/state';
 import { listPlanRevisions } from '@/lib/server/blackboard/plan-revisions';
 import { roleNamesBySessionID } from '@/lib/blackboard/roles';
 

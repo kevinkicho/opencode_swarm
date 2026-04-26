@@ -591,7 +591,12 @@ export async function deriveRunRow(
   // module's globalThis registry.
   if (status === 'idle') {
     try {
-      const { getTickerSnapshot } = await import('./blackboard/auto-ticker');
+      // Read-only path: import directly from auto-ticker/state instead
+      // of the heavy auto-ticker index. The index transitively pulls
+      // tick.ts → coordinator → planner — ~1100 unnecessary modules
+      // that Next.js dev compiles into every snapshot/runs-list call.
+      // Same fix shape as the snapshot/retro routes.
+      const { getTickerSnapshot } = await import('./blackboard/auto-ticker/state');
       const ticker = getTickerSnapshot(meta.swarmRunID);
       if (ticker) {
         if (!ticker.stopped) {
