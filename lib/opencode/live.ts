@@ -20,6 +20,7 @@ import type {
   SwarmRunMeta,
 } from '../swarm-run-types';
 import { OpencodeHttpError } from './errors';
+import { validatePart } from './validate-part';
 
 async function getJsonBrowser<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/api/opencode${path}`, { ...init, cache: 'no-store' });
@@ -1067,9 +1068,19 @@ export function useLiveSwarmRunMessages(
       }
       const props = parsed.properties ?? {};
       if (parsed.type === 'message.part.updated') {
-        const part = props.part;
         const messageID = props.messageID;
-        if (!part?.id || !messageID) return false;
+        if (!messageID) return false;
+        // HARDENING_PLAN.md#R2 — validate the part shape before merging.
+        // Pre-fix the cast `props.part as OpencodePart` trusted whatever
+        // opencode emitted; a new part type or missing required field
+        // (Q34/Q42 class) silently corrupted the slot. Validator returns
+        // ok=false + warns once on schema drift; we then fall through to
+        // refetch (return false) so the slot reloads from the canonical
+        // /message endpoint.
+        const checked = validatePart(props.part);
+        if (!checked.ok) return false;
+        const part = checked.part;
+        if (!part.id) return false;
         let applied = false;
         setSlots((prev) => {
           const idx = prev.findIndex((s) => s.sessionID === sid);

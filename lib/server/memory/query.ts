@@ -30,6 +30,7 @@
 import 'server-only';
 
 import { memoryDb } from './db';
+import { validateMemoryKindDiscriminator } from '../swarm-registry-validate';
 import type {
   AgentRollup,
   RecallItem,
@@ -194,11 +195,20 @@ function querySummaries(req: RecallRequest, limit: number): RecallResponse {
 
   let tokenEstimate = 0;
   const items: RecallSummaryItem[] = rows.map((r) => {
+    // HARDENING_PLAN.md#R7 — validate the kind discriminator before
+    // the union cast. Pre-fix the cast trusted any parsed JSON; a row
+    // missing the kind field would propagate into UI as agent-shaped
+    // garbage. Validator returns null on shape failure (warn-once).
     let blob: AgentRollup | RunRetro | null = null;
+    let raw: unknown = null;
     try {
-      blob = JSON.parse(r.payload) as AgentRollup | RunRetro;
+      raw = JSON.parse(r.payload);
     } catch {
-      blob = null;
+      raw = null;
+    }
+    const checked = raw === null ? null : validateMemoryKindDiscriminator(raw);
+    if (checked && (checked.kind === 'retro' || checked.kind === 'agent')) {
+      blob = raw as AgentRollup | RunRetro;
     }
     const headline = headlineFor(blob);
     tokenEstimate += estimateTokens(headline);

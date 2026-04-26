@@ -22,7 +22,15 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { createGunzip } from 'node:zlib';
 
-import { getSessionMessagesServer } from './opencode-server';
+// HARDENING_PLAN.md#FU.3 (Q47 follow-up) — getSessionMessagesServer is
+// dynamic-imported inside deriveSessionRow rather than static-imported
+// here. Static import pulls the full opencode-server graph (~1100
+// modules) into every route that imports swarm-registry, even routes
+// that only need getRun/listRuns. Dynamic import lets Next.js split
+// the heavy chain off the cold-compile path. Same pattern Q46 used
+// for the ticker route. Type-only import keeps the symbol available
+// for the deriveSessionRow signature without dragging the runtime.
+import type { getSessionMessagesServer as GetSessionMessagesServerFn } from './opencode-server';
 import {
   validateSwarmRunEvent,
   validateSwarmRunMeta,
@@ -463,6 +471,24 @@ interface DerivedRow {
 //
 // Never throws. A probe failure collapses to `unknown` + zeros so the
 // aggregate can still fold this session in without rejecting the whole run.
+// Lazy-load opencode-server on first call. The dynamic import returns
+// the same module object on every call (Next.js / Node's import cache
+// memoizes), so the cost is paid once per process — and only when a
+// route actually fans into deriveRunRow / deriveRunTokens. Routes that
+// only need getRun/listRuns skip the entire opencode chain.
+let _getSessionMessagesImpl: typeof GetSessionMessagesServerFn | null = null;
+async function getSessionMessagesLazy(
+  sessionID: string,
+  workspace: string,
+  signal?: AbortSignal,
+) {
+  if (!_getSessionMessagesImpl) {
+    const mod = await import('./opencode-server');
+    _getSessionMessagesImpl = mod.getSessionMessagesServer;
+  }
+  return _getSessionMessagesImpl(sessionID, workspace, signal);
+}
+
 async function deriveSessionRow(
   sessionID: string,
   workspace: string,
@@ -470,7 +496,7 @@ async function deriveSessionRow(
 ): Promise<DerivedRow> {
   let messages;
   try {
-    messages = await getSessionMessagesServer(sessionID, workspace, signal);
+    messages = await getSessionMessagesLazy(sessionID, workspace, signal);
   } catch {
     // Could be the session was deleted out from under us, or opencode is
     // momentarily unreachable. Either way, not actionable by the picker —

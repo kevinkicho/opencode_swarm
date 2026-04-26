@@ -11,6 +11,7 @@
 import 'server-only';
 
 import { memoryDb } from './db';
+import { validateMemoryKindDiscriminator } from '../swarm-registry-validate';
 import type { AgentRollup, RunRetro } from './types';
 
 interface RollupRow {
@@ -43,16 +44,26 @@ export function getRetro(swarmRunID: string): {
   let retro: RunRetro | null = null;
   const agentRollups: AgentRollup[] = [];
   for (const r of rows) {
+    let raw: unknown;
     try {
-      const blob = JSON.parse(r.payload) as AgentRollup | RunRetro;
-      if (blob.kind === 'retro') retro = blob;
-      else if (blob.kind === 'agent') agentRollups.push(blob);
+      raw = JSON.parse(r.payload);
     } catch {
-      // Malformed payload — skip rather than throw. A single bad row
-      // shouldn't hide the rest of the run's data; the rollup generator
-      // can be re-run to rewrite it.
+      // Malformed JSON — skip rather than throw. A single bad row
+      // shouldn't hide the rest of the run's data; the rollup
+      // generator can be re-run to rewrite it.
       continue;
     }
+    // HARDENING_PLAN.md#R7 — discriminator validator. Pre-fix the cast
+    // `as AgentRollup | RunRetro` trusted the parsed JSON without
+    // checking the kind field. A row with missing/wrong kind would
+    // propagate undefined into UI consumers. Validator returns null
+    // + warns once when the discriminator is missing.
+    const checked = validateMemoryKindDiscriminator(raw);
+    if (!checked) continue;
+    if (checked.kind === 'retro') retro = raw as RunRetro;
+    else if (checked.kind === 'agent') agentRollups.push(raw as AgentRollup);
+    // Other (unknown) kinds skipped silently — forward-compat for new
+    // L2 shapes added later.
   }
 
   return { retro, agentRollups };

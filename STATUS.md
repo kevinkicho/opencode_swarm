@@ -19,14 +19,80 @@ current — remove when shipped or explicitly abandoned.
 
 ## Last updated
 
-**2026-04-26** — stress-test follow-up sweep + parallel-session
-audit. Today's batch (10 commits) closed every TODO from the
-MAXTEAM-2026-04-26 stress test (#95–#100, #101+#103, #104, #105)
-plus the dev-gate (#102), then audited and landed the 19 unstaged
-parallel-session edits as two themed commits (critical store.ts
-fix + UX/perf bundle). Tests 196 → 224, page count of unstaged
-files dropped from 19 → 0. Next review: ~2026-06-01 or whenever
-this file's "last updated" line has drifted again.
+**2026-04-26 evening** — comprehensive hardening session. **38 hardening
+items shipped across 14 commits**, ~9000 LOC delta. Wave 1 + Wave 2 of
+HARDENING_PLAN.md (resilience floor + durability floor) **complete**;
+Wave 3 partial (D3 LRU + W3.4 postmortem template + D8 CAS unit tests
+shipped, 7 pattern integration tests + dispatch tests pending);
+Wave 4 essentially complete (E1, E2, E5, E6, E9 + W4.6 audit, only
+E4 SSE consolidation pending); Wave 5 partial (C1, C5, C7, C9, C13,
+C15, C17, C18 + api-types lift + memory-validator wiring + Q47
+lazy-load still queued + the big file splits queued). Tests 254 →
+**428 passing** (+174). All **8 hardening lints green**. tsc clean
+throughout. Imports cycles 2 → 0.
+
+Key incident classes mechanically prevented (each gated by a green
+hardening lint or D4 keystone test):
+
+- **201-zombie kickoff** (R1) — pattern kickoffs race a 150ms
+  deadline; sync-throw → 5xx with `gateFailures` instead of phantom run
+- **Lock-HMR resets** (D2) — criticLocks/verifierLocks/auditLocks
+  pinned on globalThis (was 3 unsafe `const Map`s)
+- **Schema drift** (R2 + D7) — `validatePart` firewall wired into the
+  SSE merge path + 6 opencode JSON fixtures + 48 transform snapshots
+- **meta.json corruption** (D1) — `atomicWriteFile` + `withKeyedMutex`
+  wrap createRun/updateRunMeta
+- **Sequential 9P reads** (E5) — three sha7 loops in dispatch.ts
+  parallelized
+- **Disk-JSON undefined-cast** (R7) — `validateSwarmRunMeta`,
+  `validateSwarmRunEvent`, `validateMemoryKindDiscriminator` wired
+  through getRun, readEvents, memory reader/query
+- **Empty-catch bug-magnet** (R3) — auto-ticker orphan-cleanup logs
+  forensic trail (extracted to `classifyMetaForCleanup` for testing)
+- **Bare error vocabulary** (R4) — typed
+  `OpencodeHttpError/TimeoutError/UnreachableError` replace 8 throws
+- **API error-shape drift** (R5) — `{error, detail?, hint?}` enforced
+  by lint
+- **Untyped request bodies** (R6) — `parseFooBody` validators on the
+  4 prior offenders
+- **Auto-ticker concurrency** (D8 + D9) — resweepInFlight CAS-tighten
+  (+ 4-test verification) + per-swarmRunID dispatch mutex
+- **Unbounded caches** (D3) — `LRU<K, V>` helper bounds 4 sites
+- **Snapshot 2N probe redundancy** (E1) —
+  `getSessionMessagesServer` 500ms in-flight + TTL dedup
+- **4 raw fetches bypass dedup** (E2) — pages migrated to
+  `useSwarmRuns` hook
+- **Manual POST state pairs** (E9) — 4 sites migrated to
+  `useMutation` for uniform pending/error/disabled
+- **Timeline 4-level prop drill** (C7) — `TimelineInteractionContext`
+- **`extractLatestAssistantText` × 6 dups** (C1) — single canonical
+  in `harvest-drafts.ts`
+- **Inline route interfaces × 7** (C5) — lifted to `lib/api-types.ts`
+- **`process.env.X` × 13 sites** (C5) — single `lib/config.ts`
+- **Magic numbers in pattern code × 13** (C18) —
+  `lib/server/pattern-tunables.ts` TIMINGS + THRESHOLDS
+- **Rail helpers × 5+ dups** (C15) — `components/rails/_shared.ts`
+- **Direct import cycles × 2** (C17) — broken via leaf type
+  modules
+- **`server-only` enforcement** (D6) — 64/64 server modules
+- **Orphan API endpoints × 4** (C9) — deleted; route count 20 → 16
+- **Memory rollup monolith** (C13) — 591 → 193 LOC + 467 LOC
+  pure-compute module
+
+Bible of structural fragility findings + prioritized fix plan now lives
+at `docs/HARDENING_PLAN.md`. Test enforcement at
+`tests/HARDENING_VALIDATION.md` + 17 hardening test files.
+Implementation plan operationalized at `docs/IMPLEMENTATION_PLAN.md`
+Phase 8 (43 items + 9 follow-ups across 5 waves). Call-graph
+post-hardening at `docs/CALL_GRAPH.md` (218 files, 773 fn defs, 0
+direct cycles).
+
+Remaining: ~16 large decomp items (split swarm-registry derive lazy-
+load, decompose tickCoordinator, split run/route.ts + live.ts +
+transform.ts + planner.ts, modal decomp, page hooks, remaining UI)
+plus 7 pattern integration tests + dispatch tests + planner-sweep
+tests. Each is independent and pickable from TaskList. Next review:
+when this file's "last updated" line drifts again.
 
 ---
 
