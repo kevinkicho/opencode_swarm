@@ -38,6 +38,7 @@ const Inspector = dynamic(
 import { PageModals } from './page-internals/page-modals';
 import { useModalState } from './page-internals/use-modal-state';
 import { useSelectionState } from './page-internals/use-selection-state';
+import { useCostCapBlock } from './page-internals/use-cost-cap-block';
 import type { PaletteAction } from '@/components/command-palette';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { StatusRail } from '@/components/status-rail';
@@ -112,7 +113,7 @@ const StrategyRail = dynamic(
   { ssr: false },
 );
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
-import { CostCapBanner, type CostCapBlock } from '@/components/cost-cap-banner';
+import { CostCapBanner } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
 import { ReconcileStrip } from '@/components/reconcile-strip';
 import { SynthesisStrip } from '@/components/synthesis-strip';
@@ -133,8 +134,6 @@ import {
   useSwarmRunSnapshot,
   useSessionDiff,
   useSwarmRuns,
-  postSessionMessageBrowser,
-  CostCapError,
 } from '@/lib/opencode/live';
 import {
   toAgents,
@@ -537,10 +536,12 @@ function PageBody({
   // openers/closers so passing them down doesn't invalidate downstream
   // memos.
   const modals = useModalState();
-  // Most recent cost-cap rejection from the proxy gate (DESIGN.md §9). Set
-  // when postSessionMessageBrowser throws CostCapError; cleared on dismiss or
-  // when the user switches to a different run.
-  const [costCapBlock, setCostCapBlock] = useState<CostCapBlock | null>(null);
+  // Cost-cap block + safe-post wrapper hub. See
+  // app/page-internals/use-cost-cap-block.ts. Auto-clears the banner
+  // when swarmRunID changes; safePost is the only call sites use to
+  // post messages — turns CostCapError into the banner side-effect
+  // so call sites don't repeat the try/catch dance.
+  const { costCapBlock, safePost, dismissCap } = useCostCapBlock(swarmRunID);
   // Left-panel tab is lifted so the timeline can reveal the plan when a task
   // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
   // PlanRail scrolls+flashes on change; we clear it after the row animates.
@@ -755,41 +756,6 @@ function PageBody({
     closeDrawer,
   } = useSelectionState(agents);
 
-  // Wrapper for postSessionMessageBrowser that turns the CostCapError thrown
-  // by the proxy gate (DESIGN.md §9) into a banner-block side-effect, so
-  // callers don't have to repeat the same try/catch + setCostCapBlock(...) +
-  // return dance at every send site. Returns a discriminated result so
-  // multi-session fan-out loops (council, reconcile) can decide whether to
-  // bail (capped → yes, abort fan-out) or continue (other errors already
-  // logged by us → next session).
-  const safePost = useCallback(
-    async (
-      sid: string,
-      workspace: string,
-      body: string,
-      opts: { agent?: string } | undefined,
-      context: string,
-    ): Promise<{ ok: true } | { ok: false; capped: boolean }> => {
-      try {
-        await postSessionMessageBrowser(sid, workspace, body, opts);
-        return { ok: true };
-      } catch (err) {
-        if (err instanceof CostCapError) {
-          setCostCapBlock({
-            swarmRunID: err.swarmRunID,
-            costTotal: err.costTotal,
-            costCap: err.costCap,
-            message: err.message,
-          });
-          return { ok: false, capped: true };
-        }
-        console.error(`[${context}] post failed`, sid, err);
-        return { ok: false, capped: false };
-      }
-    },
-    [],
-  );
-
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey)) return;
@@ -806,13 +772,8 @@ function PageBody({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Drop any stale cost-cap banner when the active run changes — a block from
-  // one run isn't meaningful for another. Also clears when the user exits a
-  // swarm-scoped view entirely (swarmRunID → null).
-  useEffect(() => {
-    setCostCapBlock(null);
-  }, [swarmRunID]);
-
+  // (cost-cap banner auto-clear lives in useCostCapBlock — fires on
+  // swarmRunID change without a separate effect here)
 
   const drawerTitle = focusedMsgId
     ? messages.find((m) => m.id === focusedMsgId)?.title
@@ -1180,10 +1141,10 @@ function PageBody({
         <CostCapBanner
           block={costCapBlock}
           onOpenRouting={() => {
-            setCostCapBlock(null);
+            dismissCap();
             modals.openers.routing();
           }}
-          onDismiss={() => setCostCapBlock(null)}
+          onDismiss={dismissCap}
         />
       )}
 
