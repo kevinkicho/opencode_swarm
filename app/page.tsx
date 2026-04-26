@@ -40,6 +40,7 @@ import { useModalState } from './page-internals/use-modal-state';
 import { useSelectionState } from './page-internals/use-selection-state';
 import { useCostCapBlock } from './page-internals/use-cost-cap-block';
 import { useGlobalKeybindings } from './page-internals/use-global-keybindings';
+import { useViewState } from './page-internals/use-view-state';
 import type { PaletteAction } from '@/components/command-palette';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { StatusRail } from '@/components/status-rail';
@@ -543,13 +544,7 @@ function PageBody({
   // post messages — turns CostCapError into the banner side-effect
   // so call sites don't repeat the try/catch dance.
   const { costCapBlock, safePost, dismissCap } = useCostCapBlock(swarmRunID);
-  // Left-panel tab is lifted so the timeline can reveal the plan when a task
-  // card's todo-eyebrow is clicked. `focusTodoId` is a transient pointer —
-  // PlanRail scrolls+flashes on change; we clear it after the row animates.
-  // 2026-04-24: pattern-specific tabs moved out of LeftTabs to the
-  // main viewport runView. Left panel now holds only cross-pattern
-  // surfaces.
-  const [leftTab, setLeftTab] = useState<'plan' | 'roster' | 'board' | 'heat'>('plan');
+  // (view-state hub moved below boardSwarmRunID — needs it as a gate input)
 
   // Board SSE subscription lives at the page level so both the left-rail
   // "board" tab and the main-view "board" toggle read from the same
@@ -581,35 +576,24 @@ function PageBody({
     () => roleNamesFromMeta(swarmRunMeta),
     [swarmRunMeta],
   );
-  const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
-  // Main-panel view toggle. Timeline = cross-lane event flow (default);
-  // cards = per-turn conversation cards; board = full-width blackboard
-  // kanban (only for blackboard runs — hidden otherwise). The cards
-  // view is a complement to the timeline — it collapses tool calls into
-  // chip rows but loses the wire/A2A topology the timeline exists to
-  // show. See DESIGN.md §2.
-  const [runView, setRunView] = useState<RunView>('timeline');
 
-  // Auto-reset runView when its enabling condition disappears (e.g.,
-  // user navigates from a critic-loop run with `iterations` selected
-  // to a council run where `iterations` is no longer in the toggle).
-  // Without this, the main view goes blank because the dispatch
-  // returns null for the now-disabled key.
-  useEffect(() => {
-    const ok = VIEW_PATTERN_GATES[runView].enabled({
-      pattern: swarmRunMeta?.pattern,
-      boardSwarmRunID,
-    });
-    if (!ok) setRunView('timeline');
-  }, [runView, swarmRunMeta?.pattern, boardSwarmRunID]);
-
-  const jumpToTodo = useCallback((todoId: string) => {
-    setLeftTab('plan');
-    setFocusTodoId(todoId);
-    // Clear after the flash so re-clicking the same todo re-triggers the
-    // scroll + highlight. 1200ms covers smooth scroll + visual settle.
-    window.setTimeout(() => setFocusTodoId(null), 1200);
-  }, []);
+  // View state hub — leftTab, runView, focusTodoId + jumpToTodo. See
+  // app/page-internals/use-view-state.ts. Single source for the cross-
+  // cutting "click a card → flip plan tab + flash a todo" UX, plus the
+  // auto-reset effect that resets runView when its gate stops applying
+  // (mid-pattern-switch).
+  const viewState = useViewState<RunView>(
+    'timeline',
+    (view) =>
+      VIEW_PATTERN_GATES[view].enabled({
+        pattern: swarmRunMeta?.pattern,
+        boardSwarmRunID,
+      }),
+    [swarmRunMeta?.pattern, boardSwarmRunID],
+  );
+  const { leftTab, setLeftTab, runView, setRunView, focusTodoId, jumpToTodo } = viewState;
+  // (leftTab/runView/focusTodoId state, auto-reset effect, and jumpToTodo
+  // handler now live in useViewState — see destructure above.)
 
   // Palette actions: runtime navigation shortcuts that don't fit the
   // jump-to-node model. Gated on swarmRunStatus so we don't offer retro for
