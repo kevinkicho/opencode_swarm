@@ -8,8 +8,12 @@
 // The orchestrator is a persistent reasoning surface for the mission —
 // users can just type into the composer to nudge it, but common nudges
 // (status report, re-strategize, focus check) are reachable without
-// having to compose prose. Buttons post to session 0 with
-// agent='orchestrator' so the roster keeps the role label.
+// having to compose prose. Buttons post to session 0 with NO `agent`
+// field — opencode silently drops POSTs whose agent isn't one of its
+// built-ins (build/compaction/explore/general/plan/summary/title), and
+// 'orchestrator' is our role label, not an opencode agent. Without
+// the agent field opencode uses the session's default, which is what
+// we want anyway. See reference_opencode_agent_silent_drop.md.
 //
 // Rendering contract: returns null when pattern !== 'orchestrator-worker'
 // OR when the orchestrator hasn't produced any completed turn yet
@@ -79,8 +83,9 @@ export function OrchestratorActionsStrip({
   messages: AgentMessage[];
   meta: SwarmRunMeta | null;
   // Fires with the canned prompt for the chosen action. Callers route
-  // the POST (adding `agent: 'orchestrator'` and the orchestrator's
-  // sessionID) — the component stays HTTP-agnostic.
+  // the POST to the orchestrator's sessionID without an `agent` field
+  // (opencode would silently drop the post otherwise — see file header).
+  // The component stays HTTP-agnostic.
   onAction: (actionID: string, prompt: string) => Promise<void> | void;
 }) {
   const [pending, setPending] = useState<string | null>(null);

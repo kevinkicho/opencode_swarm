@@ -568,6 +568,29 @@ export async function deriveRunRow(
     }
   }
 
+  // #7.Q28 — auto-ticker activity overrides per-session "between turns"
+  // idleness. Empirical: a 60-min orchestrator-worker run shows every
+  // session as `idle` whenever the workers complete a turn between
+  // dispatches (their trailing assistant has time.completed set). The
+  // per-session classifier is correct at that microsecond, but the
+  // run-level answer is wrong — the ticker is actively dispatching, work
+  // IS happening. Promote to `live` whenever an active ticker exists.
+  // Stopped tickers don't override (the run really is done at that
+  // point). Dynamic import keeps swarm-registry decoupled from the
+  // ticker module's globalThis registry.
+  if (status === 'idle') {
+    try {
+      const { getTickerSnapshot } = await import('./blackboard/auto-ticker');
+      const ticker = getTickerSnapshot(meta.swarmRunID);
+      if (ticker && !ticker.stopped) {
+        status = 'live';
+      }
+    } catch {
+      // ticker registry unreachable — keep idle. The picker already
+      // tolerates this case via its existing classifier.
+    }
+  }
+
   return { status, lastActivityTs, costTotal, tokensTotal };
 }
 

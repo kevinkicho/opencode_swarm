@@ -1114,11 +1114,17 @@ function PageBody({
           if (!swarmRunMeta) return;
           const orchestratorSID = swarmRunMeta.sessionIDs[0];
           if (!orchestratorSID) return;
+          // Don't pass `agent` — opencode silently drops POSTs whose
+          // `agent` field isn't one of its built-ins (build/compaction/
+          // explore/general/plan/summary/title). 'orchestrator' is our
+          // role label, not an opencode agent. Past behavior: every
+          // button click 204'd silently, no message posted, no
+          // observable event. See reference_opencode_agent_silent_drop.md.
           await safePost(
             orchestratorSID,
             swarmRunMeta.workspace,
             prompt,
-            { agent: 'orchestrator' },
+            undefined,
             `orchestrator-action/${actionID}`,
           );
         }}
