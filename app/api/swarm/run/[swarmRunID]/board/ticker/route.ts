@@ -22,6 +22,7 @@ import { getRun } from '@/lib/server/swarm-registry';
 // → planner. start/stop only run on POST and are dynamic-imported there.
 import { getTickerSnapshot } from '@/lib/server/blackboard/auto-ticker/state';
 import type { TickerSnapshot } from '@/lib/server/blackboard/auto-ticker/types';
+import type { BoardTickerPostBody } from '@/lib/api-types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,13 +46,9 @@ export async function GET(
   return Response.json(body, { status: 200 });
 }
 
-interface PostBody {
-  action?: unknown;
-  // Only used for action='start'. When > 0, the ticker runs in
-  // long-running mode (periodic + eager re-sweep, no auto-idle stop).
-  // Omit for the default short-run behavior.
-  periodicSweepMinutes?: unknown;
-}
+// HARDENING_PLAN.md#C5 — `PostBody` lifted to lib/api-types.ts as
+// BoardTickerPostBody. Field comments live with the canonical type.
+type PostBody = BoardTickerPostBody;
 
 export async function POST(
   req: NextRequest,

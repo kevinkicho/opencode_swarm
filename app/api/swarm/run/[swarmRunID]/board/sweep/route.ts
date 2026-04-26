@@ -19,6 +19,7 @@ import type { NextRequest } from 'next/server';
 
 import { getRun } from '@/lib/server/swarm-registry';
 import { runPlannerSweep } from '@/lib/server/blackboard/planner';
+import type { BoardSweepBody } from '@/lib/api-types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -30,10 +31,10 @@ export const runtime = 'nodejs';
 const MIN_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 5 * 60_000;
 
-interface SweepBody {
-  overwrite?: unknown;
-  timeoutMs?: unknown;
-}
+// HARDENING_PLAN.md#C5 — `SweepBody` lifted to lib/api-types.ts as
+// BoardSweepBody. Local alias retained so the rest of this file's
+// references don't churn.
+type SweepBody = BoardSweepBody;
 
 export async function POST(
   req: NextRequest,

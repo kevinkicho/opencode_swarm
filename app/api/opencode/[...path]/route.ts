@@ -5,6 +5,7 @@ import {
   findRunBySession,
   getRun,
 } from '@/lib/server/swarm-registry';
+import type { CostCapGateBlock } from '@/lib/api-types';
 
 // Next.js 14 App Router catch-all route: /api/opencode/* is forwarded to the
 // opencode instance. Auth is injected server-side by opencodeFetch — the browser
@@ -61,11 +62,9 @@ function gatedSessionID(
 
 // Result shape for the gate check. `null` means "let the prompt through";
 // an object means "block with this 402 body".
-interface GateBlock {
-  swarmRunID: string;
-  costTotal: number;
-  costCap: number;
-}
+//
+// HARDENING_PLAN.md#C5 — type lifted to lib/api-types.ts (CostCapGateBlock).
+type GateBlock = CostCapGateBlock;
 
 // On probe failure (opencode unreachable, session vanished) we return null
 // and let the prompt through — availability beats a false positive when the

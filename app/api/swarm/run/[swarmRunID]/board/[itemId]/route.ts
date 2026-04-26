@@ -81,12 +81,9 @@ function parseActionBody(
   return { ok: true, body: r as unknown as ActionBody & { action: Action } };
 }
 
-interface ActionBody {
-  action?: string;
-  ownerAgentId?: string;
-  fileHashes?: Array<{ path?: unknown; sha?: unknown }>;
-  note?: string;
-}
+// HARDENING_PLAN.md#C5 — `ActionBody` lifted to lib/api-types.ts as
+// BoardActionBody.
+type ActionBody = import('@/lib/api-types').BoardActionBody;
 
 function parseFileHashes(
   raw: unknown,

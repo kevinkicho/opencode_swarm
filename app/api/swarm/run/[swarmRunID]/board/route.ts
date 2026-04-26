@@ -67,15 +67,9 @@ function mintItemId(): string {
   return 't_' + randomBytes(4).toString('hex');
 }
 
-interface PostBody {
-  id?: string;
-  kind?: string;
-  content?: string;
-  status?: string;
-  ownerAgentId?: string;
-  note?: string;
-  fileHashes?: Array<{ path?: unknown; sha?: unknown }>;
-}
+// HARDENING_PLAN.md#C5 — `PostBody` lifted to lib/api-types.ts as
+// BoardPostBody.
+type PostBody = import('@/lib/api-types').BoardPostBody;
 
 function parsePost(raw: unknown): Omit<BoardItem, 'createdAtMs' | 'completedAtMs' | 'staleSinceSha'> | string {
   if (!raw || typeof raw !== 'object') return 'body must be a JSON object';

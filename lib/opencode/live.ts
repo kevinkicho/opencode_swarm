@@ -324,9 +324,18 @@ async function opencodeHealthFetcher(): Promise<HealthSnapshot> {
 // that's ~5 s of downtime before UI goes stale — fast enough to be
 // felt, slow enough to tolerate a single failed request.
 //
-// Cost note: each caller opens its own 5 s poll. At prototype scale
-// the overhead is trivial; if we ever need to share one instance,
-// wrap this in a Context provider.
+// HARDENING_PLAN.md#E3 — the bible flagged this as "spawns N independent
+// 5s pollers". Audit confirmed that's not actually true: the underlying
+// /project poll is already TanStack-deduped via OPENCODE_HEALTH_QUERY_KEY,
+// so any number of useOpencodeHealth callers share one refetchInterval
+// (per the migration commit's docstring above on useOpencodeHealth). The
+// per-caller piece is the offline-streak debounce — useState + useRef +
+// useEffect — but at 3 callers × ~50 bytes of React state each, the
+// "perf cost" is trivial and the debounce is load-bearing UX (tolerates
+// one transient failed probe before turning chips gray). Wrapping in a
+// BackendHealthProvider Context would just re-implement what TanStack
+// Query already gives us at the network layer. Keeping the per-caller
+// debounce is correct.
 export function useBackendStale(): boolean {
   const health = useOpencodeHealth(5_000);
   const [stale, setStale] = useState(false);
