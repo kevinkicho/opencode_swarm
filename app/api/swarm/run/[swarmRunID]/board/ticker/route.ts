@@ -16,12 +16,12 @@
 import type { NextRequest } from 'next/server';
 
 import { getRun } from '@/lib/server/swarm-registry';
-import {
-  getTickerSnapshot,
-  startAutoTicker,
-  stopAutoTicker,
-  type TickerSnapshot,
-} from '@/lib/server/blackboard/auto-ticker';
+// HARDENING_PLAN.md#E6 — Q46-style import-graph slim. Import the
+// state-only `getTickerSnapshot` directly from the leaf module so the
+// 5s-polled GET handler doesn't transitively pull tick.ts → coordinator
+// → planner. start/stop only run on POST and are dynamic-imported there.
+import { getTickerSnapshot } from '@/lib/server/blackboard/auto-ticker/state';
+import type { TickerSnapshot } from '@/lib/server/blackboard/auto-ticker/types';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -87,8 +87,16 @@ export async function POST(
     ) {
       periodicSweepMs = Math.round(body.periodicSweepMinutes * 60_000);
     }
+    // E6 — dynamic import keeps start/stop's tick.ts → coordinator chain
+    // out of the GET handler's compile graph.
+    const { startAutoTicker } = await import(
+      '@/lib/server/blackboard/auto-ticker'
+    );
     startAutoTicker(params.swarmRunID, { periodicSweepMs });
   } else if (body.action === 'stop') {
+    const { stopAutoTicker } = await import(
+      '@/lib/server/blackboard/auto-ticker'
+    );
     stopAutoTicker(params.swarmRunID, 'manual');
   } else {
     return Response.json(

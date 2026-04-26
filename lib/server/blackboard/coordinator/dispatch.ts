@@ -412,17 +412,22 @@ async function tickCoordinatorImpl(
   // editedPaths only.
   let claimAnchors: { path: string; sha: string }[] | null = null;
   if (todo.expectedFiles && todo.expectedFiles.length > 0) {
-    claimAnchors = [];
-    for (const rel of todo.expectedFiles) {
-      const abs = path.resolve(meta.workspace, rel);
-      try {
-        claimAnchors.push({ path: rel, sha: await sha7(abs) });
-      } catch {
-        // File absent at claim time — sentinel '' anchors "expected to
-        // be created." Drift check distinguishes this from a live hash.
-        claimAnchors.push({ path: rel, sha: '' });
-      }
-    }
+    // HARDENING_PLAN.md#E5 — parallelize sha7 reads. Pre-fix this was
+    // a sequential `for await`, costing N WSL2 9P round-trips. With
+    // Promise.all we wait one round-trip's latency for the whole set.
+    claimAnchors = await Promise.all(
+      todo.expectedFiles.map(async (rel) => {
+        const abs = path.resolve(meta.workspace, rel);
+        try {
+          return { path: rel, sha: await sha7(abs) };
+        } catch {
+          // File absent at claim time — sentinel '' anchors "expected
+          // to be created." Drift check distinguishes this from a
+          // live hash.
+          return { path: rel, sha: '' };
+        }
+      }),
+    );
   }
 
   // Claim. CAS protects against another coordinator / external caller
@@ -568,21 +573,25 @@ async function tickCoordinatorImpl(
   // → reject if any changed" step of the ollama-swarm blackboard spec.
   if (todo.expectedFiles && todo.expectedFiles.length > 0 && todo.fileHashes) {
     const editedSet = new Set(editedPaths);
-    const driftedPaths: string[] = [];
-    for (const anchor of todo.fileHashes) {
-      if (editedSet.has(anchor.path)) continue; // legitimate self-edit
-      const abs = path.resolve(meta.workspace, anchor.path);
-      let currentSha = '';
-      try {
-        currentSha = await sha7(abs);
-      } catch {
-        // File absent now — drift if it existed at claim time.
-        currentSha = '';
-      }
-      if (currentSha !== anchor.sha) {
-        driftedPaths.push(anchor.path);
-      }
-    }
+    // HARDENING_PLAN.md#E5 — parallelize sha7 reads. Pre-fix this was
+    // a sequential `for await`, costing N WSL2 9P round-trips. Filter
+    // out self-edits before re-hashing so we don't waste reads on
+    // paths we already know are non-drift.
+    const candidates = todo.fileHashes.filter((a) => !editedSet.has(a.path));
+    const checked = await Promise.all(
+      candidates.map(async (anchor) => {
+        const abs = path.resolve(meta.workspace, anchor.path);
+        let currentSha = '';
+        try {
+          currentSha = await sha7(abs);
+        } catch {
+          // File absent now — drift if it existed at claim time.
+          currentSha = '';
+        }
+        return { path: anchor.path, drifted: currentSha !== anchor.sha };
+      }),
+    );
+    const driftedPaths = checked.filter((c) => c.drifted).map((c) => c.path);
     if (driftedPaths.length > 0) {
       const driftedDeltas = await Promise.all(
         driftedPaths.map(async (p) => {
@@ -630,18 +639,28 @@ async function tickCoordinatorImpl(
   // `rel` here may be relative (the common case — an in-workspace edit) or
   // absolute (out-of-tree edit, already normalized to forward slashes).
   // path.resolve handles both: an absolute arg wins over the base.
-  const fileHashes: { path: string; sha: string }[] = [];
-  for (const rel of editedPaths) {
-    try {
-      fileHashes.push({
-        path: rel,
-        sha: await sha7(path.resolve(meta.workspace, rel)),
-      });
-    } catch {
-      // Edited then deleted, or path outside workspace (resolve() out-of-tree).
-      // Skip — commit-time drift isn't what we're modeling here anyway.
-    }
-  }
+  // HARDENING_PLAN.md#E5 — parallelize sha7 reads. Pre-fix this was
+  // a sequential `for await`, costing N WSL2 9P round-trips. Promise.all
+  // collapses to one round-trip's worth of latency. We retain the
+  // per-file try/catch so a single missing file doesn't reject the
+  // whole hash batch.
+  const fileHashes: { path: string; sha: string }[] = (
+    await Promise.all(
+      editedPaths.map(async (rel) => {
+        try {
+          return {
+            path: rel,
+            sha: await sha7(path.resolve(meta.workspace, rel)),
+          };
+        } catch {
+          // Edited then deleted, or path outside workspace
+          // (resolve() out-of-tree). Drop — commit-time drift isn't
+          // what we're modeling here anyway.
+          return null;
+        }
+      }),
+    )
+  ).filter((x): x is { path: string; sha: string } => x !== null);
 
   // #7.Q42 — phantom-completion guard. The legitimate "no-edit done" cases
   // are: (a) a worker explicitly replies with "skip: <reason>" because the
