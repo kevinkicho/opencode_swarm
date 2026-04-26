@@ -464,7 +464,8 @@ export async function runDebateJudgeKickoff(
         known,
         deadline,
       );
-      if (!wait.ok) {
+      const waitOk = wait.ok;
+      if (!waitOk) {
         console.warn(
           `[debate-judge] run ${swarmRunID} round ${round}: generator-${i + 1} wait failed (${wait.reason})`,
         );
@@ -472,7 +473,17 @@ export async function runDebateJudgeKickoff(
       let text: string | null = null;
       try {
         const msgs = await getSessionMessagesServer(sid, meta.workspace);
-        text = extractLatestAssistantText(msgs);
+        // #7.Q22 — only count messages that landed AFTER our prompt was
+        // posted. Without this filter, a silent-freeze on the actual draft
+        // turn falls through to the generator's prime-ack from the intro
+        // post (which IS a completed assistant message with text), and
+        // that prime-ack becomes the "draft" the judge sees. Result on
+        // run_mofpvnu3_4b9n5i: both generators silent-frozen, judge
+        // declared WINNER from two prime-acks. Filtering by `known` makes
+        // a silent freeze surface as text=null, which falls through to
+        // the `present.length < 2` abort gate below.
+        const newMsgs = msgs.filter((m) => !known.has(m.info.id));
+        text = extractLatestAssistantText(newMsgs);
         knownByGenerator.set(sid, new Set(msgs.map((m) => m.info.id)));
       } catch {
         // tolerate fetch failure; proceed with null text

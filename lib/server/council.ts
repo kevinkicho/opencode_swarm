@@ -349,6 +349,60 @@ export async function runCouncilRounds(
     });
   }
 
+  // #7.Q32 — wait for the FINAL round's responses. Without this harvest
+  // the loop posts maxRounds prompts but only awaits maxRounds-1 round
+  // of responses, leaving the last round's assistant turns frozen at
+  // parts=0 forever (visible in opencode as zombie placeholders). The
+  // final-round prompt explicitly asks each member to vote on the
+  // accepted draft — those votes are the council's most refined output
+  // and we were throwing them away. Reproduced 2026-04-26 on
+  // run_moflgdpi_xf703h: 3 sessions stuck at parts=0 for 2h+ until
+  // teardown. Now: wait for round-maxRounds responses, capture them
+  // as a finding so they're durably visible in /retro and the board.
+  const finalDeadline = Date.now() + ROUND_WAIT_MS;
+  const finalHarvest = await harvestDrafts(meta, {
+    knownIDsBySession,
+    deadline: finalDeadline,
+    contextLabel: '[council]',
+  });
+  for (const row of finalHarvest) {
+    knownIDsBySession.set(row.sessionID, row.newKnownIDs);
+  }
+  const finalDrafts = finalHarvest.map((r) => ({
+    sessionID: r.sessionID,
+    text: r.text,
+  }));
+  latestDrafts = finalDrafts;
+  const finalPresent = finalDrafts.filter((d) => d.text !== null);
+  lastCompletedRound = maxRounds;
+
+  if (finalPresent.length > 0) {
+    console.log(
+      `[council] run ${swarmRunID} — final round (${maxRounds}) harvested: ${finalPresent.length}/${finalDrafts.length} member(s) responded`,
+    );
+    // Capture the final-round votes as a finding so /retro and the
+    // board carry them. recordPartialOutcome's "phase" field is free-
+    // form; "complete" signals this isn't a failure. The summary
+    // includes each member's vote text so the human can read the
+    // verdicts without scrolling individual session transcripts.
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'council',
+      phase: `complete (round ${maxRounds}/${maxRounds})`,
+      reason: 'auto-rounds-complete',
+      summary: buildPartialSummary(maxRounds + 1),
+    });
+  } else {
+    console.warn(
+      `[council] run ${swarmRunID} — final round (${maxRounds}) produced no drafts; council output is incomplete`,
+    );
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'council',
+      phase: `final-round (${maxRounds}/${maxRounds})`,
+      reason: 'final-round-no-drafts',
+      summary: buildPartialSummary(maxRounds + 1),
+    });
+  }
+
   console.log(
     `[council] run ${swarmRunID} — auto-rounds complete (${maxRounds} rounds total)`,
   );
