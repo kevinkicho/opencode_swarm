@@ -65,10 +65,20 @@ import {
   relativizeToWorkspace,
   sha7,
 } from './coordinator/path-utils';
+import { scoreTodoByHeat } from './coordinator/heat';
+import {
+  buildWorkPrompt,
+  extractLatestErrorText,
+  isAssistantComplete,
+  isAssistantInFlight,
+  oldestInFlightAgeMs,
+  ownerIdForSession,
+} from './coordinator/message-helpers';
 
 // Re-export public surface so external imports keep working unchanged.
-// Phases 1-2 of #107 — types + pure helpers extracted; orchestration
-// (waitForSessionIdle + tickCoordinator) still lives below.
+// Phases 1-3 of #107 — types + pure helpers + heat scoring + message
+// helpers extracted; orchestration (waitForSessionIdle + tickCoordinator)
+// still lives below.
 export {
   COORDINATOR_EXPORTS_KEY,
   turnTimeoutFor,
@@ -78,6 +88,9 @@ export {
   extractPathTokens,
   pathOverlaps,
   relativizeToWorkspace,
+  buildWorkPrompt,
+  extractLatestErrorText,
+  ownerIdForSession,
 };
 export type { CoordinatorExports, TickOpts, TickOutcome };
 
@@ -222,201 +235,6 @@ async function scheduleCasDriftReplan(
 // short for UI columns while remaining unambiguous per session. Matches the
 // "board ownerAgentId is whatever the writer posts" contract in
 // lib/blackboard/types.ts — derivation happens in the UI.
-export function ownerIdForSession(sessionID: string): string {
-  return 'ag_ses_' + sessionID.slice(-8);
-}
-
-
-// Stigmergy v1 — pheromone-weighted pick. Score a todo by summing the
-// edit counts of heat entries whose path or containing dir or basename
-// appears in the todo's content. Three match tiers:
-//
-//   * Full-path match (content includes `src/foo/bar.ts`): +2x count
-//     — strong signal, the todo explicitly names the file
-//   * Directory match (content includes `src/foo/` when h.path is
-//     `src/foo/bar.ts`): +1x count — todo targets the dir that owns
-//     this file. Covers the "fix everything in src/components/" case.
-//   * Basename match (content includes `bar.ts`, len ≥ 4): +1x count
-//     — weakest, covers the "edit bar.ts" case where h.path has a
-//     different leading dir
-//
-// Basenames under 4 chars are skipped — matching "ts" or "js" would
-// be noise. The picker sorts OPEN todos by this score ASC
-// (exploratory bias — steer workers toward unexplored files) with
-// createdAtMs ASC as the tiebreak. A todo with no file attribution
-// scores 0 and falls back to oldest-first, which is the correct
-// degenerate case.
-// PATTERN_DESIGN/stigmergy.md I1 — heat half-life decay. Without this,
-// editCount accumulates forever and an early-hot file dominates the
-// score for hours after it's been quiet, anchoring the swarm. Decay
-// weights each file's contribution by 0.5^(Δt / HEAT_HALF_LIFE_MS),
-// where Δt is wallclock since the file was last touched. Recent
-// edits count fully; old edits fade out. Half-life is configurable
-// via OPENCODE_HEAT_HALF_LIFE_S (seconds); default 1800 (30 min)
-// is gentler than the spec's 130s but matches our typical session
-// pacing. Override to 130 for spec-literal validation runs.
-const HEAT_HALF_LIFE_DEFAULT_MS = 30 * 60 * 1000;
-function heatHalfLifeMs(): number {
-  const env = process.env.OPENCODE_HEAT_HALF_LIFE_S;
-  if (!env) return HEAT_HALF_LIFE_DEFAULT_MS;
-  const n = parseInt(env, 10);
-  if (!Number.isFinite(n) || n <= 0) return HEAT_HALF_LIFE_DEFAULT_MS;
-  return n * 1000;
-}
-function decayFactor(lastTouchedMs: number): number {
-  if (lastTouchedMs <= 0) return 1; // unknown timestamp = no decay
-  const dt = Math.max(0, Date.now() - lastTouchedMs);
-  return Math.pow(0.5, dt / heatHalfLifeMs());
-}
-
-function scoreTodoByHeat(
-  content: string,
-  heat: FileHeat[],
-  pickedSessionID?: string,
-): number {
-  let score = 0;
-  for (const h of heat) {
-    const norm = h.path.replace(/\\/g, '/');
-    const lastSlash = norm.lastIndexOf('/');
-    const base = lastSlash >= 0 ? norm.slice(lastSlash + 1) : norm;
-    const dirWithSlash = lastSlash >= 0 ? norm.slice(0, lastSlash + 1) : '';
-    const decay = decayFactor(h.lastTouchedMs);
-    const decayedCount = h.editCount * decay;
-    let weight = 0;
-    if (content.includes(h.path) || content.includes(norm)) {
-      weight = 2;
-    } else if (dirWithSlash && content.includes(dirWithSlash)) {
-      weight = 1;
-    } else if (base.length >= 4 && content.includes(base)) {
-      weight = 1;
-    }
-    if (weight > 0) {
-      score += decayedCount * weight;
-      // PATTERN_DESIGN/stigmergy.md I4 — per-worker warmth bonus.
-      // Picker sorts ascending (low-heat = preferred), so subtracting
-      // here biases the picked session toward files it has already
-      // touched (exploitation). Coefficient 0.5 keeps the global
-      // exploratory bias dominant when the worker is one of many
-      // touchers, but lets a sole-toucher tip toward continuing where
-      // they have session context.
-      if (pickedSessionID) {
-        const sessionEdits = h.editsBySession?.[pickedSessionID] ?? 0;
-        if (sessionEdits > 0) {
-          score -= 0.5 * sessionEdits * decay * weight;
-        }
-      }
-    }
-  }
-  return score;
-}
-
-function isAssistantComplete(m: OpencodeMessage): boolean {
-  return m.info.role === 'assistant' && !!m.info.time.completed;
-}
-
-// #96 — extracts the most recent assistant `info.error` message text
-// among NEW messages (not in knownIDs). Used by the worker dispatch
-// path to enrich the stale-note from the generic "turn errored" to
-// "turn errored: <provider error excerpt>". Walks tail-to-head so
-// the LATEST errored turn wins when a session has multiple. The
-// `knownIDs` filter is the same set the dispatch path passes to
-// waitForSessionIdle — only counts errors that appeared during the
-// dispatch's wait window. Pure (no I/O) so callers can unit-test it.
-export function extractLatestErrorText(
-  messages: OpencodeMessage[],
-  knownIDs: Set<string>,
-): string | undefined {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i];
-    if (knownIDs.has(m.info.id)) continue;
-    if (m.info.role !== 'assistant') continue;
-    if (!m.info.error) continue;
-    const errInfo = m.info.error as { name?: string; message?: string };
-    return errInfo.message || errInfo.name || JSON.stringify(m.info.error);
-  }
-  return undefined;
-}
-
-function isAssistantInFlight(m: OpencodeMessage): boolean {
-  return (
-    m.info.role === 'assistant' &&
-    !m.info.time.completed &&
-    !m.info.error
-  );
-}
-
-// How long has the oldest in-flight assistant turn been running? Returns 0
-// when the session has no in-flight turns. Used by the session picker to
-// distinguish legitimate long-running work from zombies.
-function oldestInFlightAgeMs(messages: OpencodeMessage[]): number {
-  let oldest: number | null = null;
-  for (const m of messages) {
-    if (!isAssistantInFlight(m)) continue;
-    const created = m.info.time.created;
-    if (typeof created !== 'number') continue;
-    if (oldest === null || created < oldest) oldest = created;
-  }
-  if (oldest === null) return 0;
-  return Date.now() - oldest;
-}
-
-
-export function buildWorkPrompt(item: BoardItem): string {
-  // Synthesize items carry a complete, self-contained prompt (member drafts
-  // already embedded by the caller). Wrapping them in the blackboard-edit
-  // preamble would both mangle the synthesis directive and mislead the
-  // synthesizer into editing files. Post the content verbatim and let the
-  // CAS lifecycle handle progression.
-  if (item.kind === 'synthesize') return item.content;
-  const lines: string[] = [
-    'Blackboard work prompt.',
-    '',
-    `Todo id: ${item.id}`,
-    `Todo: ${item.content}`,
-  ];
-  // #76 retry-differentiation. When this todo was previously claimed
-  // and stalled / errored, retryOrStale set a `[retry:N] <reason>`
-  // note. Without surfacing that to the model, the re-dispatch is
-  // identical to the first attempt — same prompt, same model, likely
-  // same failure mode. Inject a preamble that names the prior failure
-  // so the model can adapt (try a different approach, narrower scope,
-  // smaller diff). The note already truncates at 200 chars; further
-  // trimming here would strip the actual reason content.
-  const retry = extractRetryFailureReason(item.note);
-  if (retry) {
-    lines.push(
-      '',
-      `NOTE: this is retry ${retry.attempt} of this todo. Previous attempt failed with: ${retry.reason}`,
-      'Adjust your approach so you do not hit the same failure mode —',
-      'narrow the scope, split the work, or try a different file ordering',
-      'if appropriate. Do not just repeat the previous attempt verbatim.',
-    );
-  }
-  // Pre-announced file scope (declared-roles alignment). When the
-  // planner tagged the todo with [files:a,b], the coordinator has
-  // already hashed those files at claim time for CAS drift detection;
-  // the worker MUST stay within this list or risk the commit being
-  // rejected as out-of-scope (future Stage 2 enforcement). Today this
-  // is a soft instruction plus a hard CAS check on drift at commit.
-  if (item.expectedFiles && item.expectedFiles.length > 0) {
-    lines.push(
-      '',
-      `Expected file scope (DO NOT edit files outside this list): ${item.expectedFiles.join(', ')}`,
-      'Other workers have claims on other files. Editing outside this',
-      'scope risks a CAS-drift rejection at commit time.',
-    );
-  }
-  lines.push(
-    '',
-    'Complete this todo by editing the file(s) above directly. Keep the',
-    'scope narrow — one todo, one change. Do not call the task tool, do',
-    'not spawn sub-agents. When done, reply with a one-sentence summary.',
-    '',
-    'If the todo turns out to be wrong or already done, reply "skip:" with',
-    'a one-line reason and do not edit anything.',
-  );
-  return lines.join('\n');
-}
 
 // Poll until the session has finished processing whatever prompt we just
 // posted. A naive "first completed assistant message" check races
