@@ -138,36 +138,21 @@ import {
   useSwarmRuns,
 } from '@/lib/opencode/live';
 import {
-  toAgents,
-  toMessages,
-  toRunMeta,
-  toRunPlan,
-  toProviderSummary,
-  toLiveTurns,
-  toTurnCards,
-  toFileHeat,
-  parseSessionDiffs,
   type LiveTurn,
   type TurnCard,
   type FileHeat,
 } from '@/lib/opencode/transform';
+import {
+  useSwarmView,
+  EMPTY_SWARM_VIEW,
+  type SwarmView,
+} from './page-internals/use-swarm-view';
+import { useDiffStats } from './page-internals/use-diff-stats';
 import { tokensForBudget } from '@/lib/opencode/pricing';
 import type { DiffData } from '@/lib/types';
 import type { AgentMessage, Agent, RunMeta, ProviderSummary, TodoItem } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TimelineNode } from '@/lib/types';
-
-interface SwarmView {
-  agents: Agent[];
-  agentOrder: string[];
-  messages: AgentMessage[];
-  runMeta: RunMeta;
-  providerSummary: ProviderSummary[];
-  runPlan: TodoItem[];
-  liveTurns: LiveTurn[];
-  turnCards: TurnCard[];
-  fileHeat: FileHeat[];
-}
 
 // runView gates — single source of truth for which main-panel views
 // are available given the active run's pattern + board state. Three
@@ -239,31 +224,6 @@ const VIEW_PATTERN_GATES: Record<string, ViewConfig> = {
 } as const;
 type RunView = keyof typeof VIEW_PATTERN_GATES;
 const RUN_VIEW_KEYS = Object.keys(VIEW_PATTERN_GATES) as RunView[];
-
-// Zero-state view for "no run active" — topbar chips render as 0/placeholder,
-// all live-data panels collapse to their empty states. Budget defaults match
-// the routing-modal defaults so the topbar chip doesn't read 0/0.
-const EMPTY_VIEW: SwarmView = {
-  agents: [],
-  agentOrder: [],
-  messages: [],
-  runMeta: {
-    id: '',
-    title: '',
-    status: 'paused',
-    started: '',
-    elapsed: '—',
-    totalTokens: 0,
-    totalCost: 0,
-    budgetCap: 5,
-    cwd: '',
-  },
-  providerSummary: [],
-  runPlan: [],
-  liveTurns: [],
-  turnCards: [],
-  fileHeat: [],
-};
 
 export default function Page() {
   return (
@@ -351,60 +311,13 @@ function PageInner() {
   const liveDirectory = liveData?.session?.directory ?? null;
   const permissions = useLivePermissions(sessionId, liveDirectory);
 
-  const view: SwarmView = useMemo(() => {
-    // Council / multi-session: merge every slot's messages into a single
-    // chronological stream, then feed the transform pipeline. toAgents and
-    // toMessages are session-aware (S4 rekey), so merging is safe — IDs
-    // stay disambiguated by sessionID and user→assistant routing resolves
-    // per-session rather than cross-session. The primary slot's session is
-    // the anchor for runMeta; workspace / title are identical across
-    // council members by construction.
-    if (isMultiSession && liveSwarmRun.slots.length > 0) {
-      const merged = liveSwarmRun.slots
-        .flatMap((s) => s.messages)
-        .slice()
-        .sort((a, b) => a.info.time.created - b.info.time.created);
-      const anchorSession = liveSwarmRun.slots[0]?.session ?? null;
-      const { agents, agentOrder } = toAgents(merged);
-      const baseMeta = toRunMeta(anchorSession, merged);
-      // For multi-session runs the primary member's opencode title carries
-      // the `#1` member suffix we added at spawn time (swarm/run/route.ts).
-      // Users reading the topbar want the run-level title, not "foo #1" —
-      // so overlay meta.title (the seed title) and swarmRunID so the anchor
-      // reads as a run identity rather than a stray member.
-      return {
-        agents,
-        agentOrder,
-        messages: toMessages(merged),
-        runMeta: {
-          ...baseMeta,
-          id: swarmRunMeta_?.swarmRunID ?? baseMeta.id,
-          title: swarmRunMeta_?.title ?? baseMeta.title,
-        },
-        providerSummary: toProviderSummary(agents, merged),
-        runPlan: toRunPlan(merged),
-        liveTurns: toLiveTurns(merged),
-        turnCards: toTurnCards(merged),
-        fileHeat: toFileHeat(merged),
-      };
-    }
-    if (sessionId && liveData) {
-      const { agents, agentOrder } = toAgents(liveData.messages);
-      const messages = toMessages(liveData.messages);
-      return {
-        agents,
-        agentOrder,
-        messages,
-        runMeta: toRunMeta(liveData.session, liveData.messages),
-        providerSummary: toProviderSummary(agents, liveData.messages),
-        runPlan: toRunPlan(liveData.messages),
-        liveTurns: toLiveTurns(liveData.messages),
-        turnCards: toTurnCards(liveData.messages),
-        fileHeat: toFileHeat(liveData.messages),
-      };
-    }
-    return EMPTY_VIEW;
-  }, [isMultiSession, liveSwarmRun.slots, swarmRunMeta_, sessionId, liveData]);
+  const view: SwarmView = useSwarmView({
+    isMultiSession,
+    liveSwarmRun,
+    swarmRunMeta: swarmRunMeta_,
+    sessionId,
+    liveData: liveData ?? null,
+  });
 
   // Layer `waiting` on top of toAgents' status: a pending permission on the
   // session means whichever agent is mid-turn is actually blocked on human
@@ -689,38 +602,11 @@ function PageBody({
     loading: diffLoading,
     error: diffError,
   } = useSessionDiff(liveSessionId, !!liveSessionId, liveLastUpdated);
-  const liveDiffs: DiffData[] | null = useMemo(
-    () => (rawDiffs ? parseSessionDiffs(rawDiffs) : null),
-    [rawDiffs]
-  );
-  // Per-file add/delete stats for the cards view's file list and the
-  // heat rail's +/- columns. Built from liveDiffs if present; empty
-  // map otherwise.
-  //
-  // Key shape: we populate BOTH the relative path (as liveDiffs has
-  // it) and the workspace-prefixed absolute path, because different
-  // surfaces carry paths in different shapes — heat.path is absolute
-  // (came from opencode patch.files) while filesTouched in cards
-  // view is also absolute. Lookups by either form resolve.
-  //
-  // Multi-session caveat: only the primary session's diff is fetched
-  // today, so stats for files edited exclusively by non-primary
-  // sessions stay undefined (render as `—`). A future pass can
-  // aggregate diffs across every sessionID in meta.sessionIDs.
-  const diffStatsByPath = useMemo(() => {
-    const m = new Map<string, { added: number; deleted: number }>();
-    if (!liveDiffs) return m;
-    const ws = (swarmRunMeta?.workspace ?? liveDirectory ?? '')
-      .replace(/\\/g, '/')
-      .replace(/\/+$/, '');
-    for (const d of liveDiffs) {
-      const stats = { added: d.additions ?? 0, deleted: d.deletions ?? 0 };
-      const rel = d.file.replace(/\\/g, '/').replace(/^\/+/, '');
-      m.set(rel, stats);
-      if (ws) m.set(`${ws}/${rel}`, stats);
-    }
-    return m;
-  }, [liveDiffs, swarmRunMeta?.workspace, liveDirectory]);
+  const { liveDiffs, diffStatsByPath } = useDiffStats({
+    rawDiffs,
+    workspace: swarmRunMeta?.workspace,
+    liveDirectory,
+  });
 
   // Selection-tuple state hub — see app/page-internals/use-selection-state.ts.
   // Owns focusedMsgId / selectedAgentId / selectedFileHeat / drawerOpen
