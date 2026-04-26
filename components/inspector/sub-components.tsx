@@ -96,9 +96,21 @@ export function MessageInspector({
             </span>
             <span className="flex-1 h-px bg-gradient-to-r from-transparent via-fog-700 to-transparent" />
           </div>
-          {toAgents.map((a, i) => (
-            <AgentPill key={a?.id ?? `to-${i}`} agent={a} direction="to" />
-          ))}
+          {/*
+            Internal-only parts (reasoning, step-start, step-finish) have
+            no real recipient — they're the model's own thinking + opencode's
+            turn bookkeeping. Showing "TO: human operator" was misleading
+            (the user reads it as "agent talking to human" when it's
+            actually agent talking to itself). Hide the recipient pills
+            for these part kinds; keep them for text / tool / patch / agent
+            / subtask where the recipient is meaningful.
+          */}
+          {msg.part !== 'reasoning' &&
+            msg.part !== 'step-start' &&
+            msg.part !== 'step-finish' &&
+            toAgents.map((a, i) => (
+              <AgentPill key={a?.id ?? `to-${i}`} agent={a} direction="to" />
+            ))}
         </div>
       </div>
 

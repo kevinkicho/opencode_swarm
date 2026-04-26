@@ -404,6 +404,18 @@ export function toMessages(
           ? (part.tokens as OpencodeTokenUsage | undefined)?.total
           : undefined;
 
+      // Tokens + cost surface at the message level in opencode's data
+      // model — m.info.tokens / m.info.cost are aggregates for the whole
+      // assistant turn, not per-part. Only `step-finish` parts carry a
+      // separate `tokens` field (mid-turn checkpoint). Surface the
+      // message-level aggregate on every part so clicking any chip in
+      // the inspector shows the message's totals (the user's mental
+      // model — "what did this turn cost?"); fall back to step-finish's
+      // partial total when message-level isn't set yet (mid-stream).
+      const tokensForPart = m.info.tokens?.total ?? partTokens;
+      const costForPart =
+        typeof m.info.cost === 'number' ? m.info.cost : derivedCost(m.info);
+
       out.push({
         id: part.id,
         fromAgentId: isHumanAgentId(fromAgentId) ? 'human' : fromAgentId,
@@ -420,7 +432,8 @@ export function toMessages(
           (part as { time?: { start: number; end?: number } }).time?.start,
           (part as { time?: { start: number; end?: number } }).time?.end
         ),
-        tokens: partTokens,
+        tokens: tokensForPart,
+        cost: costForPart > 0 ? costForPart : undefined,
         status,
         threadId: m.info.id,
       });
