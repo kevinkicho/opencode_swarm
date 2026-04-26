@@ -46,32 +46,19 @@ import { toFileHeat, type FileHeat } from '@/lib/opencode/transform';
 import type { BoardItem } from '@/lib/blackboard/types';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 
-// Shared key for HMR-resilient consumer lookups (see lib/server/hmr-exports.ts).
-// Export so consumers can import it alongside the types.
-export const COORDINATOR_EXPORTS_KEY = Symbol.for(
-  'opencode_swarm.coordinator.exports',
-);
-export interface CoordinatorExports {
-  // Forward-declare typeof — actual definitions below; TS hoists function
-  // types so the declaration order works out.
-  tickCoordinator: (
-    swarmRunID: string,
-    opts?: {
-      restrictToSessionID?: string;
-      excludeSessionIDs?: readonly string[];
-    },
-  ) => Promise<TickOutcome>;
-  waitForSessionIdle: (
-    sessionID: string,
-    workspace: string,
-    knownIDs: Set<string>,
-    deadline: number,
-  ) =>
-    Promise<
-      | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
-      | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' | 'tool-loop' }
-    >;
-}
+import {
+  COORDINATOR_EXPORTS_KEY,
+  type CoordinatorExports,
+  type TickOpts,
+  type TickOutcome,
+} from './coordinator/types';
+
+// Re-export public types so external imports keep working unchanged.
+// Phase 1 of #107 — types extracted; logic still lives below.
+export {
+  COORDINATOR_EXPORTS_KEY,
+};
+export type { CoordinatorExports, TickOpts, TickOutcome };
 
 const POLL_INTERVAL_MS = 1000;
 // Raised from 5 min to 10 min after the 2026-04-23 overnight run showed
@@ -249,26 +236,6 @@ async function scheduleCasDriftReplan(
 // lib/blackboard/types.ts — derivation happens in the UI.
 export function ownerIdForSession(sessionID: string): string {
   return 'ag_ses_' + sessionID.slice(-8);
-}
-
-export type TickOutcome =
-  | { status: 'picked'; sessionID: string; itemID: string; editedPaths: string[] }
-  | { status: 'stale'; sessionID: string; itemID: string; reason: string }
-  | { status: 'skipped'; reason: string };
-
-export interface TickOpts {
-  timeoutMs?: number;
-  // Restrict the session picker to a single sessionID. When set, the tick
-  // uses that session if idle, or returns skipped otherwise — it does not
-  // fall back to other sessions. The auto-ticker passes this to fan out
-  // one tick per session in parallel; map-reduce synthesis omits it so
-  // any idle session can claim the synthesize item.
-  restrictToSessionID?: string;
-  // Exclude these sessions from the dispatch picker. Used by the
-  // orchestrator-worker pattern to keep the orchestrator (session 0)
-  // focused on planning while only workers (sessions 1..N) claim todos.
-  // Applied before restrictToSessionID — a session in both is excluded.
-  excludeSessionIDs?: readonly string[];
 }
 
 // Same pattern as planner.ts::sha7 — 7-char git-short SHA1 of file contents.
