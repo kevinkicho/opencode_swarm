@@ -312,6 +312,17 @@ export interface SwarmRunResponse {
   swarmRunID: string;
   sessionIDs: string[];
   meta: SwarmRunMeta;
+  // HARDENING_PLAN.md#R1 — gate-session spawn failures surfaced.
+  // Critic / verifier / auditor sessions are spawned best-effort:
+  // a failure used to fall through to undefined silently, so a run
+  // with `enableAuditorGate: true` could launch with no auditor
+  // session and the user had no signal. Now each failure's reason
+  // appears here. Absent when all enabled gate-spawns succeeded.
+  gateFailures?: {
+    critic?: string;
+    verifier?: string;
+    auditor?: string;
+  };
 }
 
 // --- run lifecycle status ---------------------------------------------------

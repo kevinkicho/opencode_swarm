@@ -78,8 +78,14 @@ async function ensureSlots(state: TickerState): Promise<boolean> {
   if (state.sessionIDs.length > 0) return true;
   const meta = await getRun(state.swarmRunID);
   if (!meta) return false;
-  // Double-check after the await: a second fanout may have populated
-  // concurrently. Initialize only if still empty.
+  // HARDENING_PLAN.md#D8 — idempotent-race property documented.
+  // Two concurrent fanout() callers can both pass the first guard, both
+  // await getRun, and both reach this block. The inner write of
+  // `state.sessionIDs` and `state.slots` is content-deterministic
+  // (same meta.sessionIDs, same makeSlot output), so racing produces
+  // an identical state. Future edits MUST preserve this property —
+  // do not introduce non-idempotent writes (e.g., counters, side-
+  // effecting allocations) into this block without an explicit lock.
   if (state.sessionIDs.length === 0) {
     state.sessionIDs = [...meta.sessionIDs];
     for (const sid of state.sessionIDs) {
@@ -192,8 +198,12 @@ async function tickSession(
       // re-sweep at MAX_TIER again (throttled by MIN_MS_BETWEEN_SWEEPS).
       // Only hard caps (commitsCap / todosCap / minutesCap) or a manual
       // stop end the run.
+      // HARDENING_PLAN.md#D8 — attemptTierEscalation owns the flag now
+      // (sets at entry, clears on all exit paths). Pre-fix the caller
+      // checked-then-set the flag, which raced under two concurrent
+      // tickSession calls. The inner check is now a fast-path optimization
+      // only; the function self-guards regardless.
       if (!state.resweepInFlight) {
-        state.resweepInFlight = true;
         void attemptTierEscalation(state);
       }
     }

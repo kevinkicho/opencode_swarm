@@ -27,6 +27,20 @@ import type { TickerState } from './types';
 export async function attemptTierEscalation(state: TickerState): Promise<void> {
   const swarmRunID = state.swarmRunID;
 
+  // HARDENING_PLAN.md#D8 — self-guarding CAS. Pre-fix the caller did
+  // `if (!state.resweepInFlight) { state.resweepInFlight = true; void
+  // attemptTierEscalation(state); }` — a read-then-set race where two
+  // concurrent tickSession calls past the auto-stop threshold both
+  // observed false and both fired the escalation. The fix: this
+  // function owns the flag. Set it before the first await so any
+  // concurrent caller sees true and returns immediately.
+  //
+  // The inner try/catch/finally (below) clears the flag on the main
+  // exit path. The orchestrator-replan early-return is its own exit
+  // path — clear the flag explicitly there too.
+  if (state.resweepInFlight) return;
+  state.resweepInFlight = true;
+
   // PATTERN_DESIGN/orchestrator-worker.md I1 — hard cap on re-plan
   // loops. Only enforced for orchestrator-worker. Self-organizing
   // patterns can re-plan freely. Read meta on the same path we use
@@ -36,6 +50,7 @@ export async function attemptTierEscalation(state: TickerState): Promise<void> {
       `[board/auto-ticker] ${swarmRunID}: orchestrator hit MAX_ORCHESTRATOR_REPLANS=${MAX_ORCHESTRATOR_REPLANS} — stopping ticker (replan-loop-exhausted)`,
     );
     stopAutoTicker(swarmRunID, 'replan-loop-exhausted');
+    state.resweepInFlight = false; // D8 — clear flag on this exit path
     return;
   }
 

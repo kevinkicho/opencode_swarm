@@ -41,6 +41,10 @@ import { runRoleDifferentiatedKickoff } from '@/lib/server/role-differentiated';
 import { runCriticLoopKickoff } from '@/lib/server/critic-loop';
 import { runDebateJudgeKickoff } from '@/lib/server/debate-judge';
 import { runDeliberateExecuteKickoff } from '@/lib/server/deliberate-execute';
+import {
+  attachLateFailureLog,
+  raceKickoffSync,
+} from '@/lib/server/run/kickoff-guard';
 import type {
   SwarmRunListRow,
   SwarmRunRequest,
@@ -742,11 +746,17 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Step 2.5 (opt-in): spawn a dedicated critic session for the anti-
   // busywork gate. Lives outside the worker pool — NOT in sessionIDs —
-  // so the coordinator doesn't tick it. If the spawn fails we swallow
-  // the error and continue without a gate rather than fail the whole
-  // run; the behavior degrades to "same as if the flag was off," which
-  // is a safer failure mode than blocking run creation on an opt-in
-  // feature. See lib/server/blackboard/critic.ts for the review path.
+  // so the coordinator doesn't tick it. If the spawn fails we accumulate
+  // the reason into `gateFailures` and continue without a gate rather
+  // than fail the whole run; the behavior degrades to "same as if the
+  // flag was off," which is a safer failure mode than blocking run
+  // creation on an opt-in feature.
+  //
+  // HARDENING_PLAN.md#R1 — gateFailures used to fall through to
+  // undefined silently; now they're surfaced in the 201 response body
+  // so the user has a signal that an enabled gate didn't actually come
+  // up. See lib/server/blackboard/critic.ts for the review path.
+  const gateFailures: { critic?: string; verifier?: string; auditor?: string } = {};
   let criticSessionID: string | undefined;
   if (parsed.enableCriticGate) {
     try {
@@ -756,10 +766,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
       criticSessionID = critic.id;
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.warn(
         '[swarm/run] critic session spawn failed — run continues without critic gate:',
-        err instanceof Error ? err.message : String(err),
+        message,
       );
+      gateFailures.critic = message;
     }
   }
 
@@ -776,10 +788,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
       verifierSessionID = verifier.id;
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.warn(
         '[swarm/run] verifier session spawn failed — run continues without verifier gate:',
-        err instanceof Error ? err.message : String(err),
+        message,
       );
+      gateFailures.verifier = message;
     }
   }
 
@@ -798,10 +812,12 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
       auditorSessionID = auditor.id;
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
       console.warn(
         '[swarm/run] auditor session spawn failed — run continues without auditor gate:',
-        err instanceof Error ? err.message : String(err),
+        message,
       );
+      gateFailures.auditor = message;
     }
   }
 
@@ -853,157 +869,138 @@ export async function POST(req: NextRequest): Promise<Response> {
   // sweep (up to 90s) could strand the ticker right when todos finally
   // land. Starting post-sweep sidesteps the race.
   //
+  // HARDENING_PLAN.md#R1 — every per-pattern kickoff goes through the
+  // sync-throw guard. If the kickoff settles (rejects) within the 150ms
+  // window, the route returns 5xx with `{ error: 'kickoff-failed', detail }`
+  // instead of 201 with a phantom run. If it's still pending after the
+  // window, the orchestrator owns its own outcome from there — we attach
+  // a tail console.warn so late failures still leave a forensic trace.
+  //
+  // Pre-fix: every block was `kickoff().catch((err) => console.warn(...))`,
+  // returning 201 even when the orchestrator threw on its first await.
+  // That created "alive zombie" runs (MAXTEAM-2026-04-26 incident class).
+  const runID = meta.swarmRunID;
+  let kickoffPromise: Promise<unknown> | null = null;
+  let kickoffLabel = '';
+
   // Sweep failure (zero todos / timeout / opencode error) logs and exits
   // without starting the ticker. Callers can retry via
   // POST /api/swarm/run/:id/board/sweep { "overwrite": true }.
   if (parsed.pattern === 'blackboard') {
-    const runID = meta.swarmRunID;
-    runPlannerSweep(runID)
-      .then((result) => {
-        if (result.items.length === 0) {
-          console.warn(
-            `[swarm/run] blackboard sweep for ${runID} produced 0 todos — auto-ticker not started`,
-          );
-          return;
-        }
-        console.log(
-          `[swarm/run] blackboard sweep for ${runID} produced ${result.items.length} todos — starting auto-ticker`,
-        );
-        const periodicSweepMs =
-          parsed.persistentSweepMinutes && parsed.persistentSweepMinutes > 0
-            ? Math.round(parsed.persistentSweepMinutes * 60_000)
-            : 0;
-        startAutoTicker(runID, { periodicSweepMs });
-      })
-      .catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
+    kickoffLabel = 'blackboard';
+    kickoffPromise = runPlannerSweep(runID).then((result) => {
+      if (result.items.length === 0) {
         console.warn(
-          `[swarm/run] blackboard sweep for ${runID} failed:`,
-          message,
+          `[swarm/run] blackboard sweep for ${runID} produced 0 todos — auto-ticker not started`,
         );
-      });
+        return;
+      }
+      console.log(
+        `[swarm/run] blackboard sweep for ${runID} produced ${result.items.length} todos — starting auto-ticker`,
+      );
+      const periodicSweepMs =
+        parsed.persistentSweepMinutes && parsed.persistentSweepMinutes > 0
+          ? Math.round(parsed.persistentSweepMinutes * 60_000)
+          : 0;
+      startAutoTicker(runID, { periodicSweepMs });
+    });
   }
 
   // Step 5 (map-reduce only): kick off the synthesis orchestrator. Waits for
   // every map session to idle, then posts a synthesis prompt to
-  // sessionIDs[0] with each sibling's final draft embedded. Runs fully in
-  // the background — the HTTP response returns before any member has even
-  // started working, let alone finished. Failures log and exit quietly; the
-  // per-member drafts still sit in their session transcripts so the human
-  // can reconcile manually even if synthesis never lands.
+  // sessionIDs[0] with each sibling's final draft embedded. The per-member
+  // drafts still sit in their session transcripts so a human can reconcile
+  // manually even if synthesis never lands.
   if (parsed.pattern === 'map-reduce') {
-    const runID = meta.swarmRunID;
-    runMapReduceSynthesis(runID).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[swarm/run] map-reduce synthesis for ${runID} failed:`, message);
-    });
+    kickoffLabel = 'map-reduce';
+    kickoffPromise = runMapReduceSynthesis(runID);
   }
 
-  // Step 6 (council only): kick off auto-rounds. Waits for every session to
-  // idle at the end of Round 1, harvests each member's latest draft, fans
-  // out a Round-2 prompt with peer drafts embedded. Repeats for up to
-  // DEFAULT_MAX_ROUNDS total rounds. Runs fully in the background — the
-  // ReconcileStrip manual "↻ round 2" button still works and can fire
-  // additional rounds on top if a human wants more deliberation than the
-  // auto-cadence provides.
+  // Step 6 (council only): kick off auto-rounds. Waits for every session
+  // to idle at end of Round 1, harvests each member's latest draft, fans
+  // out a Round-2 prompt. The ReconcileStrip manual "↻ round 2" button
+  // still works on top.
   if (parsed.pattern === 'council') {
-    const runID = meta.swarmRunID;
-    runCouncilRounds(runID).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[swarm/run] council auto-rounds for ${runID} failed:`, message);
-    });
+    kickoffLabel = 'council';
+    kickoffPromise = runCouncilRounds(runID);
   }
 
   // Step 7 (orchestrator-worker only): post the orchestrator intro to
-  // session 0 with agent='orchestrator', fire the initial planner
-  // sweep against that same session, then start the auto-ticker with
-  // the orchestrator excluded from worker dispatch. Runs fully in the
-  // background — the HTTP response returns before the orchestrator has
-  // even started thinking. Failures log and exit; the sessions exist
-  // and the human can manually kick things off from the composer.
+  // session 0, fire planner sweep against it, then start auto-ticker with
+  // the orchestrator excluded from worker dispatch.
   if (parsed.pattern === 'orchestrator-worker') {
-    const runID = meta.swarmRunID;
-    runOrchestratorWorkerKickoff(runID, {
+    kickoffLabel = 'orchestrator-worker';
+    kickoffPromise = runOrchestratorWorkerKickoff(runID, {
       persistentSweepMinutes: parsed.persistentSweepMinutes,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[swarm/run] orchestrator-worker kickoff for ${runID} failed:`,
-        message,
-      );
     });
   }
 
-  // Step 8 (role-differentiated only): post role-framed intros to workers,
-  // fire planner sweep on session 0 (the architect), start auto-ticker
-  // for standard board-claim dispatch. All sessions are workers from the
-  // coordinator's POV — roles shape what they self-select, not routing.
+  // Step 8 (role-differentiated only): post role-framed intros, fire
+  // planner sweep on session 0, start auto-ticker for standard
+  // board-claim dispatch.
   if (parsed.pattern === 'role-differentiated') {
-    const runID = meta.swarmRunID;
-    runRoleDifferentiatedKickoff(runID, {
+    kickoffLabel = 'role-differentiated';
+    kickoffPromise = runRoleDifferentiatedKickoff(runID, {
       persistentSweepMinutes: parsed.persistentSweepMinutes,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[swarm/run] role-differentiated kickoff for ${runID} failed:`,
-        message,
-      );
     });
   }
 
-  // Step 9 (critic-loop only): prime the critic with its contract, kick
-  // the worker into producing a draft, loop review-revise until the
-  // critic approves or the max-iterations cap fires.
+  // Step 9 (critic-loop only): prime the critic, kick the worker, loop
+  // review-revise until critic approves or max-iterations fires.
   if (parsed.pattern === 'critic-loop') {
-    const runID = meta.swarmRunID;
-    runCriticLoopKickoff(runID, {
+    kickoffLabel = 'critic-loop';
+    kickoffPromise = runCriticLoopKickoff(runID, {
       maxIterations: parsed.criticMaxIterations,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[swarm/run] critic-loop kickoff for ${runID} failed:`,
-        message,
-      );
     });
   }
 
-  // Step 10 (debate-judge only): prime judge + generators, run up to
-  // debateMaxRounds rounds of generators-propose / judge-evaluate,
-  // terminating on WINNER / MERGE verdict or round cap.
+  // Step 10 (debate-judge only): prime judge + generators, run rounds.
   if (parsed.pattern === 'debate-judge') {
-    const runID = meta.swarmRunID;
-    runDebateJudgeKickoff(runID, {
+    kickoffLabel = 'debate-judge';
+    kickoffPromise = runDebateJudgeKickoff(runID, {
       maxRounds: parsed.debateMaxRounds,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[swarm/run] debate-judge kickoff for ${runID} failed:`,
-        message,
-      );
     });
   }
 
-  // Step 11 (deliberate-execute only): compositional pattern. Runs
-  // council-style deliberation rounds, synthesizes the converged drafts
-  // into concrete todos, then kicks into blackboard-style execution on
-  // the same session pool.
+  // Step 11 (deliberate-execute only): compositional pattern.
   if (parsed.pattern === 'deliberate-execute') {
-    const runID = meta.swarmRunID;
-    runDeliberateExecuteKickoff(runID, {
+    kickoffLabel = 'deliberate-execute';
+    kickoffPromise = runDeliberateExecuteKickoff(runID, {
       persistentSweepMinutes: parsed.persistentSweepMinutes,
-    }).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        `[swarm/run] deliberate-execute kickoff for ${runID} failed:`,
-        message,
-      );
     });
+  }
+
+  // Apply the sync-throw guard. R1's contract: if the kickoff threw
+  // synchronously (or rejected within 150ms), return 5xx so the user
+  // doesn't get a "run created" 201 for a run whose orchestrator is
+  // already dead.
+  if (kickoffPromise) {
+    const sync = await raceKickoffSync(kickoffPromise);
+    if (sync.kind === 'rejected') {
+      console.warn(
+        `[swarm/run] ${kickoffLabel} kickoff for ${runID} rejected synchronously:`,
+        sync.error.message,
+      );
+      return Response.json(
+        {
+          error: 'kickoff-failed',
+          detail: sync.error.message,
+          swarmRunID: runID,
+          sessionIDs: meta.sessionIDs,
+        },
+        { status: 502 },
+      );
+    }
+    if (sync.kind === 'pending') {
+      attachLateFailureLog(kickoffPromise, kickoffLabel, runID);
+    }
   }
 
   const payload: SwarmRunResponse = {
     swarmRunID: meta.swarmRunID,
     sessionIDs: meta.sessionIDs,
     meta,
+    ...(Object.keys(gateFailures).length > 0 ? { gateFailures } : {}),
   };
   return Response.json(payload, { status: 201 });
 }

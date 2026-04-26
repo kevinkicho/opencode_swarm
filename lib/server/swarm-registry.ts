@@ -23,6 +23,10 @@ import readline from 'node:readline';
 import { createGunzip } from 'node:zlib';
 
 import { getSessionMessagesServer } from './opencode-server';
+import {
+  validateSwarmRunEvent,
+  validateSwarmRunMeta,
+} from './swarm-registry-validate';
 import { priceFor } from '../opencode/pricing';
 import type {
   OpencodeMessage,
@@ -248,7 +252,30 @@ export async function getRun(swarmRunID: string): Promise<SwarmRunMeta | null> {
   }
   try {
     const raw = await fs.readFile(metaPath(swarmRunID), 'utf8');
-    const value = JSON.parse(raw) as SwarmRunMeta;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      // HARDENING_PLAN.md#R7 — JSON parse failure on disk read.
+      // Pre-fix: this would throw and propagate up; downstream callers
+      // saw the failure as "run is broken" without context. Treat as
+      // missing — the validator path warns once, then null cascades.
+      console.warn(
+        `[swarm-registry] meta.json for ${swarmRunID} is corrupt JSON:`,
+        parseErr instanceof Error ? parseErr.message : String(parseErr),
+      );
+      cache.set(swarmRunID, { value: null, fetchedAt: Date.now() });
+      return null;
+    }
+    // R7 — validate the parsed shape before trusting it. A truncated
+    // meta.json that happens to be valid JSON (e.g., `{}`) would have
+    // passed the cast pre-fix and propagated undefined fields into
+    // every consumer.
+    const value = validateSwarmRunMeta(parsed);
+    if (value === null) {
+      cache.set(swarmRunID, { value: null, fetchedAt: Date.now() });
+      return null;
+    }
     cache.set(swarmRunID, { value, fetchedAt: Date.now() });
     return value;
   } catch (err) {
@@ -854,12 +881,18 @@ export async function* readEvents(
     const sinceTs = opts.sinceTs;
     for await (const line of lines) {
       if (!line) continue;
-      let ev: SwarmRunEvent;
+      // HARDENING_PLAN.md#R7 — validate event shape per line.
+      // Pre-fix the cast trusted any line that parsed as JSON,
+      // including hand-edited noise that would have surfaced as
+      // undefined fields downstream.
+      let parsed: unknown;
       try {
-        ev = JSON.parse(line) as SwarmRunEvent;
+        parsed = JSON.parse(line);
       } catch {
         continue;
       }
+      const ev = validateSwarmRunEvent(parsed);
+      if (ev === null) continue;
       if (sinceTs !== undefined && ev.ts <= sinceTs) continue;
       yield ev;
     }

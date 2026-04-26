@@ -65,7 +65,65 @@ import { turnTimeoutFor, zombieThresholdFor } from './timeouts';
 import type { TickOpts, TickOutcome } from './types';
 import { waitForSessionIdle } from './wait';
 
+// HARDENING_PLAN.md#D9 — per-swarmRunID dispatch mutex.
+//
+// Pre-fix: tickCoordinator had no per-run lock. The auto-ticker fans out
+// via restrictToSessionID with a per-session inFlight flag, but a user
+// POST to /board/tick (with no restriction) could race the auto-ticker
+// on the same swarmRunID — both pick the same idle session, both call
+// getSessionMessagesServer, both pick the same todo, the second loses
+// CAS at transitionStatus. Lossy-but-correct (the SQL CAS was the only
+// real protection) but expensive — one full opencode read trip wasted
+// per race.
+//
+// The mutex serializes all entries to tickCoordinator(runID) per run
+// regardless of caller. The per-session inFlight flag still exists
+// inside fanout() for same-session re-entry within the mutex.
+//
+// globalThis-keyed so HMR doesn't reset the mutex map mid-flight (same
+// pattern as criticLocks/verifierLocks/auditLocks per D2).
+const DISPATCH_MUTEX_KEY = Symbol.for('opencode_swarm.dispatchMutexByRun.v1');
+function dispatchMutexByRun(): Map<string, Promise<unknown>> {
+  const g = globalThis as { [DISPATCH_MUTEX_KEY]?: Map<string, Promise<unknown>> };
+  const slot = g[DISPATCH_MUTEX_KEY];
+  if (slot instanceof Map) return slot;
+  const next = new Map<string, Promise<unknown>>();
+  g[DISPATCH_MUTEX_KEY] = next;
+  return next;
+}
+
+async function withDispatchMutex<T>(
+  swarmRunID: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const locks = dispatchMutexByRun();
+  const prior = locks.get(swarmRunID) ?? Promise.resolve();
+  // Chain via then(fn, fn) so a prior rejection doesn't poison the chain
+  // — each tick runs after the prior settles regardless of outcome.
+  const next = prior.then(fn, fn) as Promise<T>;
+  locks.set(swarmRunID, next);
+  try {
+    return await next;
+  } finally {
+    if (locks.get(swarmRunID) === next) {
+      locks.delete(swarmRunID);
+    }
+  }
+}
+
+// Public entry point — serializes per swarmRunID. Internal logic in
+// tickCoordinatorImpl below; keeping the wrapper thin makes the mutex
+// boundary obvious for future readers.
 export async function tickCoordinator(
+  swarmRunID: string,
+  opts: TickOpts = {},
+): Promise<TickOutcome> {
+  return withDispatchMutex(swarmRunID, () =>
+    tickCoordinatorImpl(swarmRunID, opts),
+  );
+}
+
+async function tickCoordinatorImpl(
   swarmRunID: string,
   opts: TickOpts = {},
 ): Promise<TickOutcome> {

@@ -121,11 +121,26 @@ export function useLiveBoard(swarmRunID: string | null): LiveBoard {
       } catch {
         return;
       }
-      if (frame.type === 'board.snapshot') {
-        byId.clear();
-        for (const it of frame.items) byId.set(it.id, it);
-      } else {
-        byId.set(frame.item.id, frame.item);
+      // HARDENING_PLAN.md#R2 — exhaustive switch with default branch.
+      // Pre-fix: an `if/else` assumed any non-snapshot frame was an
+      // item-update, so a new frame type from the server would either
+      // crash on undefined frame.item or silently shadow real updates.
+      // The default warn surfaces drift in dev logs.
+      switch (frame.type) {
+        case 'board.snapshot':
+          byId.clear();
+          for (const it of frame.items) byId.set(it.id, it);
+          break;
+        case 'board.item.inserted':
+        case 'board.item.updated':
+          byId.set(frame.item.id, frame.item);
+          break;
+        default:
+          // Compile-time exhaustiveness: if a new BoardFrame variant is
+          // added, TypeScript flags this assignment. Runtime: log so a
+          // server-side frame addition without client update is visible.
+          console.warn('[blackboard.live] unknown board frame', frame);
+          return;
       }
       setItems(sortBoardItems([...byId.values()]));
       setError(null);
