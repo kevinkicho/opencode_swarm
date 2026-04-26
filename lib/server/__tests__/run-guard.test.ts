@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withRunGuard } from '../run-guard';
-import type { SwarmRunMeta } from '../../swarm-run-types';
+import { fakeMeta } from './_helpers/fake-meta';
 
 // Mock the two modules withRunGuard depends on so the test stays
 // pure (no fs reads, no opencode HTTP calls). We exercise the
@@ -23,18 +23,6 @@ const { recordPartialOutcome } = await import('../degraded-completion');
 const mockGetRun = vi.mocked(getRun);
 const mockFinalizeRun = vi.mocked(finalizeRun);
 const mockRecordPartialOutcome = vi.mocked(recordPartialOutcome);
-
-const fakeMeta = (overrides: Partial<SwarmRunMeta> = {}): SwarmRunMeta =>
-  ({
-    swarmRunID: 'run_test_x',
-    pattern: 'critic-loop',
-    workspace: '/tmp/x',
-    sessionIDs: ['s1', 's2'],
-    createdAt: 0,
-    title: 't',
-    teamModels: [],
-    ...overrides,
-  }) as SwarmRunMeta;
 
 beforeEach(() => {
   mockGetRun.mockReset();

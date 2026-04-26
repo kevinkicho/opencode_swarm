@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { OpencodeMessage } from '../../../opencode/types';
+import { makeAssistant } from '../../__tests__/_helpers/fake-message';
+import type { OpencodeServerMocks } from '../../__tests__/_helpers/mock-opencode';
 
 // #100 — waitForSessionIdle deadline-abort test. The MAXTEAM-2026-04-26
 // critic-loop runaway burned 955K tokens / 30 min on a worker turn that
@@ -17,11 +18,12 @@ import type { OpencodeMessage } from '../../../opencode/types';
 // timing. POLL_INTERVAL_MS = 1000 (private to coordinator), so the test
 // takes ~1-2s to complete.
 
-vi.mock('../../opencode-server', () => ({
-  getSessionMessagesServer: vi.fn(),
-  abortSessionServer: vi.fn(),
-  postSessionMessageServer: vi.fn(),
+const opencodeMocks: OpencodeServerMocks = vi.hoisted(() => ({
+  getSessionMessagesServer: vi.fn().mockResolvedValue([]),
+  abortSessionServer: vi.fn().mockResolvedValue(undefined),
+  postSessionMessageServer: vi.fn().mockResolvedValue(undefined),
 }));
+vi.mock('../../opencode-server', () => opencodeMocks);
 // Other transitively-loaded modules don't need behavior mocks for this
 // test (they're only touched by other coordinator code paths). But we
 // mock the SQLite-backed ones so that opening the module doesn't write
@@ -44,29 +46,9 @@ vi.mock('../planner', () => ({
 }));
 
 const { waitForSessionIdle } = await import('../coordinator');
-const { getSessionMessagesServer, abortSessionServer } = await import(
-  '../../opencode-server'
-);
 
-const mockGet = vi.mocked(getSessionMessagesServer);
-const mockAbort = vi.mocked(abortSessionServer);
-
-function makeAssistant(opts: {
-  id: string;
-  completed?: number | null;
-  parts?: number;
-  error?: unknown;
-}): OpencodeMessage {
-  return {
-    info: {
-      id: opts.id,
-      role: 'assistant',
-      time: { created: Date.now(), completed: opts.completed ?? null },
-      ...(opts.error ? { error: opts.error } : {}),
-    },
-    parts: Array(opts.parts ?? 1).fill({ type: 'text', text: 'streaming…' }),
-  } as unknown as OpencodeMessage;
-}
+const mockGet = opencodeMocks.getSessionMessagesServer;
+const mockAbort = opencodeMocks.abortSessionServer;
 
 beforeEach(() => {
   mockGet.mockReset();
