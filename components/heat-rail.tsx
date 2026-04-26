@@ -96,9 +96,11 @@ export function HeatRail({
   // derived `ag_<name>_<last8>` id. Build a reverse map via agent.sessionID
   // so per-file toucher badges resolve correctly. Fallback to empty map
   // if an agent doesn't carry sessionID (mock fixtures).
-  const agentBySession = new Map<string, Agent>();
-  for (const a of agents) if (a.sessionID) agentBySession.set(a.sessionID, a);
-  const maxCount = Math.max(1, ...heat.map((h) => h.editCount));
+    const agentBySession = new Map<string, Agent>();
+    for (const a of agents) if (a.sessionID) agentBySession.set(a.sessionID, a);
+    const maxCount = Math.max(1, ...heat.map((h) => h.editCount));
+    const totalEdits = useMemo(() => heat.reduce((sum, h) => sum + h.editCount, 0), [heat]);
+
 
   // Phase 5.1 — view toggle between flat hot-first list and a
   // VSCode-style file tree grouped by directory. STATUS heat-tab
@@ -106,15 +108,32 @@ export function HeatRail({
   // (un-edited) workspace files on the tree, sourced from the
   // gitignore-aware /tree endpoint. Default = list — keeps muscle
   // memory for users on the previous build.
-  const [view, setView] = useState<'list' | 'tree' | 'all'>('list');
+  const [view, setView] = useState<'list' | 'tree' | 'all'>('tree');
   const [filter, setFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState<'hot' | 'alpha'>('hot');
 
   // Filter heat data based on the current filter string (case-insensitive)
   const filteredHeat = useMemo(() => {
-    if (!filter) return heat;
+    let data = heat;
+    if (filter) {
+      const f = filter.toLowerCase();
+      data = heat.filter((h) => h.path.toLowerCase().includes(f));
+    }
+
+    if (sortOrder === 'alpha') {
+      return [...data].sort((a, b) => a.path.localeCompare(b.path));
+    }
+    return [...data].sort((a, b) => b.editCount - a.editCount);
+  }, [heat, filter, sortOrder]);
+
+  // Filter the workspace file list for 'all' mode so the tree
+  // only shows matching paths (and their ancestors). Cold files that
+  // don't match the filter are dropped.
+  const filteredWorkspaceFiles = useMemo(() => {
+    if (!filter || !workspaceFiles) return workspaceFiles;
     const f = filter.toLowerCase();
-    return heat.filter((h) => h.path.toLowerCase().includes(f));
-  }, [heat, filter]);
+    return workspaceFiles.filter((p) => p.toLowerCase().includes(f));
+  }, [workspaceFiles, filter]);
 
   // Lazy-fetch the workspace file list for `all` mode. We only fire
 
@@ -160,17 +179,18 @@ export function HeatRail({
 
   const body =
     view === 'tree' || view === 'all' ? (
-      <HeatTreeView
-        heat={filteredHeat}
-        workspace={workspace}
-        maxCount={maxCount}
-        agentBySession={agentBySession}
-        diffStatsByPath={diffStatsByPath}
-        onSelect={onSelect}
-        coldPaths={view === 'all' ? workspaceFiles ?? [] : null}
-        coldLoading={view === 'all' && workspaceFiles === null && !workspaceFilesError}
-        coldError={view === 'all' ? workspaceFilesError : null}
-      />
+       <HeatTreeView
+         heat={filteredHeat}
+         workspace={workspace}
+         maxCount={maxCount}
+         agentBySession={agentBySession}
+         diffStatsByPath={diffStatsByPath}
+         onSelect={onSelect}
+         coldPaths={view === 'all' ? filteredWorkspaceFiles ?? [] : null}
+         coldLoading={view === 'all' && workspaceFiles === null && !workspaceFilesError}
+         coldError={view === 'all' ? workspaceFilesError : null}
+       />
+
     ) : (
       <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
         {filteredHeat.length === 0 ? (
@@ -199,39 +219,69 @@ export function HeatRail({
         heat
       </span>
        <span className="font-mono text-micro text-fog-700 tabular-nums">
-         {heat.length} files
+         {heat.length} files · {totalEdits} edits
        </span>
-       <div className="ml-auto flex items-center gap-2">
-         <input
-           type="text"
-           value={filter}
-           onChange={(e) => setFilter(e.target.value)}
-           placeholder="filter paths..."
-           className="h-4 w-24 px-1.5 font-mono text-micro text-fog-300 bg-ink-900 border border-ink-700 outline-none focus:border-fog-500 transition-colors placeholder:text-fog-700"
-         />
-         <div className="flex items-center gap-0.5">
-           <ViewToggleButton
-             active={view === 'list'}
-             onClick={() => setView('list')}
-             label="list"
-             tooltip="hot-first flat list"
-           />
-           <ViewToggleButton
-             active={view === 'tree'}
-             onClick={() => setView('tree')}
-             label="tree"
-             tooltip="grouped by directory · hot files only"
-           />
-           {swarmRunID && (
-             <ViewToggleButton
-               active={view === 'all'}
-               onClick={() => setView('all')}
-               label="all"
-               tooltip="full workspace tree · cold files muted (gitignore-aware)"
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSortOrder(sortOrder === 'hot' ? 'alpha' : 'hot')}
+            className="h-4 px-1.5 rounded font-mono text-micro uppercase tracking-widest2 transition cursor-pointer bg-ink-900 border border-ink-700 text-fog-500 hover:text-fog-200 hover:bg-ink-800/50"
+          >
+            sort: {sortOrder === 'hot' ? 'hot' : 'α'}
+          </button>
+          <div className="relative flex items-center">
+           <div className="relative flex items-center group">
+             <input
+               type="text"
+               value={filter}
+               onChange={(e) => setFilter(e.target.value)}
+               placeholder="filter paths..."
+               className="h-4 w-24 px-1.5 font-mono text-micro text-fog-300 bg-ink-900 border border-ink-700 outline-none focus:border-fog-500 transition-colors placeholder:text-fog-700"
              />
-           )}
-         </div>
-       </div>
+             {filter && (
+               <button
+                 type="button"
+                 onClick={() => setFilter('')}
+                 className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 flex items-center justify-center rounded-full bg-ink-700 text-fog-500 hover:text-fog-200 transition-colors"
+               >
+                 <span className="text-[8px] leading-none">✕</span>
+               </button>
+             )}
+           </div>
+
+            {filter && (
+              <button
+                type="button"
+                onClick={() => setFilter('')}
+                className="absolute right-1 top-1/2 -translate-y-1/2 h-3 w-3 flex items-center justify-center rounded-full font-mono text-[8px] text-fog-500 hover:text-fog-200 hover:bg-ink-800 transition-colors"
+              >
+                ×
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-0.5">
+            <ViewToggleButton
+              active={view === 'list'}
+              onClick={() => setView('list')}
+              label="list"
+              tooltip="hot-first flat list"
+            />
+            <ViewToggleButton
+              active={view === 'tree'}
+              onClick={() => setView('tree')}
+              label="tree"
+              tooltip="grouped by directory · hot files only"
+            />
+            {swarmRunID && (
+              <ViewToggleButton
+                active={view === 'all'}
+                onClick={() => setView('all')}
+                label="all"
+                tooltip="full workspace tree · cold files muted (gitignore-aware)"
+              />
+            )}
+          </div>
+        </div>
     </div>
   );
 
@@ -349,10 +399,11 @@ function HeatRow({
         }}
       >
         {/* Intensity bar — fixed 22px column, bar width scales with count. */}
-        <Tooltip
-          content={`${heat.editCount} edit${heat.editCount === 1 ? '' : 's'}`}
-          side="right"
-        >
+         <Tooltip
+           content={`${heat.editCount} / ${maxCount} edits`}
+           side="right"
+         >
+
           <span
             className="relative h-2 w-full bg-ink-800 rounded-sm overflow-hidden cursor-default"
             aria-label={`intensity ${Math.round(intensity * 100)}%`}
@@ -732,19 +783,114 @@ function HeatTreeRow({
 
   return (
     <li className="relative min-w-0">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handleClick}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handleClick();
+        <Tooltip
+          content={
+            <div className="space-y-1 max-w-[420px]">
+              <div className="font-mono text-[10.5px] text-fog-200 break-all">
+                {node.fullPath}
+              </div>
+              <div className="font-mono text-[10.5px] text-fog-400 tabular-nums">
+                {new Date(node.lastTouchedMs).toLocaleString()}
+              </div>
+              <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 tabular-nums">
+                {fmtAgo(node.lastTouchedMs)} ago
+              </div>
+              {touchers.length > 0 && (
+                <div className="flex items-center gap-1 pt-0.5 flex-wrap">
+                  <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
+                    touched by
+                  </span>
+                  {touchers.map((a) => (
+                    <span
+                      key={a.id}
+                      className={clsx(
+                        'inline-flex items-center h-4 px-1 rounded-sm font-mono text-[9px] leading-none',
+                        accentBadge[a.accent],
+                      )}
+                    >
+                      {a.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           }
-        }}
+          side="right"
+        >
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={handleClick}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleClick();
+              }
+            }}
+            className="h-5 px-3 grid items-center gap-1.5 cursor-pointer hover:bg-ink-800/40 transition"
+            style={{
+              gridTemplateColumns: `${indent}px 12px 16px minmax(0, 1fr) 32px 36px`,
+            }}
+          >
+            <span /> {/* indent spacer */}
+            <span
+              className={clsx(
+                'font-mono text-[9px] text-fog-600 select-none',
+                !isDir && 'invisible',
+              )}
+            >
+              {isExpanded ? '▾' : '▸'}
+            </span>
+            <span className="h-2 w-3 rounded-sm overflow-hidden bg-ink-900/60">
+              <span
+                className={clsx('block h-full transition-all', barTone)}
+                style={{ width: `${Math.max(8, intensity * 100)}%` }}
+              />
+            </span>
+            <span
+              className={clsx(
+                'font-mono text-[10.5px] truncate',
+                isDir ? 'text-fog-300' : 'text-fog-200',
+              )}
+            >
+              {node.name}
+              {isDir && (
+                <span className="ml-1 text-fog-700 normal-case text-[9px]">
+                  {node.fileCount} file{node.fileCount === 1 ? '' : 's'}
+                </span>
+              )}
+            </span>
+            <span className="font-mono text-[10px] tabular-nums text-fog-500 text-right">
+              {node.editCount}×
+            </span>
+            <span className="font-mono text-[10px] tabular-nums text-fog-700 text-right">
+              {fmtAgo(node.lastTouchedMs)}
+            </span>
+          </div>
+        </Tooltip>
+
+                      {a.name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          }
+          side="right"
+        >
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={handleClick}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleClick();
+              }
+            }}
         className="h-5 px-3 grid items-center gap-1.5 cursor-pointer hover:bg-ink-800/40 transition"
         style={{
-          gridTemplateColumns: `${indent}px 12px 16px minmax(0, 1fr) 32px 36px`,
+          gridTemplateColumns: `${indent}px 12px 16px minmax(0, 1fr) 32px 32px 32px 36px`,
         }}
         title={node.fullPath}
       >
@@ -760,12 +906,17 @@ function HeatTreeRow({
         </span>
         {/* Intensity bar — dir + file both show one. Dir's reflects
             sum of descendant edits, normalized against the run-wide max. */}
-        <span className="h-2 w-3 rounded-sm overflow-hidden bg-ink-900/60">
-          <span
-            className={clsx('block h-full transition-all', barTone)}
-            style={{ width: `${Math.max(8, intensity * 100)}%` }}
-          />
-        </span>
+        <Tooltip
+          content={`${node.editCount} edit${node.editCount === 1 ? '' : 's'}`}
+          side="right"
+        >
+          <span className="h-2 w-3 rounded-sm overflow-hidden bg-ink-900/60">
+            <span
+              className={clsx('block h-full transition-all', barTone)}
+              style={{ width: `${Math.max(8, intensity * 100)}%` }}
+            />
+          </span>
+        </Tooltip>
         <span
           className={clsx(
             'font-mono text-[10.5px] truncate',
@@ -779,6 +930,22 @@ function HeatTreeRow({
             </span>
           )}
         </span>
+        <span
+          className={clsx(
+            'font-mono text-[10.5px] tabular-nums text-right',
+            diffStats && diffStats.added > 0 ? 'text-mint' : 'text-fog-700',
+          )}
+        >
+          {!diffStats ? '—' : diffStats.added > 0 ? `+${diffStats.added}` : ''}
+        </span>
+        <span
+          className={clsx(
+            'font-mono text-[10.5px] tabular-nums text-right',
+            diffStats && diffStats.deleted > 0 ? 'text-rust' : 'text-fog-700',
+          )}
+        >
+          {!diffStats ? '—' : diffStats.deleted > 0 ? `-${diffStats.deleted}` : ''}
+        </span>
         <span className="font-mono text-[10px] tabular-nums text-fog-500 text-right">
           {node.editCount}×
         </span>
@@ -786,6 +953,8 @@ function HeatTreeRow({
           {fmtAgo(node.lastTouchedMs)}
         </span>
       </div>
+
+        </Tooltip>
     </li>
   );
 }

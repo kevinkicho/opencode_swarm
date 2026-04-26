@@ -224,6 +224,17 @@ async function scheduleCasDriftReplan(
       overwrite: true,
       includeBoardContext: true,
     });
+
+    // Reopen items tagged as stale due to CAS drift so they can be re-picked.
+    const { bulkReopenStaleItems, listBoardItems } = await import('./store');
+    const all = listBoardItems(swarmRunID);
+    const staleItems = all
+      .filter((i) => i.status === 'stale' && i.staleSinceSha)
+      .map((i) => i.id);
+    if (staleItems.length > 0) {
+      const count = bulkReopenStaleItems(swarmRunID, staleItems);
+      console.log(`[coordinator] CAS-drift: reopened ${count}/${staleItems.length} stale items`);
+    }
   } catch (err) {
     console.warn(
       `[coordinator] CAS-drift replan failed for ${swarmRunID}:`,
@@ -1242,11 +1253,17 @@ export async function tickCoordinator(
       }
     }
     if (driftedPaths.length > 0) {
-      const detail = driftedPaths.slice(0, 3).join(',');
-      const more = driftedPaths.length > 3 ? ` +${driftedPaths.length - 3}` : '';
-      const note = `[cas-drift:${detail}${more}]`;
+      const driftedDeltas = await Promise.all(
+        driftedPaths.map(async (p) => {
+          const anchor = todo.fileHashes?.find((a) => a.path === p);
+          const currentSha = await sha7(path.resolve(meta.workspace, p)).catch(() => 'none');
+          return `${p} (${anchor?.sha ?? 'none'} → ${currentSha})`;
+        }),
+      );
+      const detail = driftedDeltas.join('\n').trim();
+      const note = `[cas-drift:${detail}]`;
       console.log(
-        `[coordinator] ${swarmRunID}/${todo.id}: CAS drift on ${driftedPaths.length} file(s) (${detail}${more}) — moving to stale before critic`,
+        `[coordinator] ${swarmRunID}/${todo.id}: CAS drift on ${driftedPaths.length} file(s):\n${detail} — moving to stale before critic`,
       );
       const rolled = transitionStatus(swarmRunID, todo.id, {
         from: 'in-progress',
@@ -1266,7 +1283,7 @@ export async function tickCoordinator(
           status: 'stale',
           sessionID,
           itemID: todo.id,
-          reason: `cas-drift: ${detail}${more}`,
+          reason: `cas-drift: ${detail}`,
         };
       }
       // CAS rollback lost race (another agent moved the item) — fall
