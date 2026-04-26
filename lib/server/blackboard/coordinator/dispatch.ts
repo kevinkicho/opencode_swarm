@@ -583,6 +583,56 @@ export async function tickCoordinator(
     }
   }
 
+  // #7.Q42 — phantom-completion guard. The legitimate "no-edit done" cases
+  // are: (a) a worker explicitly replies with "skip: <reason>" because the
+  // todo was wrong / already done, OR (b) a worker did real research-only
+  // tool calls (read/grep/glob) on a survey-shape todo that needs no edits.
+  // Both shapes leave editedPaths empty. The PHANTOM case — discovered on
+  // run_mog101p0_7js6lt 2026-04-26 — is a worker that emits text-only
+  // responses containing pseudo-tool-call markup like
+  // `<tool>glob<arg_key>...</arg_value></tool|>` as plain text, makes ZERO
+  // real tool calls, never edits anything, but the assistant text is non-
+  // empty so the dispatcher trusted it as a completed turn → 9 phantom
+  // "done" todos with no real artifacts.
+  //
+  // Reject this case: if the worker's new turns contain ZERO real tool
+  // parts AND ZERO patch parts AND the text doesn't begin with "skip:",
+  // bounce to stale. Legitimate research work passes (real tool parts);
+  // legitimate skip replies pass (skip: prefix); only the
+  // pseudo-tool-text class fails the guard.
+  if (editedPaths.length === 0) {
+    let realToolPartCount = 0;
+    let realPatchPartCount = 0;
+    for (const m of waited.messages) {
+      if (!waited.newIDs.has(m.info.id)) continue;
+      if (m.info.role !== 'assistant') continue;
+      for (const p of m.parts) {
+        if (p.type === 'tool') realToolPartCount += 1;
+        if (p.type === 'patch') realPatchPartCount += 1;
+      }
+    }
+    if (realToolPartCount === 0 && realPatchPartCount === 0) {
+      const workerText = extractWorkerAssistantText(
+        waited.messages,
+        waited.newIDs,
+      );
+      const looksLikeSkip = /^\s*skip\s*:/i.test(workerText);
+      if (!looksLikeSkip) {
+        const note = '[phantom-no-tools] worker produced text-only response with zero real tool/patch parts and no skip: prefix';
+        console.warn(
+          `[coordinator] ${swarmRunID}/${todo.id}: ${note} (text=${workerText.length} chars)`,
+        );
+        const outcome = retryOrStale(swarmRunID, todo, note);
+        return {
+          status: 'stale',
+          sessionID,
+          itemID: todo.id,
+          reason: `${outcome}: phantom-no-tools`,
+        };
+      }
+    }
+  }
+
   // Anti-busywork critic gate (opt-in via meta.enableCriticGate). Runs
   // between "turn completed" and "mark done" so a busywork verdict keeps
   // the item reclaim-able via retry-stale instead of shipping a green
