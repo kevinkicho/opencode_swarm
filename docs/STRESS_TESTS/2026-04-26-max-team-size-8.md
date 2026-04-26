@@ -166,18 +166,24 @@ These recommendations feed task #101 (kickoff WARN) + task #103
 
 ## Filed follow-up tasks
 
-| Task | Subject |
-|---|---|
-| #95 | debate-judge: investigate why error-state didn't fire #73 partial-outcome |
-| #96 | role-differentiated: silent stop after 3 done — needs richer log trail |
-| #97 | map-reduce at teamSize 8: synthesis-starved, 0 done despite 10M+ tokens |
-| #98 | deliberate-execute at teamSize 8: stuck in deliberation phase |
-| #99 | blackboard at teamSize 8: planner sweep cycles without seeding board |
-| #100 | critic-loop: 955K-token worker turn never completes |
-| #101 | Per-pattern teamSize sanity WARN at kickoff |
-| #102 | Pre-dev-restart `npx tsc --noEmit` gate |
-| #103 | new-run picker: per-pattern teamSize hints + recommended max |
-| #104 | Stuck-deliberation detector for high-token zero-output runs |
+| Task | Subject | Status |
+|---|---|---|
+| #95 | debate-judge: investigate why error-state didn't fire #73 partial-outcome | pending |
+| #96 | role-differentiated: silent stop after 3 done — needs richer log trail | pending |
+| #97 | map-reduce at teamSize 8: synthesis-starved, 0 done despite 10M+ tokens | pending |
+| #98 | deliberate-execute at teamSize 8: stuck in deliberation phase | pending |
+| #99 | blackboard at teamSize 8: planner sweep cycles without seeding board | pending |
+| #100 | critic-loop: 955K-token worker turn never completes | pending |
+| #101 | Per-pattern teamSize sanity WARN at kickoff | **shipped 2026-04-26** |
+| #102 | Pre-dev-restart `npx tsc --noEmit` gate | **shipped 2026-04-26** (`0c7e895`) |
+| #103 | new-run picker: per-pattern teamSize hints + recommended max | **shipped 2026-04-26** |
+| #104 | Stuck-deliberation detector for high-token zero-output runs | pending |
+
+The recommended-max column drives both #101 (server WARN) and #103
+(picker hint). When the table above gets re-derived from a follow-up
+stress test, update `lib/swarm-patterns.ts::patternMeta[*].recommendedMax`
+to keep the three signals (this ledger, server WARN, picker hint) in
+sync.
 
 ## Comparison baseline
 

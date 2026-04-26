@@ -17,6 +17,7 @@ import {
   patternMeta,
   patternAccentText,
   patternAccentBorder,
+  teamSizeWarningMessage,
   type PatternMeta,
 } from '@/lib/swarm-patterns';
 import type { SwarmPattern } from '@/lib/swarm-types';
@@ -196,6 +197,16 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     [teamCounts]
   );
   const hasDirective = directive.trim().length > 0;
+
+  // Per-pattern recommended-max readout (#103). Reads patternMeta.recommendedMax
+  // — the same value the kickoff WARN (#101) and the MAXTEAM-2026-04-26 stress
+  // test ledger emit. Empty totalAgents means "auto-default at server"; we
+  // still surface the recommendation so the user can tune their stack
+  // intentionally.
+  const recommendedMax = patternMeta[pattern].recommendedMax;
+  const teamSizeWarn = totalAgents > 0
+    ? teamSizeWarningMessage(pattern, totalAgents)
+    : undefined;
 
   const cloneTarget = useMemo(() => {
     const ws = workspacePath.trim().replace(/\/+$/, '');
@@ -477,6 +488,42 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
             <div className="mt-1 font-mono text-[10.5px] text-fog-700 leading-snug">
               agents self-select within the run's bounds. stacking N of the same model spawns N
               peer agents on that model.
+            </div>
+            {/*
+              recommended-max readout (#103). Empirical ceiling per pattern
+              from the MAXTEAM-2026-04-26 stress test. Stays muted by default
+              so it doesn't compete with the team picker; turns amber when
+              totalAgents > recommendedMax to flag that the run is in
+              degradation territory. Tooltip carries the full server-warn
+              message so the user can read the exact failure-mode reference
+              without leaving the modal.
+            */}
+            <div
+              className={clsx(
+                'mt-1 font-mono text-[10.5px] leading-snug flex items-center gap-2',
+                teamSizeWarn ? 'text-amber/85' : 'text-fog-700',
+              )}
+            >
+              <span>
+                recommended max for{' '}
+                <span className={patternAccentText[patternMeta[pattern].accent]}>
+                  {patternMeta[pattern].label}
+                </span>
+                : <span className="tabular-nums">{recommendedMax}</span>
+                {totalAgents > 0 && (
+                  <>
+                    {' · current '}
+                    <span className="tabular-nums">{totalAgents}</span>
+                  </>
+                )}
+              </span>
+              {teamSizeWarn && (
+                <Tooltip content={teamSizeWarn}>
+                  <span className="cursor-help underline decoration-dotted underline-offset-2">
+                    above ceiling — hover for failure modes
+                  </span>
+                </Tooltip>
+              )}
             </div>
           </Section>
 

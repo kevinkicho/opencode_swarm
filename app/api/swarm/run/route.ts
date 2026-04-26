@@ -45,7 +45,7 @@ import type {
   SwarmRunResponse,
 } from '@/lib/swarm-run-types';
 import type { SwarmPattern } from '@/lib/swarm-types';
-import { patternDefaults } from '@/lib/swarm-patterns';
+import { patternDefaults, teamSizeWarningMessage } from '@/lib/swarm-patterns';
 import {
   collectOllamaModels,
   prewarmModels,
@@ -521,6 +521,15 @@ export async function POST(req: NextRequest): Promise<Response> {
   // we spawn — meta.teamSize isn't persisted separately because
   // meta.sessionIDs.length carries the truth.
   const teamSize = parsed.teamSize ?? PATTERN_TEAM_SIZE[parsed.pattern].defaultSize;
+
+  // Per-pattern empirical sanity warning (#101). teamSize > recommendedMax
+  // is allowed (route still accepts up to TEAM_SIZE_MAX), but we surface a
+  // dev-log line so the operator knows the run is in territory the
+  // 2026-04-26 stress test caught failure modes in. The picker (#103)
+  // surfaces this same threshold visually; the WARN is the kickoff-time
+  // belt for cases where the run was created via API or scripted.
+  const sanityWarn = teamSizeWarningMessage(parsed.pattern, teamSize);
+  if (sanityWarn) console.warn(sanityWarn);
 
   // Post-resolve length check for teamModels — teamSize defaults are
   // pattern-specific, so the validator couldn't enforce length until

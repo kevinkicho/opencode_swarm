@@ -18,6 +18,16 @@ export interface PatternMeta {
   fit: string;
   available: boolean;       // drives disabled state + "coming soon" indicator
   accent: 'molten' | 'amber' | 'mint' | 'iris' | 'rust' | 'fog';
+  // Empirical recommended teamSize ceiling from the MAXTEAM-2026-04-26
+  // stress test (docs/STRESS_TESTS/2026-04-26-max-team-size-8.md).
+  // Above this size every pattern except orchestrator-worker degraded
+  // to stalls / errors / synth-starvation within a 30-minute cap.
+  // Advisory only: the route handler still accepts teamSize up to
+  // PATTERN_TEAM_SIZE.maxSize, but emits a console.warn at kickoff
+  // (#101) and the new-run picker shades the slider above this point
+  // (#103). Re-derive from a fresh stress test if pattern internals
+  // change.
+  recommendedMax: number;
 }
 
 export const patternMeta: Record<SwarmPattern, PatternMeta> = {
@@ -28,6 +38,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'small focused work; baseline to compare multi-session shapes against',
     available: true,
     accent: 'molten',
+    recommendedMax: 1,
   },
   blackboard: {
     label: 'blackboard',
@@ -36,6 +47,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'broad parallel work; self-organizing teams on independent todos',
     available: true,
     accent: 'amber',
+    recommendedMax: 6,
   },
   'map-reduce': {
     label: 'map-reduce',
@@ -44,6 +56,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'large surveys or surveys-of-surveys where one merge step suffices',
     available: true,
     accent: 'mint',
+    recommendedMax: 5,
   },
   council: {
     label: 'council',
@@ -52,6 +65,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'design / architecture decisions where divergence beats convergence',
     available: true,
     accent: 'iris',
+    recommendedMax: 5,
   },
   'orchestrator-worker': {
     label: 'orchestrator',
@@ -60,6 +74,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'long missions where a persistent planner owns strategy',
     available: true,
     accent: 'rust',
+    recommendedMax: 8,
   },
   'role-differentiated': {
     label: 'roles',
@@ -68,6 +83,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'work with clear sub-disciplines (frontend/backend, code/docs/tests)',
     available: true,
     accent: 'iris',
+    recommendedMax: 6,
   },
   'debate-judge': {
     label: 'debate',
@@ -76,6 +92,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'binary or scored choices between well-framed alternatives',
     available: true,
     accent: 'amber',
+    recommendedMax: 4,
   },
   'critic-loop': {
     label: 'critic',
@@ -84,6 +101,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'non-binary quality (copy, architecture, UX) where first pass is rarely right',
     available: true,
     accent: 'mint',
+    recommendedMax: 2,
   },
   'deliberate-execute': {
     label: 'deliberate→execute',
@@ -92,8 +110,30 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'think deeply, then build — framing matters more than execution speed',
     available: true,
     accent: 'fog',
+    recommendedMax: 4,
   },
 };
+
+// Pure helper. Returns the WARN message to log at kickoff when teamSize
+// exceeds the empirical recommendedMax for the pattern; undefined when
+// teamSize is within the safe envelope. Centralized here so the route
+// handler (#101) and the new-run picker (#103) read from a single
+// source of truth, and so the message text is unit-testable in
+// isolation. The caller passes the message to console.warn (server)
+// or surfaces it inline (client).
+export function teamSizeWarningMessage(
+  pattern: SwarmPattern,
+  teamSize: number,
+): string | undefined {
+  const meta = patternMeta[pattern];
+  if (!meta) return undefined;
+  if (teamSize <= meta.recommendedMax) return undefined;
+  return (
+    `[swarm/run] teamSize=${teamSize} exceeds recommendedMax=${meta.recommendedMax} for pattern '${pattern}' — ` +
+    `MAXTEAM-2026-04-26 stress test observed degradation above this size. ` +
+    `See docs/STRESS_TESTS/2026-04-26-max-team-size-8.md for failure modes.`
+  );
+}
 
 // Per-pattern model defaults (2026-04-24 Stage 2 declared-roles). When
 // a run request omits teamModels / criticModel / verifierModel /

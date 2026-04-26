@@ -28,6 +28,51 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — stress-test follow-up: dev-gate + teamSize ceilings (#102 + #101 + #103)
+
+Three closely-coupled fixes from the MAXTEAM-2026-04-26 stress-test
+ledger. All read from a single source-of-truth (`patternMeta.recommendedMax`)
+so the kickoff WARN, picker hint, and stress-test ledger never drift
+out of sync.
+
+**Code shipped:**
+
+- **`scripts/dev.mjs` tsc --noEmit gate** (`0c7e895`, #102) — runs
+  `npx tsc --noEmit` before binding the dev port, refuses to start
+  on non-zero status, prints offending stdout+stderr. Skip via
+  `--skip-tsc` flag or `DEV_SKIP_TSC=1` env. Cost: ~10–15 s cold cache,
+  ~3–5 s warm. Rationale: during the 2026-04-26 max-team-size run, two
+  parallel-session breakages (heat-rail.tsx duplicated `<Tooltip>`,
+  coordinator.ts `await` in non-async map) silently 500'd every
+  snapshot endpoint mid-stress-test. Catching those before bind would
+  have saved ~5 min of monitoring blindness. See
+  `docs/STRESS_TESTS/2026-04-26-max-team-size-8.md` "Mid-run incidents".
+
+- **Per-pattern `recommendedMax` + kickoff WARN** (this commit, #101) —
+  added a `recommendedMax` field to `PatternMeta` carrying the empirical
+  ceiling each pattern survived in the 2026-04-26 stress test (8 except
+  orchestrator-worker, 5 for council/map-reduce, 6 for blackboard/
+  role-differentiated, 4 for debate-judge/deliberate-execute, 2 for
+  critic-loop). New `teamSizeWarningMessage(pattern, teamSize)` helper
+  is pure + unit-tested (8 tests, `lib/__tests__/swarm-patterns.test.ts`).
+  The `/api/swarm/run` POST handler calls it after teamSize resolution
+  and emits a `console.warn` referencing the stress-test ledger when
+  the run exceeds the ceiling. Advisory only — the route still accepts
+  up to `TEAM_SIZE_MAX=8`.
+
+- **New-run picker recommendedMax readout** (this commit, #103) — under
+  the team picker, a one-line readout shows
+  `recommended max for {pattern}: N · current K`. When K > N, the line
+  flips amber and surfaces a hover-tooltip carrying the same warning
+  text the server emits, so the user sees the failure-mode reference
+  without leaving the modal. Single source of truth: imports
+  `teamSizeWarningMessage` directly so server WARN and picker hint can't
+  diverge.
+
+**Tests:** 205 passing (was 196). New file `lib/__tests__/swarm-patterns.test.ts`
+covers the per-pattern ceilings + warning shape + the orchestrator-worker
+"only one that scaled cleanly" assertion. tsc --noEmit clean.
+
 ### 2026-04-26 — pending-validations sweep + perf wiring + log-tail HMR fix
 
 User asked to clear the backlog of "shipped but unvalidated" items
