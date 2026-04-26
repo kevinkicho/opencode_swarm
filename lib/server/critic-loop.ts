@@ -35,7 +35,10 @@ const CRITIC_AGENT_NAME = 'critic';
 // is generous for substantive work — critic usually replies faster
 // (~1-2 min) but the worker's first draft or a deep revision can run
 // 5-10 min.
-const ITERATION_WAIT_MS = 15 * 60 * 1000;
+// HARDENING_PLAN.md#C18 — wait window + nitpick conf cap lifted to
+// pattern-tunables.ts.
+import { THRESHOLDS, TIMINGS } from './pattern-tunables';
+const ITERATION_WAIT_MS = TIMINGS.critic.iterationWaitMs;
 
 // Maximum iterations when the request body doesn't specify. 3 rounds
 // (initial draft + 2 revisions) is enough to surface most critic
@@ -308,7 +311,7 @@ export async function runCriticLoopKickoff(
   // stop. Spec calls for a 2-iteration look-back; we keep history
   // longer for log clarity.
   const verdictHistory: ParsedVerdict[] = [];
-  const NITPICK_CONF_MAX = 3;
+  const NITPICK_CONF_MAX = THRESHOLDS.critic.nitpickConfMax;
   function isNitpickStreak(): boolean {
     if (verdictHistory.length < 2) return false;
     const last2 = verdictHistory.slice(-2);

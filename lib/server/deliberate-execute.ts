@@ -79,7 +79,9 @@ import { recordPartialOutcome } from './degraded-completion';
 import { extractLatestAssistantText } from './harvest-drafts';
 import type { OpencodeMessage } from '../opencode/types';
 
-const SYNTHESIS_WAIT_MS = 15 * 60 * 1000;
+// HARDENING_PLAN.md#C18 — TIMINGS + THRESHOLDS lifted to pattern-tunables.ts.
+import { THRESHOLDS, TIMINGS } from './pattern-tunables';
+const SYNTHESIS_WAIT_MS = TIMINGS.deliberateExecute.synthesisWaitMs;
 
 // PATTERN_DESIGN/deliberate-execute.md I4 — directive-complexity classifier.
 // Deliberation-then-execute pays for its richer framing in tokens (N sessions
@@ -89,7 +91,7 @@ const SYNTHESIS_WAIT_MS = 15 * 60 * 1000;
 // Cheap heuristic at kickoff: small char count AND few distinct action verbs
 // from a canonical list. We don't auto-redirect to blackboard (operator's
 // pattern choice is intentional); just WARN so they can rethink next time.
-const DIRECTIVE_SMALL_CHARS = 200;
+const DIRECTIVE_SMALL_CHARS = THRESHOLDS.deliberateExecute.directiveSmallChars;
 const DIRECTIVE_SMALL_VERB_COUNT = 2;
 const DIRECTIVE_ACTION_VERBS = new Set<string>([
   'add', 'audit', 'build', 'change', 'check', 'clean',
@@ -134,8 +136,8 @@ export function classifyDirectiveComplexity(directive: string): DirectiveComplex
 // the same model that helped deliberate to critique the seeded todos
 // for concreteness / claimability / independence. Cap retries at 1
 // to avoid loops on a divergent verifier.
-const VERIFIER_WAIT_MS = 5 * 60 * 1000;
-const MAX_SYNTHESIS_RETRIES = 1;
+const VERIFIER_WAIT_MS = TIMINGS.deliberateExecute.verifierWaitMs;
+const MAX_SYNTHESIS_RETRIES = THRESHOLDS.deliberateExecute.maxSynthesisRetries;
 
 export interface SynthesisVerdict {
   verdict: 'approved' | 'revise' | 'unclear';

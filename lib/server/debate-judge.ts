@@ -26,7 +26,9 @@ import type { OpencodeMessage } from '../opencode/types';
 const JUDGE_AGENT_NAME = 'judge';
 const GENERATOR_AGENT_PREFIX = 'generator-';
 
-const ROUND_WAIT_MS = 20 * 60 * 1000;
+// HARDENING_PLAN.md#C18 — round wait lifted to pattern-tunables.ts.
+import { TIMINGS } from './pattern-tunables';
+const ROUND_WAIT_MS = TIMINGS.debate.roundWaitMs;
 const DEFAULT_MAX_ROUNDS = 2;
 
 // HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to

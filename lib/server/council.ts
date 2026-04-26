@@ -68,20 +68,12 @@ export function recommendedDeliberationRounds(teamSize: number): number {
   return DEFAULT_MAX_ROUNDS;
 }
 
-// Per-round wait ceiling. 10 min was the spec target
-// (PATTERN_DESIGN/council.md I4); empirically council members reply in
-// 1–3 min so this is generous headroom. A blown deadline records the
-// member as no-draft (null text) and the round proceeds with the
-// remaining drafts — single hung members no longer stall the council.
-const ROUND_WAIT_MS = 10 * 60 * 1000;
-
-// PATTERN_DESIGN/council.md I1 — convergence-detection auto-stop.
-// Mean-pairwise-token-jaccard ≥ this value at round R(N-1)'s harvest
-// short-circuits rounds N..maxRounds. Threshold matches the
-// council-rail UI's "high" tone (≥ 0.8) but tightened to 0.85 here
-// because we're making a binding decision (skip work) rather than
-// just labeling a row.
-const COUNCIL_CONVERGENCE_THRESHOLD = 0.85;
+// HARDENING_PLAN.md#C18 — TIMINGS + THRESHOLDS lifted to
+// lib/server/pattern-tunables.ts. Local aliases keep call sites stable;
+// stress-tests can override the canonical constants there.
+import { THRESHOLDS, TIMINGS } from './pattern-tunables';
+const ROUND_WAIT_MS = TIMINGS.council.roundWaitMs;
+const COUNCIL_CONVERGENCE_THRESHOLD = THRESHOLDS.council.convergence;
 
 const CONV_STOPWORDS = new Set([
   'the', 'a', 'an', 'and', 'or', 'of', 'to', 'in', 'for', 'on', 'with',

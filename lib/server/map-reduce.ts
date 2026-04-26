@@ -107,7 +107,9 @@ export async function deriveSlices(
 // and compute max:min. If the ratio exceeds 5x, log a single WARN naming
 // each slice with its size. Cheap (~ms on small repos, capped on large
 // repos by the recursion cost) and fire-and-forget — never blocks kickoff.
-const SCOPE_IMBALANCE_THRESHOLD = 5;
+// HARDENING_PLAN.md#C18 — TIMINGS + THRESHOLDS lifted to pattern-tunables.ts.
+import { THRESHOLDS, TIMINGS } from './pattern-tunables';
+const SCOPE_IMBALANCE_THRESHOLD = THRESHOLDS.mapReduce.scopeImbalance;
 const SCOPE_CODE_EXTS = new Set<string>([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
   '.py', '.go', '.rb', '.java', '.kt', '.swift',
@@ -221,7 +223,7 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   // PATTERN_DESIGN/map-reduce.md I3 — parallel waits so a hung member
   // doesn't block sibling waits sequentially. Each wait runs to its own
   // deadline; the slow ones don't penalize the fast ones.
-  const SESSION_WAIT_MS = 25 * 60 * 1000;
+  const SESSION_WAIT_MS = TIMINGS.mapReduce.sessionWaitMs;
   const deadline = Date.now() + SESSION_WAIT_MS;
   const knownIDsBySession = await snapshotKnownIDs(meta, '[map-reduce]');
   const waitResults = await harvestDrafts(meta, {
@@ -342,8 +344,8 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   // leaving the item observable on the board for forensics. Per-tick
   // timeout (`tickCoordinator`'s inner waitForSessionIdle) still governs
   // how long we wait for the synthesizer's own turn to complete.
-  const DISPATCH_DEADLINE_MS = 5 * 60 * 1000;
-  const TICK_INTERVAL_MS = 3000;
+  const DISPATCH_DEADLINE_MS = TIMINGS.mapReduce.dispatchDeadlineMs;
+  const TICK_INTERVAL_MS = TIMINGS.mapReduce.tickIntervalMs;
   const dispatchDeadline = Date.now() + DISPATCH_DEADLINE_MS;
 
   while (Date.now() < dispatchDeadline) {
@@ -428,7 +430,7 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
 // no tokenizer dependency, predictable upper bound, and reasonably
 // portable across models. Trimmed text gets a clear footer so the
 // synthesizer knows the input was capped.
-const MAX_DRAFT_CHARS_FOR_SYNTHESIS = 80_000;
+const MAX_DRAFT_CHARS_FOR_SYNTHESIS = THRESHOLDS.mapReduce.maxDraftCharsForSynthesis;
 
 export function truncateDraftForSynthesis(text: string): {
   text: string;
@@ -517,8 +519,8 @@ function buildSynthesisPrompt(
 // MAX_REVISIONS revisions so a disagreeable critic can't burn unbounded
 // tokens. Critic verdict format: first line APPROVED or REVISE; rest of
 // the body is feedback (passed to the synthesizer when REVISE).
-const SYNTHESIS_CRITIC_WAIT_MS = 5 * 60 * 1000;
-const MAX_SYNTHESIS_CRITIC_REVISIONS = 2;
+const SYNTHESIS_CRITIC_WAIT_MS = TIMINGS.mapReduce.synthesisCriticWaitMs;
+const MAX_SYNTHESIS_CRITIC_REVISIONS = THRESHOLDS.mapReduce.maxSynthesisCriticRevisions;
 
 function pickCriticSession(
   sessionIDs: readonly string[],
