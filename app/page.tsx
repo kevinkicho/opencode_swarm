@@ -37,6 +37,7 @@ const Inspector = dynamic(
 );
 import { PageModals } from './page-internals/page-modals';
 import { useModalState } from './page-internals/use-modal-state';
+import { useSelectionState } from './page-internals/use-selection-state';
 import type { PaletteAction } from '@/components/command-palette';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { StatusRail } from '@/components/status-rail';
@@ -531,18 +532,10 @@ function PageBody({
   swarmRuns: import('@/lib/swarm-run-types').SwarmRunListRow[];
 }) {
   const router = useRouter();
-  const [focusedMsgId, setFocusedMsgId] = useState<string | null>(null);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  // A row in the heat rail that was clicked to open the file inspector.
-  // Orthogonal to focusedMsgId / selectedAgentId — they mutually exclude
-  // each other so the drawer shows exactly one thing at a time.
-  const [selectedFileHeat, setSelectedFileHeat] = useState<FileHeat | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
   // 8 modal flag/setter pairs collapsed into one hook — see
   // app/page-internals/use-modal-state.ts. The hook hands back stable
   // openers/closers so passing them down doesn't invalidate downstream
-  // memos. drawerOpen stays here because it's coupled to the selection
-  // tuple (focusedMsgId / selectedAgentId / selectedFileHeat).
+  // memos.
   const modals = useModalState();
   // Most recent cost-cap rejection from the proxy gate (DESIGN.md §9). Set
   // when postSessionMessageBrowser throws CostCapError; cleared on dismiss or
@@ -743,78 +736,24 @@ function PageBody({
     return m;
   }, [liveDiffs, swarmRunMeta?.workspace, liveDirectory]);
 
-  const focusMessage = useCallback((id: string) => {
-    setFocusedMsgId((prev) => {
-      if (prev === id) {
-        setDrawerOpen(false);
-        return null;
-      }
-      setSelectedAgentId(null);
-      setSelectedFileHeat(null);
-      setDrawerOpen(true);
-      return id;
-    });
-  }, []);
-
-  const clearFocus = useCallback(() => {
-    setFocusedMsgId(null);
-    setSelectedAgentId(null);
-    setSelectedFileHeat(null);
-    setDrawerOpen(false);
-  }, []);
-
-  const selectAgent = useCallback((id: string) => {
-    setSelectedAgentId(id);
-    setFocusedMsgId(null);
-    setSelectedFileHeat(null);
-    setDrawerOpen(true);
-  }, []);
-
-  // IMPLEMENTATION_PLAN.md 6.9 — pattern-tab row clicks need to wire
-  // into the inspector. Pattern rails carry raw `sessionID` from
-  // opencode; the inspector keys on `ag_<name>_<sid8>` agent IDs.
-  // Bridge by walking the agents array. No-op when no agent has been
-  // synthesised yet for that session (rare — happens only between
-  // session spawn and first intro post).
-  const selectSession = useCallback(
-    (sessionID: string) => {
-      if (!sessionID) return;
-      const agent = agents.find((a) => a.sessionID === sessionID);
-      if (!agent) return;
-      setSelectedAgentId(agent.id);
-      setFocusedMsgId(null);
-      setSelectedFileHeat(null);
-      setDrawerOpen(true);
-    },
-    [agents],
-  );
-
-  const rosterSelect = useCallback((id: string) => {
-    setSelectedAgentId(id);
-    setFocusedMsgId(null);
-    setSelectedFileHeat(null);
-  }, []);
-
-  const selectFileHeat = useCallback((heat: FileHeat) => {
-    // Toggle: clicking the same file again closes the drawer.
-    setSelectedFileHeat((prev) => {
-      if (prev?.path === heat.path) {
-        setDrawerOpen(false);
-        return null;
-      }
-      setFocusedMsgId(null);
-      setSelectedAgentId(null);
-      setDrawerOpen(true);
-      return heat;
-    });
-  }, []);
-
-  const closeDrawer = useCallback(() => {
-    setDrawerOpen(false);
-    setFocusedMsgId(null);
-    setSelectedAgentId(null);
-    setSelectedFileHeat(null);
-  }, []);
+  // Selection-tuple state hub — see app/page-internals/use-selection-state.ts.
+  // Owns focusedMsgId / selectedAgentId / selectedFileHeat / drawerOpen
+  // plus the 7 handlers that enforce the "set one, clear the others,
+  // open the drawer" invariant. selectSession bridges pattern-rail
+  // sessionIDs → synthesised agent IDs by walking the agents array.
+  const {
+    focusedMsgId,
+    selectedAgentId,
+    selectedFileHeat,
+    drawerOpen,
+    focusMessage,
+    selectAgent,
+    selectSession,
+    rosterSelect,
+    selectFileHeat,
+    clearFocus,
+    closeDrawer,
+  } = useSelectionState(agents);
 
   // Wrapper for postSessionMessageBrowser that turns the CostCapError thrown
   // by the proxy gate (DESIGN.md §9) into a banner-block side-effect, so
