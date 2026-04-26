@@ -39,6 +39,7 @@ import { PageModals } from './page-internals/page-modals';
 import { useModalState } from './page-internals/use-modal-state';
 import { useSelectionState } from './page-internals/use-selection-state';
 import { useCostCapBlock } from './page-internals/use-cost-cap-block';
+import { useGlobalKeybindings } from './page-internals/use-global-keybindings';
 import type { PaletteAction } from '@/components/command-palette';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { StatusRail } from '@/components/status-rail';
@@ -756,24 +757,10 @@ function PageBody({
     closeDrawer,
   } = useSelectionState(agents);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const k = e.key.toLowerCase();
-      if (k === 'k') {
-        e.preventDefault();
-        modals.openers.togglePalette();
-      } else if (k === 'n') {
-        e.preventDefault();
-        modals.openers.newRun();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, []);
-
-  // (cost-cap banner auto-clear lives in useCostCapBlock — fires on
-  // swarmRunID change without a separate effect here)
+  // Cmd/Ctrl-K toggles the palette; Cmd/Ctrl-N opens the new-run modal.
+  // Lives in useGlobalKeybindings so this file doesn't grow keybinding
+  // tables inline as we add more shortcuts.
+  useGlobalKeybindings(modals);
 
   const drawerTitle = focusedMsgId
     ? messages.find((m) => m.id === focusedMsgId)?.title
