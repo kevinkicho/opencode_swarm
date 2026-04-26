@@ -177,7 +177,8 @@ These recommendations feed task #101 (kickoff WARN) + task #103
 | #101 | Per-pattern teamSize sanity WARN at kickoff | **shipped 2026-04-26** |
 | #102 | Pre-dev-restart `npx tsc --noEmit` gate | **shipped 2026-04-26** (`0c7e895`) |
 | #103 | new-run picker: per-pattern teamSize hints + recommended max | **shipped 2026-04-26** |
-| #104 | Stuck-deliberation detector for high-token zero-output runs | pending |
+| #104 | Stuck-deliberation detector for high-token zero-output runs | **shipped 2026-04-26** — `lib/server/stuck-detector.ts` + picker `⚠` indicator. Tokens > 500K AND age > 10min AND boardItemCount === 0 → stuck. |
+| #105 | Hard-stop run button: abort all sessions + auto-ticker + mark stopped | **shipped 2026-04-26** — `POST /api/swarm/run/:id/stop` + `HardStopChip` (two-step confirm) in `swarm-topbar.tsx`. New `'operator-hard-stop'` StopReason. |
 
 The recommended-max column drives both #101 (server WARN) and #103
 (picker hint). When the table above gets re-derived from a follow-up

@@ -19,10 +19,14 @@ current — remove when shipped or explicitly abandoned.
 
 ## Last updated
 
-**2026-04-23** — post-consolidation. Today's 12 incremental shipped
-entries folded into one themed block. Next review: ~2026-06-01 or
-whenever the file has drifted enough that scanning it doesn't match
-the actual state.
+**2026-04-26** — stress-test follow-up sweep + parallel-session
+audit. Today's batch (10 commits) closed every TODO from the
+MAXTEAM-2026-04-26 stress test (#95–#100, #101+#103, #104, #105)
+plus the dev-gate (#102), then audited and landed the 19 unstaged
+parallel-session edits as two themed commits (critical store.ts
+fix + UX/perf bundle). Tests 196 → 224, page count of unstaged
+files dropped from 19 → 0. Next review: ~2026-06-01 or whenever
+this file's "last updated" line has drifted again.
 
 ---
 
