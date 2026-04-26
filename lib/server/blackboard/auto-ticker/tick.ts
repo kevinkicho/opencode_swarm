@@ -39,10 +39,24 @@ function liveAutoTicker(): AutoTickerExports {
 }
 
 // Is this outcome quiescent (no forward progress possible right now)?
-// `picked` and `stale` are progress signals — real work ran; reset the
-// idle counter. `skipped` is a no-op tick.
+// `picked` is real progress (a todo committed). Most `stale` outcomes
+// are also progress signals — the session attempted work and either
+// hit CAS-drift (lost the file race) or had its turn timeout. Both
+// reset the idle counter because "the session is still trying".
+//
+// EXCEPT phantom-no-tools (#7.Q42 #7.Q45): when the worker produced
+// only text-only pseudo-tool-XML with zero real tool/patch parts, the
+// session is NOT trying — it's emitting placeholder text and burning
+// retries. Treating that as progress means the auto-stop threshold
+// never trips and the run spins forever. Count phantom-no-tools as
+// idle so consecutive bounces eventually trigger auto-stop / tier
+// escalation, same as `skipped`.
 function isIdleOutcome(o: TickOutcome): boolean {
-  return o.status === 'skipped';
+  if (o.status === 'skipped') return true;
+  if (o.status === 'stale' && o.reason.includes('phantom-no-tools')) {
+    return true;
+  }
+  return false;
 }
 
 function makeSlot(sessionID: string): PerSessionSlot {
