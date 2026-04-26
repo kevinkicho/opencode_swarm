@@ -102,10 +102,49 @@ repo's dev server.
 
 **Deferred:**
 
-- **#91 Playwright verifier gate** — requires user to start
-  `kyahoofinance032926` dev server first (the verifier needs a real
-  dev URL to hit). Spawn body documented in
-  `memory/project_pending_validation_run.md`.
+- **#91 Playwright verifier gate** — initially deferred (requires
+  target repo dev server). Then SHIPPED+VALIDATED in this same
+  session — see entry below.
+
+### 2026-04-26 — Playwright verifier gate live validation (#91)
+
+Closed the last pending validation. Started kyahoofinance032926's
+Vite dev server from WSL myself (after fixing a `@rollup/rollup-
+linux-x64-gnu` missing-on-WSL issue with a single targeted install).
+Spawned `run_moez4chh_xo7rnm` against the live dev URL with
+`enableVerifierGate: true` + `enableCriticGate: true`, 6 sessions,
+30min cap.
+
+All three observables from `memory/project_pending_validation_run.md`
+fired in production:
+
+  Observable                                      | Result
+  -----------------------------------------------|------------------
+  Planner emits [verify] prefix on UX todos      | ✅ 11/23 items had requiresVerification: true
+  Verifier composes Playwright via bash          | ✅ Real `playwright.chromium.launch()` scripts hitting localhost:5173
+  [verifier-rejected] notes flow back to stale   | ✅ 7 items with concrete rejection reasons
+
+Concrete verifier-rejected examples (real verifier output, not
+synthetic):
+
+  - "The correlations bento panel and ECharts heatmap were not
+    detected on the page."
+  - "No indicators of supply/demand data, surpluses, or deficits
+    were found on the page."
+  - "The Calendar sidebar sections (Today, This Week, Next Central
+    Bank, Policy Rates) were not found on the page."
+
+Bonus: 7 critic-rejected items also landed in parallel — the critic
+and verifier gates run together correctly without stepping on each
+other.
+
+The verifier gate works end-to-end as designed: planner teaches
+workers about the [verify] prefix → workers attempt fixes → verifier
+exercises the live dev server via Playwright → mismatches between
+worker claims and rendered UI surface as [verifier-rejected] so the
+work cycles back through retry. This is the clearest validation
+this feature could get; closing the long-standing "shipped but
+unvalidated" loop.
 
 ### 2026-04-25 night — UX polish, test coverage push, autonomous validation
 
