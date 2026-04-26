@@ -1,15 +1,17 @@
 // Planner sweep endpoint — step 3a of SWARM_PATTERNS.md §1.
 //
-// POST /api/swarm/run/:swarmRunID/board/sweep
+// POST /api/_debug/swarm-run/:swarmRunID/sweep
 //   body: { overwrite?: boolean, timeoutMs?: number }
 //
 // Triggers one round of todowrite-from-a-session on the run and translates
 // each todo into an open board item. Synchronous on the client side — the
 // response lands after the assistant turn completes or the timeout fires.
 //
-// Separate route from /board and /board/:itemId because sweep is a
-// coordinator action, not a per-item or per-board CRUD verb. Living under
-// /board keeps all coordinator plumbing in one tree.
+// HARDENING_PLAN.md#C9 / FU.5 — moved from /api/swarm/run/[id]/board/sweep
+// to /api/_debug/swarm-run/[id]/sweep 2026-04-26 because this is an
+// operational-recovery endpoint (curl-callable for debugging, not used
+// from the UI). The /api/_debug/* prefix marks it as such; the public
+// API surface stays clean.
 //
 // The route's job is input validation + timeouts + surfacing planner errors
 // as HTTP codes. The actual opencode roundtrip happens in

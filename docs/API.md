@@ -213,53 +213,13 @@ used.
 Backed by the process-local bus in `lib/server/blackboard/bus.ts`;
 `store` fires on insert/transition.
 
-### `POST /api/swarm/run/{swarmRunID}/board/sweep`
-
-Run the planner sweep — posts the planner prompt to session 0, parses
-`todowrite` output, seeds the board with open items. The "plan from
-scratch" half of the coordinator loop.
-
-**Body:** `{ overwrite?: boolean; timeoutMs?: number }` (timeout range
-5 s – 5 min).
-
-**Response 200:** `{ items: BoardItem[], count: number }`.
-
-**Errors:** `409` if board already populated and `overwrite` is not
-set; `504` timeout.
-
-### `POST /api/swarm/run/{swarmRunID}/board/tick`
-
-Run one coordinator tick — pick a session + pick an open item + claim
-+ dispatch + wait for idle + commit. Synchronous. External test drivers
-(smoke scripts) call this; normal runs use the auto-ticker (below).
-
-**Body:** `{ timeoutMs?: number }` (5 s – 10 min).
-
-**Response 200:** `{ outcome: string }` — e.g. `claimed:t_abc`,
-`idle`, `timeout`, `skipped:no-open-items`.
-
-### `POST /api/swarm/run/{swarmRunID}/board/retry-stale`
-
-Bulk reopen — every `stale` item transitions to `open`, clearing
-`ownerAgentId` / `fileHashes` / `staleSinceSha` / retry-count note.
-Also auto-starts the ticker if it was stopped and the pattern is in
-`TICKER_PATTERNS` (blackboard, orchestrator-worker, role-differentiated,
-deliberate-execute).
-
-**Body:** `{}`.
-
-**Response 200**
-```ts
-{
-  reopened: number;
-  reopenedIds: string[];
-  failed: Array<{ id: string; currentStatus: string }>;   // CAS races
-  tickerRestarted: boolean;
-}
-```
-
-Recovery path for rate-limit-stranded runs — see
-`memory/reference_opencode_freeze.md`.
+<!--
+HARDENING_PLAN.md#C9 / FU.5 — moved 2026-04-26.
+The 3 endpoints below (sweep, tick, retry-stale) live under
+/api/_debug/swarm-run/* now. Documented in the §6 Debug endpoints
+section below. They're operational-recovery routes (no UI button),
+explicitly namespaced so the public API surface stays clean.
+-->
 
 ### `GET /api/swarm/run/{swarmRunID}/board/ticker`
 
@@ -330,6 +290,67 @@ behind a future agent-tool integration when an actual caller surfaces.
 
 The L0/L1/L2 memory schema (DESIGN.md §7.4-7.5) is unchanged. -->
 
+
+---
+
+## 4b. Debug / operational endpoints (`/api/_debug/*`)
+
+HARDENING_PLAN.md#C9 — three operational-recovery endpoints live
+under `/api/_debug/swarm-run/{swarmRunID}/*`. The `_debug` prefix is
+the contract: routes here have **no UI button**, are **curl-callable
+for ops**, and may change shape without notice. The auto-ticker drives
+production runs; these routes exist so a human can poke a stuck run
+when things go sideways.
+
+### `POST /api/_debug/swarm-run/{swarmRunID}/sweep`
+
+Run the planner sweep — posts the planner prompt to session 0, parses
+`todowrite` output, seeds the board with open items. The "plan from
+scratch" half of the coordinator loop. Re-callable by hand when the
+auto-sweep is gated (`overwrite: true`).
+
+**Body:** `{ overwrite?: boolean; timeoutMs?: number }` (timeout range
+5 s – 5 min).
+
+**Response 200:** `{ items: BoardItem[], count: number }`.
+
+**Errors:** `409` if board already populated and `overwrite` is not
+set; `504` timeout.
+
+### `POST /api/_debug/swarm-run/{swarmRunID}/tick`
+
+Run one coordinator tick — pick a session + pick an open item + claim
++ dispatch + wait for idle + commit. Synchronous. The auto-ticker
+drives production runs; this endpoint is for smoke-scripts/curl ops
+debugging only.
+
+**Body:** `{ timeoutMs?: number }` (5 s – 10 min).
+
+**Response 200:** `{ outcome: string }` — e.g. `claimed:t_abc`,
+`idle`, `timeout`, `skipped:no-open-items`.
+
+### `POST /api/_debug/swarm-run/{swarmRunID}/retry-stale`
+
+Bulk reopen — every `stale` item transitions to `open`, clearing
+`ownerAgentId` / `fileHashes` / `staleSinceSha` / retry-count note.
+Also auto-starts the ticker if it was stopped and the pattern is in
+`TICKER_PATTERNS` (blackboard, orchestrator-worker, role-differentiated,
+deliberate-execute).
+
+**Body:** `{}`.
+
+**Response 200**
+```ts
+{
+  reopened: number;
+  reopenedIds: string[];
+  failed: Array<{ id: string; currentStatus: string }>;   // CAS races
+  tickerRestarted: boolean;
+}
+```
+
+Recovery path for rate-limit-stranded runs — see
+`memory/reference_opencode_freeze.md`.
 
 ---
 

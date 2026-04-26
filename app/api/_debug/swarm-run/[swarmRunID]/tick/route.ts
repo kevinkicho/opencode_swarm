@@ -1,12 +1,17 @@
 // Coordinator tick endpoint — one round of "pick an open todo + idle
 // session, claim it, send work, finalize". Step 3b/3c of SWARM_PATTERNS.md §1.
 //
-// POST /api/swarm/run/:swarmRunID/board/tick
+// POST /api/_debug/swarm-run/:swarmRunID/tick
 //   body: { timeoutMs?: number }
 //
 // Synchronous — the response returns after the assistant turn finishes or
-// the timeout fires. Until step 3d wires an auto-ticker, external callers
-// (smoke scripts, curl) drive progress via this route.
+// the timeout fires. The auto-ticker drives progress in production runs;
+// this route is for smoke-scripts/curl ops debugging only.
+//
+// HARDENING_PLAN.md#C9 / FU.5 — moved from /api/swarm/run/[id]/board/tick
+// to /api/_debug/swarm-run/[id]/tick 2026-04-26 because this is an
+// ops-only endpoint, not used from the UI. Path matches the sweep
+// endpoint's _debug-namespace move.
 //
 // Single caller assumption: two concurrent POSTs to this route for the
 // same run would both see the same 'open' todo, one would win the CAS and

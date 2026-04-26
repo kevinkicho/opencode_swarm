@@ -739,7 +739,7 @@ function buildPlannerPartialSummary(
     parts.push('');
     parts.push(
       'Pre-sweep board state survives. The run can be resumed manually via ' +
-        '`POST /api/swarm/run/<id>/board/sweep` once the underlying issue ' +
+        '`POST /api/_debug/swarm-run/<id>/sweep` once the underlying issue ' +
         '(silent worker / ollama down / etc.) is resolved.',
     );
   }

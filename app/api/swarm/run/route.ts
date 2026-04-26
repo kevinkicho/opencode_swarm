@@ -885,7 +885,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Sweep failure (zero todos / timeout / opencode error) logs and exits
   // without starting the ticker. Callers can retry via
-  // POST /api/swarm/run/:id/board/sweep { "overwrite": true }.
+  // POST /api/_debug/swarm-run/:id/sweep { "overwrite": true }.
   if (parsed.pattern === 'blackboard') {
     kickoffLabel = 'blackboard';
     kickoffPromise = runPlannerSweep(runID).then((result) => {

@@ -69,7 +69,7 @@ import { waitForSessionIdle } from './wait';
 //
 // Pre-fix: tickCoordinator had no per-run lock. The auto-ticker fans out
 // via restrictToSessionID with a per-session inFlight flag, but a user
-// POST to /board/tick (with no restriction) could race the auto-ticker
+// POST to /api/_debug/swarm-run/<id>/tick (with no restriction) could race the auto-ticker
 // on the same swarmRunID — both pick the same idle session, both call
 // getSessionMessagesServer, both pick the same todo, the second loses
 // CAS at transitionStatus. Lossy-but-correct (the SQL CAS was the only

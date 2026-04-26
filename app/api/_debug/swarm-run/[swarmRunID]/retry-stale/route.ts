@@ -1,6 +1,12 @@
 // Bulk reopen of stale board items.
 //
-// POST /api/swarm/run/:swarmRunID/board/retry-stale   body: {}
+// POST /api/_debug/swarm-run/:swarmRunID/retry-stale   body: {}
+//
+// HARDENING_PLAN.md#C9 / FU.5 — moved from /api/swarm/run/[id]/board/
+// retry-stale to /api/_debug/swarm-run/[id]/retry-stale 2026-04-26.
+// Operational-recovery endpoint, no UI button (per the original audit
+// note that flagged this as orphan). The /api/_debug/* prefix marks
+// it as ops-only.
 //
 // Stale items on the board come from two sources, both semantically dead-ends
 // in the normal CAS lifecycle:
