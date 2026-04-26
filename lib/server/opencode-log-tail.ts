@@ -88,10 +88,21 @@ function findActiveLog(dir: string): string | null {
 // alone produces hundreds of lines per minute during a sweep — those
 // are the workspace's files being touched as workers commit, not
 // errors we want to see.
+//
+// 2026-04-26 audit: `ERROR service=server error= failed` fires every
+// 30s with an empty error field, regardless of what our app does.
+// Opencode's POST/SSE traffic keeps working through it; appears to be
+// an internal periodic check that's logged at ERROR level even on
+// normal operation. 179 occurrences observed in a 1h dev session,
+// drowning the actual error signal we wired F2 to surface. Filter it
+// here. If a real "service=server" failure ever surfaces, opencode
+// would log distinct error detail (e.g. error="ECONNREFUSED ...")
+// which our regex doesn't match, so this filter is conservative.
 const NOISE_PATTERNS: ReadonlyArray<RegExp> = [
   /service=bus type=file\.watcher\.updated\b/,
   /service=snapshot prune=/,
   /service=bus type=session\.idle\b/,
+  /^ERROR\s+\S+\s+\+\d+ms\s+service=server\s+error=\s+failed\s*$/,
 ];
 
 function isNoise(line: string): boolean {
