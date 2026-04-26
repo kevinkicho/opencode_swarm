@@ -186,7 +186,16 @@ export type StopReason =
   // with this reason and the run-health banner surfaces it for human
   // intervention. Self-organizing patterns are uncapped — they don't
   // exhibit this failure mode.
-  | 'replan-loop-exhausted';
+  | 'replan-loop-exhausted'
+  // #105 — operator clicked the force-stop button. Distinct from
+  // 'manual' (which means the operator stopped the auto-ticker via
+  // the ticker control endpoint, leaving sessions alive). hard-stop
+  // tears down the whole run: ticker + every session + records a
+  // partial-outcome finding so the board carries the operator-action
+  // evidence. Used when a run is wedged with a turn that's still
+  // emitting parts (silent watchdog can't fire) but isn't producing
+  // useful output.
+  | 'operator-hard-stop';
 
 // PATTERN_DESIGN/orchestrator-worker.md I1. The cap counts ALL planner
 // sweeps for the run (initial + re-plans), so MAX_ORCHESTRATOR_REPLANS

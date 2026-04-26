@@ -28,6 +28,44 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — hard-stop run button (#105)
+
+Soft `abort` only targets the primary session — multi-session runs
+(council, debate-judge, role-differentiated, etc.) keep N-1 worker /
+critic / verifier / auditor sessions tokenating, AND the orchestrator
+coroutine keeps waiting. User reported `run_mof0ct1k_qpmsw1` (a
+stress-test map-reduce run) bleeding tokens for 1.5 hours after
+clicking abort.
+
+**Endpoint:** new `POST /api/swarm/run/:swarmRunID/stop`. For
+ticker-bearing patterns (blackboard / orchestrator-worker /
+role-differentiated / deliberate-execute phase 3): calls
+`stopAutoTicker(runID, 'operator-hard-stop')` — the ticker's
+existing teardown handles abort cascade + run-end audit + persisted
+snapshot. For non-ticker patterns (council / debate-judge /
+critic-loop / map-reduce phase 1): explicitly aborts every session
+in `meta.sessionIDs` plus critic / verifier / auditor.
+Either way, records a `recordPartialOutcome` finding tagged
+`operator-hard-stop` so the board carries durable evidence.
+
+**StopReason:** added `'operator-hard-stop'` as a discrete reason
+distinct from `'manual'` (which means stopping the auto-ticker
+without aborting sessions). The run-health banner can now
+distinguish these two operator actions.
+
+**UI:** new `HardStopChip` in `swarm-topbar.tsx` next to existing
+soft `AbortChip`. Two-step confirm to prevent accidental kills:
+first click arms (3s auto-disarm window so a stray click doesn't
+become a permanent landmine on the next click), second click
+executes. Distinct rust styling + animate-pulse on armed state.
+Disabled while in-flight; shows "stopped" terminal state after
+success.
+
+**Tradeoff:** in-flight tool calls land as-is — no rollback. A
+worker mid-edit when stop fires will leave its file changes on
+disk. Acceptable: the alternative is the current "stuck forever"
+state.
+
 ### 2026-04-26 — stuck-deliberation detector + picker indicator (#104)
 
 A run that's been alive long enough to produce output but has zero
