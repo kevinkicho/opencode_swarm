@@ -36,13 +36,18 @@ export type {
   OpencodeStepFinishPart,
 } from './types';
 
-const OPENCODE_URL = process.env.OPENCODE_URL ?? 'http://localhost:4096';
-const OPENCODE_BASIC_USER = process.env.OPENCODE_BASIC_USER ?? '';
-const OPENCODE_BASIC_PASS = process.env.OPENCODE_BASIC_PASS ?? '';
+// HARDENING_PLAN.md#C5 — env reads via lib/config.ts.
+import {
+  OPENCODE_BASIC_PASS,
+  OPENCODE_BASIC_USER,
+  OPENCODE_URL,
+} from '../config';
 
 function basicAuthHeader(): string | null {
   if (!OPENCODE_BASIC_USER && !OPENCODE_BASIC_PASS) return null;
-  const token = Buffer.from(`${OPENCODE_BASIC_USER}:${OPENCODE_BASIC_PASS}`).toString('base64');
+  const token = Buffer.from(
+    `${OPENCODE_BASIC_USER ?? ''}:${OPENCODE_BASIC_PASS ?? ''}`,
+  ).toString('base64');
   return `Basic ${token}`;
 }
 

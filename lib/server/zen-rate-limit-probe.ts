@@ -21,6 +21,7 @@ import 'server-only';
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { OPENCODE_LOG_DIR } from '../config';
 
 const DEFAULT_LOG_DIR =
   '/mnt/c/Users/kevin/.opencode-ui-separate/opencode/log';
@@ -68,7 +69,7 @@ async function readTail(file: string, bytes: number): Promise<string> {
 }
 
 export async function detectRecentZen429(): Promise<RateLimitSignal> {
-  const dir = process.env.OPENCODE_LOG_DIR || DEFAULT_LOG_DIR;
+  const dir = OPENCODE_LOG_DIR || DEFAULT_LOG_DIR;
   try {
     const file = await latestLogFile(dir);
     if (!file) return { found: false };

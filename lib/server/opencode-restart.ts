@@ -20,6 +20,7 @@
 import 'server-only';
 
 import { spawn } from 'node:child_process';
+import { OPENCODE_RESTART_CMD } from '../config';
 
 // 10 min: long enough that the STARTUP_GRACE (15 min) has clearly
 // elapsed since the last attempt, short enough that a genuinely-flaky
@@ -55,7 +56,7 @@ export interface RestartAttempt {
 // detached so Node can exit without waiting on it.
 export function maybeRestartOpencode(context: string): RestartAttempt {
   const s = state();
-  const cmd = process.env.OPENCODE_RESTART_CMD?.trim();
+  const cmd = OPENCODE_RESTART_CMD?.trim();
   if (!cmd) {
     // Zero-config path: unchanged behavior from before this helper existed.
     s.lastOutcome = 'disabled';

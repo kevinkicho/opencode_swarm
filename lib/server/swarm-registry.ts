@@ -41,11 +41,10 @@ import type {
   SwarmRunStatus,
 } from '../swarm-run-types';
 
-// Override via env for deployments that want runs under a different root
-// (e.g. a mounted volume). Defaults to repo-root/.opencode_swarm in dev.
-const ROOT =
-  process.env.OPENCODE_SWARM_ROOT ??
-  path.join(process.cwd(), '.opencode_swarm');
+// HARDENING_PLAN.md#C5 — env reads consolidated in lib/config.ts.
+// OPENCODE_SWARM_ROOT default is repo-root/.opencode_swarm; override
+// via env for deployments that want runs under a different root.
+import { OPENCODE_SWARM_ROOT as ROOT } from '../config';
 
 function runDir(swarmRunID: string): string {
   return path.join(ROOT, 'runs', swarmRunID);

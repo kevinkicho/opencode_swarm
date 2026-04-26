@@ -21,20 +21,18 @@ import { promises as fs, createReadStream, createWriteStream } from 'node:fs';
 import { createGzip } from 'node:zlib';
 import { pipeline } from 'node:stream/promises';
 import path from 'node:path';
+import { DEMO_LOG_AUTO_DELETE, DEMO_LOG_RETENTION_DAYS } from '../config';
 
 const ROOT = path.resolve(process.cwd(), 'demo-log');
 const COMPRESS_MIN_BYTES = 64 * 1024;
 const COMPRESS_TARGETS = ['events.ndjson', 'board-events.ndjson'];
 
 function retentionDays(): number {
-  const raw = process.env.DEMO_LOG_RETENTION_DAYS;
-  if (!raw) return 30;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : 30;
+  return DEMO_LOG_RETENTION_DAYS > 0 ? DEMO_LOG_RETENTION_DAYS : 30;
 }
 
 function autoDeleteEnabled(): boolean {
-  return process.env.DEMO_LOG_AUTO_DELETE === '1';
+  return DEMO_LOG_AUTO_DELETE;
 }
 
 async function compressFileIfBig(filePath: string): Promise<boolean> {

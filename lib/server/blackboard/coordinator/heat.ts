@@ -22,15 +22,16 @@
 import 'server-only';
 
 import type { FileHeat } from '../../../opencode/transform';
+import { OPENCODE_HEAT_HALF_LIFE_S } from '../../../config';
 
+// HARDENING_PLAN.md#C5 — half-life pulled from typed config. Default
+// 7200s = 2h; values ≤ 0 fall back to the historical 30-min default
+// for safety.
 const HEAT_HALF_LIFE_DEFAULT_MS = 30 * 60 * 1000;
 
 function heatHalfLifeMs(): number {
-  const env = process.env.OPENCODE_HEAT_HALF_LIFE_S;
-  if (!env) return HEAT_HALF_LIFE_DEFAULT_MS;
-  const n = parseInt(env, 10);
-  if (!Number.isFinite(n) || n <= 0) return HEAT_HALF_LIFE_DEFAULT_MS;
-  return n * 1000;
+  if (OPENCODE_HEAT_HALF_LIFE_S <= 0) return HEAT_HALF_LIFE_DEFAULT_MS;
+  return OPENCODE_HEAT_HALF_LIFE_S * 1000;
 }
 
 function decayFactor(lastTouchedMs: number): number {

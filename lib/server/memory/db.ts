@@ -15,9 +15,8 @@ import type { Database as DB } from 'better-sqlite3';
 import { readFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-const ROOT =
-  process.env.OPENCODE_SWARM_ROOT ??
-  path.join(process.cwd(), '.opencode_swarm');
+// HARDENING_PLAN.md#C5 — env reads via lib/config.ts.
+import { OPENCODE_SWARM_ROOT as ROOT } from '../../config';
 
 const DB_PATH = path.join(ROOT, 'memory.sqlite');
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');

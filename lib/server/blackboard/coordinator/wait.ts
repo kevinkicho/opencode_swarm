@@ -28,6 +28,7 @@
 import 'server-only';
 
 import { abortSessionServer, getSessionMessagesServer } from '../../opencode-server';
+import { OLLAMA_URL } from '../../../config';
 import type { OpencodeMessage } from '../../../opencode/types';
 
 const POLL_INTERVAL_MS = 1000;
@@ -79,7 +80,7 @@ const PROBE_TIMEOUT_MS = 5 * 1000;
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 
 async function probeOllamaPs(): Promise<{ ok: boolean; detail?: string }> {
-  const base = (process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL).replace(/\/$/, '');
+  const base = OLLAMA_URL.replace(/\/$/, '');
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), PROBE_TIMEOUT_MS);
   try {

@@ -29,6 +29,8 @@
 
 import 'server-only';
 
+import { OLLAMA_URL } from '../../config';
+
 const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 const WARMUP_TIMEOUT_MS = 120_000; // 2 min — covers nemotron's ~65s + buffer
 const WARMUP_PROMPT = 'hi';
@@ -51,7 +53,7 @@ function ollamaModelName(fullId: string): string | null {
 export async function prewarmModels(
   modelIds: readonly string[],
 ): Promise<PrewarmResult[]> {
-  const base = (process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL).replace(/\/$/, '');
+  const base = OLLAMA_URL.replace(/\/$/, '');
   const unique = Array.from(
     new Set(
       modelIds

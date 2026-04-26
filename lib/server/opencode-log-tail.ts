@@ -33,13 +33,13 @@ import 'server-only';
 import { existsSync, readdirSync, statSync, openSync, closeSync, readSync } from 'fs';
 import { homedir } from 'os';
 import path from 'path';
+import { OPENCODE_LOG_DIR, USER, WSL_USER } from '../config';
 
 // Default log dir matches the documented path on the user's host —
 // see memory/reference_opencode_4097_launcher.md. Override via env
 // for unusual installs.
 function defaultLogDir(): string {
-  const env = process.env.OPENCODE_LOG_DIR;
-  if (env) return env;
+  if (OPENCODE_LOG_DIR) return OPENCODE_LOG_DIR;
   return path.join(homedir(), '.local', 'share', 'opencode', 'log');
 }
 
@@ -54,7 +54,7 @@ function fallbackWindowsLogDir(): string {
   // single non-Public user dir if the env var is missing. The fallback
   // is only useful on the developer's own machine — on a fresh clone
   // OPENCODE_LOG_DIR should be set explicitly.
-  const user = process.env.WSL_USER ?? process.env.USER;
+  const user = WSL_USER ?? USER;
   if (!user) return '';
   return `/mnt/c/Users/${user}/.local/share/opencode/log`;
 }
