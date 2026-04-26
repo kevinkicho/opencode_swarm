@@ -23,65 +23,20 @@ import { lazyWithRetry } from '@/lib/lazy-with-retry';
 // (webpack hash rotating mid-HMR, or SSE-saturated dev server dropping a
 // chunk request) retries twice before surfacing — covers the common case
 // without masking real import failures.
-const CommandPalette = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/command-palette').then((m) => m.CommandPalette),
-  ),
-  { ssr: false },
-);
-const RoutingModal = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/routing-modal').then((m) => m.RoutingModal),
-  ),
-  { ssr: false },
-);
-const LiveCommitHistory = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/live-commit-history').then((m) => m.LiveCommitHistory),
-  ),
-  { ssr: false },
-);
-const SpawnAgentModal = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/spawn-agent-modal').then((m) => m.SpawnAgentModal),
-  ),
-  { ssr: false },
-);
-const GlossaryModal = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/glossary-modal').then((m) => m.GlossaryModal),
-  ),
-  { ssr: false },
-);
-const NewRunModal = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/new-run-modal').then((m) => m.NewRunModal),
-  ),
-  { ssr: false },
-);
-const RunProvenanceDrawer = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/run-provenance-drawer').then(
-      (m) => m.RunProvenanceDrawer,
-    ),
-  ),
-  { ssr: false },
-);
-const CostDashboard = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/cost-dashboard').then((m) => m.CostDashboard),
-  ),
-  { ssr: false },
-);
-// Inspector is gated by drawerOpen state which defaults to closed. At 17 kB
-// in the client bundle it's worth keeping out of the initial load — the
-// drawer's 220ms open animation masks the dynamic import's fetch latency.
+// Modal renders moved to app/page-internals/page-modals.tsx (#7.Q26
+// decomposition wave 2). The 8 dynamic-imported overlays live there now,
+// alongside the useModalState hook that owns their open/close flags.
+// Inspector stays here — it's gated by drawerOpen + the selection state
+// (focusedMsgId / selectedAgentId / selectedFileHeat), which is too
+// entangled with the page-level interaction model to extract cleanly.
 const Inspector = dynamic(
   lazyWithRetry(() =>
     import('@/components/inspector').then((m) => m.Inspector),
   ),
   { ssr: false },
 );
+import { PageModals } from './page-internals/page-modals';
+import { useModalState } from './page-internals/use-modal-state';
 import type { PaletteAction } from '@/components/command-palette';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { StatusRail } from '@/components/status-rail';
@@ -583,14 +538,12 @@ function PageBody({
   // each other so the drawer shows exactly one thing at a time.
   const [selectedFileHeat, setSelectedFileHeat] = useState<FileHeat | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [routingOpen, setRoutingOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [spawnOpen, setSpawnOpen] = useState(false);
-  const [glossaryOpen, setGlossaryOpen] = useState(false);
-  const [newRunOpen, setNewRunOpen] = useState(false);
-  const [provenanceOpen, setProvenanceOpen] = useState(false);
-  const [costOpen, setCostOpen] = useState(false);
+  // 8 modal flag/setter pairs collapsed into one hook — see
+  // app/page-internals/use-modal-state.ts. The hook hands back stable
+  // openers/closers so passing them down doesn't invalidate downstream
+  // memos. drawerOpen stays here because it's coupled to the selection
+  // tuple (focusedMsgId / selectedAgentId / selectedFileHeat).
+  const modals = useModalState();
   // Most recent cost-cap rejection from the proxy gate (DESIGN.md §9). Set
   // when postSessionMessageBrowser throws CostCapError; cleared on dismiss or
   // when the user switches to a different run.
@@ -904,10 +857,10 @@ function PageBody({
       const k = e.key.toLowerCase();
       if (k === 'k') {
         e.preventDefault();
-        setPaletteOpen((prev) => !prev);
+        modals.openers.togglePalette();
       } else if (k === 'n') {
         e.preventDefault();
-        setNewRunOpen(true);
+        modals.openers.newRun();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -953,7 +906,7 @@ function PageBody({
         agents,
         providers: providerSummary,
         run: runWithBounds,
-        onOpenRouting: () => setRoutingOpen(true),
+        onOpenRouting: modals.openers.routing,
       }}
     >
     <div className="relative h-screen w-screen flex flex-col bg-ink-900 overflow-hidden bg-noise">
@@ -961,8 +914,8 @@ function PageBody({
       <SwarmTopbar
         run={runWithBounds}
         providers={providerSummary}
-        onOpenPalette={() => setPaletteOpen(true)}
-        onOpenSettings={() => setRoutingOpen(true)}
+        onOpenPalette={modals.openers.palette}
+        onOpenSettings={modals.openers.routing}
         liveSessionId={liveSessionId}
         liveDirectory={liveDirectory}
         swarmRunMeta={swarmRunMeta}
@@ -991,7 +944,7 @@ function PageBody({
           onFocus={focusMessage}
           onJump={focusMessage}
           onSelectFileHeat={selectFileHeat}
-          onSpawn={() => setSpawnOpen(true)}
+          onSpawn={modals.openers.spawn}
           tab={leftTab}
           onTabChange={setLeftTab}
           focusTodoId={focusTodoId}
@@ -1289,7 +1242,7 @@ function PageBody({
           block={costCapBlock}
           onOpenRouting={() => {
             setCostCapBlock(null);
-            setRoutingOpen(true);
+            modals.openers.routing();
           }}
           onDismiss={() => setCostCapBlock(null)}
         />
@@ -1318,13 +1271,13 @@ function PageBody({
       />
 
       <StatusRail
-        onOpenPalette={() => setPaletteOpen(true)}
-        onOpenRouting={() => setRoutingOpen(true)}
-        onOpenHistory={() => setHistoryOpen(true)}
-        onOpenGlossary={() => setGlossaryOpen(true)}
-        onOpenNewRun={() => setNewRunOpen(true)}
-        onOpenProvenance={swarmRunID ? () => setProvenanceOpen(true) : null}
-        onOpenCost={() => setCostOpen(true)}
+        onOpenPalette={modals.openers.palette}
+        onOpenRouting={modals.openers.routing}
+        onOpenHistory={modals.openers.history}
+        onOpenGlossary={modals.openers.glossary}
+        onOpenNewRun={modals.openers.newRun}
+        onOpenProvenance={swarmRunID ? modals.openers.provenance : null}
+        onOpenCost={modals.openers.cost}
         swarmRunID={swarmRunID}
       />
 
@@ -1348,42 +1301,18 @@ function PageBody({
         />
       </Drawer>
 
-      <CommandPalette
-        open={paletteOpen}
-        onClose={() => setPaletteOpen(false)}
-        nodes={paletteNodes}
-        onJump={focusMessage}
-        actions={paletteActions}
-      />
-
-      <RoutingModal open={routingOpen} onClose={() => setRoutingOpen(false)} />
-
-      <LiveCommitHistory
-        open={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        turns={liveTurns}
-        diffs={liveDiffs}
-        loading={diffLoading}
-        error={diffError}
-      />
-
-      <SpawnAgentModal
-        open={spawnOpen}
-        onClose={() => setSpawnOpen(false)}
-        directory={liveDirectory}
-      />
-
-      <GlossaryModal open={glossaryOpen} onClose={() => setGlossaryOpen(false)} />
-
-      <NewRunModal open={newRunOpen} onClose={() => setNewRunOpen(false)} />
-
-      <RunProvenanceDrawer
+      <PageModals
+        state={modals}
+        paletteNodes={paletteNodes}
+        paletteActions={paletteActions}
+        onJumpToMessage={focusMessage}
+        liveTurns={liveTurns}
+        liveDiffs={liveDiffs}
+        diffLoading={diffLoading}
+        diffError={diffError}
+        liveDirectory={liveDirectory}
         swarmRunID={swarmRunID}
-        open={provenanceOpen}
-        onClose={() => setProvenanceOpen(false)}
       />
-
-      <CostDashboard open={costOpen} onClose={() => setCostOpen(false)} />
     </div>
     </ProviderStatsProvider>
     </PlaybackProvider>
