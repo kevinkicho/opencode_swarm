@@ -6,6 +6,7 @@
 
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 import type { TickerState } from '@/lib/blackboard/live';
 import type { BoardItem } from '@/lib/blackboard/types';
 import { Tooltip } from '../ui/tooltip';
@@ -102,7 +103,32 @@ export function HardStopChip({ swarmRunID }: { swarmRunID: string }) {
     return () => clearTimeout(t);
   }, [phase]);
 
-  const onClick = async () => {
+  // HARDENING_PLAN.md#E9 — useMutation for the inner fetch. Phase
+  // ('idle' | 'armed' | 'busy' | 'done') stays as useState because it's
+  // a multi-step UI state machine that includes pre-fetch states the
+  // mutation doesn't model directly. Mutation drives only busy/done/error.
+  const stopMutation = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const res = await fetch(`/api/swarm/run/${swarmRunID}/stop`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      });
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          detail?: string;
+        };
+        throw new Error(detail.error ?? detail.detail ?? `HTTP ${res.status}`);
+      }
+    },
+    onSuccess: () => setPhase('done'),
+    onError: (err) => {
+      setError((err as Error).message);
+      setPhase('idle');
+    },
+  });
+
+  const onClick = () => {
     if (phase === 'busy' || phase === 'done') return;
     if (phase === 'idle') {
       setPhase('armed');
@@ -112,22 +138,7 @@ export function HardStopChip({ swarmRunID }: { swarmRunID: string }) {
     // armed → execute
     setPhase('busy');
     setError(null);
-    try {
-      const res = await fetch(`/api/swarm/run/${swarmRunID}/stop`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-      });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(
-          (detail as { error?: string }).error ?? `HTTP ${res.status}`,
-        );
-      }
-      setPhase('done');
-    } catch (err) {
-      setError((err as Error).message);
-      setPhase('idle');
-    }
+    stopMutation.mutate();
   };
 
   const label =

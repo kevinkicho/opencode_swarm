@@ -3,7 +3,7 @@
 import clsx from 'clsx';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { SWARM_RUNS_QUERY_KEY } from '@/lib/opencode/live';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
@@ -68,8 +68,6 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const [branchStrategy, setBranchStrategy] = useState<BranchStrategy>('push-new-branch');
   const [branchName, setBranchName] = useState<string>(generateRunId);
   const [startMode, setStartMode] = useState<StartMode>('dry-run');
-  const [launching, setLaunching] = useState(false);
-  const [launchError, setLaunchError] = useState<string | null>(null);
   const [recipesOpen, setRecipesOpen] = useState(false);
   const [copiedPattern, setCopiedPattern] = useState<SwarmPattern | null>(null);
   const router = useRouter();
@@ -115,6 +113,45 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     workspacePath.trim().length > 0 &&
     (branchStrategy !== 'push-new-branch' || branchName.trim().length > 0);
 
+  // HARDENING_PLAN.md#E9 — useMutation for the run-create POST.
+  // Pre-fix: useState pair `launching` + `launchError` driven by
+  // try/catch around the fetch. Post-fix: TanStack manages pending +
+  // error state uniformly; SWARM_RUNS_QUERY_KEY invalidation lives in
+  // onSuccess; navigation happens after success returns.
+  const launchMutation = useMutation({
+    mutationFn: async (body: SwarmRunRequest): Promise<SwarmRunResponse> => {
+      const res = await fetch('/api/swarm/run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          detail?: string;
+        };
+        throw new Error(
+          detail.error ??
+            detail.detail ??
+            `swarm run create -> HTTP ${res.status}`,
+        );
+      }
+      return (await res.json()) as SwarmRunResponse;
+    },
+    onSuccess: (payload) => {
+      // #7.Q39 — invalidate the runs-list cache so the just-spawned
+      // run surfaces in the picker immediately instead of waiting for
+      // the next 4s poll.
+      void queryClient.invalidateQueries({ queryKey: SWARM_RUNS_QUERY_KEY });
+      onClose();
+      router.push(`/?swarmRun=${encodeURIComponent(payload.swarmRunID)}`);
+    },
+  });
+  const launching = launchMutation.isPending;
+  const launchError = launchMutation.error
+    ? (launchMutation.error as Error).message
+    : null;
+
   const launchLabel = useMemo(() => {
     if (launching) return 'launching run';
     if (startMode === 'dry-run') return 'launch dry-run';
@@ -124,8 +161,6 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
 
   const handleLaunch = async () => {
     if (!canLaunch || launching) return;
-    setLaunching(true);
-    setLaunchError(null);
     const directory = workspacePath.trim();
     const prompt = directive.trim();
     // Seed the session title from the directive's first line. Without this
@@ -163,33 +198,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
       body.teamModels = teamModels;
     }
     if (!unbounded) body.bounds = { costCap, minutesCap };
-    try {
-      const res = await fetch('/api/swarm/run', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const detail = await res.json().catch(() => ({}));
-        throw new Error(
-          (detail as { error?: string }).error ??
-            `swarm run create -> HTTP ${res.status}`
-        );
-      }
-      const payload = (await res.json()) as SwarmRunResponse;
-      // #7.Q39 — invalidate the runs-list cache so the just-spawned run
-      // surfaces in the picker immediately instead of waiting for the
-      // next 4s poll. The picker mounts on the destination page so by
-      // the time the user opens it the cache will have refetched. Fire-
-      // and-forget; nav doesn't gate on the invalidate completing.
-      void queryClient.invalidateQueries({ queryKey: SWARM_RUNS_QUERY_KEY });
-      onClose();
-      router.push(`/?swarmRun=${encodeURIComponent(payload.swarmRunID)}`);
-    } catch (err) {
-      setLaunchError((err as Error).message);
-    } finally {
-      setLaunching(false);
-    }
+    launchMutation.mutate(body);
   };
 
   const bumpCount = (id: string, delta: number) => {

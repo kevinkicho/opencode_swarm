@@ -14,7 +14,8 @@
 // "no re-plans" when sweepCount === 1.
 
 import clsx from 'clsx';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation } from '@tanstack/react-query';
 
 import { useStrategy, type PlanRevisionWire } from '@/lib/blackboard/strategy';
 
@@ -43,7 +44,41 @@ export function StrategyRail({
 }) {
   const { revisions, loading, error } = useStrategy(swarmRunID);
   const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [replanState, setReplanState] = useState<'idle' | 'firing' | 'queued' | 'failed'>('idle');
+
+  // PATTERN_DESIGN/orchestrator-worker.md I3 — manual replan trigger.
+  // POST /api/swarm/run/:id/replan returns 202 immediately.
+  //
+  // HARDENING_PLAN.md#E9 — useMutation for uniform pending/error/disabled
+  // state. The transient "queued" → "idle" auto-reset is preserved via
+  // a useEffect tied to the mutation's status.
+  const replanMutation = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const res = await fetch(`/api/swarm/run/${swarmRunID}/replan`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    },
+  });
+  const replanState: 'idle' | 'firing' | 'queued' | 'failed' =
+    replanMutation.isPending
+      ? 'firing'
+      : replanMutation.isSuccess
+      ? 'queued'
+      : replanMutation.isError
+      ? 'failed'
+      : 'idle';
+  const fireReplan = async (): Promise<void> => {
+    if (replanMutation.isPending) return;
+    replanMutation.mutate();
+  };
+  // Auto-reset back to idle 3s after success or failure so repeated
+  // clicks fire fresh sweeps without a permanent label change.
+  useEffect(() => {
+    if (replanMutation.isSuccess || replanMutation.isError) {
+      const t = setTimeout(() => replanMutation.reset(), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [replanMutation, replanMutation.isSuccess, replanMutation.isError]);
 
   const headerStatus = useMemo(() => {
     if (loading && revisions.length === 0) return 'loading…';
@@ -52,31 +87,6 @@ export function StrategyRail({
     const latest = revisions[0];
     return `R${latest.round} · last sweep ${fmtAge(latest.createdAt)} ago · ${revisions.length} sweep${revisions.length === 1 ? '' : 's'}`;
   }, [loading, error, revisions]);
-
-  // PATTERN_DESIGN/orchestrator-worker.md I3 — manual replan trigger.
-  // POST /api/swarm/run/:id/replan returns 202 immediately. We render
-  // a transient "queued" state that auto-resets so repeated clicks
-  // produce repeated background sweeps without a permanent label
-  // change.
-  const fireReplan = async (): Promise<void> => {
-    if (replanState === 'firing') return;
-    setReplanState('firing');
-    try {
-      const res = await fetch(`/api/swarm/run/${swarmRunID}/replan`, {
-        method: 'POST',
-      });
-      if (!res.ok) {
-        setReplanState('failed');
-        setTimeout(() => setReplanState('idle'), 3000);
-        return;
-      }
-      setReplanState('queued');
-      setTimeout(() => setReplanState('idle'), 3000);
-    } catch {
-      setReplanState('failed');
-      setTimeout(() => setReplanState('idle'), 3000);
-    }
-  };
 
   if (revisions.length === 0) {
     return wrap(

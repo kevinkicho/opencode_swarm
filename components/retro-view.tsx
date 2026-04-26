@@ -22,6 +22,7 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
+import { useMutation } from '@tanstack/react-query';
 import type { AgentRollup, RunRetro } from '@/lib/server/memory/types';
 import type { TickerSnapshot } from '@/lib/blackboard/live';
 
@@ -697,35 +698,40 @@ function GenerateRollupCard({ swarmRunID }: { swarmRunID: string }) {
 }
 
 function RollupGenerateButton({ swarmRunID }: { swarmRunID: string }) {
+  // HARDENING_PLAN.md#E9 — useMutation replaces document.activeElement
+  // mutation + manual error label. Pre-fix the click handler grabbed
+  // the active element by side effect, mutated its disabled+textContent
+  // imperatively, and reloaded the page on success. Now state is React-
+  // managed and the imperative DOM mutation smell is gone.
+  const rollupMutation = useMutation({
+    mutationFn: async (): Promise<void> => {
+      const res = await fetch('/api/swarm/memory/rollup', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ swarmRunID }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    },
+    onSuccess: () => {
+      // Same UX as before — full reload to pick up the freshly-written
+      // rollups + retro from the server. Could be improved to hit the
+      // canonical TanStack queryKey once retros migrate.
+      window.location.reload();
+    },
+  });
+  const label = rollupMutation.isPending
+    ? 'generating…'
+    : rollupMutation.isError
+      ? `error: ${(rollupMutation.error as Error)?.message ?? 'unknown'} — retry`
+      : 'generate rollup';
   return (
     <button
       type="button"
-      onClick={async () => {
-        const btn = document.activeElement as HTMLButtonElement | null;
-        if (btn) {
-          btn.disabled = true;
-          btn.textContent = 'generating…';
-        }
-        try {
-          const res = await fetch('/api/swarm/memory/rollup', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ swarmRunID }),
-          });
-          if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-          }
-          window.location.reload();
-        } catch (err) {
-          if (btn) {
-            btn.disabled = false;
-            btn.textContent = `error: ${err instanceof Error ? err.message : 'unknown'} — retry`;
-          }
-        }
-      }}
-      className="w-full h-7 px-3 rounded font-mono text-[11px] uppercase tracking-widest2 cursor-pointer bg-ink-800 hairline text-fog-200 hover:border-mint/40 hover:text-mint transition"
+      onClick={() => rollupMutation.mutate()}
+      disabled={rollupMutation.isPending}
+      className="w-full h-7 px-3 rounded font-mono text-[11px] uppercase tracking-widest2 cursor-pointer bg-ink-800 hairline text-fog-200 hover:border-mint/40 hover:text-mint transition disabled:cursor-wait disabled:opacity-70"
     >
-      generate rollup
+      {label}
     </button>
   );
 }
