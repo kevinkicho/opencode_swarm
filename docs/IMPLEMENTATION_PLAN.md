@@ -264,12 +264,12 @@ schema-drift surprises, no more silent orphan kills. **Do this first.**
 
 | # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
 |---|---|---|---|---|---|
-| 8.W1.1 | Forensic-log on auto-ticker orphan-cleanup | #R3 | 15m | `orphan-cleanup-log.test.ts` (un-skip) | PENDING |
-| 8.W1.2 | Pattern-kickoff sync-throw → 5xx + gateFailures field | #R1 | 2-3h | `tests/integration/kickoff-fail-open.test.ts` (un-skip) | PENDING |
-| 8.W1.3 | Add `lib/opencode/validate-part.ts` runtime SDK validator | #R2 | 1h | `lib/opencode/__tests__/validate-part.test.ts` (un-skip) | PENDING |
-| 8.W1.4 | Capture 4-6 opencode JSON fixtures into `lib/opencode/__fixtures__/` | #D7 | 1-2h | (none — pairs with 8.W1.5) | PENDING |
-| 8.W1.5 | Drive transformers through fixture corpus | #D4 #3 | 1-2h | `lib/opencode/__tests__/transform-fixtures.test.ts` (un-skip) | PENDING |
-| 8.W1.6 | Exhaustive switch on `lib/blackboard/live.ts:120` | #R2 | 15m | (covered by validate-part) | PENDING |
+| 8.W1.1 | Forensic-log on auto-ticker orphan-cleanup | #R3 | 15m | `orphan-cleanup-log.test.ts` (un-skip) | **SHIPPED** |
+| 8.W1.2 | Pattern-kickoff sync-throw → 5xx + gateFailures field | #R1 | 2-3h | `tests/integration/kickoff-fail-open.test.ts` (un-skip) | **SHIPPED** |
+| 8.W1.3 | Add `lib/opencode/validate-part.ts` runtime SDK validator | #R2 | 1h | `lib/opencode/__tests__/validate-part.test.ts` (un-skip) | **SHIPPED** |
+| 8.W1.4 | Capture 4-6 opencode JSON fixtures into `lib/opencode/__fixtures__/` | #D7 | 1-2h | (none — pairs with 8.W1.5) | **SHIPPED** |
+| 8.W1.5 | Drive transformers through fixture corpus | #D4 #3 | 1-2h | `lib/opencode/__tests__/transform-fixtures.test.ts` (un-skip) | **SHIPPED** |
+| 8.W1.6 | Exhaustive switch on `lib/blackboard/live.ts:120` | #R2 | 15m | (covered by validate-part) | **SHIPPED** |
 
 **Commits this wave produces:** ~3 (one for R3 + R1; one for R2 validator + fixtures + transformer tests; one for the live.ts switch).
 
@@ -280,15 +280,15 @@ parallelize across two sittings.
 
 | # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
 |---|---|---|---|---|---|
-| 8.W2.1 | `atomicWriteFile` helper + per-run mutex; rewrite meta.json sites | #D1 | 1-2h | `lib/server/__tests__/atomic-write.test.ts` (un-skip) | PENDING |
-| 8.W2.2 | globalThis-key the 3 lock maps (critic / verifier / auditor) | #D2 | 30m | `lock-hmr-survival.test.ts` (3 sub-tests flip) | PENDING |
-| 8.W2.3 | `import 'server-only';` on all 64 server modules | #D6 | 30m | `server-only-imports.test.ts` flips | PENDING |
-| 8.W2.4 | `lib/opencode/errors.ts` typed errors + replace 8 throws + 2 substring matches | #R4 | 1-2h | `lib/opencode/__tests__/errors.test.ts` (un-skip) | PENDING |
-| 8.W2.5 | `swarm-registry-validate.ts` for meta.json + events.ndjson + memory union | #R7 | 1-2h | `swarm-registry-validate.test.ts` (un-skip) | PENDING |
-| 8.W2.6 | API error-response shape standardization (15 sites → `{error, detail?, hint?}`) | #R5 | 2-3h | `api-error-shape.test.ts` flips | PENDING |
-| 8.W2.7 | `parseFooBody` validators for the 4 untyped routes | #R6 | 1-2h | `route-body-validation.test.ts` flips | PENDING |
-| 8.W2.8 | Auto-ticker `resweepInFlight` CAS-tighten + `ensureSlots` idempotence note | #D8 | 30m | new `auto-ticker/__tests__/tick.test.ts` covers concurrent tickSession | PENDING |
-| 8.W2.9 | Per-swarmRunID dispatch mutex around `tickCoordinator` | #D9 | 1h | dispatch test (W3.1) covers concurrent-call serialization | PENDING |
+| 8.W2.1 | `atomicWriteFile` helper + per-run mutex; rewrite meta.json sites | #D1 | 1-2h | `lib/server/__tests__/atomic-write.test.ts` (un-skip) | **SHIPPED** |
+| 8.W2.2 | globalThis-key the 3 lock maps (critic / verifier / auditor) | #D2 | 30m | `lock-hmr-survival.test.ts` (3 sub-tests flip) | **SHIPPED** |
+| 8.W2.3 | `import 'server-only';` on all 64 server modules | #D6 | 30m | `server-only-imports.test.ts` flips | **SHIPPED** |
+| 8.W2.4 | `lib/opencode/errors.ts` typed errors + replace 8 throws + 2 substring matches | #R4 | 1-2h | `lib/opencode/__tests__/errors.test.ts` (un-skip) | **SHIPPED** |
+| 8.W2.5 | `swarm-registry-validate.ts` for meta.json + events.ndjson + memory union | #R7 | 1-2h | `swarm-registry-validate.test.ts` (un-skip) | **SHIPPED** |
+| 8.W2.6 | API error-response shape standardization (15 sites → `{error, detail?, hint?}`) | #R5 | 2-3h | `api-error-shape.test.ts` flips | **SHIPPED** |
+| 8.W2.7 | `parseFooBody` validators for the 4 untyped routes | #R6 | 1-2h | `route-body-validation.test.ts` flips | **SHIPPED** |
+| 8.W2.8 | Auto-ticker `resweepInFlight` CAS-tighten + `ensureSlots` idempotence note | #D8 | 30m | new `auto-ticker/__tests__/tick.test.ts` covers concurrent tickSession | **SHIPPED** |
+| 8.W2.9 | Per-swarmRunID dispatch mutex around `tickCoordinator` | #D9 | 1h | dispatch test (W3.1) covers concurrent-call serialization | **SHIPPED** |
 
 **Commits this wave produces:** ~6-8 (each item is a clean independent commit).
 
@@ -300,11 +300,11 @@ refactor (Wave 5) doesn't ship blind.
 | # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
 |---|---|---|---|---|---|
 | 8.W3.0 | Lifecycle test for `swarm-registry` (already shipped) | #D4 #1 | (done) | `swarm-registry-lifecycle.test.ts` (passing) | **SHIPPED** |
-| 8.W3.1 | Tests for `tickCoordinator` (covers Q34 silent-drop class) | #D4 #2 | 3-4h | `coordinator/__tests__/dispatch.test.ts` (un-skip) | PENDING |
-| 8.W3.2 | 6 missing pattern integration tests (orchestrator-worker, role-differentiated, critic-loop, debate-judge, council, map-reduce, deliberate-execute) | #D4 #4 | 4-6h | `tests/integration/<pattern>.test.ts` (un-skip × 7) | PENDING |
-| 8.W3.3 | Tests for `runPlannerSweep` | #D4 #5 | 2h | `planner-sweep.test.ts` (un-skip) | PENDING |
-| 8.W3.4 | Postmortem ledger template update + audit existing | #D5 | 30m | `postmortem-ledger.test.ts` (passing) | (lint already passes; just template + retroactive audit) |
-| 8.W3.5 | LRU helper + cap unbounded caches (5 caches) | #D3 | 1-2h | `lib/server/__tests__/lru.test.ts` (un-skip) | PENDING |
+| 8.W3.1 | Tests for `tickCoordinator` (covers Q34 silent-drop class) | #D4 #2 | 3-4h | `coordinator/__tests__/dispatch.test.ts` (un-skip) | **SHIPPED** (33 cases · commit 723d735) |
+| 8.W3.2 | 6 missing pattern integration tests (orchestrator-worker, role-differentiated, critic-loop, debate-judge, council, map-reduce, deliberate-execute) | #D4 #4 | 4-6h | `tests/integration/<pattern>.test.ts` (un-skip × 7) | DEFERRED (needs live dev+opencode infra; harness reads `.dev-port`. Re-attempt next live-validation session) |
+| 8.W3.3 | Tests for `runPlannerSweep` | #D4 #5 | 2h | `planner-sweep.test.ts` (un-skip) | **SHIPPED** (26 cases · commit b21607b) |
+| 8.W3.4 | Postmortem ledger template update + audit existing | #D5 | 30m | `postmortem-ledger.test.ts` (passing) | **SHIPPED** (audit clean — FU.6) |
+| 8.W3.5 | LRU helper + cap unbounded caches (5 caches) | #D3 | 1-2h | `lib/server/__tests__/lru.test.ts` (un-skip) | **SHIPPED** |
 
 **Commits this wave produces:** ~4 (group integration tests by 3-pattern batches).
 
@@ -315,14 +315,14 @@ cycles tighten.
 
 | # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
 |---|---|---|---|---|---|
-| 8.W4.1 | `getSessionMessagesServer` in-flight + 500ms TTL dedup | #E1 | 1h | (manual: 16→8 probes on 8-session snapshot) | PENDING |
-| 8.W4.2 | Migrate 4 raw `/api/swarm/run` fetches to `useSwarmRuns` | #E2 | 30m | `raw-fetch-audit.test.ts` flips | PENDING |
-| 8.W4.3 | `BackendHealthProvider` Context (kill 3-poller waste) | #E3 | 30m | (manual: 1× /health/5s instead of N×) | PENDING |
-| 8.W4.4 | Parallelize 3 `sha7` await loops in `dispatch.ts` | #E5 | 30m | (covered by W3.1 dispatch test) | PENDING |
-| 8.W4.5 | `board/ticker` Q46-style import-graph fix | #E6 | 30m | (manual: cold-compile probe ≤200 modules) | PENDING |
-| 8.W4.6 | Audit other multi-method routes for same pattern | #E7 | 1-2h | (audit notes only) | PENDING |
+| 8.W4.1 | `getSessionMessagesServer` in-flight + 500ms TTL dedup | #E1 | 1h | (manual: 16→8 probes on 8-session snapshot) | **SHIPPED** |
+| 8.W4.2 | Migrate 4 raw `/api/swarm/run` fetches to `useSwarmRuns` | #E2 | 30m | `raw-fetch-audit.test.ts` flips | **SHIPPED** |
+| 8.W4.3 | `BackendHealthProvider` Context (kill 3-poller waste) | #E3 | 30m | (manual: 1× /health/5s instead of N×) | **SHIPPED** |
+| 8.W4.4 | Parallelize 3 `sha7` await loops in `dispatch.ts` | #E5 | 30m | (covered by W3.1 dispatch test) | **SHIPPED** |
+| 8.W4.5 | `board/ticker` Q46-style import-graph fix | #E6 | 30m | (manual: cold-compile probe ≤200 modules) | **SHIPPED** |
+| 8.W4.6 | Audit other multi-method routes for same pattern | #E7 | 1-2h | (audit notes only) | **SHIPPED** |
 | 8.W4.7 | Fold ticker + strategy frames into `/board/events` SSE; drop 2 polls | #E4 | 2-3h | (manual: Network panel shows 1 SSE not 3 polls) | PENDING |
-| 8.W4.8 | `useMutation` migration for 4 POST raw-fetch sites | #E9 | 2-3h | (manual: each mutation has uniform pending/error/disabled state) | PENDING |
+| 8.W4.8 | `useMutation` migration for 4 POST raw-fetch sites | #E9 | 2-3h | (manual: each mutation has uniform pending/error/disabled state) | **SHIPPED** |
 
 **Commits this wave produces:** ~6 (E5 piggybacks on W3.1; E6+E7 group; E4 standalone; E9 standalone).
 
@@ -333,27 +333,45 @@ Do incrementally — each item is independently mergeable.
 
 | # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
 |---|---|---|---|---|---|
-| 8.W5.1 | Split `swarm-registry.ts` along fs/derive seam (closes Q47) | #C3 | 2-3h | `swarm-registry-lifecycle.test.ts` stays green | PENDING |
-| 8.W5.2 | Decompose `tickCoordinator` into 5 helpers | #C4 | 4-5h | dispatch tests (W3.1) pass per-helper | PENDING |
+| 8.W5.1 | Split `swarm-registry.ts` along fs/derive seam (closes Q47) | #C3 | 2-3h | `swarm-registry-lifecycle.test.ts` stays green | DEFERRED — FU.3 lazy-load addressed the Q47 compile-graph concern; full split optional |
+| 8.W5.2 | Decompose `tickCoordinator` into 5 helpers | #C4 | 4-5h | dispatch tests (W3.1) pass per-helper | PENDING (now unblocked by W3.1) |
 | 8.W5.3 | Split `app/api/swarm/run/route.ts` (1076 → ≤250 LOC + per-pattern kickoff table) | #C2 | 3-4h | (no test regression; manual: route file ≤250) | PENDING |
-| 8.W5.4 | Delete/namespace 8 orphan endpoints | #C9 | 1-2h | (manual: route count 20 → ≤14) | PENDING |
-| 8.W5.5 | `lib/api-types.ts` lift 6 inline route interfaces | #C5 | 1-2h | (manual: client + server share types) | PENDING |
-| 8.W5.6 | `lib/config.ts` typed env-var module | #C5 | 1-2h | (manual: `grep process.env` in lib/app drops to 1 file) | PENDING |
-| 8.W5.6b | `lib/server/pattern-tunables.ts` consolidate ~20 magic numbers | #C18 | 2-3h | (manual: pattern files import constants instead of inlining) | PENDING |
-| 8.W5.7 | Lift `extractLatestAssistantText` to `harvest-drafts.ts` (delete 5 dupes) | #C1 | 1h | (manual: grep returns 1 def) | PENDING |
-| 8.W5.8 | Move `parseVerdict` server-side only; client reads structured field | #C16 | 30m | (manual: `parseVerdict` in 0 .tsx files) | PENDING |
-| 8.W5.9 | `components/rails/_shared.ts` rail helpers consolidation | #C15 | 1-2h | (manual: grep `function wrap` in components/ returns 1) | PENDING |
-| 8.W5.10 | `app/page.tsx` extract `useSwarmView` + `useDiffStats` hooks | #C6 + #E8 | 3-4h | (manual: page.tsx ≤1050 LOC, hook count ≤22) | PENDING |
-| 8.W5.11 | `swarm-timeline.tsx` add `TimelineInteractionContext` | #C7 | 1-2h | (manual: prop list shrinks ≥3) | PENDING |
+| 8.W5.4 | Delete/namespace 8 orphan endpoints | #C9 | 1-2h | (manual: route count 20 → ≤14) | **SHIPPED** (FU.5 finalised 3 ops endpoints under /api/_debug/) |
+| 8.W5.5 | `lib/api-types.ts` lift 6 inline route interfaces | #C5 | 1-2h | (manual: client + server share types) | **SHIPPED** |
+| 8.W5.6 | `lib/config.ts` typed env-var module | #C5 | 1-2h | (manual: `grep process.env` in lib/app drops to 1 file) | **SHIPPED** |
+| 8.W5.6b | `lib/server/pattern-tunables.ts` consolidate ~20 magic numbers | #C18 | 2-3h | (manual: pattern files import constants instead of inlining) | **SHIPPED** |
+| 8.W5.7 | Lift `extractLatestAssistantText` to `harvest-drafts.ts` (delete 5 dupes) | #C1 | 1h | (manual: grep returns 1 def) | **SHIPPED** |
+| 8.W5.8 | Move `parseVerdict` server-side only; client reads structured field | #C16 | 30m | (manual: `parseVerdict` in 0 .tsx files) | (deferred — low priority; not in current task list) |
+| 8.W5.9 | `components/rails/_shared.ts` rail helpers consolidation | #C15 | 1-2h | (manual: grep `function wrap` in components/ returns 1) | **SHIPPED** |
+| 8.W5.10 | `app/page.tsx` extract `useSwarmView` + `useDiffStats` hooks | #C6 + #E8 | 3-4h | (manual: page.tsx ≤1050 LOC, hook count ≤22) | **SHIPPED** (1206 → 1092 LOC · commit b918d95) |
+| 8.W5.11 | `swarm-timeline.tsx` add `TimelineInteractionContext` | #C7 | 1-2h | (manual: prop list shrinks ≥3) | **SHIPPED** |
 | 8.W5.12 | Split `lib/opencode/live.ts` into 6 hook files | #C10 | 4-6h | each new file ≤300 LOC | PENDING |
 | 8.W5.13 | Split `lib/opencode/transform.ts` into per-transformer files | #C11 | 3-4h | each new file ≤300 LOC | PENDING |
-| 8.W5.14 | Split `lib/server/blackboard/planner.ts` into 4 files | #C12 | 3-5h | each new file ≤400 LOC | PENDING |
-| 8.W5.15 | Split `lib/server/memory/rollup.ts` (capture/compute/persist) | #C13 | 2-3h | each new file ≤250 LOC | PENDING |
+| 8.W5.14 | Split `lib/server/blackboard/planner.ts` into 4 files | #C12 | 3-5h | each new file ≤400 LOC | PENDING (now unblocked by W3.3) |
+| 8.W5.15 | Split `lib/server/memory/rollup.ts` (capture/compute/persist) | #C13 | 2-3h | each new file ≤250 LOC | **SHIPPED** |
 | 8.W5.16 | Decompose `new-run-modal` + `spawn-agent-modal` + `routing-modal` | #C8 | 4-5h | each ≤500 LOC; modal opens cleanly | PENDING |
-| 8.W5.17 | Close 2 import cycles | #C17 | 30m | `import-cycles.test.ts` flips | PENDING |
+| 8.W5.17 | Close 2 import cycles | #C17 | 30m | `import-cycles.test.ts` flips | **SHIPPED** |
 | 8.W5.18 | Remaining UI decomp (retro-view + turn-cards + agent-roster + etc.) | #C14 | 6-10h | each ≤500 LOC | PENDING |
 
 **Commits this wave produces:** ~15-18 (one per item; some can group).
+
+### Follow-ups · audit-driven additions (FU series)
+
+After Wave 1-5 shipping, a code-audit pass surfaced 9 follow-up items
+that were already implied by the plan but not called out as discrete
+deliverables. Each closes a specific gap.
+
+| # | Item | HARDENING_PLAN | Status |
+|---|---|---|---|
+| 8.FU.1 | Wire `validatePart` into 5 live.ts SSE parse sites | #R2 | **SHIPPED** |
+| 8.FU.2 | Wire `validateMemoryKindDiscriminator` into memory readers | #R7 | **SHIPPED** |
+| 8.FU.3 | Q47: lazy-load opencode-server inside deriveRunRow | #C3 (partial) | **SHIPPED** |
+| 8.FU.4 | Unit test for D8 resweepInFlight CAS-tighten | #D8 verification | **SHIPPED** (4 cases) |
+| 8.FU.5 | Move 3 curl-callable orphan endpoints to /api/_debug/ | #C9 (extension) | **SHIPPED** (commit 136c227) |
+| 8.FU.6 | Retroactive audit of 3 existing postmortems against new template | #D5 | **SHIPPED** |
+| 8.FU.7 | Live-render verification of TimelineContext + useMutation refactors | #C7 + #E9 | DEFERRED (needs live dev infra) |
+| 8.FU.8 | Regenerate docs/CALL_GRAPH.md | (housekeeping) | **SHIPPED** |
+| 8.FU.9 | STATUS.md update reflecting post-hardening state | (housekeeping) | **SHIPPED** |
 
 ### Stop conditions (anti-scope-creep)
 
