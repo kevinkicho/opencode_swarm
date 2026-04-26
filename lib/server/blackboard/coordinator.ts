@@ -27,8 +27,6 @@
 //
 // Server-only. Never imported from client code.
 
-import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
 import path from 'node:path';
 
 import { getRun } from '../swarm-registry';
@@ -52,11 +50,34 @@ import {
   type TickOpts,
   type TickOutcome,
 } from './coordinator/types';
+import { turnTimeoutFor, zombieThresholdFor } from './coordinator/timeouts';
+import {
+  currentRetryCount,
+  extractRetryFailureReason,
+  MAX_STALE_RETRIES,
+  retryOrStale,
+} from './coordinator/retry';
+import {
+  extractEditedPaths,
+  extractPathTokens,
+  extractWorkerAssistantText,
+  pathOverlaps,
+  relativizeToWorkspace,
+  sha7,
+} from './coordinator/path-utils';
 
-// Re-export public types so external imports keep working unchanged.
-// Phase 1 of #107 — types extracted; logic still lives below.
+// Re-export public surface so external imports keep working unchanged.
+// Phases 1-2 of #107 — types + pure helpers extracted; orchestration
+// (waitForSessionIdle + tickCoordinator) still lives below.
 export {
   COORDINATOR_EXPORTS_KEY,
+  turnTimeoutFor,
+  zombieThresholdFor,
+  currentRetryCount,
+  extractRetryFailureReason,
+  extractPathTokens,
+  pathOverlaps,
+  relativizeToWorkspace,
 };
 export type { CoordinatorExports, TickOpts, TickOutcome };
 
@@ -75,40 +96,7 @@ const POLL_INTERVAL_MS = 1000;
 // revisions on a focused target, so a shorter timeout catches hung
 // turns faster without losing legitimate work. Patterns not in the map
 // fall back to DEFAULT_TURN_TIMEOUT_MS.
-const DEFAULT_TURN_TIMEOUT_MS = 10 * 60_000;
-const TURN_TIMEOUTS_MS: Record<string, number> = {
-  blackboard: 10 * 60_000,
-  'orchestrator-worker': 10 * 60_000,
-  'role-differentiated': 10 * 60_000,
-  'deliberate-execute': 15 * 60_000,
-};
-export function turnTimeoutFor(pattern: string): number {
-  return TURN_TIMEOUTS_MS[pattern] ?? DEFAULT_TURN_TIMEOUT_MS;
-}
-
-// Per-pattern zombie threshold for the session picker. opencode assistant
-// turns can hang with no completed AND no error (see
-// memory/reference_opencode_zombie_messages.md) — in-flight indefinitely,
-// silently blocking dispatch because the picker skips any session with an
-// active in-flight turn. After this many ms, the picker treats the turn
-// as stale: auto-aborts it and dispatches to the session anyway.
-//
-// Only blackboard-family patterns (blackboard / orchestrator-worker /
-// role-differentiated / deliberate-execute) run through tickCoordinator,
-// so those are the only values that matter in practice. 10 min is the
-// legacy default and works for typical refactor work; deliberate-execute's
-// synthesis phase gets more headroom because reconciling N council drafts
-// legitimately takes longer than a single-file edit.
-const ZOMBIE_TURN_THRESHOLD_DEFAULT_MS = 10 * 60_000;
-const ZOMBIE_TURN_THRESHOLDS_MS: Record<string, number> = {
-  blackboard: 10 * 60_000,
-  'orchestrator-worker': 10 * 60_000,
-  'role-differentiated': 10 * 60_000,
-  'deliberate-execute': 15 * 60_000,
-};
-export function zombieThresholdFor(pattern: string): number {
-  return ZOMBIE_TURN_THRESHOLDS_MS[pattern] ?? ZOMBIE_TURN_THRESHOLD_DEFAULT_MS;
-}
+// Per-pattern timeouts moved to coordinator/timeouts.ts (#107 phase 2).
 
 // How long the session must be silent (no new activity, all turns completed)
 // before we treat it as "done". opencode emits one assistant message per
@@ -238,83 +226,6 @@ export function ownerIdForSession(sessionID: string): string {
   return 'ag_ses_' + sessionID.slice(-8);
 }
 
-// Same pattern as planner.ts::sha7 — 7-char git-short SHA1 of file contents.
-async function sha7(absPath: string): Promise<string> {
-  const buf = await fs.readFile(absPath);
-  return createHash('sha1').update(buf).digest('hex').slice(0, 7);
-}
-
-// Stale-retry budget. When a worker times out or errors on a todo,
-// instead of terminating the todo as `stale` forever, requeue it as
-// `open` so another tick can pick it up. The retry count is stored in
-// the todo's note — after MAX_STALE_RETRIES, the item stays stale.
-//
-// Why: a single transient failure (slow tool call, temporarily-offline
-// upstream, hit a 5-min deadline mid-work) shouldn't drop the todo from
-// the swarm's work queue. The user was explicit about wanting stale
-// items to not "die silently."
-const MAX_STALE_RETRIES = 2;
-const RETRY_TAG_RE = /^\[retry:(\d+)\]\s*/;
-
-export function currentRetryCount(note: string | null | undefined): number {
-  if (!note) return 0;
-  const m = RETRY_TAG_RE.exec(note);
-  return m ? Number(m[1]) : 0;
-}
-
-// Transition an in-progress item into either `open` (retry) or `stale`
-// (final) based on accumulated retry count in the note field. Preserves
-// the failure reason in the note so inspector / rail views still show
-// why the previous attempt failed.
-function retryOrStale(
-  swarmRunID: string,
-  item: BoardItem,
-  reason: string,
-): 'retry' | 'stale' {
-  const retries = currentRetryCount(item.note);
-  if (retries < MAX_STALE_RETRIES) {
-    const nextNote = `[retry:${retries + 1}] ${reason}`.slice(0, 200);
-    transitionStatus(swarmRunID, item.id, {
-      from: 'in-progress',
-      to: 'open',
-      ownerAgentId: null,
-      fileHashes: null,
-      note: nextNote,
-    });
-    return 'retry';
-  }
-  transitionStatus(swarmRunID, item.id, {
-    from: 'in-progress',
-    to: 'stale',
-    note: `[final after ${retries} retries] ${reason}`.slice(0, 200),
-  });
-  return 'stale';
-}
-
-// File-path-ish tokens inside a todo's content. Used to detect overlap
-// with an in-progress item's content so two sessions don't trample each
-// other's files. Matches: dir-ish (src/foo/bar), file-ish with common
-// extensions, and bare basenames ≥4 chars with an extension. Tokens
-// under 4 chars are skipped — "ts" / "js" would be noise.
-const PATH_TOKEN_RE = /[a-zA-Z_][\w.-]*(?:\/[\w.-]+)+\/?|\b\w{4,}\.(?:ts|tsx|js|jsx|py|go|rs|md|css|html|json|yaml|yml|toml)\b/g;
-
-export function extractPathTokens(content: string): Set<string> {
-  const out = new Set<string>();
-  const matches = content.match(PATH_TOKEN_RE) ?? [];
-  for (const m of matches) out.add(m.replace(/\\/g, '/').replace(/\/$/, ''));
-  return out;
-}
-
-export function pathOverlaps(a: Set<string>, b: Set<string>): boolean {
-  for (const x of a) {
-    for (const y of b) {
-      if (x === y) return true;
-      if (x.startsWith(y + '/')) return true; // y is ancestor of x
-      if (y.startsWith(x + '/')) return true; // x is ancestor of y
-    }
-  }
-  return false;
-}
 
 // Stigmergy v1 — pheromone-weighted pick. Score a todo by summing the
 // edit counts of heat entries whose path or containing dir or basename
@@ -449,78 +360,6 @@ function oldestInFlightAgeMs(messages: OpencodeMessage[]): number {
   return Date.now() - oldest;
 }
 
-// Which files did the turn edit? `patch` parts carry `files: string[]`
-// (one part per turn that committed edits — see lib/opencode/types.ts). We
-// union across every patch part in the scoped messages, so a turn that
-// touches the same file twice produces one entry.
-function extractEditedPaths(
-  messages: OpencodeMessage[],
-  scopeMessageIDs: Set<string>,
-): string[] {
-  const paths = new Set<string>();
-  for (const m of messages) {
-    if (!scopeMessageIDs.has(m.info.id)) continue;
-    for (const part of m.parts) {
-      if (part.type !== 'patch') continue;
-      for (const f of part.files) paths.add(f);
-    }
-  }
-  return [...paths];
-}
-
-// Concatenate the text-part content of new assistant messages in the
-// scope. Used by the critic gate to show the reviewer what the worker
-// "said" about the turn (argument, claim, summary). Keeps only the last
-// assistant message's text — that's usually the closing summary; prior
-// steps are tool calls + reasoning we don't need to show the critic.
-function extractWorkerAssistantText(
-  messages: OpencodeMessage[],
-  scopeMessageIDs: Set<string>,
-): string {
-  let last = '';
-  for (const m of messages) {
-    if (!scopeMessageIDs.has(m.info.id)) continue;
-    if (m.info.role !== 'assistant') continue;
-    const text = m.parts
-      .flatMap((p) => (p.type === 'text' ? [p.text] : []))
-      .join('')
-      .trim();
-    if (text) last = text;
-  }
-  return last;
-}
-
-// opencode reports absolute paths in `patch.files` (e.g. on Windows,
-// `C:/Users/.../components/foo.tsx`). The board stores fileHashes for
-// cross-run comparison — absolute host paths make those records useless
-// if the repo ever moves. Relativize against the run's workspace and
-// normalize to forward slashes; fall back to the absolute path if the
-// edit landed outside the workspace (e.g. a shared config), since we'd
-// rather record something truthful than pretend an out-of-tree edit is
-// local.
-export function relativizeToWorkspace(workspace: string, p: string): string {
-  const rel = path.relative(workspace, p);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
-    return p.replace(/\\/g, '/');
-  }
-  return rel.replace(/\\/g, '/');
-}
-
-// #76 — extract the human-readable failure reason from a retry note so
-// it can be surfaced to the model on re-dispatch. Notes have the shape
-// `[retry:N] <reason>` (set by retryOrStale). Returns null when the note
-// is absent or doesn't carry a retry tag. Exported for unit tests.
-export function extractRetryFailureReason(
-  note: string | null | undefined,
-): { attempt: number; reason: string } | null {
-  if (!note) return null;
-  const m = RETRY_TAG_RE.exec(note);
-  if (!m) return null;
-  const attempt = Number(m[1]);
-  const reason = note.slice(m[0].length).trim();
-  if (!reason) return { attempt, reason: '(no reason recorded)' };
-  return { attempt, reason };
-}
 
 export function buildWorkPrompt(item: BoardItem): string {
   // Synthesize items carry a complete, self-contained prompt (member drafts
