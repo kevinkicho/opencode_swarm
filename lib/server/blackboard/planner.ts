@@ -86,14 +86,11 @@ export interface PlannerSweepResult {
   planMessageID: string | null;
 }
 
-// Mint matches the format used by POST /board (t_ + 8 hex chars). Collision
-// probability is ~10^-10 per run — adequate for prototype scale, matched
-// against a (run_id, id) UNIQUE constraint in SQL so conflicts surface.
-// Exported so other pattern orchestrators (deliberate-execute) can mint
-// consistent IDs when seeding the board from their own synthesis paths.
-export function mintItemId(): string {
-  return 't_' + randomBytes(4).toString('hex');
-}
+// HARDENING_PLAN.md#C17 — `mintItemId` extracted to ./item-ids to break
+// the planner ↔ degraded-completion import cycle. Imported AND re-
+// exported here so existing callers don't need to update their imports.
+import { mintItemId } from './item-ids';
+export { mintItemId };
 
 // PATTERN_DESIGN/blackboard.md I4 — criterion authoring preflight.
 // Returns true when the criterion text is concrete enough for the

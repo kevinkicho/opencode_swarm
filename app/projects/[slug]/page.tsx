@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { RepoRunsView } from '@/components/repo-runs-view';
-import type { SwarmRunListRow } from '@/lib/swarm-run-types';
+import { SWARM_RUNS_QUERY_KEY, useSwarmRuns } from '@/lib/opencode/live';
 
 // /projects/[slug] — cross-run comparison surface for one workspace.
 //
@@ -30,36 +31,19 @@ export default function ProjectDetailPage() {
   const params = useParams<{ slug: string }>();
   const slug = decodeURIComponent(params.slug);
 
-  const [rows, setRows] = useState<SwarmRunListRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  // HARDENING_PLAN.md#E2 — useSwarmRuns shares queryKey with the picker
+  // so this page reuses cached data instead of triggering a separate
+  // round trip on every navigation.
+  const { rows, error } = useSwarmRuns({ intervalMs: 30000 });
+  const queryClient = useQueryClient();
+  const onRefresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: SWARM_RUNS_QUERY_KEY });
+  }, [queryClient]);
 
-  const load = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const r = await fetch('/api/swarm/run', { cache: 'no-store' });
-      const data = (await r.json()) as { runs?: SwarmRunListRow[]; error?: string };
-      if (!r.ok) {
-        setError(data.error ?? `HTTP ${r.status}`);
-        return;
-      }
-      setRows(data.runs ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const matching =
-    rows === null
-      ? null
-      : rows.filter((row) => repoNameOf(row.meta.workspace) === slug);
+  const matching = useMemo(
+    () => rows.filter((row) => repoNameOf(row.meta.workspace) === slug),
+    [rows, slug],
+  );
 
   return (
     <div className="flex flex-col h-screen w-screen bg-ink-900 bg-noise">
@@ -75,19 +59,16 @@ export default function ProjectDetailPage() {
             /
           </span>
           <span className="font-mono text-[13px] text-fog-200">{slug}</span>
-          {matching && (
-            <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700 tabular-nums">
-              {matching.length} run{matching.length === 1 ? '' : 's'}
-            </span>
-          )}
+          <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700 tabular-nums">
+            {matching.length} run{matching.length === 1 ? '' : 's'}
+          </span>
         </div>
         <button
           type="button"
-          onClick={() => void load()}
-          disabled={refreshing}
-          className="font-mono text-micro uppercase tracking-widest2 text-fog-500 hover:text-fog-300 disabled:opacity-50"
+          onClick={onRefresh}
+          className="font-mono text-micro uppercase tracking-widest2 text-fog-500 hover:text-fog-300"
         >
-          {refreshing ? '…' : 'refresh'}
+          refresh
         </button>
       </header>
 
@@ -97,7 +78,7 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {matching === null ? (
+      {rows.length === 0 && !error ? (
         <div className="flex-1 grid place-items-center font-mono text-micro uppercase tracking-widest2 text-fog-700">
           loading…
         </div>

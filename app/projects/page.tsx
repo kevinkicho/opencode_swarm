@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import { ProjectsMatrix } from '@/components/projects-matrix';
-import type { SwarmRunListRow } from '@/lib/swarm-run-types';
+import { SWARM_RUNS_QUERY_KEY, useSwarmRuns } from '@/lib/opencode/live';
 
 // /projects — project-time matrix of every swarm run, grouped by workspace.
 //
@@ -12,41 +13,26 @@ import type { SwarmRunListRow } from '@/lib/swarm-run-types';
 // carries lastActivityTs + cost + tokens + status per row. Grouping by
 // workspace happens client-side in ProjectsMatrix; at prototype scale
 // (tens to a few hundred runs) that's cheap.
+//
+// HARDENING_PLAN.md#E2 — uses the canonical useSwarmRuns hook so this
+// page shares the TanStack queryKey + dedup with the run picker. Pre-fix
+// this page did its own raw fetch + useState/useEffect, costing one
+// extra cold-load round-trip every time the user navigated here.
 
 export default function ProjectsPage() {
-  const [rows, setRows] = useState<SwarmRunListRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const load = useCallback(async () => {
-    setRefreshing(true);
-    try {
-      const r = await fetch('/api/swarm/run', { cache: 'no-store' });
-      const data = (await r.json()) as { runs?: SwarmRunListRow[]; error?: string };
-      if (!r.ok) {
-        setError(data.error ?? `HTTP ${r.status}`);
-        return;
-      }
-      setRows(data.runs ?? []);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const { rows, error } = useSwarmRuns({ intervalMs: 30000 });
+  const queryClient = useQueryClient();
+  const onRefresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: SWARM_RUNS_QUERY_KEY });
+  }, [queryClient]);
 
   return (
     <ProjectsMatrix
-      rows={rows ?? []}
-      loading={rows === null}
+      rows={rows}
+      loading={rows.length === 0 && !error}
       error={error}
-      onRefresh={() => void load()}
-      refreshing={refreshing}
+      onRefresh={onRefresh}
+      refreshing={false}
     />
   );
 }

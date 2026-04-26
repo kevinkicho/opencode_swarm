@@ -19,7 +19,9 @@
 
 import 'server-only';
 
-import { mintItemId } from './blackboard/planner';
+// HARDENING_PLAN.md#C17 — import mintItemId from the leaf module
+// instead of planner.ts (which itself imports from this file).
+import { mintItemId } from './blackboard/item-ids';
 import { insertBoardItem } from './blackboard/store';
 
 interface PartialOutcomeOpts {

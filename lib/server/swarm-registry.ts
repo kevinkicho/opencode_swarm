@@ -28,6 +28,7 @@ import {
   validateSwarmRunMeta,
 } from './swarm-registry-validate';
 import { atomicWriteFile, withKeyedMutex } from './atomic-write';
+import { LRU } from './lru';
 import { priceFor } from '../opencode/pricing';
 import type {
   OpencodeMessage,
@@ -69,16 +70,19 @@ function eventsGzPath(swarmRunID: string): string {
 // the answer is stable for the life of a run, so we keep a process-local
 // Map seeded by createRun() and lazily refilled from disk on miss.
 //
-// Same survive-restart shape as derivedRowCache below: globalThis-pinned
-// so Next.js dev module reloads don't duplicate it, no LRU bound (tens of
-// runs at prototype scale), single-worker-only.
+// HARDENING_PLAN.md#D3 — bounded LRU. Pre-fix this was an unbounded
+// Map; in long-lived dev it accumulated every session ID across every
+// run (including deleted runs) forever. 2000 entries is generous for
+// the prototype scale (~20 sessions × 100 runs); each entry is just
+// two strings (sessionID → swarmRunID) so memory footprint is trivial.
+const SESSION_INDEX_MAX = 2000;
 const globalIndexKey = Symbol.for('opencode_swarm.sessionIndex');
 type GlobalWithIndex = typeof globalThis & {
-  [globalIndexKey]?: Map<string, string>;
+  [globalIndexKey]?: LRU<string, string>;
 };
-function sessionIndex(): Map<string, string> {
+function sessionIndex(): LRU<string, string> {
   const g = globalThis as GlobalWithIndex;
-  if (!g[globalIndexKey]) g[globalIndexKey] = new Map();
+  if (!g[globalIndexKey]) g[globalIndexKey] = new LRU(SESSION_INDEX_MAX);
   return g[globalIndexKey]!;
 }
 
@@ -230,17 +234,22 @@ export async function createRun(
 // Keyed by globalThis so HMR module reloads don't lose the cache —
 // matches the same pattern as the F7 baselineCache in opencode-server.ts.
 const META_CACHE_TTL_MS = 2000;
+// HARDENING_PLAN.md#D3 — bounded LRU. Pre-fix this was an unbounded
+// Map; a long-lived dev process accumulated entries forever. 500
+// entries is well above any realistic prototype run count and cheap
+// in memory (~2 KB meta × 500 = ~1 MB worst case).
+const META_CACHE_MAX = 500;
 interface MetaCacheEntry {
   value: SwarmRunMeta | null;
   fetchedAt: number;
 }
 const globalMetaCacheKey = Symbol.for('opencode_swarm.swarmRegistry.metaCache');
 type GlobalWithMetaCache = typeof globalThis & {
-  [globalMetaCacheKey]?: Map<string, MetaCacheEntry>;
+  [globalMetaCacheKey]?: LRU<string, MetaCacheEntry>;
 };
-function metaCache(): Map<string, MetaCacheEntry> {
+function metaCache(): LRU<string, MetaCacheEntry> {
   const g = globalThis as GlobalWithMetaCache;
-  if (!g[globalMetaCacheKey]) g[globalMetaCacheKey] = new Map();
+  if (!g[globalMetaCacheKey]) g[globalMetaCacheKey] = new LRU(META_CACHE_MAX);
   return g[globalMetaCacheKey]!;
 }
 function invalidateMetaCache(swarmRunID: string): void {
@@ -778,13 +787,17 @@ interface CachedRow {
 // — actively-live runs are still up-to-date when something happens.
 const CACHE_TTL_MS = 10_000;
 
+// HARDENING_PLAN.md#D3 — bounded LRU. Pre-fix unbounded; in long-lived
+// dev a deleted run's CachedRow never expired. 500 is the same bound
+// as metaCache (paired keying — both keyed on swarmRunID).
+const DERIVED_CACHE_MAX = 500;
 const globalCacheKey = Symbol.for('opencode_swarm.deriveRowCache');
 type GlobalWithCache = typeof globalThis & {
-  [globalCacheKey]?: Map<string, CachedRow>;
+  [globalCacheKey]?: LRU<string, CachedRow>;
 };
-function derivedRowCache(): Map<string, CachedRow> {
+function derivedRowCache(): LRU<string, CachedRow> {
   const g = globalThis as GlobalWithCache;
-  if (!g[globalCacheKey]) g[globalCacheKey] = new Map();
+  if (!g[globalCacheKey]) g[globalCacheKey] = new LRU(DERIVED_CACHE_MAX);
   return g[globalCacheKey]!;
 }
 

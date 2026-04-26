@@ -16,14 +16,14 @@ const REPO_ROOT = join(__dirname, '..', '..', '..');
 const APP_DIR = join(REPO_ROOT, 'app');
 const COMPONENTS_DIR = join(REPO_ROOT, 'components');
 
-// Endpoints that already have a canonical hook. Any direct fetch is a
-// candidate for migration. (We allow fetch in lib/opencode/live.ts and
-// lib/blackboard/live.ts because that's where the hooks themselves live.)
-const HOOK_BACKED_ENDPOINTS = [
+// Endpoints that already have a canonical hook. Match only exact URLs
+// (no path-suffix), so `/api/swarm/run/${id}` (specific-run fetch) does
+// NOT trip the lint — only the list endpoint `/api/swarm/run` does.
+const HOOK_BACKED_ENDPOINTS_EXACT = new Set<string>([
   '/api/swarm/run',          // useSwarmRuns
   '/api/opencode/health',    // useOpencodeHealth
   '/api/opencode/session',   // useLiveSessions / useLiveSession
-];
+]);
 
 // Files allowed to fetch directly — typically the hook implementations
 // themselves, or one-shot mutations where the hook isn't appropriate.
@@ -65,7 +65,11 @@ function findRawGetFetches(file: string, src: string): Violation[] {
     const match = line.match(/fetch\s*\(\s*['"`]([^'"`]+)['"`]/);
     if (!match) continue;
     const url = match[1];
-    if (!HOOK_BACKED_ENDPOINTS.some((ep) => url.startsWith(ep))) continue;
+    // Strip any query string before the exact-match check so fetches
+    // like `/api/swarm/run?since=...` still trip if such variants
+    // existed (none today, but cheap to be defensive).
+    const path = url.split('?')[0];
+    if (!HOOK_BACKED_ENDPOINTS_EXACT.has(path)) continue;
 
     // Look ahead 5 lines for a method: 'POST'/'PUT'/etc.; if none, it's a GET.
     const window = lines.slice(i, Math.min(i + 6, lines.length)).join(' ');

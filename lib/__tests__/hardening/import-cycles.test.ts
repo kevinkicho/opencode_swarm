@@ -54,6 +54,20 @@ function resolveImport(fromFile: string, spec: string, allFiles: Set<string>): s
   return null;
 }
 
+// Strip line + block comments + string-literal contents BEFORE matching
+// `from '...'`. Without this the detector trips on prose inside comments
+// (e.g., `// imported it back from '../foo'`) and reports phantom cycles.
+function stripCommentsAndStrings(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+    // Empty out single/double/template string literals so a `from '...'`
+    // literal inside an unrelated string can't trip the regex.
+    .replace(/'(?:\\.|[^'\\])*'/g, "''")
+    .replace(/"(?:\\.|[^"\\])*"/g, '""')
+    .replace(/`(?:\\.|[^`\\])*`/g, '``');
+}
+
 function buildEdges(): Map<string, Set<string>> {
   const allFiles = new Set<string>();
   for (const root of SCAN_DIRS) {
@@ -62,15 +76,22 @@ function buildEdges(): Map<string, Set<string>> {
     }
   }
   const edges = new Map<string, Set<string>>();
-  const importPathRe = /from\s+['"]([^'"]+)['"]/g;
+  // Detect `import ... from '...'` and bare `import '...'` directives.
+  // Using two regexes is simpler than one mega-pattern and the
+  // strip-comments pass means string-literal noise is already neutralized.
+  const importFromRe = /\bfrom\s*['"]([^'"]+)['"]/g;
+  const bareImportRe = /\bimport\s*['"]([^'"]+)['"]/g;
   for (const rel of allFiles) {
-    const src = readFileSync(join(REPO_ROOT, rel), 'utf8');
+    const rawSrc = readFileSync(join(REPO_ROOT, rel), 'utf8');
+    const src = stripCommentsAndStrings(rawSrc);
     const out = new Set<string>();
-    importPathRe.lastIndex = 0;
-    let m;
-    while ((m = importPathRe.exec(src))) {
-      const target = resolveImport(rel, m[1], allFiles);
-      if (target) out.add(target);
+    for (const re of [importFromRe, bareImportRe]) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(src))) {
+        const target = resolveImport(rel, m[1], allFiles);
+        if (target) out.add(target);
+      }
     }
     edges.set(rel, out);
   }
