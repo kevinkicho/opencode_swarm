@@ -575,6 +575,16 @@ export async function POST(req: NextRequest): Promise<Response> {
     }
     parsed.teamRoles = roles;
   }
+  // enableAuditorGate default. Caller-undefined → take the pattern's
+  // default; explicit boolean from caller always wins (validator above
+  // already coerced it onto parsed). Spawning the auditor seat is the
+  // route's responsibility once parsed.enableAuditorGate is true.
+  if (
+    defaults.enableAuditorGate !== undefined &&
+    parsed.enableAuditorGate === undefined
+  ) {
+    parsed.enableAuditorGate = defaults.enableAuditorGate;
+  }
 
   const seedTitle = parsed.title ?? parsed.directive?.split('\n', 1)[0]?.trim();
 

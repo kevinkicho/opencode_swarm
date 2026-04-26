@@ -141,13 +141,16 @@ export function teamSizeWarningMessage(
 // pre-fill them. Caller-supplied values always win — this only fires
 // for unset fields. See route.ts::applyPatternDefaults.
 //
-// Two ollama-tier models power the defaults after 2026-04-25 evening
-// directive ("all agents other than planner → gemma4:31b-cloud"):
-//   glm-5.1:cloud    — planner seat only (blackboard session[0]); fast
-//                      structured-JSON for the planning sweep
-//   gemma4:31b-cloud — every other seat across every pattern
-// nemotron-3-super:cloud is no longer a default, but stays in
-// model-catalog.ts so a user can still pick it explicitly per run.
+// Three ollama-tier models power the defaults after 2026-04-25 evening
+// directives:
+//   glm-5.1:cloud          — planner seat only (blackboard session[0]);
+//                            fast structured-JSON for the planning sweep
+//   gemma4:31b-cloud       — every team / critic / verifier / drafter /
+//                            judge seat across every pattern
+//   nemotron-3-super:cloud — dedicated auditor seat on blackboard runs
+//                            (enableAuditorGate default-on for that
+//                            pattern). Strongest reasoning tier for the
+//                            "is this criterion met?" gate.
 //
 // `teamModels(n)` returns a length-`n` array; session[0] is planner-
 // shaped for blackboard-family patterns, synthesizer for map-reduce,
@@ -156,6 +159,7 @@ export function teamSizeWarningMessage(
 // orchestrator module; this table matches them.
 const GLM = 'ollama/glm-5.1:cloud';
 const GEMMA = 'ollama/gemma4:31b-cloud';
+const NEMOTRON = 'ollama/nemotron-3-super:cloud';
 
 export interface PatternDefaults {
   teamModels?: (teamSize: number) => string[];
@@ -172,6 +176,12 @@ export interface PatternDefaults {
   // teamRoles uses. Indexed 0..N-1. Array shorter than teamSize
   // cycles; longer arrays are truncated.
   teamRoles?: string[];
+  // When true and the request didn't explicitly set enableAuditorGate,
+  // the route handler spawns a dedicated auditor opencode session at
+  // run creation. Only meaningful for blackboard-family patterns
+  // (blackboard / orchestrator-worker / role-differentiated /
+  // deliberate-execute) — the route validator rejects it elsewhere.
+  enableAuditorGate?: boolean;
 }
 
 export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
@@ -183,14 +193,20 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
   },
   blackboard: {
     // session[0] = planner (display-only role); sessions[1..N-1] = workers.
-    // Per 2026-04-25 evening directive, the planner is the only seat
-    // allowed to deviate from GEMMA. Keep GLM here — fast structured-JSON
-    // for the planner sweep — but flip critic/auditor down to GEMMA so
-    // the rest of the run is monoculture.
+    // Auditor lives in its own session (enableAuditorGate default-on per
+    // 2026-04-25 evening directive). Model assignment per directive:
+    //   planner  → GLM     (fast structured-JSON for the planner sweep)
+    //   workers  → GEMMA
+    //   critic   → GEMMA
+    //   verifier → GEMMA
+    //   auditor  → NEMOTRON (strongest reasoning tier, batch-rare cadence
+    //                        — every K commits + tier escalation + run end
+    //                        — so its slower latency is amortized)
     teamModels: (n) => [GLM, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
     criticModel: GEMMA,
     verifierModel: GEMMA,
-    auditorModel: GEMMA,
+    auditorModel: NEMOTRON,
+    enableAuditorGate: true,
   },
   'map-reduce': {
     // Mappers + synthesizer all on GEMMA per 2026-04-25 evening
