@@ -28,6 +28,32 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — planner-sweep zero-todo findings (#99)
+
+MAXTEAM-2026-04-26 found blackboard at teamSize=8 burning 1.2M tokens
+across repeated sweeps that never seeded any board items. Operators
+saw "no items" with no explanation of what the planner had been
+doing — only dev-log WARN lines.
+
+**Fix:** `runPlannerSweep` now records two distinct operator-visible
+findings via `recordPartialOutcome` when a sweep produces zero items:
+
+1. **`planner-sweep (zero-todo)`** — planner finished its turn but
+   never called `todowrite`. Finding includes a 200-char assistant
+   reply excerpt + common-causes hint (abstract directive, model
+   regression, missing workspace artifacts) and remediation guidance
+   (rephrase, switch pattern).
+2. **`planner-sweep (filtered-all-todos)`** — planner DID call
+   `todowrite` but every entry was filtered before insert
+   (`isViableCriterion` rejected vague entries, empty content, etc.).
+   Finding shows the dropped count and points the operator to the
+   strategy tab to inspect the planner reply.
+
+Both surface as findings on the board, not just dev-log lines, so
+the operator sees them in the same UI surface where they were
+expecting work to land. Operator's pattern + directive choice still
+stands; the run can be relaunched with revisions.
+
 ### 2026-04-26 — council & deliberate-execute scale-aware round cap (#98)
 
 MAXTEAM-2026-04-26 found council at teamSize=8 ran 24 turns of cross-

@@ -914,6 +914,7 @@ export async function runPlannerSweep(
     // Still log a no-op revision so the strategy tab can render
     // "sweep #N — orchestrator declined to revise" rather than missing
     // a round entirely.
+    const excerpt = extractAssistantExcerpt(waited.messages, waited.newIDs);
     try {
       const round = nextRoundForRun(swarmRunID);
       recordPlanRevision({
@@ -923,7 +924,7 @@ export async function runPlannerSweep(
         removed: [],
         rephrased: [],
         boardSnapshot: snapshotBoard(swarmRunID),
-        excerpt: extractAssistantExcerpt(waited.messages, waited.newIDs),
+        excerpt,
         planMessageId: null,
       });
     } catch (err) {
@@ -933,6 +934,33 @@ export async function runPlannerSweep(
         }`,
       );
     }
+    // #99 — operator-visible finding for "planner returned no todos".
+    // The strategy tab carries the sweep-revision row, but operators
+    // looking at the board see "no items" with no obvious reason. The
+    // MAXTEAM-2026-04-26 blackboard-at-teamSize=8 run burned 1.2M
+    // tokens cycling like this without surfacing why. Recording a
+    // partial-outcome finding lands a row on the board so the operator
+    // can see the assistant's reply excerpt and either rephrase the
+    // directive or pick a different pattern.
+    recordPartialOutcome(swarmRunID, {
+      pattern: meta.pattern,
+      phase: 'planner-sweep (zero-todo)',
+      reason: 'no-todowrite-call',
+      summary: [
+        'Planner sweep completed but did not call todowrite — board has no work to dispatch.',
+        '',
+        excerpt
+          ? `Assistant reply excerpt: "${excerpt}"`
+          : 'Assistant produced no extractable text.',
+        '',
+        'Common causes:',
+        '- Directive was abstract enough that the planner couldn\'t commit to concrete todos.',
+        '- Planner emitted reasoning but no structured todowrite call (model regression).',
+        '- workspace state lacks the artifacts the directive references (e.g., missing files).',
+        '',
+        'Operator action: rephrase the directive with concrete deliverables, OR switch to a different pattern (council if the work needs deliberation, none if a single session is sufficient).',
+      ].join('\n'),
+    });
     return { items: [], sessionID, planMessageID: null };
   }
 
@@ -1007,6 +1035,28 @@ export async function runPlannerSweep(
       elapsedMs,
     }),
   );
+
+  // #99 — operator-visible finding for "todowrite called but every
+  // item dropped during validation". Distinct from the no-todowrite
+  // case above: here the planner DID call todowrite, but every entry
+  // was filtered (all-vague-criteria, all-empty-content, etc.). The
+  // operator-visible board still ends up empty, which looks the same
+  // as the no-todowrite case — but with a different fix. Surface
+  // both reasons so the operator can react appropriately.
+  if (items.length === 0 && latest.todos.length > 0) {
+    recordPartialOutcome(swarmRunID, {
+      pattern: meta.pattern,
+      phase: 'planner-sweep (filtered-all-todos)',
+      reason: `dropped=${droppedCriteria}/${latest.todos.length}`,
+      summary: [
+        `Planner called todowrite with ${latest.todos.length} item(s), but every one was filtered out before reaching the board.`,
+        '',
+        `Dropped criteria: ${droppedCriteria} (failed isViableCriterion check — vague success criteria like "make the app better")`,
+        '',
+        'Operator action: review the planner reply in the strategy tab and rephrase the directive with more concrete success criteria. Or override with `enableCriticGate: false` if the auditor is being too strict for this run shape.',
+      ].join('\n'),
+    });
+  }
 
   // PATTERN_DESIGN/role-differentiated.md I3 — dispatch role-notes
   // after the board insert. Each note is posted to the matching
