@@ -28,6 +28,42 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — critic-loop runaway-token leak fixed (#100)
+
+The MAXTEAM-2026-04-26 stress test caught a critic-loop run
+(`run_mof0de0o_z31ohi`) burning 955K tokens / 30+ min on a single
+worker turn that never completed. Diagnosis + fix recorded as
+`docs/POSTMORTEMS/2026-04-26-critic-loop-runaway-token.md`.
+
+**Root cause:** `waitForSessionIdle()` in
+`lib/server/blackboard/coordinator.ts` had four watchdog branches that
+each called `abortSessionServer` before returning (silent / tool-loop /
+provider-unavailable / silent-warn). The plain deadline-expiry branch
+(`while (Date.now() < deadline)` exit, line 810 pre-fix) returned
+`{ ok: false, reason: 'timeout' }` **without aborting**. Net effect:
+the orchestrator stops waiting after `ITERATION_WAIT_MS`, but the
+worker turn keeps streaming tokens in opencode forever — F1 silent
+watchdog never triggers because parts are growing, just not completing.
+
+**Fix:** Track `lastSeenInProgress` inside the poll loop. When the
+deadline expires AND the most recent poll saw an in-progress turn,
+abort the session before returning timeout. When the most recent poll
+saw all turns completed (just waiting on the `SESSION_IDLE_QUIET_MS`
+buffer), don't bother — those sessions are already idle. New log line:
+`[coordinator] session ses_<id> timeout with in-progress turn —
+aborting (task #100)`.
+
+**Knock-on:** Every other caller of `waitForSessionIdle(..., deadline)`
+gets the same guarantee — planner sweep timeouts, blackboard worker
+dispatch, council/debate-judge/role-differentiated/orchestrator-worker
+sub-waits. The orchestrators above didn't need code changes; they
+already returned partial-outcome, now the session bleed stops too.
+
+**Validation probe:** see postmortem §4. PENDING — needs a future
+critic-loop run with a token-heavy directive to confirm the
+"aborting (task #100)" log line lands and `tokensTotal` plateaus
+within ~30 s.
+
 ### 2026-04-26 — stress-test follow-up: dev-gate + teamSize ceilings (#102 + #101 + #103)
 
 Three closely-coupled fixes from the MAXTEAM-2026-04-26 stress-test

@@ -628,6 +628,19 @@ export async function waitForSessionIdle(
   let lastTotalParts = 0;
   let warnedSilent = false;
   let lastProbeMs = 0;
+  // Sticky in-progress flag — set whenever we observe a new assistant
+  // message that hasn't completed yet, cleared whenever every new
+  // assistant has completed. Read by the deadline-expiry abort path
+  // below. Drives task #100 fix: a worker emitting parts past the
+  // ITERATION_WAIT_MS deadline (955K tokens / 30+ min in the
+  // MAXTEAM-2026-04-26 critic-loop run) was leaving an in-progress
+  // turn alive in opencode forever — silent watchdog never fires
+  // (parts ARE growing), tool-loop detector doesn't see structurally-
+  // identical errors, deadline-timeout path didn't call abort. Net
+  // effect: pattern reports "timeout" up to its caller while opencode
+  // keeps burning tokens on the abandoned turn. Tracking in-progress
+  // here lets the deadline path abort exactly the runaway case.
+  let lastSeenInProgress = false;
   // Tool-loop detector — PATTERN_DESIGN/blackboard.md 6.12. Some
   // models (notably gemma4:31b-cloud on the `edit` tool) burn entire
   // turns retrying a structurally-broken tool call with near-identical
@@ -787,17 +800,24 @@ export async function waitForSessionIdle(
       }
     }
 
-    if (newAssistants.length === 0) continue;
+    if (newAssistants.length === 0) {
+      lastSeenInProgress = false;
+      continue;
+    }
 
     if (newAssistants.some((m) => !!m.info.error)) {
       return { ok: false, reason: 'error' };
     }
 
     // Any turn still running? Keep polling.
-    if (newAssistants.some((m) => !m.info.time.completed)) continue;
+    if (newAssistants.some((m) => !m.info.time.completed)) {
+      lastSeenInProgress = true;
+      continue;
+    }
 
     // All turns completed; require a quiet window so we don't catch a
     // between-step state where the next message is about to be created.
+    lastSeenInProgress = false;
     const lastCompletedAt = Math.max(
       ...newAssistants
         .map((m) => m.info.time.completed)
@@ -806,6 +826,29 @@ export async function waitForSessionIdle(
     if (Date.now() - lastCompletedAt < SESSION_IDLE_QUIET_MS) continue;
 
     return { ok: true, messages, newIDs };
+  }
+  // Deadline expired. If a turn was still in-progress as of the most
+  // recent poll, abort the session so opencode stops generating tokens
+  // on a turn the orchestrator has already given up on. Without this,
+  // the turn keeps burning tokens forever — observed in MAXTEAM-2026-
+  // 04-26 critic-loop where a worker turn ran past 30 minutes / 955K
+  // tokens with the orchestrator returning 'timeout' up the stack
+  // (the patterns above don't have a place to call abort themselves).
+  // We don't abort when the last poll saw all turns completed: those
+  // are just stuck on the SESSION_IDLE_QUIET_MS buffer; the session
+  // is already idle and aborting would be theater.
+  if (lastSeenInProgress) {
+    console.error(
+      `[coordinator] session ${sessionID} timeout with in-progress turn — aborting (task #100)`,
+    );
+    try {
+      await abortSessionServer(sessionID, workspace);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[coordinator] timeout abort failed for ${sessionID}: ${detail}`,
+      );
+    }
   }
   return { ok: false, reason: 'timeout' };
 }
