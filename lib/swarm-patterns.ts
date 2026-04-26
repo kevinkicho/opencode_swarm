@@ -233,25 +233,31 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     teamModels: (n) => Array(n).fill(GEMMA),
   },
   'orchestrator-worker': {
-    // session[0] = orchestrator (owns strategy for long runs);
+    // session[0] = orchestrator (owns strategy + runs the planner sweep);
     // sessions[1..N-1] = workers.
     //
-    // Swapped 2026-04-25: orchestrator was NEMOTRON, now GEMMA.
-    // Retest with --log-level DEBUG (run_modx3mv5_cpwh93) reproduced
-    // a fail mode where nemotron-through-opencode loops on todowrite
-    // — 18 successful assistant turns in 200s, each re-emitting the
-    // same 10 todo items, board never seeded. Functionally equivalent
-    // to the original "silent 14m" symptom (run_mod5dy6n_utsb32) for
-    // this pattern's purposes. Direct ollama API works fine for
-    // nemotron, so the issue is opencode's wrapper handling of
-    // step-tool-step loops on this specific model. GEMMA fills the
-    // orchestrator seat without the loop. Other patterns that put
-    // nemotron in non-planner seats (council drafters, map-reduce
-    // synthesizer, debate judge, role-differentiated architect)
-    // were NOT changed — those seats don't use todowrite, so the
-    // observed failure mode wouldn't apply. Each gated on its own
-    // retest if a problem surfaces.
-    teamModels: (n) => Array(n).fill(GEMMA),
+    // Model rationale (2026-04-26 update — Q34 root-cause fix):
+    //   orchestrator → GLM (same as blackboard's planner seat)
+    //   workers      → GEMMA
+    //
+    // History: was NEMOTRON pre-2026-04-25 (step-loop cost issue), then
+    // all GEMMA per the "all non-planner seats → GEMMA" directive. Q34
+    // verify run (run_mog0axza_pzalr8) on 2026-04-26 surfaced the GEMMA
+    // failure mode on this seat: GEMMA on the long-context planner
+    // sweep prompt (~37K chars: README + board context) emits PSEUDO-
+    // TOOL-CALL TEXT instead of invoking the real todowrite tool —
+    // `<\|tool>glob{...}<tool\|>` etc. as plain text, parts.tools=[].
+    // Same pathology likely caused both prior `opencode-frozen` events
+    // (model spinning on pseudo-tool-text until F1 watchdog stops it).
+    //
+    // The orchestrator IS the planner-equivalent for orchestrator-worker
+    // (it runs `runPlannerSweep`), and GLM was empirically proven on
+    // blackboard runs to call todowrite reliably on the same prompt
+    // shape. Per the "all non-planner seats → GEMMA" directive the
+    // orchestrator IS a planner seat; it should match blackboard's
+    // session[0] model. Workers stay on GEMMA — they don't run the
+    // planner sweep, just claim/implement todos.
+    teamModels: (n) => [GLM, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
   },
   'role-differentiated': {
     // All roles on GEMMA per 2026-04-25 evening directive. Was
