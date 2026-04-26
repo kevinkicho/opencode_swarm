@@ -23,9 +23,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { postSessionMessageBrowser, CostCapError } from '@/lib/opencode/live';
 import { type CostCapBlock } from '@/components/cost-cap-banner';
+import type { OpencodeBuiltinAgent } from '@/lib/opencode/types';
 
 export interface SafePostOptions {
-  agent?: string;
+  // #7.Q37 — same typed-enum guarantee as postSessionMessageBrowser.
+  // A custom role label here would silently 204 the post; the type
+  // catches that at compile time.
+  agent?: OpencodeBuiltinAgent;
 }
 
 export type SafePostResult = { ok: true } | { ok: false; capped: boolean };

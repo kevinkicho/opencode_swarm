@@ -17,7 +17,7 @@
 
 import { opencodeFetch } from '../opencode/client';
 import type { OpencodeSession } from '../opencode/client';
-import type { OpencodeMessage } from '../opencode/types';
+import type { OpencodeBuiltinAgent, OpencodeMessage } from '../opencode/types';
 import { parseOpencodeJSON } from '../opencode/runtime-shape';
 import {
   isOpencodeDiffArray,
@@ -196,7 +196,10 @@ export async function postSessionMessageServer(
   sessionId: string,
   directory: string,
   text: string,
-  opts: { agent?: string; model?: string } = {}
+  // #7.Q37 — `agent` typed as the built-in set. Passing a custom role
+  // label (e.g. 'orchestrator', 'judge') would have opencode silently
+  // 204 the POST; the type now catches that at compile time.
+  opts: { agent?: OpencodeBuiltinAgent; model?: string } = {}
 ): Promise<void> {
   // F7 prompt-size preflight. Only fires when opts.model is set
   // (caller passed a specific model — we have a clear key to look up).

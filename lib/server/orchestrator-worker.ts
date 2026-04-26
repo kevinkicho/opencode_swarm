@@ -102,15 +102,24 @@ export async function runOrchestratorWorkerKickoff(
   const workerCount = meta.sessionIDs.length - 1;
 
   // Post the orchestrator-framing message with agent='orchestrator'
-  // so the UI's roster shows this session under its role name rather
-  // than the default 'build' agent opencode seeds on session create.
+  // The UI's roster role labeling comes from `meta.teamRoles` via
+  // roleNamesBySessionID() — NOT from this `agent` field. Earlier code
+  // passed `agent: 'orchestrator'` here trying to override the default
+  // 'build' agent opencode seeds, but 'orchestrator' isn't an opencode
+  // built-in agent so opencode silently 204'd the entire intro post
+  // (#7.Q37 caught this at compile time after Q33 surfaced the same
+  // class of bug on the actions buttons). Effect: orchestrator session
+  // never got its role-framed intro on every orchestrator-worker run
+  // — likely a contributing cause of Q34 (opencode-frozen recurrence,
+  // 2/2 runs at ~min 12). Now passing only the model pin; opencode uses
+  // the session's default agent and the intro actually lands.
   const intro = buildOrchestratorIntroPrompt(meta.directive, workerCount);
   try {
     await postSessionMessageServer(
       orchestratorSessionID,
       meta.workspace,
       intro,
-      { agent: ORCHESTRATOR_AGENT_NAME, model: meta.teamModels?.[0] },
+      { model: meta.teamModels?.[0] },
     );
     console.log(
       `[orchestrator-worker] run ${swarmRunID}: orchestrator intro posted to ${orchestratorSessionID.slice(-8)}`,

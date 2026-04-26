@@ -31,6 +31,25 @@ export type OpencodePartType =
   | 'step-finish'
   | 'patch';
 
+// #7.Q37 — opencode's built-in agent set. POSTs whose `agent` field
+// isn't one of these get silently dropped with HTTP 204 (the message
+// never persists, no observable event). The trap was documented in
+// `reference_opencode_agent_silent_drop.md`; Q33 surfaced a real
+// production hit (orchestrator-actions buttons sending agent='orchestrator',
+// which silently 204'd every click). Typing it as a union catches
+// future regressions at compile time. If opencode adds a new built-in
+// agent, add it here. Custom role labels ('orchestrator', 'judge',
+// 'auditor', etc.) are NOT opencode agents — they're our internal
+// taxonomy and should NOT be passed through this field.
+export type OpencodeBuiltinAgent =
+  | 'build'
+  | 'compaction'
+  | 'explore'
+  | 'general'
+  | 'plan'
+  | 'summary'
+  | 'title';
+
 export interface OpencodeTokenUsage {
   total: number;
   input: number;

@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import type {
+  OpencodeBuiltinAgent,
   OpencodeMessage,
   OpencodePart,
   OpencodePermissionReply,
@@ -206,7 +207,10 @@ export async function postSessionMessageBrowser(
   sessionId: string,
   directory: string,
   text: string,
-  opts: { agent?: string } = {},
+  // #7.Q37 — `agent` typed as the built-in set. Passing a custom role
+  // label (e.g. 'orchestrator', 'judge') would have opencode silently
+  // 204 the POST; the type now catches that at compile time.
+  opts: { agent?: OpencodeBuiltinAgent } = {},
   init: RequestInit = {}
 ): Promise<void> {
   const qs = new URLSearchParams({ directory }).toString();

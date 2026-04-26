@@ -8,6 +8,8 @@
 //   - the coordinator's worker-dispatch post (agent={role} on work prompts
 //     so workers carry their role in opencode's info.agent downstream)
 
+import type { OpencodeBuiltinAgent } from '../opencode/types';
+
 // The coordinator's ownerIdForSession convention — duplicated here to
 // keep this module dependency-light. If that convention ever changes,
 // search repo for `ag_ses_` and update both.
@@ -180,9 +182,14 @@ export function roleNamesBySessionID(
 // opencode.json and wants them honored, that's a separate opt-in
 // path — for the default case where opencode.json has no custom
 // agents, NEVER passing the param is the only reliable behavior.
+//
+// #7.Q37 — return type narrowed to `OpencodeBuiltinAgent | undefined`
+// so dispatch's `agent` param matches the postSessionMessage signature.
+// The current implementation is `undefined`-only; if a future opt-in
+// path returns a real agent it must be one of opencode's built-ins.
 export function opencodeAgentForSession(
   _meta: RoleMetaLite | null | undefined,
   _sessionID: string,
-): string | undefined {
+): OpencodeBuiltinAgent | undefined {
   return undefined;
 }

@@ -1147,17 +1147,25 @@ function PageBody({
         disabledReason="no active run — start one from the status rail to compose"
         onSend={(target: ComposerTarget, body: string) => {
           if (!liveSessionId || !liveDirectory) return;
-          // Agent target → opencode `agent` field (agent-config name, not UI id).
-          // Broadcast → omit `agent`; opencode routes to the session's lead.
-          const agentName =
+          // #7.Q37 — route per-agent sends by sessionID, not by passing
+          // the agent's UI name to opencode's `agent` field. Our agent
+          // names ('build #1', 'member-1', 'mapper-1', etc.) aren't
+          // opencode built-in agents, so the prior `{ agent: agentName }`
+          // path silently 204'd every per-agent send. The sessionID-
+          // routing approach is correct anyway: each team agent has its
+          // own opencode session, so posting there sends to that worker
+          // directly. Broadcast (non-agent target) goes to the primary
+          // session; opencode routes to its lead.
+          const targetAgent =
             target.kind === 'agent'
-              ? agents.find((a) => a.id === target.id)?.name
+              ? agents.find((a) => a.id === target.id)
               : undefined;
+          const targetSessionID = targetAgent?.sessionID ?? liveSessionId;
           void safePost(
-            liveSessionId,
+            targetSessionID,
             liveDirectory,
             body,
-            { agent: agentName },
+            undefined,
             'composer',
           );
         }}

@@ -3,6 +3,8 @@
 import clsx from 'clsx';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
+import { SWARM_RUNS_QUERY_KEY } from '@/lib/opencode/live';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
 import { IconBranch, IconMilestone, IconSettings } from './icons';
@@ -71,6 +73,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const [recipesOpen, setRecipesOpen] = useState(false);
   const [copiedPattern, setCopiedPattern] = useState<SwarmPattern | null>(null);
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const copyRecipe = async (p: SwarmPattern, body: string) => {
     try {
@@ -174,6 +177,12 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
         );
       }
       const payload = (await res.json()) as SwarmRunResponse;
+      // #7.Q39 — invalidate the runs-list cache so the just-spawned run
+      // surfaces in the picker immediately instead of waiting for the
+      // next 4s poll. The picker mounts on the destination page so by
+      // the time the user opens it the cache will have refetched. Fire-
+      // and-forget; nav doesn't gate on the invalidate completing.
+      void queryClient.invalidateQueries({ queryKey: SWARM_RUNS_QUERY_KEY });
       onClose();
       router.push(`/?swarmRun=${encodeURIComponent(payload.swarmRunID)}`);
     } catch (err) {
