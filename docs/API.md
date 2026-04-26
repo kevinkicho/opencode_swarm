@@ -187,60 +187,14 @@ Role labels resolved via `lib/blackboard/roles.ts::roleNamesBySessionID`.
 Scoped to `pattern='blackboard'` by the UI, but the storage endpoints
 don't gatekeep pattern — they'll happily store items for any run.
 
-### `GET /api/swarm/run/{swarmRunID}/board`
-
-List every board item, newest-first.
-
-**Response 200:** `{ items: BoardItem[] }`.
-
-### `POST /api/swarm/run/{swarmRunID}/board`
-
-Create a board item.
-
-**Body**
-```ts
-{
-  id?: string;               // auto-mint as t_<4hex> if omitted
-  kind: "todo" | "question" | "claim" | "finding";
-  content: string;
-  status?: BoardItemStatus;  // defaulted by kind: finding→done, claim→claimed, else→open
-  ownerAgentId?: string;     // required for claim
-  note?: string;
-  fileHashes?: Array<{ path: string; sha: string }>;  // required non-empty for claim
-  requiresVerification?: boolean;  // Playwright verifier gate opt-in
-  preferredRole?: string;          // soft routing for role-differentiated pattern
-}
-```
-
-**Wire protocol for planner-seeded todos.** The planner can't call this endpoint directly — it emits via opencode's `todowrite` tool which only supports `{ content, status, priority }`. To express `requiresVerification` and `preferredRole`, the planner uses leading content prefixes that `latestTodosFrom` strips:
-- `[verify] …` → `requiresVerification: true`
-- `[role:<name>] …` → `preferredRole: '<name>'` (lowercased, kebab-cased, max 24 chars)
-- Both may compose: `[verify] [role:tester] …` or either order.
-
-**Response 201:** `{ item: BoardItem }`. Errors: `400` validation,
-`409` id UNIQUE conflict.
-
-### `POST /api/swarm/run/{swarmRunID}/board/{itemId}`
-
-Board-item action. CAS-checked transitions.
-
-**Body**
-```ts
-{
-  action: "claim" | "start" | "commit" | "block" | "unblock";
-  ownerAgentId?: string;
-  fileHashes?: Array<{ path: string; sha: string }>;
-  note?: string;
-}
-```
-
-**Response 200:** `{ item: BoardItem }`. On `commit` with file drift:
-```ts
-{ item, drift: Array<{ path; recorded; current: string | null }> }
-```
-(item marked `stale`, 200 returned — drift is information, not
-failure). **409** on CAS loss (status flipped under you) with
-`currentStatus`.
+<!-- HARDENING_PLAN.md#C9 — `GET /board`, `POST /board`, and
+`POST /board/{itemId}` removed 2026-04-26. Each endpoint had zero
+in-repo browser callers; the coordinator imports `insertBoardItem` and
+`transitionStatus` directly server-side, and the SSE stream at
+`/board/events` (below) is the canonical observation channel. The
+planner-todo content-prefix protocol (`[verify] …`, `[role:tester] …`)
+is still load-bearing — it's parsed by `latestTodosFrom` over the
+planner's `todowrite` stream, not over an HTTP body. -->
 
 ### `GET /api/swarm/run/{swarmRunID}/board/events`
 
@@ -365,43 +319,17 @@ Run the L1 → L2 reducer. Generates per-session `AgentRollup` and a
 
 See DESIGN.md §7.4 for the `AgentRollup` / `RunRetro` schemas.
 
-### `POST /api/swarm/memory/reindex`
+<!-- HARDENING_PLAN.md#C9 — `POST /api/swarm/memory/reindex` and
+`POST /api/swarm/recall` removed 2026-04-26. Both had zero in-repo
+callers (browser or otherwise). The reindex flow described above is
+still available as a one-shot via `node scripts/_reindex.mjs` (the
+canonical install backfill path). The recall query surface was
+designed for agents to hydrate context from prior runs — the design
+is preserved in `lib/server/memory/query.ts::recall` and re-exposable
+behind a future agent-tool integration when an actual caller surfaces.
 
-Rebuild the L1 parts index from L0 (`events.ndjson`). Backfill after
-install, schema migration, or a corrupted index. Resumes from per-run
-`event_seq` cursor — idempotent.
+The L0/L1/L2 memory schema (DESIGN.md §7.4-7.5) is unchanged. -->
 
-**Body:** `{ swarmRunID?: string }`.
-
-**Response 200:** `{ results: Array<{ swarmRunID, ...reindexResult }> }`.
-
-### `POST /api/swarm/recall`
-
-Query surface for agents (or UI side panels) to hydrate context from
-prior runs. Three response shapes.
-
-**Body (`RecallRequest`)**
-```ts
-{
-  // at least one of swarmRunID / sessionID / workspace required
-  swarmRunID?: string;
-  sessionID?: string;
-  workspace?: string;
-  shape?: 'summary' | 'parts' | 'diffs';   // default 'summary'
-  // shape-specific filters (file glob, agent id, time window, etc.)
-  // — see RecallRequest in lib/server/memory/types.ts
-}
-```
-
-**Response 200:** shape-dependent.
-- `summary` → cards per session + `RunRetro` for the run
-- `parts` → part snippets matching filters
-- `diffs` → patch parts only (file edits)
-
-**Errors:** `400 query_too_broad` when no scope is set (guardrail
-against malformed agent plans).
-
-See DESIGN.md §7.5 for the design rationale + shape catalog.
 
 ---
 
