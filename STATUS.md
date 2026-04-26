@@ -28,6 +28,34 @@ the actual state.
 
 ## Shipped
 
+### 2026-04-26 — stuck-deliberation detector + picker indicator (#104)
+
+A run that's been alive long enough to produce output but has zero
+board items and accumulated significant tokens is "stuck" — neither
+the silent-watchdog nor the wall-clock cap will catch it because
+parts ARE arriving and the run isn't actually past its budget yet.
+This was the failure shape behind multiple MAXTEAM-2026-04-26 runs:
+council × 8 (3.85M tokens / 0 items / stale), deliberate-execute × 8
+(3.4M tokens / 0 items / stuck phase 1), map-reduce × 8 (10.3M tokens
+/ 0 items / synth-starved).
+
+**Fix:** new pure helper `lib/server/stuck-detector.ts`. Returns
+`{ stuck: true, reason }` when ALL three conditions hold:
+- `tokensTotal > 500K` (below this is normal startup)
+- `ageMs > 10 min` (below this is normal model warm-up + first sweep)
+- `boardItemCount === 0` (no findings, no todos, no criteria)
+
+Wired into `GET /api/swarm/run` so every list-row carries an optional
+`stuck?: { reason }` field. `swarm-runs-picker.tsx` shows a `⚠` next
+to the status label when set, with a tooltip carrying the full reason
+("3.4M tokens spent over 30 min, board still empty — likely stuck
+deliberation"). 10 unit tests in `stuck-detector.test.ts`.
+
+Detection only — does not abort. The hard-stop button (#105, queued)
+gives the operator the action; this signal tells them which runs
+need it. Total cost: one `listBoardItems` call per row in the list
+endpoint (sub-ms local SQLite).
+
 ### 2026-04-26 — error-path findings: withRunGuard fallback + coordinator error-text (#95 + #96)
 
 Two related gaps from MAXTEAM-2026-04-26 closed in one pass:

@@ -25,6 +25,8 @@ import type { NextRequest } from 'next/server';
 
 import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
 import { createRun, deriveRunRowCached, getRun, listRuns } from '@/lib/server/swarm-registry';
+import { listBoardItems } from '@/lib/server/blackboard/store';
+import { detectStuckDeliberation } from '@/lib/server/stuck-detector';
 import { runPlannerSweep } from '@/lib/server/blackboard/planner';
 import { startAutoTicker } from '@/lib/server/blackboard/auto-ticker';
 import { runCouncilRounds } from '@/lib/server/council';
@@ -1021,7 +1023,37 @@ export async function GET(): Promise<Response> {
         // unexpected crash path (e.g. OOM) and is fine to surface as a 500.
         const { status, lastActivityTs, costTotal, tokensTotal } =
           await deriveRunRowCached(meta);
-        return { meta, status, lastActivityTs, costTotal, tokensTotal };
+        // #104 — stuck-deliberation flag. listBoardItems is local SQLite
+        // (sub-ms per call) so adding it to every list row is cheap;
+        // detectStuckDeliberation is a pure helper. Skipped entirely
+        // for runs with no createdAt (would mean a corrupt meta — let
+        // the row render without the stuck flag rather than crash).
+        let stuck: { reason: string } | undefined;
+        try {
+          if (typeof meta.createdAt === 'number') {
+            const boardItemCount = listBoardItems(meta.swarmRunID).length;
+            const result = detectStuckDeliberation({
+              tokensTotal,
+              ageMs: Date.now() - meta.createdAt,
+              boardItemCount,
+            });
+            if (result.stuck && result.reason) {
+              stuck = { reason: result.reason };
+            }
+          }
+        } catch {
+          // Best-effort: stuck detection isn't load-bearing for the
+          // list render; fall through without the flag if it threw.
+        }
+        const row: SwarmRunListRow = {
+          meta,
+          status,
+          lastActivityTs,
+          costTotal,
+          tokensTotal,
+        };
+        if (stuck) row.stuck = stuck;
+        return row;
       })
     );
     return Response.json({ runs: rows });

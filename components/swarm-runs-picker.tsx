@@ -272,6 +272,14 @@ function PickerPanel({
                       >
                         {visual.label}
                       </span>
+                      {row.stuck && (
+                        <span
+                          className="ml-1 font-mono text-[9.5px] uppercase tracking-widest2 text-rust"
+                          title={`stuck: ${row.stuck.reason}`}
+                        >
+                          ⚠
+                        </span>
+                      )}
                     </span>
                     <span
                       className={clsx(

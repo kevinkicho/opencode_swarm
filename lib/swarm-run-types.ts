@@ -350,6 +350,13 @@ export interface SwarmRunListRow {
   // Zero when the probe failed or the run has no assistant messages yet.
   costTotal: number;
   tokensTotal: number;
+  // Stuck-deliberation detector (#104). Set when the run has crossed
+  // both STUCK_TOKEN_FLOOR and STUCK_AGE_FLOOR_MS but has zero board
+  // items. Picker uses this to surface a visual warning so the operator
+  // can hard-stop a hung run instead of waiting on the wall-clock cap.
+  // Absent when not stuck (omitted from the JSON to keep the shape
+  // backward-compatible with picker code that doesn't yet read it).
+  stuck?: { reason: string };
 }
 
 // --- multiplexed event shape (out of /api/swarm/run/:id/events) -------------
