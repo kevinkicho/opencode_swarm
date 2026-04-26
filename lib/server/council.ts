@@ -30,6 +30,7 @@
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
+import { harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
 import { withRunGuard } from './run-guard';
 import { recordPartialOutcome } from './degraded-completion';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
@@ -231,15 +232,7 @@ export async function runCouncilRounds(
   // post happened just before this function was called (in the route),
   // so each session already has its Round-0 user message plus the base
   // system. Anything that arrives after this snapshot is Round-1 and up.
-  const knownIDsBySession = new Map<string, Set<string>>();
-  for (const sid of meta.sessionIDs) {
-    try {
-      const msgs = await getSessionMessagesServer(sid, meta.workspace);
-      knownIDsBySession.set(sid, new Set(msgs.map((m) => m.info.id)));
-    } catch {
-      knownIDsBySession.set(sid, new Set());
-    }
-  }
+  const knownIDsBySession = await snapshotKnownIDs(meta, '[council]');
 
   // #73 — track latest drafts so a partial-outcome record can capture
   // what survived if council aborts mid-rounds (wall-clock cap, fewer
@@ -285,36 +278,19 @@ export async function runCouncilRounds(
     // so each member gets the full ROUND_WAIT_MS. Sequential waits
     // would have shared the deadline (member 5 starts with member 1's
     // remaining time) and the round-end could've blown past the
-    // per-round budget. Promise.all preserves draft order; failures
-    // are absorbed into per-member text=null at the resolve step.
+    // per-round budget. harvestDrafts encapsulates the fan-out shape;
+    // we update knownIDsBySession from the row's newKnownIDs so the
+    // next round only awaits genuinely-new messages.
     const deadline = Date.now() + ROUND_WAIT_MS;
-    const drafts = await Promise.all(
-      meta.sessionIDs.map(async (sid) => {
-        const known = knownIDsBySession.get(sid) ?? new Set<string>();
-        const result = await waitForSessionIdle(sid, meta.workspace, known, deadline);
-        if (!result.ok) {
-          console.warn(
-            `[council] session ${sid} wait failed (${result.reason}) — recording as no-draft for round ${roundNum} (PATTERN_DESIGN/council.md I4)`,
-          );
-        }
-        // Always fetch current state — even on timeout, a partially-
-        // done assistant turn may have a final text we can use.
-        // Update knownIDs so the next round only awaits genuinely new
-        // messages.
-        let text: string | null = null;
-        try {
-          const msgs = await getSessionMessagesServer(sid, meta.workspace);
-          text = extractLatestAssistantText(msgs);
-          knownIDsBySession.set(sid, new Set(msgs.map((m) => m.info.id)));
-        } catch (err) {
-          console.warn(
-            `[council] session ${sid} message fetch failed:`,
-            err instanceof Error ? err.message : String(err),
-          );
-        }
-        return { sessionID: sid, text };
-      }),
-    );
+    const harvest = await harvestDrafts(meta, {
+      knownIDsBySession,
+      deadline,
+      contextLabel: '[council]',
+    });
+    for (const row of harvest) {
+      knownIDsBySession.set(row.sessionID, row.newKnownIDs);
+    }
+    const drafts = harvest.map((r) => ({ sessionID: r.sessionID, text: r.text }));
 
     latestDrafts = drafts;
     const present = drafts.filter((d) => d.text !== null);

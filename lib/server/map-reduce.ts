@@ -27,6 +27,7 @@ import path from 'node:path';
 import { withRunGuard } from './run-guard';
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
+import { harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
 import { recordPartialOutcome } from './degraded-completion';
 import { getBoardItem, insertBoardItem } from './blackboard/store';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
@@ -212,61 +213,20 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
     return;
   }
 
-  // Snapshot known IDs per session at the moment we start waiting. The
-  // directive post happened just before this call (in the route), so each
-  // session already has at least one user message; we consider everything
-  // currently visible as "known" and wait for the next assistant turn to
-  // land and complete.
-  const knownIDsBySession = new Map<string, Set<string>>();
-  for (const sid of meta.sessionIDs) {
-    try {
-      const msgs = await getSessionMessagesServer(sid, meta.workspace);
-      knownIDsBySession.set(sid, new Set(msgs.map((m) => m.info.id)));
-    } catch {
-      knownIDsBySession.set(sid, new Set());
-    }
-  }
-
   // Per-session wait deadline. 25 minutes is generous for a map phase — if
   // any one session blows this we log and skip its output in the synthesis
   // (better to ship N-1 drafts than hang forever).
-  const SESSION_WAIT_MS = 25 * 60 * 1000;
-  const deadline = Date.now() + SESSION_WAIT_MS;
-
   // PATTERN_DESIGN/map-reduce.md I3 — parallel waits so a hung member
   // doesn't block sibling waits sequentially. Each wait runs to its own
   // deadline; the slow ones don't penalize the fast ones.
-  const waitResults = await Promise.all(
-    meta.sessionIDs.map(async (sid) => {
-      const known = knownIDsBySession.get(sid) ?? new Set<string>();
-      const result = await waitForSessionIdle(sid, meta.workspace, known, deadline);
-      if (!result.ok) {
-        console.warn(
-          `[map-reduce] session ${sid} wait failed (${result.reason}) — proceeding with its last completed text`,
-        );
-      }
-      // Whether waitForSessionIdle succeeded or not, fetch the latest
-      // state and take the newest completed assistant text part. For
-      // map-reduce this is the member's final draft regardless of how
-      // we exited the wait.
-      let lastText: string | null = null;
-      try {
-        const msgs = await getSessionMessagesServer(sid, meta.workspace);
-        lastText = extractLatestAssistantText(msgs);
-      } catch (err) {
-        console.warn(
-          `[map-reduce] session ${sid} message fetch failed:`,
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-      return {
-        sessionID: sid,
-        ok: result.ok,
-        reason: result.ok ? null : result.reason,
-        text: lastText,
-      };
-    }),
-  );
+  const SESSION_WAIT_MS = 25 * 60 * 1000;
+  const deadline = Date.now() + SESSION_WAIT_MS;
+  const knownIDsBySession = await snapshotKnownIDs(meta, '[map-reduce]');
+  const waitResults = await harvestDrafts(meta, {
+    knownIDsBySession,
+    deadline,
+    contextLabel: '[map-reduce]',
+  });
   const drafts: Array<{ sessionID: string; text: string | null }> =
     waitResults.map((r) => ({ sessionID: r.sessionID, text: r.text }));
 
