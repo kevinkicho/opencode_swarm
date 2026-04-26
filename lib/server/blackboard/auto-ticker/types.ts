@@ -204,6 +204,13 @@ export interface TickerSnapshot {
   currentTier: number;
   tierExhausted: boolean;
   maxTier: number;
+  // #7.Q21 — surface the running commits counter so the UI can show it
+  // in the ticker chip and the picker. Internal state (TickerState)
+  // already maintains this; just wasn't propagated through `snapshot()`.
+  // Monotonic — increments on every successful 'picked' outcome
+  // (todo committed to done). Compared to bounds.commitsCap by the
+  // hard-cap watchdog. 0 immediately after start; persists post-stop.
+  totalCommits: number;
   // Epoch-ms when the Zen retry-after window ends (only present when
   // stopReason is 'zen-rate-limit' AND the 429 response carried a
   // parseable retry-after header). UI shows a live countdown chip.

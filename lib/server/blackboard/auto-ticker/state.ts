@@ -258,6 +258,10 @@ export function snapshot(s: TickerState): TickerSnapshot {
     currentTier: s.currentTier ?? 1,
     tierExhausted: s.tierExhausted ?? false,
     maxTier: MAX_TIER,
+    // #7.Q21 — propagate the running commits counter. Defaults to 0
+    // for legacy entries from the old shape (HMR carryover) so the
+    // field is always defined per the type contract.
+    totalCommits: s.totalCommits ?? 0,
     retryAfterEndsAtMs: s.retryAfterEndsAtMs,
   };
 }

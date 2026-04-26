@@ -37,6 +37,11 @@ export interface TickerSnapshot {
   currentTier: number;
   tierExhausted: boolean;
   maxTier: number;
+  // #7.Q21 — running count of successful 'picked' outcomes (todos
+  // committed to done). Monotonic; persists post-stop. Compared
+  // server-side to bounds.commitsCap. UI can show "N commits" in the
+  // ticker chip / picker / retro.
+  totalCommits: number;
   // Epoch-ms when a Zen retry-after window ends. Present only on
   // stopReason='zen-rate-limit' runs whose 429 carried a parseable
   // retry-after. UI renders a live countdown chip from this.
