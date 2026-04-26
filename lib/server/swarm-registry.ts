@@ -462,6 +462,23 @@ async function deriveSessionRow(
 
   // Assistant message path.
   if (info.error) {
+    // #7.Q27 — distinguish operator-initiated aborts from real failures.
+    // opencode marks MessageAbortedError on the trailing assistant turn
+    // whenever our /abort fires (cap-stop, manual /stop, operator abort,
+    // F1 silent-watchdog stop). All four are *graceful terminations* —
+    // the run did what it was supposed to do and was shut down cleanly.
+    // Treating them as `error` was making cap-stopped runs (the cleanest
+    // outcome we have) show red in the picker. Other error names (provider
+    // failures, parse errors, model timeouts) still escalate to `error`.
+    const errName = (info.error as { name?: string } | null | undefined)?.name;
+    if (errName === 'MessageAbortedError') {
+      return {
+        status: 'idle',
+        lastActivityTs: info.time.completed ?? info.time.created,
+        costTotal,
+        tokensTotal,
+      };
+    }
     return {
       status: 'error',
       lastActivityTs: info.time.completed ?? info.time.created,

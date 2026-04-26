@@ -1,7 +1,7 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Agent, AgentMessage, SwarmPattern, TodoItem } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
@@ -119,10 +119,21 @@ export function LeftTabs({
   // it vanishes when no files have been touched yet, so a mid-run tab
   // switch back to 'heat' after a restart shouldn't leave the header
   // in an invalid state.
+  //
+  // Plan→heat auto-promote (#7.Q25): the original "auto-flip plan→heat
+  // when heat exists" rule fired on EVERY render where heat>0 and tab='plan',
+  // which clobbered explicit user clicks (click 'plan' → next render flips
+  // it back to 'heat' since heat>0). Track prev heat length in a ref so
+  // the flip only fires once on the 0→>0 transition. Subsequent user
+  // clicks on 'plan' stick.
+  const prevHeatLenRef = useRef(heat.length);
   useEffect(() => {
     if (!boardSwarmRunID && tab === 'board') setTab('plan');
     if (heat.length === 0 && tab === 'heat') setTab('plan');
-    if (heat.length > 0 && tab === 'plan') setTab('heat');
+    if (prevHeatLenRef.current === 0 && heat.length > 0 && tab === 'plan') {
+      setTab('heat');
+    }
+    prevHeatLenRef.current = heat.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardSwarmRunID, heat.length, tab]);
 

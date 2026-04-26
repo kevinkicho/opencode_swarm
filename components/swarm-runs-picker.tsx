@@ -132,14 +132,19 @@ function PickerPanel({
           return haystack.includes(q);
         })
       : rows;
-    // Sort by status rank (live first, unknown last) with createdAt
-    // descending as tiebreak. This pushes in-flight runs to the top where
-    // users are most likely to want them — the "what's happening right
-    // now" answer shouldn't require scrolling.
+    // #7.Q29 — sort live runs to the top, then strict newest-first by
+    // createdAt for everything else. The original "rank → createdAt
+    // tiebreak" shape buried newer runs under older same-rank runs:
+    // a stale run from yesterday would sit above an idle run from
+    // today, because stale outranks idle. That broke the picker for
+    // post-validation review (today's clean idle runs hidden behind
+    // yesterday's stale residue). Live still wins because in-flight
+    // is what the user almost always wants first; status dot color
+    // still communicates the bucket for non-live rows.
     return [...base].sort((a, b) => {
-      const ra = STATUS_VISUAL[a.status].rank;
-      const rb = STATUS_VISUAL[b.status].rank;
-      if (ra !== rb) return ra - rb;
+      const aLive = a.status === 'live' ? 0 : 1;
+      const bLive = b.status === 'live' ? 0 : 1;
+      if (aLive !== bLive) return aLive - bLive;
       return b.meta.createdAt - a.meta.createdAt;
     });
   }, [rows, query]);
