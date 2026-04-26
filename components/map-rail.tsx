@@ -25,6 +25,7 @@ import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
+import { compactNum, countLines, turnText } from './rails/_shared';
 
 interface MapRow {
   slotIndex: number;
@@ -45,20 +46,8 @@ interface ReduceRow {
   outputLines: number;
 }
 
-function turnText(m: OpencodeMessage): string {
-  let out = '';
-  for (const p of m.parts) {
-    if (p.type === 'text' || p.type === 'reasoning') {
-      out += (p as { text?: string }).text ?? '';
-    }
-  }
-  return out;
-}
-
-function countLines(s: string): number {
-  if (!s) return 0;
-  return s.split('\n').length;
-}
+// HARDENING_PLAN.md#C15 — `turnText` and `countLines` lifted to
+// components/rails/_shared.ts.
 
 // Extract the scope annotation from the first user message. Convention
 // from buildScopedDirective (lib/server/map-reduce.ts:98-114): the
@@ -342,12 +331,8 @@ const REDUCE_STATUS_TONE: Record<ReduceRow['status'], string> = {
   stale: 'text-amber',
 };
 
-function compactNum(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
-}
+// HARDENING_PLAN.md#C15 — `compactNum` lifted to rails/_shared.ts (the
+// shared version absorbs map-rail's strict-superset M branch).
 
 function MapRowEl({
   row,

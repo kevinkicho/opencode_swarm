@@ -1,0 +1,79 @@
+{
+  "captureMeta": {
+    "source": "scripts/_capture-opencode-fixtures.mjs",
+    "pattern": "orchestrator-worker",
+    "role": "worker",
+    "capturedAt": 1777239710409
+  },
+  "message": {
+    "info": {
+      "parentID": "msg_dca7c18ba0019oTopRZC4YlYVj",
+      "role": "assistant",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/USER\\Workspace\\kyahoofinance032926",
+        "root": "/USER\\Workspace\\kyahoofinance032926"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 27625,
+        "input": 27579,
+        "output": 46,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      },
+      "modelID": "gemma4:31b-cloud",
+      "providerID": "ollama",
+      "time": {
+        "created": 1777218628202,
+        "completed": 1777218632638
+      },
+      "finish": "stop",
+      "id": "msg_dca7c2a6a0013MR3p404M8xJgi",
+      "sessionID": "ses_23584e7faffeLV8i2EimPMj0lF"
+    },
+    "parts": [
+      {
+        "snapshot": "bf02e596a56b815a0fd5c0d767c57d5e87a33123",
+        "type": "step-start",
+        "id": "prt_dca7c36cf001ioYsD7t9sTxtF2",
+        "sessionID": "ses_23584e7faffeLV8i2EimPMj0lF",
+        "messageID": "msg_dca7c2a6a0013MR3p404M8xJgi"
+      },
+      {
+        "type": "text",
+        "text": "skip: Both `captureBentoSnapshot` in `src/utils/exportUtils.js` and its integration in `HubLayout.jsx`'s `handleExport` function are already implemented.",
+        "time": {
+          "start": 1777218631376,
+          "end": 1777218632345
+        },
+        "id": "prt_dca7c36d0001PDv76zF002uV1E",
+        "sessionID": "ses_23584e7faffeLV8i2EimPMj0lF",
+        "messageID": "msg_dca7c2a6a0013MR3p404M8xJgi"
+      },
+      {
+        "reason": "stop",
+        "snapshot": "bf02e596a56b815a0fd5c0d767c57d5e87a33123",
+        "type": "step-finish",
+        "tokens": {
+          "total": 27625,
+          "input": 27579,
+          "output": 46,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "cost": 0,
+        "id": "prt_dca7c3a9a0024a0NXVPyQNKxgM",
+        "sessionID": "ses_23584e7faffeLV8i2EimPMj0lF",
+        "messageID": "msg_dca7c2a6a0013MR3p404M8xJgi"
+      }
+    ]
+  }
+}

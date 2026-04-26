@@ -100,29 +100,78 @@ export async function createSessionServer(
 // message to classify a run, but opencode's /message endpoint always returns
 // the full history — there's no tail/limit param at this revision. At
 // prototype scale each call is a few KB, acceptable for a 4s poll over a
-// small ledger. If it starts to hurt, the fix is a server-side cache keyed
-// by (sessionID, time.updated) — see GET /api/swarm/run for the plan.
+// small ledger.
+//
+// HARDENING_PLAN.md#E1 — in-flight + 500ms TTL dedup. Pre-fix: the snapshot
+// route fired Promise.all([deriveRunRowCached, deriveRunTokens]); both fan
+// out to deriveSessionRow → getSessionMessagesServer for the SAME sessionIDs.
+// For an 8-session run that's 16 opencode probes when 8 would suffice.
+//
+// Implementation: a globalThis-keyed Map<key, { promise, fetchedAt }> per
+// (sessionId, directory). Concurrent callers within the TTL window share
+// the same Promise; new callers after the TTL get a fresh fetch.
+const SESSION_MSG_CACHE_KEY = Symbol.for(
+  'opencode_swarm.getSessionMessagesServerCache.v1',
+);
+const SESSION_MSG_TTL_MS = 500;
+interface MsgCacheEntry {
+  promise: Promise<OpencodeMessage[]>;
+  fetchedAt: number;
+}
+function getSessionMsgCache(): Map<string, MsgCacheEntry> {
+  const g = globalThis as { [SESSION_MSG_CACHE_KEY]?: Map<string, MsgCacheEntry> };
+  const slot = g[SESSION_MSG_CACHE_KEY];
+  if (slot instanceof Map) return slot;
+  const next = new Map<string, MsgCacheEntry>();
+  g[SESSION_MSG_CACHE_KEY] = next;
+  return next;
+}
+
 export async function getSessionMessagesServer(
   sessionId: string,
   directory: string,
   signal?: AbortSignal
 ): Promise<OpencodeMessage[]> {
-  const qs = new URLSearchParams({ directory }).toString();
-  const res = await opencodeFetch(
-    `/session/${encodeURIComponent(sessionId)}/message?${qs}`,
-    { signal }
-  );
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(
-      `opencode session messages -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
-    );
+  // Cache key on (sessionId, directory). The signal IS NOT part of the
+  // key — a cancelled caller's signal cancels its OWN await, not the
+  // shared in-flight fetch (which other callers may still be awaiting).
+  const cache = getSessionMsgCache();
+  const key = `${sessionId}|${directory}`;
+  const cached = cache.get(key);
+  const now = Date.now();
+  if (cached && now - cached.fetchedAt < SESSION_MSG_TTL_MS) {
+    // Cooperate with the caller's signal: they get to abort their await,
+    // but the underlying fetch keeps going for whoever else is sharing it.
+    if (signal?.aborted) {
+      return Promise.reject(signal.reason ?? new Error('AbortError'));
+    }
+    return cached.promise;
   }
-  return parseOpencodeJSON(
-    res,
-    isOpencodeMessageArray,
-    `GET /session/${sessionId.slice(-8)}/message`,
-  );
+  const promise = (async () => {
+    const qs = new URLSearchParams({ directory }).toString();
+    const res = await opencodeFetch(
+      `/session/${encodeURIComponent(sessionId)}/message?${qs}`,
+      { signal },
+    );
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new Error(
+        `opencode session messages -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`,
+      );
+    }
+    return parseOpencodeJSON(
+      res,
+      isOpencodeMessageArray,
+      `GET /session/${sessionId.slice(-8)}/message`,
+    );
+  })();
+  // Drop the entry on rejection so the next caller retries instead of
+  // re-throwing the same error within the TTL window.
+  promise.catch(() => {
+    if (cache.get(key)?.promise === promise) cache.delete(key);
+  });
+  cache.set(key, { promise, fetchedAt: now });
+  return promise;
 }
 
 // Session-aggregate diff. Opencode returns one entry per changed file with a

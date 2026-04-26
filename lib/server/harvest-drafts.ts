@@ -106,9 +106,17 @@ export async function harvestDrafts(
 
 // Pull the latest completed assistant text part. Mirrors the
 // "last assistant text" convention used across the orchestrator
-// modules. Inlined here so the helper has no further coordinator-
-// internal dependencies.
-function extractLatestAssistantText(messages: OpencodeMessage[]): string | null {
+// modules.
+//
+// HARDENING_PLAN.md#C1 — exported here as the canonical source.
+// Pre-fix: this function existed character-identical in 6 files
+// (council, critic-loop, debate-judge, deliberate-execute, map-reduce,
+// harvest-drafts) under copy-paste. Drift risk: a fix in one site
+// silently failed to apply to the other 5. Post-fix: all 5 callers
+// import from here. STOP — do NOT introduce a polymorphic runPattern()
+// interface; the "delete a pattern with one git rm" property is
+// load-bearing.
+export function extractLatestAssistantText(messages: OpencodeMessage[]): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const m = messages[i];
     if (m.info.role !== 'assistant') continue;

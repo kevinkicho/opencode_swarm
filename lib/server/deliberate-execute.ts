@@ -76,6 +76,7 @@ import { startAutoTicker } from './blackboard/auto-ticker';
 import { getRun } from './swarm-registry';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
 import { recordPartialOutcome } from './degraded-completion';
+import { extractLatestAssistantText } from './harvest-drafts';
 import type { OpencodeMessage } from '../opencode/types';
 
 const SYNTHESIS_WAIT_MS = 15 * 60 * 1000;
@@ -229,21 +230,8 @@ function seedTodosFromExtract(
 // so the same per-teamSize policy lights up here. Caller-supplied
 // `opts.deliberationRounds` still wins. (#98)
 
-function extractLatestAssistantText(
-  messages: OpencodeMessage[],
-): string | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i];
-    if (m.info.role !== 'assistant') continue;
-    if (!m.info.time.completed) continue;
-    const texts = m.parts.filter(
-      (p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text',
-    );
-    if (texts.length === 0) continue;
-    return texts[texts.length - 1].text;
-  }
-  return null;
-}
+// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
+// harvest-drafts.ts.
 
 function buildSynthesisPrompt(
   directive: string | undefined,

@@ -1,0 +1,129 @@
+{
+  "captureMeta": {
+    "source": "scripts/_capture-opencode-fixtures.mjs",
+    "pattern": "orchestrator-worker",
+    "role": "orchestrator",
+    "capturedAt": 1777239710299
+  },
+  "message": {
+    "info": {
+      "parentID": "msg_dcaf6351c001lJAmxDWmJqnibI",
+      "role": "assistant",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/USER\\Workspace\\kyahoofinance032926",
+        "root": "/USER\\Workspace\\kyahoofinance032926"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 11256,
+        "input": 11176,
+        "output": 80,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      },
+      "modelID": "glm-5.1:cloud",
+      "providerID": "ollama",
+      "time": {
+        "created": 1777226626341,
+        "completed": 1777226646219
+      },
+      "finish": "tool-calls",
+      "id": "msg_dcaf63525001qthUQ0jqPxgmiD",
+      "sessionID": "ses_23509d31effeUrwOkgnABtKgZD"
+    },
+    "parts": [
+      {
+        "snapshot": "bf02e596a56b815a0fd5c0d767c57d5e87a33123",
+        "type": "step-start",
+        "id": "prt_dcaf65358001GaMpfCdVRjptH3",
+        "sessionID": "ses_23509d31effeUrwOkgnABtKgZD",
+        "messageID": "msg_dcaf63525001qthUQ0jqPxgmiD"
+      },
+      {
+        "type": "reasoning",
+        "text": "Let me start by understanding the project structure and the README claims, then audit the implementation against those claims.",
+        "time": {
+          "start": 1777226634073,
+          "end": 1777226635931
+        },
+        "id": "prt_dcaf65359001wbzlUXbFSkoPgr",
+        "sessionID": "ses_23509d31effeUrwOkgnABtKgZD",
+        "messageID": "msg_dcaf63525001qthUQ0jqPxgmiD"
+      },
+      {
+        "type": "tool",
+        "tool": "read",
+        "callID": "call_k917gq6l",
+        "state": {
+          "status": "completed",
+          "input": {
+            "filePath": "/USER\\Workspace\\kyahoofinance032926"
+          },
+          "output": "<path>/USER\\Workspace\\kyahoofinance032926</path>\n<type>directory</type>\n<entries>\n.dockerignore\n.git/\n.gitattributes\n.gitignore\n.superpowers/\ndist/\ndocker-compose.yml\nDockerfile\ndocs/\nfetchNewStocks.js\nindex.html\nKNOWN_LIMITATIONS.md\nnode_modules/\nNOTES.md\npackage-lock.json\npackage.json\nPROJECT_MEMORY.md\nPUSH_TO_GITHUB.bat\nPUSH_TO_GITHUB.ps1\nREADME.md\nscripts/\nserver/\nsrc/\ntest-output-full.txt\ntest-output.txt\ntest-output2.txt\ntest-output3.txt\nvite.config.js\nvitest.config.js\n\n(29 entries)\n</entries>",
+          "metadata": {
+            "preview": ".dockerignore\n.git/\n.gitattributes\n.gitignore\n.superpowers/\ndist/\ndocker-compose.yml\nDockerfile\ndocs/\nfetchNewStocks.js\nindex.html\nKNOWN_LIMITATIONS.md\nnode_modules/\nNOTES.md\npackage-lock.json\npackage.json\nPROJECT_MEMORY.md\nPUSH_TO_GITHUB.bat\nPUSH_TO_GITHUB.ps1\nREADME.md",
+            "truncated": false,
+            "loaded": []
+          },
+          "title": "",
+          "time": {
+            "start": 1777226635934,
+            "end": 1777226635936
+          }
+        },
+        "id": "prt_dcaf65a9c001At9Ae86Ik2Ihj5",
+        "sessionID": "ses_23509d31effeUrwOkgnABtKgZD",
+        "messageID": "msg_dcaf63525001qthUQ0jqPxgmiD"
+      },
+      {
+        "type": "tool",
+        "tool": "glob",
+        "callID": "call_0qur81z5",
+        "state": {
+          "status": "completed",
+          "input": {
+            "path": "/USER\\Workspace\\kyahoofinance032926",
+            "pattern": "**/*.md"
+          },
+          "output": "/USER\\Workspace\\kyahoofinance032926\\NOTES.md\n/USER\\Workspace\\kyahoofinance032926\\KNOWN_LIMITATIONS.md\n/USER\\Workspace\\kyahoofinance032926\\README.md\n/USER\\Workspace\\kyahoofinance032926\\PROJECT_MEMORY.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-sentiment-positioning-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-real-estate-enrichment-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-mock-to-live-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-macro-events-calendar-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-insurance-enrichment-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-globalmacro-enrichment-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-fx-enrichment-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-equities-deep-dive-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-derivatives-enrichment-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-dark-light-theme-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-cross-market-enrichments-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-commodities-enrichment-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-05-bonds-enrichment-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-04-market-hub-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-04-global-macro-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\specs\\2026-04-04-commodities-market-design.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-sentiment-positioning.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-real-estate-enrichment.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-mock-to-live.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-macro-events-calendar.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-fx-enrichment.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-equities-deep-dive-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-dark-light-theme.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-crypto-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-cross-market-enrichments.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-credit-deep-dive.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-05-commodities-enrichment.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-realestate-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-panel-enrichment-option-a.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-live-data-bonds-derivatives-realestate.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-insurance-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-hub-shell.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-global-macro-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-fx-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-derivatives-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-data-enrichment-quick-wins.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-commodities-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\superpowers\\plans\\2026-04-04-bonds-market.md\n/USER\\Workspace\\kyahoofinance032926\\docs\\commodity_data_coverage.md",
+          "metadata": {
+            "count": 43,
+            "truncated": false
+          },
+          "title": "",
+          "time": {
+            "start": 1777226645685,
+            "end": 1777226645726
+          }
+        },
+        "id": "prt_dcaf680b3001I7yT3JaUacuxD7",
+        "sessionID": "ses_23509d31effeUrwOkgnABtKgZD",
+        "messageID": "msg_dcaf63525001qthUQ0jqPxgmiD"
+      },
+      {
+        "reason": "tool-calls",
+        "snapshot": "bf02e596a56b815a0fd5c0d767c57d5e87a33123",
+        "type": "step-finish",
+        "tokens": {
+          "total": 11256,
+          "input": 11176,
+          "output": 80,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "cost": 0,
+        "id": "prt_dcaf6816a001lCzbgmaXX5NGwB",
+        "sessionID": "ses_23509d31effeUrwOkgnABtKgZD",
+        "messageID": "msg_dcaf63525001qthUQ0jqPxgmiD"
+      }
+    ]
+  }
+}

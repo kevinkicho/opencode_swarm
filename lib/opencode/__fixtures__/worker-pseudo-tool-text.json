@@ -1,0 +1,79 @@
+{
+  "captureMeta": {
+    "source": "scripts/_capture-opencode-fixtures.mjs",
+    "pattern": "orchestrator-worker",
+    "role": "worker",
+    "capturedAt": 1777239710345
+  },
+  "message": {
+    "info": {
+      "parentID": "msg_dcacc229b001zpoyZeC8SYDsHR",
+      "role": "assistant",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/USER\\Workspace\\kyahoofinance032926",
+        "root": "/USER\\Workspace\\kyahoofinance032926"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 11336,
+        "input": 11031,
+        "output": 305,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      },
+      "modelID": "gemma4:31b-cloud",
+      "providerID": "ollama",
+      "time": {
+        "created": 1777223869087,
+        "completed": 1777224142669
+      },
+      "finish": "stop",
+      "id": "msg_dcacc229f001r2p2NvUGYS6FIi",
+      "sessionID": "ses_235391a8dffeglORqAd2vQDXXL"
+    },
+    "parts": [
+      {
+        "snapshot": "bf02e596a56b815a0fd5c0d767c57d5e87a33123",
+        "type": "step-start",
+        "id": "prt_dcacdfc55001VOiYxvjVQwrm6S",
+        "sessionID": "ses_235391a8dffeglORqAd2vQDXXL",
+        "messageID": "msg_dcacc229f001r2p2NvUGYS6FIi"
+      },
+      {
+        "type": "text",
+        "text": "<think>\n\n</think>\n\nI'll start by reading the README spec and examining the existing files to understand what needs to be built.\n\n<|tool>Bash\n<arg_key>command</arg_key>\n<arg_value>find /USER\\Workspace\\kyahoofinance032926 -name \"README*\" -type f | head -5</arg_value>\n<arg_key>description</arg_key>\n<arg_value>Find README files in project</arg_value>\n</tool|>\n<tool>Bash\n<arg_key>command</arg_key>\n<arg_value>ls -la /USER\\Workspace\\kyahoofinance032926\\src\\markets\\fx\\</arg_value>\n<arg_key>description</arg_key>\n<arg_value>List FX market directory structure</arg_value>\n</tool|>\n<tool>Bash\n<arg_key>command</arg_key>\n<arg_value>if (Test-Path \"/USER\\Workspace\\kyahoofinance032926\\src\\markets\\fx\\components\\FXSidebar.jsx\") { echo \"FXSidebar.jsx exists\" } else { echo \"FXSidebar.jsx does not exist\" }</arg_value>\n<arg_key>description</arg_key>\n<arg_value>Check if FXSidebar component exists</arg_value>\n</tool|>",
+        "time": {
+          "start": 1777223990359,
+          "end": 1777224142396
+        },
+        "id": "prt_dcacdfc570018R3NbDIxgj9xQb",
+        "sessionID": "ses_235391a8dffeglORqAd2vQDXXL",
+        "messageID": "msg_dcacc229f001r2p2NvUGYS6FIi"
+      },
+      {
+        "reason": "stop",
+        "snapshot": "bf02e596a56b815a0fd5c0d767c57d5e87a33123",
+        "type": "step-finish",
+        "tokens": {
+          "total": 11336,
+          "input": 11031,
+          "output": 305,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "cost": 0,
+        "id": "prt_dcad04e3d001wfIEgZ3rdjFA7y",
+        "sessionID": "ses_235391a8dffeglORqAd2vQDXXL",
+        "messageID": "msg_dcacc229f001r2p2NvUGYS6FIi"
+      }
+    ]
+  }
+}

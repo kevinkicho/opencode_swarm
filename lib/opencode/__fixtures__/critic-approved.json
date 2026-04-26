@@ -1,0 +1,90 @@
+{
+  "captureMeta": {
+    "source": "scripts/_capture-opencode-fixtures.mjs",
+    "pattern": "critic-loop",
+    "role": "critic",
+    "capturedAt": 1777239712919
+  },
+  "message": {
+    "info": {
+      "parentID": "msg_dc5613fed001nmds2Qd9F9LsKA",
+      "role": "assistant",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/USER\\Desktop\\opencode_enhanced_ui",
+        "root": "/USER\\Desktop\\opencode_enhanced_ui"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 13878,
+        "input": 13717,
+        "output": 161,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      },
+      "modelID": "glm-5.1:cloud",
+      "providerID": "ollama",
+      "time": {
+        "created": 1777132978162,
+        "completed": 1777132981049
+      },
+      "finish": "stop",
+      "id": "msg_dc5613ff1001Qy6LDA2Vp4eY2I",
+      "sessionID": "ses_23a9fc873ffeOx6YyZZBqiTF12"
+    },
+    "parts": [
+      {
+        "snapshot": "cd4882564e13769641057eab38e48d06476809ac",
+        "type": "step-start",
+        "id": "prt_dc5614308001Ei3j9vPYUFqyVo",
+        "sessionID": "ses_23a9fc873ffeOx6YyZZBqiTF12",
+        "messageID": "msg_dc5613ff1001Qy6LDA2Vp4eY2I"
+      },
+      {
+        "type": "reasoning",
+        "text": "The worker has addressed both structural issues from round 1:\n1. The \"cap-and-preserve\" exit strategy is now captured — partial progress preserved for human review, not a hard kill.\n2. The pure-function / caller-owns-side-effects boundary is stated explicitly.\n\nThe paragraph is accurate, concise, and covers the key design decisions. It's ready.",
+        "time": {
+          "start": 1777132978953,
+          "end": 1777132979715
+        },
+        "id": "prt_dc5614309002xZQt7X5tMAiE32",
+        "sessionID": "ses_23a9fc873ffeOx6YyZZBqiTF12",
+        "messageID": "msg_dc5613ff1001Qy6LDA2Vp4eY2I"
+      },
+      {
+        "type": "text",
+        "text": "```yaml\nverdict: APPROVED\nconfidence: 5\nscope: NONE\nissues: []\n```\n\nBoth structural gaps from round 1 are resolved: the pure-function/caller-owns-abort boundary is stated up front, and the cap-and-preserve exit contract replaces the vague \"prevents running indefinitely\" framing. The paragraph is accurate, concise, and captures the module's key design decisions without overselling.",
+        "time": {
+          "start": 1777132979716,
+          "end": 1777132980657
+        },
+        "id": "prt_dc5614604001uC7sjcQE7CsyH9",
+        "sessionID": "ses_23a9fc873ffeOx6YyZZBqiTF12",
+        "messageID": "msg_dc5613ff1001Qy6LDA2Vp4eY2I"
+      },
+      {
+        "reason": "stop",
+        "snapshot": "cd4882564e13769641057eab38e48d06476809ac",
+        "type": "step-finish",
+        "tokens": {
+          "total": 13878,
+          "input": 13717,
+          "output": 161,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "cost": 0,
+        "id": "prt_dc56149b20010Pe2DWb7mqQnv7",
+        "sessionID": "ses_23a9fc873ffeOx6YyZZBqiTF12",
+        "messageID": "msg_dc5613ff1001Qy6LDA2Vp4eY2I"
+      }
+    ]
+  }
+}

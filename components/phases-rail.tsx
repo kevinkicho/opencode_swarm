@@ -23,21 +23,10 @@ import type { OpencodeMessage } from '@/lib/opencode/types';
 import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
+import { countLines, turnText } from './rails/_shared';
 
-function turnText(m: OpencodeMessage): string {
-  let out = '';
-  for (const p of m.parts) {
-    if (p.type === 'text' || p.type === 'reasoning') {
-      out += (p as { text?: string }).text ?? '';
-    }
-  }
-  return out;
-}
-
-function countLines(s: string): number {
-  if (!s) return 0;
-  return s.split('\n').length;
-}
+// HARDENING_PLAN.md#C15 — `turnText` and `countLines` lifted to
+// components/rails/_shared.ts.
 
 // Token-jaccard convergence, same as council-rail. Kept inline so the
 // two components stay decoupled — a later shared helper is trivial

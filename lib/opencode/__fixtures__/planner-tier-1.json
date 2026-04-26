@@ -1,0 +1,79 @@
+{
+  "captureMeta": {
+    "source": "scripts/_capture-opencode-fixtures.mjs",
+    "pattern": "blackboard",
+    "role": "planner",
+    "capturedAt": 1777239710465
+  },
+  "message": {
+    "info": {
+      "parentID": "msg_dca42de5e0016dNOOOx2AJKklQ",
+      "role": "assistant",
+      "mode": "build",
+      "agent": "build",
+      "path": {
+        "cwd": "/USER\\Workspace\\kyahoofinance032926",
+        "root": "/USER\\Workspace\\kyahoofinance032926"
+      },
+      "cost": 0,
+      "tokens": {
+        "total": 56276,
+        "input": 55938,
+        "output": 338,
+        "reasoning": 0,
+        "cache": {
+          "write": 0,
+          "read": 0
+        }
+      },
+      "modelID": "glm-5.1:cloud",
+      "providerID": "ollama",
+      "time": {
+        "created": 1777215065568,
+        "completed": 1777215088960
+      },
+      "finish": "stop",
+      "id": "msg_dca45cde0001080AdrO3I22g7k",
+      "sessionID": "ses_235bd2707ffeBXDQTq24t340PL"
+    },
+    "parts": [
+      {
+        "snapshot": "058e786f5a2f9058da234e44682a0f2a341a1827",
+        "type": "step-start",
+        "id": "prt_dca45d8e8001G2SLQSuLv30lZ1",
+        "sessionID": "ses_235bd2707ffeBXDQTq24t340PL",
+        "messageID": "msg_dca45cde0001080AdrO3I22g7k"
+      },
+      {
+        "type": "text",
+        "text": "The todowrite is done. Here's a summary of the audit findings and planned work:\n\n**Highest-impact gaps found:**\n\n1. **KPI Strips missing from 20/21 markets** — README claims \"all 21 markets use a one-look unified dashboard with 4-6 key metrics at the top,\" but only EquitiesMarket actually renders a `MarketKpiStrip`. The other 20 markets render zero KPI pills.\n\n2. **Currency Picker is decorative** — The dropdown exists (10 currencies in `CurrencyContext`), and 13 markets import `useCurrency()`, but most never call `convert()` or `convertAndFormat()` on displayed values. Switching currencies does nothing visible outside Equities and a few Commodities/RealEstate price fields.\n\n3. **Sidebar KPI panels missing** — The README specifies detailed sidebar metrics for each market (e.g., Insurance shows Combined Ratio, PGR/ALL/TRV/HIG, HY OAS; Credit shows IG/HY/EM spreads). Only 8 of 21 markets have dedicated sidebar components — Insurance, Credit, GlobalMacro, EquitiesDeepDive, IMF, WorldBank, BLS, EIA, Census, Calendar, Watchlist all lack them.\n\n4. **Data provenance (DataFooter/MetricValue) missing from 5 markets** — IMF, World Bank, BLS, EIA, Census have zero DataFooter or MetricValue usage despite the README promising \"Every data point in the app is traceable to its source.\"\n\nThe 15 todos target the highest-impact gaps with concrete deliverables, biased toward building over verifying.",
+        "time": {
+          "start": 1777215068393,
+          "end": 1777215088677
+        },
+        "id": "prt_dca45d8e9001Tfrct78h1Dg47Q",
+        "sessionID": "ses_235bd2707ffeBXDQTq24t340PL",
+        "messageID": "msg_dca45cde0001080AdrO3I22g7k"
+      },
+      {
+        "reason": "stop",
+        "snapshot": "058e786f5a2f9058da234e44682a0f2a341a1827",
+        "type": "step-finish",
+        "tokens": {
+          "total": 56276,
+          "input": 55938,
+          "output": 338,
+          "reasoning": 0,
+          "cache": {
+            "write": 0,
+            "read": 0
+          }
+        },
+        "cost": 0,
+        "id": "prt_dca462826001E6NSoRQU3UmTPW",
+        "sessionID": "ses_235bd2707ffeBXDQTq24t340PL",
+        "messageID": "msg_dca45cde0001080AdrO3I22g7k"
+      }
+    ]
+  }
+}

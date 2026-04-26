@@ -1,60 +1,126 @@
 // HARDENING_PLAN.md#D4 #3 + #D7 — transform tested against real
 // opencode JSON fixtures.
 //
-// Today `transform.test.ts` covers parsers (parseUnifiedDiff,
-// parseSessionDiffs, filterDiffsForTurn) — 17 cases. The 8 main
-// transformers (toAgents, toMessages, toRunMeta, toLiveTurns,
-// toFileHeat, toTurnCards, toRunPlan, toProviderSummary) are
+// Pre-fix transform.ts had 17 unit tests covering only parsers
+// (parseUnifiedDiff, parseSessionDiffs, filterDiffsForTurn). The 8
+// main transformers (toAgents, toMessages, toRunMeta, toLiveTurns,
+// toFileHeat, toTurnCards, toRunPlan, toProviderSummary) were
 // untested.
 //
-// The fix: capture real opencode message JSONs into
-// `lib/opencode/__fixtures__/` (one per pattern: planner, worker,
-// critic, council). Run each transformer against every fixture and
-// snapshot the result.
-//
-// Status: scaffold. Un-skip once fixtures land.
+// This test drives every transformer through every captured opencode
+// fixture in __fixtures__/ and snapshots the result. PRs that change
+// transform output have to update the snapshot — visible review
+// signal. Q34/Q42-class regressions (model emits an unexpected shape
+// → silent corruption downstream) get caught by the snapshot diff.
 
-import { describe } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  toAgents,
+  toFileHeat,
+  toLiveTurns,
+  toMessages,
+  toProviderSummary,
+  toRunMeta,
+  toRunPlan,
+  toTurnCards,
+} from '../transform';
+import type { OpencodeMessage } from '../types';
 
-describe.skip('transform · fixture-driven shape coverage (D4 #3 + D7 — to be implemented)', () => {
-  // Recipe:
-  //
-  //   import { readFileSync, readdirSync } from 'node:fs';
-  //   import { join } from 'node:path';
-  //   import { toAgents, toMessages, toRunMeta, ... } from '../transform';
-  //
-  //   const FIXTURES_DIR = join(__dirname, '..', '__fixtures__');
-  //   const fixtures = readdirSync(FIXTURES_DIR)
-  //     .filter((f) => f.endsWith('.json'))
-  //     .map((f) => ({ name: f, data: JSON.parse(readFileSync(join(FIXTURES_DIR, f), 'utf8')) }));
+const FIXTURES_DIR = join(__dirname, '..', '__fixtures__');
 
-  // === Each transformer × each fixture ===
-  //
-  // for (const fx of fixtures) {
-  //   it(`toAgents on ${fx.name}`, () => expect(toAgents(fx.data)).toMatchSnapshot());
-  //   it(`toMessages on ${fx.name}`, () => expect(toMessages(fx.data)).toMatchSnapshot());
-  //   it(`toRunMeta on ${fx.name}`, () => expect(toRunMeta(fx.data)).toMatchSnapshot());
-  //   it(`toLiveTurns on ${fx.name}`, () => expect(toLiveTurns(fx.data)).toMatchSnapshot());
-  //   it(`toFileHeat on ${fx.name}`, () => expect(toFileHeat(fx.data)).toMatchSnapshot());
-  //   it(`toTurnCards on ${fx.name}`, () => expect(toTurnCards(fx.data)).toMatchSnapshot());
-  //   it(`toRunPlan on ${fx.name}`, () => expect(toRunPlan(fx.data)).toMatchSnapshot());
-  //   it(`toProviderSummary on ${fx.name}`, () => expect(toProviderSummary(fx.data)).toMatchSnapshot());
-  // }
+interface CaptureWrapper {
+  captureMeta: {
+    source: string;
+    pattern: string;
+    role: string;
+    capturedAt: number;
+  };
+  message: OpencodeMessage;
+}
 
-  // === Drift detection ===
-  //
-  // it('every fixture parses without throwing');
-  // it('every fixture has at least one message of each expected type');
+const fixtures = readdirSync(FIXTURES_DIR)
+  .filter((f) => f.endsWith('.json'))
+  .map((f) => ({
+    name: f.replace(/\.json$/, ''),
+    path: join(FIXTURES_DIR, f),
+  }));
 
-  // === Q34 / Q42 firewall ===
-  //
-  // The fixture set MUST include:
-  //   - planner-tier-1.json: a successful planner sweep reply
-  //   - worker-with-tools.json: a worker turn with patch + tool parts
-  //   - worker-text-only-skip.json: a worker that legitimately replied "skip:"
-  //   - critic-approved.json: a critic verdict reply
-  //   - council-round.json: a council deliberation round
-  //
-  // Snapshots from these fixtures are the firewall: a regression that
-  // changes shape interpretation will fail the snapshot match.
+describe('transform · fixture-driven (D7 schema-drift firewall)', () => {
+  it('fixture corpus exists', () => {
+    expect(fixtures.length).toBeGreaterThan(0);
+  });
+
+  // Every fixture must be valid JSON parsing into the wrapper shape.
+  for (const fx of fixtures) {
+    it(`${fx.name} parses cleanly`, () => {
+      const raw = JSON.parse(readFileSync(fx.path, 'utf8')) as CaptureWrapper;
+      expect(raw.message).toBeDefined();
+      expect(raw.message.info).toBeDefined();
+      expect(raw.captureMeta.pattern).toBeTruthy();
+    });
+  }
+
+  // For each fixture, drive each transformer and snapshot the output.
+  // Transformers that need additional context (toRunMeta needs a
+  // session, toProviderSummary needs agents) get minimal stand-ins.
+  for (const fx of fixtures) {
+    describe(`${fx.name}`, () => {
+      const wrapper = JSON.parse(
+        readFileSync(fx.path, 'utf8'),
+      ) as CaptureWrapper;
+      const messages: OpencodeMessage[] = [wrapper.message];
+
+      it(`toAgents`, () => {
+        expect(toAgents(messages)).toMatchSnapshot();
+      });
+
+      it(`toMessages`, () => {
+        expect(toMessages(messages)).toMatchSnapshot();
+      });
+
+      it(`toRunMeta`, () => {
+        // Synthesize a minimal session so toRunMeta has its required
+        // input. Fixture's message carries enough info to drive every
+        // assertion the transformer makes.
+        const fakeSession = {
+          id: wrapper.message.info.sessionID ?? 'ses_fixture',
+          slug: 'fx',
+          projectID: 'global',
+          directory: '/USER/workspace',
+          title: 'fixture',
+          version: '1.0',
+          summary: { diffs: [] },
+          time: { created: 0, updated: 0 },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        } as any;
+        expect(toRunMeta(fakeSession, messages)).toMatchSnapshot();
+      });
+
+      it(`toLiveTurns`, () => {
+        expect(toLiveTurns(messages)).toMatchSnapshot();
+      });
+
+      it(`toFileHeat`, () => {
+        expect(toFileHeat(messages)).toMatchSnapshot();
+      });
+
+      it(`toTurnCards`, () => {
+        expect(toTurnCards(messages)).toMatchSnapshot();
+      });
+
+      it(`toRunPlan`, () => {
+        expect(toRunPlan(messages)).toMatchSnapshot();
+      });
+
+      it(`toProviderSummary`, () => {
+        // toProviderSummary takes agents AS WELL as messages. Use the
+        // agents derived from this fixture so the test is reproducible
+        // from the fixture alone.
+        const agents = toAgents(messages).agents;
+        expect(toProviderSummary(agents, messages)).toMatchSnapshot();
+      });
+    });
+  }
 });

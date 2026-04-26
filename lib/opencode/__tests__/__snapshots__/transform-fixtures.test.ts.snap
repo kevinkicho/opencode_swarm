@@ -1,0 +1,1100 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toAgents 1`] = `
+{
+  "agentOrder": [
+    "ag_build_ewpuZgzp",
+  ],
+  "agents": [
+    {
+      "accent": "mint",
+      "costUsed": 0,
+      "focus": "build",
+      "glyph": "B",
+      "id": "ag_build_ewpuZgzp",
+      "messagesRecv": 0,
+      "messagesSent": 1,
+      "model": {
+        "family": "gemma",
+        "id": "gemma4:31b-cloud",
+        "label": "gemma4:31b-cloud",
+        "pricing": undefined,
+        "provider": "ollama",
+      },
+      "name": "build",
+      "sessionID": "ses_236c7871bffegliO2SewpuZgzp",
+      "status": "idle",
+      "tokensBudget": 80000,
+      "tokensIn": 52830,
+      "tokensOut": 183,
+      "tokensUsed": 53013,
+      "tools": [],
+    },
+  ],
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toFileHeat 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toLiveTurns 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toMessages 1`] = `
+[
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_ewpuZgzp",
+    "id": "prt_dc93a5ee9001fZ07j36whXBhXd",
+    "part": "step-start",
+    "status": "complete",
+    "threadId": "msg_dc93a5bbf001ht9wUxsQX5H53M",
+    "timestamp": "00:00",
+    "title": "step start",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 53013,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777197538239,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_ewpuZgzp",
+    "id": "prt_dc93a6d05001ODxGa3lkcZ2Z59",
+    "part": "step-finish",
+    "status": "complete",
+    "threadId": "msg_dc93a5bbf001ht9wUxsQX5H53M",
+    "timestamp": "00:00",
+    "title": "step finish · stop",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 53013,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777197538239,
+  },
+  {
+    "body": "Audit revealed high-impact gaps in the "Unified Dashboard Architecture" (specifically the KPI Strip implementation). While the README claimed a consistent KPI strip for all 21 markets, it was missing or inconsistently implemented.
+
+**Implemented Changes:**
+1.  Created a reusable \`KpiStrip\` component in \`src/components/KpiStrip/KpiStrip.jsx\` to standardize the "one-look" dashboard pattern.
+2.  Integrated the \`KpiStrip\` into the \`BondsDashboard\` as a representative implementation for the bento-grid architecture, surfacing key metrics (10Y Yield, Fed Funds, etc.) at the top of the view.
+3.  Verified that Currency Picker, Exports (PNG/CSV/JSON), and Global Search are implemented in \`MarketTabBar.jsx\` and \`HubLayout.jsx\` as claimed.",
+    "cost": undefined,
+    "duration": "3.6s",
+    "fromAgentId": "ag_build_ewpuZgzp",
+    "id": "prt_dc93a5eea001XynBSTKvM5d62z",
+    "part": "text",
+    "status": "complete",
+    "threadId": "msg_dc93a5bbf001ht9wUxsQX5H53M",
+    "timestamp": "00:00",
+    "title": "Audit revealed high-impact gaps in the "Unified Dashboard Architecture" (specif…",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 53013,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777197539050,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toProviderSummary 1`] = `
+[
+  {
+    "agents": 1,
+    "cost": 0,
+    "provider": "ollama",
+    "tokens": 53013,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toRunMeta 1`] = `
+{
+  "budgetCap": 5,
+  "cwd": "/USER/workspace",
+  "elapsed": "493665h 59m",
+  "id": "ses_236c7871bffegliO2SewpuZgzp",
+  "started": "Dec 31, 04:00 PM",
+  "status": "done",
+  "title": "fixture",
+  "totalCost": 0,
+  "totalTokens": 53013,
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toRunPlan 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round > toTurnCards 1`] = `
+[
+  {
+    "agent": "build",
+    "assistantText": "Audit revealed high-impact gaps in the "Unified Dashboard Architecture" (specifically the KPI Strip implementation). While the README claimed a consistent KPI strip for all 21 markets, it was missing or inconsistently implemented.
+
+**Implemented Changes:**
+1.  Created a reusable \`KpiStrip\` component in \`src/components/KpiStrip/KpiStrip.jsx\` to standardize the "one-look" dashboard pattern.
+2.  Integrated the \`KpiStrip\` into the \`BondsDashboard\` as a representative implementation for the bento-grid architecture, surfacing key metrics (10Y Yield, Fed Funds, etc.) at the top of the view.
+3.  Verified that Currency Picker, Exports (PNG/CSV/JSON), and Global Search are implemented in \`MarketTabBar.jsx\` and \`HubLayout.jsx\` as claimed.",
+    "completedMs": 1777197542929,
+    "cost": 0,
+    "filesTouched": [],
+    "id": "msg_dc93a5bbf001ht9wUxsQX5H53M",
+    "modelID": "gemma4:31b-cloud",
+    "providerID": "ollama",
+    "reasoningText": undefined,
+    "sessionID": "ses_236c7871bffegliO2SewpuZgzp",
+    "startedMs": 1777197538239,
+    "status": "success",
+    "tokens": 53013,
+    "tools": [],
+    "userPrompt": undefined,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toAgents 1`] = `
+{
+  "agentOrder": [
+    "ag_build_ZBqiTF12",
+  ],
+  "agents": [
+    {
+      "accent": "mint",
+      "costUsed": 0,
+      "focus": "build",
+      "glyph": "B",
+      "id": "ag_build_ZBqiTF12",
+      "messagesRecv": 0,
+      "messagesSent": 1,
+      "model": {
+        "family": "glm",
+        "id": "glm-5.1:cloud",
+        "label": "glm-5.1:cloud",
+        "pricing": {
+          "input": 1.4,
+          "output": 4.4,
+        },
+        "provider": "ollama",
+      },
+      "name": "build",
+      "sessionID": "ses_23a9fc873ffeOx6YyZZBqiTF12",
+      "status": "idle",
+      "tokensBudget": 80000,
+      "tokensIn": 13717,
+      "tokensOut": 161,
+      "tokensUsed": 13878,
+      "tools": [],
+    },
+  ],
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toFileHeat 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toLiveTurns 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toMessages 1`] = `
+[
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_ZBqiTF12",
+    "id": "prt_dc5614308001Ei3j9vPYUFqyVo",
+    "part": "step-start",
+    "status": "complete",
+    "threadId": "msg_dc5613ff1001Qy6LDA2Vp4eY2I",
+    "timestamp": "00:00",
+    "title": "step start",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 13878,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777132978162,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_ZBqiTF12",
+    "id": "prt_dc56149b20010Pe2DWb7mqQnv7",
+    "part": "step-finish",
+    "status": "complete",
+    "threadId": "msg_dc5613ff1001Qy6LDA2Vp4eY2I",
+    "timestamp": "00:00",
+    "title": "step finish · stop",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 13878,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777132978162,
+  },
+  {
+    "body": "The worker has addressed both structural issues from round 1:
+1. The "cap-and-preserve" exit strategy is now captured — partial progress preserved for human review, not a hard kill.
+2. The pure-function / caller-owns-side-effects boundary is stated explicitly.
+
+The paragraph is accurate, concise, and covers the key design decisions. It's ready.",
+    "cost": undefined,
+    "duration": "762ms",
+    "fromAgentId": "ag_build_ZBqiTF12",
+    "id": "prt_dc5614309002xZQt7X5tMAiE32",
+    "part": "reasoning",
+    "status": "complete",
+    "threadId": "msg_dc5613ff1001Qy6LDA2Vp4eY2I",
+    "timestamp": "00:00",
+    "title": "The worker has addressed both structural issues from round 1:",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 13878,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777132978953,
+  },
+  {
+    "body": "\`\`\`yaml
+verdict: APPROVED
+confidence: 5
+scope: NONE
+issues: []
+\`\`\`
+
+Both structural gaps from round 1 are resolved: the pure-function/caller-owns-abort boundary is stated up front, and the cap-and-preserve exit contract replaces the vague "prevents running indefinitely" framing. The paragraph is accurate, concise, and captures the module's key design decisions without overselling.",
+    "cost": undefined,
+    "duration": "941ms",
+    "fromAgentId": "ag_build_ZBqiTF12",
+    "id": "prt_dc5614604001uC7sjcQE7CsyH9",
+    "part": "text",
+    "status": "complete",
+    "threadId": "msg_dc5613ff1001Qy6LDA2Vp4eY2I",
+    "timestamp": "00:01",
+    "title": "\`\`\`yaml",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 13878,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777132979716,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toProviderSummary 1`] = `
+[
+  {
+    "agents": 1,
+    "cost": 0,
+    "provider": "ollama",
+    "tokens": 13878,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toRunMeta 1`] = `
+{
+  "budgetCap": 5,
+  "cwd": "/USER/workspace",
+  "elapsed": "493648h 3m",
+  "id": "ses_23a9fc873ffeOx6YyZZBqiTF12",
+  "started": "Dec 31, 04:00 PM",
+  "status": "done",
+  "title": "fixture",
+  "totalCost": 0,
+  "totalTokens": 13878,
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toRunPlan 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approved > toTurnCards 1`] = `
+[
+  {
+    "agent": "build",
+    "assistantText": "\`\`\`yaml
+verdict: APPROVED
+confidence: 5
+scope: NONE
+issues: []
+\`\`\`
+
+Both structural gaps from round 1 are resolved: the pure-function/caller-owns-abort boundary is stated up front, and the cap-and-preserve exit contract replaces the vague "prevents running indefinitely" framing. The paragraph is accurate, concise, and captures the module's key design decisions without overselling.",
+    "completedMs": 1777132981049,
+    "cost": 0,
+    "filesTouched": [],
+    "id": "msg_dc5613ff1001Qy6LDA2Vp4eY2I",
+    "modelID": "glm-5.1:cloud",
+    "providerID": "ollama",
+    "reasoningText": "The worker has addressed both structural issues from round 1:
+1. The "cap-and-preserve" exit strategy is now captured — partial progress preserved for human review, not a hard kill.
+2. The pure-function / caller-owns-side-effects boundary is stated explicitly.
+
+The paragraph is accurate, concise, and covers the key design decisions. It's ready.",
+    "sessionID": "ses_23a9fc873ffeOx6YyZZBqiTF12",
+    "startedMs": 1777132978162,
+    "status": "success",
+    "tokens": 13878,
+    "tools": [],
+    "userPrompt": undefined,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toAgents 1`] = `
+{
+  "agentOrder": [
+    "ag_build_24t340PL",
+  ],
+  "agents": [
+    {
+      "accent": "mint",
+      "costUsed": 0,
+      "focus": "build",
+      "glyph": "B",
+      "id": "ag_build_24t340PL",
+      "messagesRecv": 0,
+      "messagesSent": 1,
+      "model": {
+        "family": "glm",
+        "id": "glm-5.1:cloud",
+        "label": "glm-5.1:cloud",
+        "pricing": {
+          "input": 1.4,
+          "output": 4.4,
+        },
+        "provider": "ollama",
+      },
+      "name": "build",
+      "sessionID": "ses_235bd2707ffeBXDQTq24t340PL",
+      "status": "idle",
+      "tokensBudget": 80000,
+      "tokensIn": 55938,
+      "tokensOut": 338,
+      "tokensUsed": 56276,
+      "tools": [],
+    },
+  ],
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toFileHeat 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toLiveTurns 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toMessages 1`] = `
+[
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_24t340PL",
+    "id": "prt_dca45d8e8001G2SLQSuLv30lZ1",
+    "part": "step-start",
+    "status": "complete",
+    "threadId": "msg_dca45cde0001080AdrO3I22g7k",
+    "timestamp": "00:00",
+    "title": "step start",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 56276,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777215065568,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_24t340PL",
+    "id": "prt_dca462826001E6NSoRQU3UmTPW",
+    "part": "step-finish",
+    "status": "complete",
+    "threadId": "msg_dca45cde0001080AdrO3I22g7k",
+    "timestamp": "00:00",
+    "title": "step finish · stop",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 56276,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777215065568,
+  },
+  {
+    "body": "The todowrite is done. Here's a summary of the audit findings and planned work:
+
+**Highest-impact gaps found:**
+
+1. **KPI Strips missing from 20/21 markets** — README claims "all 21 markets use a one-look unified dashboard with 4-6 key metrics at the top," but only EquitiesMarket actually renders a \`MarketKpiStrip\`. The other 20 markets render zero KPI pills.
+
+2. **Currency Picker is decorative** — The dropdown exists (10 currencies in \`CurrencyContext\`), and 13 markets import \`useCurrency()\`, but most never call \`convert()\` or \`convertAndFormat()\` on displayed values. Switching currencies does nothing visible outside Equities and a few Commodities/RealEstate price fields.
+
+3. **Sidebar KPI panels missing** — The README specifies detailed sidebar metrics for each market (e.g., Insurance shows Combined Ratio, PGR/ALL/TRV/HIG, HY OAS; Credit shows IG/HY/EM spreads). Only 8 of 21 markets have dedicated sidebar components — Insurance, Credit, GlobalMacro, EquitiesDeepDive, IMF, WorldBank, BLS, EIA, Census, Calendar, Watchlist all lack them.
+
+4. **Data provenance (DataFooter/MetricValue) missing from 5 markets** — IMF, World Bank, BLS, EIA, Census have zero DataFooter or MetricValue usage despite the README promising "Every data point in the app is traceable to its source."
+
+The 15 todos target the highest-impact gaps with concrete deliverables, biased toward building over verifying.",
+    "cost": undefined,
+    "duration": "20.3s",
+    "fromAgentId": "ag_build_24t340PL",
+    "id": "prt_dca45d8e9001Tfrct78h1Dg47Q",
+    "part": "text",
+    "status": "complete",
+    "threadId": "msg_dca45cde0001080AdrO3I22g7k",
+    "timestamp": "00:02",
+    "title": "The todowrite is done. Here's a summary of the audit findings and planned work:",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 56276,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777215068393,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toProviderSummary 1`] = `
+[
+  {
+    "agents": 1,
+    "cost": 0,
+    "provider": "ollama",
+    "tokens": 56276,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toRunMeta 1`] = `
+{
+  "budgetCap": 5,
+  "cwd": "/USER/workspace",
+  "elapsed": "493670h 51m",
+  "id": "ses_235bd2707ffeBXDQTq24t340PL",
+  "started": "Dec 31, 04:00 PM",
+  "status": "done",
+  "title": "fixture",
+  "totalCost": 0,
+  "totalTokens": 56276,
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toRunPlan 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1 > toTurnCards 1`] = `
+[
+  {
+    "agent": "build",
+    "assistantText": "The todowrite is done. Here's a summary of the audit findings and planned work:
+
+**Highest-impact gaps found:**
+
+1. **KPI Strips missing from 20/21 markets** — README claims "all 21 markets use a one-look unified dashboard with 4-6 key metrics at the top," but only EquitiesMarket actually renders a \`MarketKpiStrip\`. The other 20 markets render zero KPI pills.
+
+2. **Currency Picker is decorative** — The dropdown exists (10 currencies in \`CurrencyContext\`), and 13 markets import \`useCurrency()\`, but most never call \`convert()\` or \`convertAndFormat()\` on displayed values. Switching currencies does nothing visible outside Equities and a few Commodities/RealEstate price fields.
+
+3. **Sidebar KPI panels missing** — The README specifies detailed sidebar metrics for each market (e.g., Insurance shows Combined Ratio, PGR/ALL/TRV/HIG, HY OAS; Credit shows IG/HY/EM spreads). Only 8 of 21 markets have dedicated sidebar components — Insurance, Credit, GlobalMacro, EquitiesDeepDive, IMF, WorldBank, BLS, EIA, Census, Calendar, Watchlist all lack them.
+
+4. **Data provenance (DataFooter/MetricValue) missing from 5 markets** — IMF, World Bank, BLS, EIA, Census have zero DataFooter or MetricValue usage despite the README promising "Every data point in the app is traceable to its source."
+
+The 15 todos target the highest-impact gaps with concrete deliverables, biased toward building over verifying.",
+    "completedMs": 1777215088960,
+    "cost": 0,
+    "filesTouched": [],
+    "id": "msg_dca45cde0001080AdrO3I22g7k",
+    "modelID": "glm-5.1:cloud",
+    "providerID": "ollama",
+    "reasoningText": undefined,
+    "sessionID": "ses_235bd2707ffeBXDQTq24t340PL",
+    "startedMs": 1777215065568,
+    "status": "success",
+    "tokens": 56276,
+    "tools": [],
+    "userPrompt": undefined,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toAgents 1`] = `
+{
+  "agentOrder": [
+    "ag_build_d2vQDXXL",
+  ],
+  "agents": [
+    {
+      "accent": "mint",
+      "costUsed": 0,
+      "focus": "build",
+      "glyph": "B",
+      "id": "ag_build_d2vQDXXL",
+      "messagesRecv": 0,
+      "messagesSent": 1,
+      "model": {
+        "family": "gemma",
+        "id": "gemma4:31b-cloud",
+        "label": "gemma4:31b-cloud",
+        "pricing": undefined,
+        "provider": "ollama",
+      },
+      "name": "build",
+      "sessionID": "ses_235391a8dffeglORqAd2vQDXXL",
+      "status": "idle",
+      "tokensBudget": 80000,
+      "tokensIn": 11031,
+      "tokensOut": 305,
+      "tokensUsed": 11336,
+      "tools": [],
+    },
+  ],
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toFileHeat 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toLiveTurns 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toMessages 1`] = `
+[
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_d2vQDXXL",
+    "id": "prt_dcacdfc55001VOiYxvjVQwrm6S",
+    "part": "step-start",
+    "status": "complete",
+    "threadId": "msg_dcacc229f001r2p2NvUGYS6FIi",
+    "timestamp": "00:00",
+    "title": "step start",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11336,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777223869087,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_d2vQDXXL",
+    "id": "prt_dcad04e3d001wfIEgZ3rdjFA7y",
+    "part": "step-finish",
+    "status": "complete",
+    "threadId": "msg_dcacc229f001r2p2NvUGYS6FIi",
+    "timestamp": "00:00",
+    "title": "step finish · stop",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11336,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777223869087,
+  },
+  {
+    "body": "<think>
+
+</think>
+
+I'll start by reading the README spec and examining the existing files to understand what needs to be built.
+
+<|tool>Bash
+<arg_key>command</arg_key>
+<arg_value>find /USER\\Workspace\\kyahoofinance032926 -name "README*" -type f | head -5</arg_value>
+<arg_key>description</arg_key>
+<arg_value>Find README files in project</arg_value>
+</tool|>
+<tool>Bash
+<arg_key>command</arg_key>
+<arg_value>ls -la /USER\\Workspace\\kyahoofinance032926\\src\\markets\\fx\\</arg_value>
+<arg_key>description</arg_key>
+<arg_value>List FX market directory structure</arg_value>
+</tool|>
+<tool>Bash
+<arg_key>command</arg_key>
+<arg_value>if (Test-Path "/USER\\Workspace\\kyahoofinance032926\\src\\markets\\fx\\components\\FXSidebar.jsx") { echo "FXSidebar.jsx exists" } else { echo "FXSidebar.jsx does not exist" }</arg_value>
+<arg_key>description</arg_key>
+<arg_value>Check if FXSidebar component exists</arg_value>
+</tool|>",
+    "cost": undefined,
+    "duration": "2m 32s",
+    "fromAgentId": "ag_build_d2vQDXXL",
+    "id": "prt_dcacdfc570018R3NbDIxgj9xQb",
+    "part": "text",
+    "status": "complete",
+    "threadId": "msg_dcacc229f001r2p2NvUGYS6FIi",
+    "timestamp": "02:01",
+    "title": "<think>",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11336,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777223990359,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toProviderSummary 1`] = `
+[
+  {
+    "agents": 1,
+    "cost": 0,
+    "provider": "ollama",
+    "tokens": 11336,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toRunMeta 1`] = `
+{
+  "budgetCap": 5,
+  "cwd": "/USER/workspace",
+  "elapsed": "493673h 22m",
+  "id": "ses_235391a8dffeglORqAd2vQDXXL",
+  "started": "Dec 31, 04:00 PM",
+  "status": "done",
+  "title": "fixture",
+  "totalCost": 0,
+  "totalTokens": 11336,
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toRunPlan 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-tool-text > toTurnCards 1`] = `
+[
+  {
+    "agent": "build",
+    "assistantText": "<think>
+
+</think>
+
+I'll start by reading the README spec and examining the existing files to understand what needs to be built.
+
+<|tool>Bash
+<arg_key>command</arg_key>
+<arg_value>find /USER\\Workspace\\kyahoofinance032926 -name "README*" -type f | head -5</arg_value>
+<arg_key>description</arg_key>
+<arg_value>Find README files in project</arg_value>
+</tool|>
+<tool>Bash
+<arg_key>command</arg_key>
+<arg_value>ls -la /USER\\Workspace\\kyahoofinance032926\\src\\markets\\fx\\</arg_value>
+<arg_key>description</arg_key>
+<arg_value>List FX market directory structure</arg_value>
+</tool|>
+<tool>Bash
+<arg_key>command</arg_key>
+<arg_value>if (Test-Path "/USER\\Workspace\\kyahoofinance032926\\src\\markets\\fx\\components\\FXSidebar.jsx") { echo "FXSidebar.jsx exists" } else { echo "FXSidebar.jsx does not exist" }</arg_value>
+<arg_key>description</arg_key>
+<arg_value>Check if FXSidebar component exists</arg_value>
+</tool|>",
+    "completedMs": 1777224142669,
+    "cost": 0,
+    "filesTouched": [],
+    "id": "msg_dcacc229f001r2p2NvUGYS6FIi",
+    "modelID": "gemma4:31b-cloud",
+    "providerID": "ollama",
+    "reasoningText": undefined,
+    "sessionID": "ses_235391a8dffeglORqAd2vQDXXL",
+    "startedMs": 1777223869087,
+    "status": "success",
+    "tokens": 11336,
+    "tools": [],
+    "userPrompt": undefined,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toAgents 1`] = `
+{
+  "agentOrder": [
+    "ag_build_imPMj0lF",
+  ],
+  "agents": [
+    {
+      "accent": "mint",
+      "costUsed": 0,
+      "focus": "build",
+      "glyph": "B",
+      "id": "ag_build_imPMj0lF",
+      "messagesRecv": 0,
+      "messagesSent": 1,
+      "model": {
+        "family": "gemma",
+        "id": "gemma4:31b-cloud",
+        "label": "gemma4:31b-cloud",
+        "pricing": undefined,
+        "provider": "ollama",
+      },
+      "name": "build",
+      "sessionID": "ses_23584e7faffeLV8i2EimPMj0lF",
+      "status": "idle",
+      "tokensBudget": 80000,
+      "tokensIn": 27579,
+      "tokensOut": 46,
+      "tokensUsed": 27625,
+      "tools": [],
+    },
+  ],
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toFileHeat 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toLiveTurns 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toMessages 1`] = `
+[
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_imPMj0lF",
+    "id": "prt_dca7c36cf001ioYsD7t9sTxtF2",
+    "part": "step-start",
+    "status": "complete",
+    "threadId": "msg_dca7c2a6a0013MR3p404M8xJgi",
+    "timestamp": "00:00",
+    "title": "step start",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 27625,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777218628202,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_imPMj0lF",
+    "id": "prt_dca7c3a9a0024a0NXVPyQNKxgM",
+    "part": "step-finish",
+    "status": "complete",
+    "threadId": "msg_dca7c2a6a0013MR3p404M8xJgi",
+    "timestamp": "00:00",
+    "title": "step finish · stop",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 27625,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777218628202,
+  },
+  {
+    "body": "skip: Both \`captureBentoSnapshot\` in \`src/utils/exportUtils.js\` and its integration in \`HubLayout.jsx\`'s \`handleExport\` function are already implemented.",
+    "cost": undefined,
+    "duration": "969ms",
+    "fromAgentId": "ag_build_imPMj0lF",
+    "id": "prt_dca7c36d0001PDv76zF002uV1E",
+    "part": "text",
+    "status": "complete",
+    "threadId": "msg_dca7c2a6a0013MR3p404M8xJgi",
+    "timestamp": "00:03",
+    "title": "skip: Both \`captureBentoSnapshot\` in \`src/utils/exportUtils.js\` and its integra…",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 27625,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777218631376,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toProviderSummary 1`] = `
+[
+  {
+    "agents": 1,
+    "cost": 0,
+    "provider": "ollama",
+    "tokens": 27625,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toRunMeta 1`] = `
+{
+  "budgetCap": 5,
+  "cwd": "/USER/workspace",
+  "elapsed": "493671h 50m",
+  "id": "ses_23584e7faffeLV8i2EimPMj0lF",
+  "started": "Dec 31, 04:00 PM",
+  "status": "done",
+  "title": "fixture",
+  "totalCost": 0,
+  "totalTokens": 27625,
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toRunPlan 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-only-skip > toTurnCards 1`] = `
+[
+  {
+    "agent": "build",
+    "assistantText": "skip: Both \`captureBentoSnapshot\` in \`src/utils/exportUtils.js\` and its integration in \`HubLayout.jsx\`'s \`handleExport\` function are already implemented.",
+    "completedMs": 1777218632638,
+    "cost": 0,
+    "filesTouched": [],
+    "id": "msg_dca7c2a6a0013MR3p404M8xJgi",
+    "modelID": "gemma4:31b-cloud",
+    "providerID": "ollama",
+    "reasoningText": undefined,
+    "sessionID": "ses_23584e7faffeLV8i2EimPMj0lF",
+    "startedMs": 1777218628202,
+    "status": "success",
+    "tokens": 27625,
+    "tools": [],
+    "userPrompt": undefined,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toAgents 1`] = `
+{
+  "agentOrder": [
+    "ag_build_nABtKgZD",
+  ],
+  "agents": [
+    {
+      "accent": "mint",
+      "costUsed": 0,
+      "focus": "build",
+      "glyph": "B",
+      "id": "ag_build_nABtKgZD",
+      "messagesRecv": 0,
+      "messagesSent": 1,
+      "model": {
+        "family": "glm",
+        "id": "glm-5.1:cloud",
+        "label": "glm-5.1:cloud",
+        "pricing": {
+          "input": 1.4,
+          "output": 4.4,
+        },
+        "provider": "ollama",
+      },
+      "name": "build",
+      "sessionID": "ses_23509d31effeUrwOkgnABtKgZD",
+      "status": "idle",
+      "tokensBudget": 80000,
+      "tokensIn": 11176,
+      "tokensOut": 80,
+      "tokensUsed": 11256,
+      "tools": [
+        "read",
+        "glob",
+      ],
+    },
+  ],
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toFileHeat 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toLiveTurns 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toMessages 1`] = `
+[
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_nABtKgZD",
+    "id": "prt_dcaf65358001GaMpfCdVRjptH3",
+    "part": "step-start",
+    "status": "complete",
+    "threadId": "msg_dcaf63525001qthUQ0jqPxgmiD",
+    "timestamp": "00:00",
+    "title": "step start",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11256,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777226626341,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_nABtKgZD",
+    "id": "prt_dcaf65a9c001At9Ae86Ik2Ihj5",
+    "part": "tool",
+    "status": "complete",
+    "threadId": "msg_dcaf63525001qthUQ0jqPxgmiD",
+    "timestamp": "00:00",
+    "title": "read",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11256,
+    "toolName": "read",
+    "toolPreview": undefined,
+    "toolState": "completed",
+    "tsMs": 1777226626341,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_nABtKgZD",
+    "id": "prt_dcaf680b3001I7yT3JaUacuxD7",
+    "part": "tool",
+    "status": "complete",
+    "threadId": "msg_dcaf63525001qthUQ0jqPxgmiD",
+    "timestamp": "00:00",
+    "title": "glob",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11256,
+    "toolName": "glob",
+    "toolPreview": undefined,
+    "toolState": "completed",
+    "tsMs": 1777226626341,
+  },
+  {
+    "body": undefined,
+    "cost": undefined,
+    "duration": undefined,
+    "fromAgentId": "ag_build_nABtKgZD",
+    "id": "prt_dcaf6816a001lCzbgmaXX5NGwB",
+    "part": "step-finish",
+    "status": "complete",
+    "threadId": "msg_dcaf63525001qthUQ0jqPxgmiD",
+    "timestamp": "00:00",
+    "title": "step finish · tool-calls",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11256,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777226626341,
+  },
+  {
+    "body": "Let me start by understanding the project structure and the README claims, then audit the implementation against those claims.",
+    "cost": undefined,
+    "duration": "1.9s",
+    "fromAgentId": "ag_build_nABtKgZD",
+    "id": "prt_dcaf65359001wbzlUXbFSkoPgr",
+    "part": "reasoning",
+    "status": "complete",
+    "threadId": "msg_dcaf63525001qthUQ0jqPxgmiD",
+    "timestamp": "00:07",
+    "title": "Let me start by understanding the project structure and the README claims, then…",
+    "toAgentIds": [
+      "human",
+    ],
+    "tokens": 11256,
+    "toolName": undefined,
+    "toolPreview": undefined,
+    "toolState": undefined,
+    "tsMs": 1777226634073,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toProviderSummary 1`] = `
+[
+  {
+    "agents": 1,
+    "cost": 0,
+    "provider": "ollama",
+    "tokens": 11256,
+  },
+]
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toRunMeta 1`] = `
+{
+  "budgetCap": 5,
+  "cwd": "/USER/workspace",
+  "elapsed": "493674h 4m",
+  "id": "ses_23509d31effeUrwOkgnABtKgZD",
+  "started": "Dec 31, 04:00 PM",
+  "status": "done",
+  "title": "fixture",
+  "totalCost": 0,
+  "totalTokens": 11256,
+}
+`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toRunPlan 1`] = `[]`;
+
+exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-tools > toTurnCards 1`] = `
+[
+  {
+    "agent": "build",
+    "assistantText": undefined,
+    "completedMs": 1777226646219,
+    "cost": 0,
+    "filesTouched": [],
+    "id": "msg_dcaf63525001qthUQ0jqPxgmiD",
+    "modelID": "glm-5.1:cloud",
+    "providerID": "ollama",
+    "reasoningText": "Let me start by understanding the project structure and the README claims, then audit the implementation against those claims.",
+    "sessionID": "ses_23509d31effeUrwOkgnABtKgZD",
+    "startedMs": 1777226626341,
+    "status": "success",
+    "tokens": 11256,
+    "tools": [
+      {
+        "id": "prt_dcaf65a9c001At9Ae86Ik2Ihj5",
+        "name": "read",
+        "state": "completed",
+        "summary": "/USER\\Workspace\\kyahoofinance032926",
+      },
+      {
+        "id": "prt_dcaf680b3001I7yT3JaUacuxD7",
+        "name": "glob",
+        "state": "completed",
+        "summary": "**/*.md",
+      },
+    ],
+    "userPrompt": undefined,
+  },
+]
+`;

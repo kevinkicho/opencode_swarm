@@ -29,7 +29,7 @@ import path from 'node:path';
 import { withRunGuard } from './run-guard';
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
-import { harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
+import { extractLatestAssistantText, harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
 import { recordPartialOutcome } from './degraded-completion';
 import { getBoardItem, insertBoardItem } from './blackboard/store';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
@@ -409,20 +409,9 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   );
 }
 
-// Pull the latest completed assistant text part. Mirrors the "last assistant
-// text" convention ReconcileStrip uses on the client — keeps map-reduce's
-// draft selection aligned with what the UI shows to the human.
-function extractLatestAssistantText(messages: OpencodeMessage[]): string | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i];
-    if (m.info.role !== 'assistant') continue;
-    if (!m.info.time.completed) continue;
-    const texts = m.parts.filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text');
-    if (texts.length === 0) continue;
-    return texts[texts.length - 1].text;
-  }
-  return null;
-}
+// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
+// harvest-drafts.ts (the helper module map-reduce already imports
+// from). Pre-fix duplicated character-identical here.
 
 // Per-draft soft cap on what we feed into the synthesis prompt
 // (#97 fix). Without this, a single verbose mapper can swallow the

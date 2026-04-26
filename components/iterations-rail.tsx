@@ -25,6 +25,7 @@ import type { OpencodeMessage } from '@/lib/opencode/types';
 import { computeDraftDiff, summariseDiff, type DraftDiff } from '@/lib/draft-diff';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
+import { compactNum, countLines, turnText } from './rails/_shared';
 
 interface IterationRow {
   // `#1` for first draft, `#1r` for first review, `#2` for second draft, …
@@ -54,23 +55,11 @@ interface IterationRow {
 // Extract assistant turn body as plain text. Walks parts, concatenates
 // text + reasoning content. Skips tool / step parts since they're
 // orchestration noise from the iteration-flow POV.
-function turnText(m: OpencodeMessage): string {
-  let out = '';
-  for (const p of m.parts) {
-    if (p.type === 'text' || p.type === 'reasoning') {
-      const t = (p as { text?: string }).text ?? '';
-      out += t;
-    }
-  }
-  return out;
-}
+// HARDENING_PLAN.md#C15 — `turnText` lifted to rails/_shared.ts.
 
 // Cheap line-count for a string. Matches what the inspector drawer
 // would show as draft length; consistent across rows.
-function countLines(s: string): number {
-  if (!s) return 0;
-  return s.split('\n').length;
-}
+// HARDENING_PLAN.md#C15 — `countLines` lifted to rails/_shared.ts.
 
 // Diff against the previous draft via shared LCS helper. PATTERN_DESIGN
 // /critic-loop.md I3 — kept in lib/draft-diff.ts so the inspector drawer
@@ -324,11 +313,7 @@ function fmtTimeOfDay(ms: number | null): string {
   return `${hh}:${mm}`;
 }
 
-function compactNum(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${Math.round(n / 1000)}k`;
-}
+// HARDENING_PLAN.md#C15 — `compactNum` lifted to rails/_shared.ts.
 
 function IterationRowEl({
   row,

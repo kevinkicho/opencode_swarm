@@ -32,7 +32,7 @@ import 'server-only';
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
-import { harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
+import { extractLatestAssistantText, harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
 import { withRunGuard } from './run-guard';
 import { recordPartialOutcome } from './degraded-completion';
 import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
@@ -118,20 +118,10 @@ export function meanPairwiseJaccard(texts: string[]): number | null {
   return pairs > 0 ? sum / pairs : null;
 }
 
-// Shared with map-reduce.ts (same shape, intentionally duplicated to keep
-// these server-side pattern modules decoupled — cross-imports between
-// pattern orchestrators make it harder to retire a pattern cleanly).
-function extractLatestAssistantText(messages: OpencodeMessage[]): string | null {
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const m = messages[i];
-    if (m.info.role !== 'assistant') continue;
-    if (!m.info.time.completed) continue;
-    const texts = m.parts.filter((p): p is Extract<typeof p, { type: 'text' }> => p.type === 'text');
-    if (texts.length === 0) continue;
-    return texts[texts.length - 1].text;
-  }
-  return null;
-}
+// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
+// harvest-drafts.ts (the helper module shared with map-reduce + others).
+// Pre-fix this function existed character-identical in 6 files; the
+// drift risk was real.
 
 function buildRoundPrompt(
   roundNum: number,

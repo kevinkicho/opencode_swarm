@@ -20,6 +20,7 @@ import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
+import { compactNum, countLines, turnText } from './rails/_shared';
 
 interface RoundCell {
   // Length in lines of the generator's proposal that round; null when
@@ -42,20 +43,8 @@ interface RoundRow {
   status: 'pending' | 'deliberating' | 'done';
 }
 
-function turnText(m: OpencodeMessage): string {
-  let out = '';
-  for (const p of m.parts) {
-    if (p.type === 'text' || p.type === 'reasoning') {
-      out += (p as { text?: string }).text ?? '';
-    }
-  }
-  return out;
-}
-
-function countLines(s: string): number {
-  if (!s) return 0;
-  return s.split('\n').length;
-}
+// HARDENING_PLAN.md#C15 — `turnText` and `countLines` lifted to
+// components/rails/_shared.ts.
 
 function diffSummary(prev: string, next: string): string {
   if (!prev && !next) return '';
@@ -306,11 +295,7 @@ const STATUS_TONE: Record<RoundRow['status'], string> = {
   done: 'text-fog-500',
 };
 
-function compactNum(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 10_000) return `${(n / 1000).toFixed(1)}k`;
-  return `${Math.round(n / 1000)}k`;
-}
+// HARDENING_PLAN.md#C15 — `compactNum` lifted to rails/_shared.ts.
 
 function DebateRowEl({
   row,
