@@ -6,8 +6,11 @@
 // Delete `.dev-port` to reroll. Override with DEV_PORT=xxxx for one-shots.
 import net from 'node:net';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+
+const args = process.argv.slice(2);
+const SKIP_TSC = args.includes('--skip-tsc') || process.env.DEV_SKIP_TSC === '1';
 
 const PORT_FILE = '.dev-port';
 const MIN = 49152;
@@ -74,6 +77,46 @@ function preflightNativeModules() {
   }
 }
 preflightNativeModules();
+
+// 2026-04-26 #102 — typecheck gate. Catches parallel-session breakages
+// (a half-finished refactor in another file leaving a JSX-or-await
+// syntax error) BEFORE we bind the port. Without this, the dev server
+// starts cleanly but every snapshot endpoint returns HTTP 500 from a
+// transitively-imported broken module. Mid-stress-test discovery is
+// expensive — see docs/STRESS_TESTS/2026-04-26-max-team-size-8.md
+// "Mid-run incidents" for why this matters.
+//
+// Cost: ~10-15s on cold cache, ~3-5s when tsc's incremental cache is
+// warm. Skip via `npm run dev -- --skip-tsc` or DEV_SKIP_TSC=1 when
+// you genuinely need to start dev with broken code (e.g. you're
+// about to fix it and want HMR to land the fix).
+function preflightTypecheck() {
+  if (SKIP_TSC) {
+    console.log('[dev] tsc gate skipped (--skip-tsc / DEV_SKIP_TSC=1)');
+    return;
+  }
+  console.log('[dev] tsc --noEmit gate (use --skip-tsc to bypass) …');
+  const t0 = Date.now();
+  const result = spawnSync('npx', ['tsc', '--noEmit'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    encoding: 'utf8',
+    shell: true,
+  });
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  if (result.status === 0) {
+    console.log(`[dev] tsc gate passed in ${elapsed}s`);
+    return;
+  }
+  console.error(`\n[dev] tsc gate FAILED in ${elapsed}s — refusing to start.`);
+  console.error(
+    '      Fix the errors below, or pass --skip-tsc to start anyway:\n',
+  );
+  // tsc writes errors to stdout, not stderr. Pipe both for safety.
+  if (result.stdout) console.error(result.stdout);
+  if (result.stderr) console.error(result.stderr);
+  process.exit(1);
+}
+preflightTypecheck();
 
 const port = await resolvePort();
 console.log(`\n[dev] using port ${port} (from ${PORT_FILE} — delete to reroll)\n`);

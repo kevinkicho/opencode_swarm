@@ -64,12 +64,12 @@ describe('tokensForBudget', () => {
 
 describe('withPricing — overlays pricing on a ModelRef', () => {
   it('returns original ref when model is unknown', () => {
-    const ref: ModelRef = { id: 'unknown-x', label: 'unknown-x' };
+    const ref: ModelRef = { id: 'unknown-x', label: 'unknown-x', provider: 'ollama', family: 'glm' };
     expect(withPricing(ref)).toBe(ref);
   });
 
   it('overlays pricing.input + pricing.output for known models', () => {
-    const ref: ModelRef = { id: 'glm-5.1', label: 'glm-5.1' };
+    const ref: ModelRef = { id: 'glm-5.1', label: 'glm-5.1', provider: 'ollama', family: 'glm' };
     const out = withPricing(ref);
     expect(out.pricing).toBeDefined();
     expect(typeof out.pricing?.input).toBe('number');
@@ -77,7 +77,7 @@ describe('withPricing — overlays pricing on a ModelRef', () => {
   });
 
   it('preserves original fields when overlaying', () => {
-    const ref: ModelRef = { id: 'glm-5.1', label: 'GLM 5.1' };
+    const ref: ModelRef = { id: 'glm-5.1', label: 'GLM 5.1', provider: 'ollama', family: 'glm' };
     const out = withPricing(ref);
     expect(out.id).toBe('glm-5.1');
     expect(out.label).toBe('GLM 5.1');
