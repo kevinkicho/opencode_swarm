@@ -1,29 +1,20 @@
-// Long-running cadenced planner sweep. Unlike attemptTierEscalation
-// (auto-idle path that bumps tier per attempt), this fires on a timer
-// regardless of whether the board is idle — the point is to periodically
-// re-examine the repo as it evolves under the workers' edits and seed
-// fresh todos the original planner pass couldn't see. Reuses
-// `resweepInFlight` as a mutex with the escalation path so the two
-// can't collide. Periodic sweeps do NOT bump tier today — they stay
-// at whatever `currentTier` the run has reached via escalation. Tying
-// periodic-mode to tier escalation is a future layer.
-//
-// Extracted from auto-ticker.ts in #106 phase 4.
+// Long-running cadenced planner sweep. Fires on a timer regardless of
+// whether the board is idle — the point is to periodically re-examine
+// the repo as it evolves under the workers' edits and seed fresh todos
+// the original planner pass couldn't see. Uses `resweepInFlight` as a
+// mutex so concurrent sweep requests collapse to one.
 
 import 'server-only';
 
 import { listBoardItems } from '../store';
 import { livePlanner } from './live-exports';
 import {
-  isRetryExhausted,
   MAX_ORCHESTRATOR_REPLANS,
   orchestratorReplanCapHit,
 } from './policies';
 import { stopAutoTicker } from './stop';
-import { attemptTierEscalation } from './tier-escalation';
 import {
   MIN_MS_BETWEEN_SWEEPS,
-  PERIODIC_DRAIN_TIER_THRESHOLD,
   type TickerState,
 } from './types';
 
@@ -53,11 +44,6 @@ export async function runPeriodicSweep(state: TickerState): Promise<void> {
   const swarmRunID = state.swarmRunID;
   state.resweepInFlight = true;
   state.lastSweepAtMs = Date.now();
-  // Post-sweep flag: true when the periodic sweep produced no new
-  // work AND the board carries no active items. Escalation fires
-  // after the mutex is released (see block below) so it can
-  // re-acquire cleanly via attemptTierEscalation's own flag handling.
-  let shouldTryEscalation = false;
   try {
     const beforeOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',
@@ -79,46 +65,10 @@ export async function runPeriodicSweep(state: TickerState): Promise<void> {
         `[board/auto-ticker] ${swarmRunID}: periodic sweep seeded ${newlyOpen} new open todo(s) — resetting idle counters`,
       );
       for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
-      state.consecutiveDrainedSweeps = 0;
     } else {
       console.log(
         `[board/auto-ticker] ${swarmRunID}: periodic sweep produced no new work (planner returned ${result.items.length} total items)`,
       );
-      // Count this as "drained" only if workers are also done — if
-      // there's active work, the planner-is-quiet state is normal
-      // (workers are still chewing through the last sweep's output).
-      //
-      // re-kick. Open items carrying a `[retry:N]` note where N≥2
-      // are workers-refused-twice, not active work. Treating them as
-      // "active" stranded run_mob31bx6_jzdfs2 — the ratchet stayed
-      // dormant because the predicate said "work available" while
-      // every worker had already declined. Exclude retry-exhausted
-      // open items from the active count so the next sweep can
-      // either rephrase them at a higher tier or drop them.
-      const activeCount = listBoardItems(swarmRunID).filter((i) => {
-        if (
-          i.status !== 'open' &&
-          i.status !== 'claimed' &&
-          i.status !== 'in-progress'
-        ) {
-          return false;
-        }
-        if (i.status === 'open' && isRetryExhausted(i.note)) {
-          return false;
-        }
-        return true;
-      }).length;
-      if (activeCount === 0) {
-        state.consecutiveDrainedSweeps += 1;
-        if (
-          state.consecutiveDrainedSweeps >= PERIODIC_DRAIN_TIER_THRESHOLD &&
-          !state.tierExhausted
-        ) {
-          shouldTryEscalation = true;
-        }
-      } else {
-        state.consecutiveDrainedSweeps = 0;
-      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -128,18 +78,5 @@ export async function runPeriodicSweep(state: TickerState): Promise<void> {
     );
   } finally {
     state.resweepInFlight = false;
-  }
-  // Periodic-mode tier escalation: fire AFTER the mutex is released so
-  // attemptTierEscalation's own flag management (set-at-entry-via-
-  // caller convention) doesn't conflict. Resets the drained counter
-  // immediately so we don't re-fire on the next sweep if the
-  // escalation itself produces empty.
-  if (shouldTryEscalation) {
-    console.log(
-      `[board/auto-ticker] ${swarmRunID}: ${state.consecutiveDrainedSweeps}+ drained periodic sweeps and zero active board items — firing tier escalation from periodic-mode`,
-    );
-    state.consecutiveDrainedSweeps = 0;
-    state.resweepInFlight = true;
-    await attemptTierEscalation(state);
   }
 }

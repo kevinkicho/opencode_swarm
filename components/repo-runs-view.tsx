@@ -194,8 +194,7 @@ function RunRow({
   const lastTs = run.lastActivityTs ?? meta.createdAt;
   const age = Date.now() - lastTs;
   const duration = lastTs - meta.createdAt;
-  const tier = meta.currentTier ?? 1;
-  const tierBadge = meta.continuationOf ? `t${tier}↗` : `t${tier}`;
+  const continuationBadge = meta.continuationOf ? '↗' : '';
 
   return (
     <li className="h-7 flex items-center px-3 hairline-b last:border-b-0 hover:bg-ink-800/40 transition-colors">
@@ -219,11 +218,13 @@ function RunRow({
         >
           {run.status}
         </span>
-        <Tooltip content="ambition ratchet tier; ↗ = inherited via continuationOf" side="top">
-          <span className="font-mono text-[10.5px] text-fog-500 tabular-nums w-10 shrink-0 cursor-default">
-            {tierBadge}
-          </span>
-        </Tooltip>
+        {continuationBadge && (
+          <Tooltip content="continued from a prior run via continuationOf" side="top">
+            <span className="font-mono text-[10.5px] text-fog-500 tabular-nums w-4 shrink-0 cursor-default">
+              {continuationBadge}
+            </span>
+          </Tooltip>
+        )}
         <span className="font-mono text-[11px] text-fog-400 tabular-nums w-20 shrink-0 text-right">
           {fmtDuration(duration)}
         </span>

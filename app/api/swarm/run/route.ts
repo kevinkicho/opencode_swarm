@@ -86,11 +86,10 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Resolve continuationOf inheritance before any session spawn so a
   // missing prior run fails fast without burning opencode resources.
-  const continuation = await resolveContinuation(parsed);
-  if (typeof continuation === 'string') {
-    return Response.json({ error: continuation }, { status: 400 });
+  const continuationErr = await resolveContinuation(parsed);
+  if (continuationErr !== null) {
+    return Response.json({ error: continuationErr }, { status: 400 });
   }
-  const startTier = continuation;
 
   // Resolve effective teamSize. The body is authoritative when present (it
   // was range-validated in parseRequest); otherwise fall back to the
@@ -263,7 +262,6 @@ export async function POST(req: NextRequest): Promise<Response> {
       criticSessionID,
       verifierSessionID,
       auditorSessionID,
-      startTier,
       teamModels: teamModelsSurvivors,
     });
   } catch (err) {

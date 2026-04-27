@@ -14,7 +14,6 @@ import { deriveRunRow, getRun, listRuns } from '../../swarm-registry';
 import { abortSessionServer } from '../../opencode-server';
 import { pruneDemoLog } from '../../demo-log-retention';
 import { readTickerSnapshot } from '../ticker-snapshots';
-import { MAX_TIER } from './types';
 import type { TickOutcome } from '../coordinator';
 import {
   globalBootCleanupKey,
@@ -279,9 +278,6 @@ export function snapshot(s: TickerState): TickerSnapshot {
     lastOutcome,
     lastRanAtMs,
     startedAtMs: s.startedAtMs,
-    currentTier: s.currentTier ?? 1,
-    tierExhausted: s.tierExhausted ?? false,
-    maxTier: MAX_TIER,
     // #7.Q21 — propagate the running commits counter. Defaults to 0
     // for legacy entries from the old shape (HMR carryover) so the
     // field is always defined per the type contract.

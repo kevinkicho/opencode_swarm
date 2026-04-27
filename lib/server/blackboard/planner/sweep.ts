@@ -128,12 +128,6 @@ export async function runPlannerSweep(
  // without burning tool calls on a read. Set false for runs where the
  // README is irrelevant or the workspace has no README.
  includeReadme?: boolean;
- // When set, the prompt includes a tier-escalation preamble instructing
- // the planner to emit work at this tier or higher. See MAX_TIER and
- // TIER_LADDER above, and "Tiered execution". The
- // auto-ticker's idle-stop path sets this; normal first-sweeps leave it
- // undefined so the planner isn't pressured to invent ambition.
- escalationTier?: number;
  } = {},
 ): Promise<PlannerSweepResult> {
  const meta = await getRun(swarmRunID);
@@ -173,19 +167,10 @@ export async function runPlannerSweep(
  ? meta.teamRoles
  : undefined;
 
- // Tier resolution: explicit opt wins (auto-ticker's tier-escalation
- // path passes the bumped value); fall back to meta.currentTier so a
- // run started via `continuationOf` targets the inherited tier on its
- // first sweep without requiring every caller to thread the value.
- // Undefined → plain first-sweep prompt.
- const effectiveEscalationTier =
- opts.escalationTier ?? (meta.currentTier && meta.currentTier > 1 ? meta.currentTier : undefined);
-
  const prompt = buildPlannerPrompt(
  meta.directive,
  boardContext,
  readme,
- effectiveEscalationTier,
  teamRolesForPrompt,
  );
  // Planner dispatch. Two channels, one wins:

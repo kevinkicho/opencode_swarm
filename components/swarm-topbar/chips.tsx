@@ -13,14 +13,6 @@ import { Tooltip } from '../ui/tooltip';
 import { Popover } from '../ui/popover';
 import { abortSessionBrowser } from '@/lib/opencode/live';
 
-const TIER_LABELS: Record<number, string> = {
-  1: 'polish',
-  2: 'structural',
-  3: 'capabilities',
-  4: 'research',
-  5: 'vision',
-};
-
 export function fmtAbsTs(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => n.toString().padStart(2, '0');
@@ -260,64 +252,6 @@ export function BudgetChip({
         </span>
       </button>
     </Popover>
-  );
-}
-
-// Ambition-ratchet tier indicator. Renders as a compact chip next to the
-// run-anchor chip. Reads currentTier / maxTier / tierExhausted off the
-// ticker snapshot — see "Tiered execution". The chip
-// is decorative (no click handler); its job is "let the user see the
-// ratchet climb in real time without opening the ticker debug endpoint."
-export function TierChip({
-  tier,
-  maxTier,
-  exhausted,
-  stale = false,
-}: {
-  tier: number;
-  maxTier: number;
-  exhausted: boolean;
-  stale?: boolean;
-}) {
-  const label = TIER_LABELS[tier] ?? `tier ${tier}`;
-  // At max tier with `exhausted` set, the ratchet has declared "no more
-  // ambitious work" — treat as a subtle done-state rather than active.
-  // Otherwise iris for tier climbing (matches the pattern-accent palette),
-  // slightly dimmed if the ticker is stopped but not yet exhausted.
-  const tone = exhausted
-    ? 'text-fog-500'
-    : tier >= 4
-      ? 'text-iris'
-      : tier >= 2
-        ? 'text-iris/80'
-        : 'text-fog-400';
-  return (
-    <Tooltip
-      side="bottom"
-      content={
-        exhausted
-          ? `tier ${tier}/${maxTier} (${label}) — ratchet exhausted; run will stop on next cascade`
-          : `tier ${tier}/${maxTier} (${label}) — ambition ratchet; escalates on board drain`
-      }
-    >
-      <div
-        className={clsx(
-          'flex items-center gap-1 h-6 px-1.5 rounded hairline cursor-help transition-opacity',
-          stale && 'opacity-50 grayscale',
-        )}
-      >
-        <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600">
-          tier
-        </span>
-        <span className={clsx('font-mono text-[10.5px] tabular-nums', tone)}>
-          {tier}/{maxTier}
-        </span>
-        <span className="font-mono text-[10px] text-fog-600">·</span>
-        <span className={clsx('font-mono text-[10px] lowercase', tone)}>
-          {label}
-        </span>
-      </div>
-    </Tooltip>
   );
 }
 

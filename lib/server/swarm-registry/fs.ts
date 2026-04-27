@@ -130,11 +130,6 @@ export async function createRun(
     criticSessionID?: string;
     verifierSessionID?: string;
     auditorSessionID?: string;
-    // When req.continuationOf is set, the caller resolves the prior run's
-    // currentTier and passes it here so meta.currentTier seeds the new
-    // run at the inherited tier (vs the default tier 1 start). Ignored
-    // when continuationOf is unset.
-    startTier?: number;
     // Survivor-remapped teamModels, index-aligned to sessionIDs. Caller
     // handles the remap from req.teamModels's original-slot order into
     // surviving-session order.
@@ -191,12 +186,8 @@ export async function createRun(
     criticModel: req.criticModel,
     verifierModel: req.verifierModel,
     auditorModel: req.auditorModel,
-    // Run-chaining lineage + inherited tier. currentTier stays absent
-    // (interpreted as tier 1) for standalone runs; only written here
-    // when the caller explicitly resolves a > 1 starting tier from a
-    // prior run.
+    // Run-chaining lineage.
     continuationOf: req.continuationOf,
-    currentTier: extras.startTier && extras.startTier > 1 ? extras.startTier : undefined,
     // Per-session model pinning (survivor-remapped upstream). Absent
     // when the caller didn't pass a team — opencode picks the default
     // agent's model per session.

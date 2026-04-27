@@ -32,14 +32,6 @@ export const IDLE_TICKS_BEFORE_STOP = 6;
 // 20-min periodic tick.
 export const IDLE_TICKS_BEFORE_EAGER_SWEEP = 3;
 
-// How many consecutive periodic sweeps must produce "no new work AND
-// no active board items" before we escalate tiers in periodic-mode.
-// At the default 20-min sweep cadence, 2 means ~40 min of drained
-// quiet before the ratchet climbs. 1 would trigger on a single
-// transient quiet; 2 requires the planner to really be out of ideas
-// AND workers to genuinely have nothing left.
-export const PERIODIC_DRAIN_TIER_THRESHOLD = 2;
-
 // Floor on how frequently sweeps fire. Even if the board drains
 // instantly, the planner needs ~60-90s per sweep, and stacking sweeps
 // back-to-back would burn tokens on constant re-planning and race the
@@ -47,16 +39,6 @@ export const PERIODIC_DRAIN_TIER_THRESHOLD = 2;
 // sweep time to fully land its new todos before the next one starts
 // reasoning about them.
 export const MIN_MS_BETWEEN_SWEEPS = 2 * 60 * 1000;
-
-// Ambition-ratchet ceiling. Re-exported here (canonical home is
-// blackboard/planner.ts) so the auto-ticker's lightweight read paths
-// can import it without statically pulling the entire planner module
-// graph. Pre-2026-04-26: state.ts imported `MAX_TIER` from planner.ts,
-// which dragged the whole planner (and transitively the coordinator)
-// into every route that touched the ticker — `/board/ticker` was
-// compiling 1339 modules instead of ~200. Keeping the constant in
-// types.ts (a leaf module with no runtime imports) breaks the chain.
-export const MAX_TIER = 5;
 
 // ─── StopReason ──────────────────────────────────────────────────────
 
@@ -114,18 +96,10 @@ export interface TickerState {
   // aren't added mid-run in today's model. Empty until first fanout populates.
   sessionIDs: string[];
   slots: Map<string, PerSessionSlot>;
-  // Re-sweep bookkeeping / ambition ratchet state. When every session hits
-  // the idle threshold we don't just stop — we try a tier-escalation
-  // planner sweep first. `resweepInFlight` guards against re-entrant
-  // planner calls from concurrent session ticks all hitting idle at once
+  // Re-sweep bookkeeping. `resweepInFlight` guards against re-entrant
+  // planner calls from concurrent session ticks all hitting at once
   // (also used as the mutex by runPeriodicSweep so the two can't stack).
-  // `currentTier` tracks where the ambition ratchet is — starts at 1
-  // (the initial sweep's tier); each auto-idle escalation tries tier+1.
-  // `tierExhausted` goes true when an escalation at MAX_TIER produced
-  // zero items — then the next idle cascade actually stops. See
   resweepInFlight: boolean;
-  currentTier: number;
-  tierExhausted: boolean;
   // Audit cadence state (Stage 2 declared-roles). Counts successful
   // 'picked' outcomes (todo committed to done) since the last audit;
   // when it hits state.auditEveryNCommits, maybeRunAudit fires a
@@ -142,14 +116,6 @@ export interface TickerState {
   // directly from listBoardItems (cheaper to compute on-demand than
   // cache) so no counter field is needed for it.
   totalCommits: number;
-  // Count of back-to-back periodic sweeps that produced zero new work
-  // AND found the board devoid of active (open/claimed/in-progress)
-  // items. Incremented in runPeriodicSweep; resets when a sweep seeds
-  // items OR the board still has active work. Once this hits
-  // PERIODIC_DRAIN_TIER_THRESHOLD, periodic-mode fires a tier
-  // escalation — without this counter, persistent-mode runs would
-  // stay at tier 1 forever since they never hit the auto-idle path.
-  consecutiveDrainedSweeps: number;
   // When the liveness watchdog declared zen-rate-limit, this holds the
   // epoch-ms at which the retry-after window opencode reported in the
   // 429 response ends. Surfaced via TickerSnapshot so the UI can show
@@ -206,13 +172,6 @@ export interface TickerSnapshot {
   lastOutcome?: TickOutcome;
   lastRanAtMs?: number;
   startedAtMs: number;
-  // Ambition-ratchet state.
-  // currentTier is 1-indexed and starts at 1; auto-idle cascades try
-  // tier+1 via attemptTierEscalation. tierExhausted means MAX_TIER was
-  // tried and produced zero items — next cascade will stop the ticker.
-  currentTier: number;
-  tierExhausted: boolean;
-  maxTier: number;
   // #7.Q21 — surface the running commits counter so the UI can show it
   // in the ticker chip and the picker. Internal state (TickerState)
   // already maintains this; just wasn't propagated through `snapshot()`.

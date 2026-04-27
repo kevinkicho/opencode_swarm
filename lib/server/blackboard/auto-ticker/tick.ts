@@ -17,7 +17,7 @@ import { checkLiveness } from './liveness';
 import { checkRoleImbalance } from './policies';
 import { snapshot, tickers } from './state';
 import { runPeriodicSweep } from './sweep';
-import { attemptTierEscalation } from './tier-escalation';
+import { stopAutoTicker } from './stop';
 import {
   AUTO_TICKER_EXPORTS_KEY,
   IDLE_TICKS_BEFORE_EAGER_SWEEP,
@@ -90,19 +90,6 @@ async function ensureSlots(state: TickerState): Promise<boolean> {
     state.sessionIDs = [...meta.sessionIDs];
     for (const sid of state.sessionIDs) {
       if (!state.slots.has(sid)) state.slots.set(sid, makeSlot(sid));
-    }
-    // Resume the ambition ratchet from its persisted tier, if any.
-    // Only take the persisted value if it's higher than the default —
-    // don't accidentally regress from an in-memory bump that happened
-    // mid-tick before the first fanout (unlikely but cheap to guard).
-    if (
-      typeof meta.currentTier === 'number' &&
-      meta.currentTier > state.currentTier
-    ) {
-      state.currentTier = meta.currentTier;
-      console.log(
-        `[board/auto-ticker] ${state.swarmRunID}: resumed ambition ratchet at persisted tier ${meta.currentTier}`,
-      );
     }
   }
   return true;
@@ -189,22 +176,11 @@ async function tickSession(
       slots.length > 0 &&
       slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP)
     ) {
-      // Ambition ratchet. On
-      // idle cascade we try a tier-N+1 planner escalation. If it seeds
-      // items, the ticker keeps going at the new tier. Stage 2 (user's
-      // 2026-04-24 termination-precedence decision): MAX_TIER does NOT
-      // stop the ticker — attemptTierEscalation caps nextTier at
-      // MAX_TIER, re-sweeps there, and returns. Subsequent cascades
-      // re-sweep at MAX_TIER again (throttled by MIN_MS_BETWEEN_SWEEPS).
-      // Only hard caps (commitsCap / todosCap / minutesCap) or a manual
-      // stop end the run.
-      // (sets at entry, clears on all exit paths). Pre-fix the caller
-      // checked-then-set the flag, which raced under two concurrent
-      // tickSession calls. The inner check is now a fast-path optimization
-      // only; the function self-guards regardless.
-      if (!state.resweepInFlight) {
-        void attemptTierEscalation(state);
-      }
+      // Auto-idle: every session has been idle for IDLE_TICKS_BEFORE_STOP
+      // consecutive ticks → stop the ticker. Runs that opt into
+      // periodicSweepMs > 0 keep going on a fixed cadence and skip this
+      // path entirely (idle between sweeps is normal, not a stop signal).
+      stopAutoTicker(state.swarmRunID, 'auto-idle');
     }
   } catch (err) {
     // tickCoordinator's declared return type is TickOutcome (it wraps its

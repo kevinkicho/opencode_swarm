@@ -101,7 +101,6 @@ export async function maybeRunAudit(
       directive: meta.directive,
       criteria: pending,
       recentDoneSummaries: doneSummaries,
-      currentTier: state.currentTier,
       auditorModel: meta.auditorModel,
     });
 

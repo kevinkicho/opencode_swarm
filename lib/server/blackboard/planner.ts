@@ -39,11 +39,6 @@ import 'server-only';
 // exported here so existing callers don't need to update their imports.
 export { mintItemId } from './item-ids';
 
-// 2026-04-26: canonical home moved to auto-ticker/types.ts so the
-// ticker's lightweight read paths don't drag this giant planner module.
-// Re-exported here for back-compat with existing call sites.
-export { MAX_TIER } from './auto-ticker/types';
-
 export {
   runPlannerSweep,
   isViableCriterion,
@@ -53,7 +48,6 @@ export {
 } from './planner/sweep';
 
 export {
-  TIER_LADDER,
   buildPlannerBoardContext,
   type PlannerBoardContext,
 } from './planner/prompt';

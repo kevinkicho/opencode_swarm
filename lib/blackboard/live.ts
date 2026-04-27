@@ -32,12 +32,6 @@ export interface TickerSnapshot {
     | { status: 'skipped'; reason: string };
   lastRanAtMs?: number;
   startedAtMs: number;
- // Ambition-ratchet state (server side: "Tiered
-  // execution"). currentTier 1-indexed; tierExhausted means MAX_TIER was
-  // attempted and returned zero — next cascade will stop the ticker.
-  currentTier: number;
-  tierExhausted: boolean;
-  maxTier: number;
   // #7.Q21 — running count of successful 'picked' outcomes (todos
   // committed to done). Monotonic; persists post-stop. Compared
   // server-side to bounds.commitsCap. UI can show "N commits" in the

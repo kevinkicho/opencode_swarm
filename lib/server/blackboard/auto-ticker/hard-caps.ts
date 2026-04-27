@@ -19,12 +19,10 @@ import { listBoardItems } from '../store';
 import { stopAutoTicker } from './stop';
 import type { TickerState } from './types';
 
-// Stage 2 hard-cap defaults (ollama-swarm spec: "hard caps fire
-// whichever first: wall-clock default 8h, 200 commits, 300 todos").
-// Effective caps are max(meta.bounds.<cap>, default). Per-run override
-// is authoritative when set; defaults keep hands-off runs from running
-// forever at MAX_TIER when the ambition ratchet can't self-exhaust
-// anymore (Stage 2 removed the tierExhausted → stop path).
+// Hard-cap defaults: "fire whichever first — wall-clock 8h, 200
+// commits, 300 todos". Effective caps are max(meta.bounds.<cap>,
+// default). Per-run override is authoritative when set; defaults keep
+// hands-off runs from running forever.
 const DEFAULT_WALLCLOCK_MINUTES = 8 * 60; // 8h
 const DEFAULT_COMMITS_CAP = 200;
 const DEFAULT_TODOS_CAP = 300;

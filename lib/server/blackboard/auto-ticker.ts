@@ -183,9 +183,6 @@ export function startAutoTicker(
     sessionIDs,
     slots,
     resweepInFlight: false,
-    currentTier: 1,
-    tierExhausted: false,
-    consecutiveDrainedSweeps: 0,
     commitsSinceLastAudit: 0,
     auditInFlight: false,
     // Cadence default: 5 commits between audits. Can be overridden

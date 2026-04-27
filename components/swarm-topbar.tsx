@@ -5,7 +5,7 @@
 //
 // Decomposed in #108: RunAnchorChip moved to swarm-topbar/run-anchor-chip.tsx
 // (its own file because the popover content alone is ~200 lines), and the
-// status / control chips (AbortChip, HardStopChip, BudgetChip, TierChip,
+// status / control chips (AbortChip, HardStopChip, BudgetChip,
 // RetryAfterChip, RunHealthChip + fmtAbsTs helper) moved to
 // swarm-topbar/chips.tsx. This file owns the layout shell + the
 // directive-teaser popover.
@@ -26,7 +26,6 @@ import {
   HardStopChip,
   RetryAfterChip,
   RunHealthChip,
-  TierChip,
 } from './swarm-topbar/chips';
 import { RunAnchorChip } from './swarm-topbar/run-anchor-chip';
 
@@ -73,20 +72,15 @@ export function SwarmTopbar({
   // leading dot on the run-anchor chip so "is this run still going?" is
   // answerable in one glance without opening the picker.
   swarmRunStatus: SwarmRunStatus | null;
-  // Live ticker snapshot for the currently-anchored run. Feeds the
-  // ambition-ratchet tier chip. `state: 'none'` = no ticker exists (e.g.
-  // non-blackboard pattern, or ticker never started). Chip renders only
-  // when state is 'active' or 'stopped' so it's meaningful to display.
+  // Live ticker snapshot for the currently-anchored run.
+  // `state: 'none'` = no ticker exists (e.g. non-blackboard pattern,
+  // or ticker never started).
   tickerState: TickerState;
 }) {
   const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
   const totalAgents = providers.reduce((s, p) => s + p.agents, 0);
-  // Show the tier chip only when the ticker has actually booted (active
-  // or stopped with known tier state). The 'none' arm lacks the tier
-  // fields by design — drawing 0/? would be worse than absence.
-  const tier = tickerState.state === 'none' ? null : tickerState;
   // When the backend has been unreachable for > ~5 s, React's in-memory
-  // snapshots (run status, tier chip, agent animations) are showing
+  // snapshots (run status, agent animations) are showing
   // stale data with no way to refresh. Gray the affected chips so users
   // can tell at a glance what's still reliable vs what's a cached frame.
   const backendStale = useBackendStale();
@@ -152,9 +146,7 @@ export function SwarmTopbar({
             stale={backendStale}
           />
         )}
-        {tier && <TierChip tier={tier.currentTier} maxTier={tier.maxTier} exhausted={tier.tierExhausted} stale={backendStale} />}
-        {tier &&
-          tickerState.state === 'stopped' &&
+        {tickerState.state === 'stopped' &&
           tickerState.stopReason === 'zen-rate-limit' &&
           tickerState.retryAfterEndsAtMs && (
             <RetryAfterChip endsAtMs={tickerState.retryAfterEndsAtMs} />

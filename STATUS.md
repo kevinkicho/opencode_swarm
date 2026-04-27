@@ -91,8 +91,6 @@ for invocation):
   server + passing `workspaceDevUrl`.
 - **Pattern benchmark script** (`scripts/_pattern_benchmark.mjs`) — works,
   never invoked. ~$12 / ~1h wall-clock for the default 3-pattern run.
-- **Ambition-ratchet tier escalation** — tier-2+ has never fired in anger.
-  Today's runs stop at tier 1 before drain.
 - **Overnight 8h run** — closest we have is 89% completion across 6 sessions
   before a Zen quota cliff at ~35min. A real 8h run that doesn't hit the
   quota wall would be the first real signal.

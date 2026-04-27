@@ -64,11 +64,6 @@ export interface AuditInput {
   // context on what's been done toward the contract. Typically
   // populated from buildPlannerBoardContext's doneSummaries.
   recentDoneSummaries: string[];
-  // Current ambition tier (1..5); included in the prompt so the
-  // auditor can factor "this run is on tier N" into borderline
-  // verdicts — a criterion that would be UNMET at tier 1 may be
-  // WONT_DO at tier 5 if it's clearly below the new ambition band.
-  currentTier?: number;
   timeoutMs?: number;
   // Pinned model (2026-04-24). Passed as `model` on
   // postSessionMessageServer so the auditor runs on a specific
@@ -124,7 +119,7 @@ function truncateContent(s: string): string {
 }
 
 function buildAuditPrompt(input: AuditInput): string {
-  const { directive, criteria, recentDoneSummaries, currentTier } = input;
+  const { directive, criteria, recentDoneSummaries } = input;
 
   const criteriaList = criteria
     .slice(0, MAX_CRITERIA_PER_AUDIT)
@@ -138,18 +133,6 @@ function buildAuditPrompt(input: AuditInput): string {
           .map((s, i) => `  ${i + 1}. ${truncateContent(s)}`)
           .join('\n');
 
-  const tierBlock =
-    currentTier && currentTier > 1
-      ? [
-          '',
-          `## Current ambition tier: ${currentTier}`,
-          'The run has escalated past tier 1 via the ambition ratchet.',
-          'Factor the tier into borderline verdicts — a criterion that',
-          "would have been UNMET at tier 1 may now be WONT_DO if it's",
-          'clearly below the current tier\'s ambition band.',
-        ]
-      : [];
-
   return [
     'You are the contract auditor for an autonomous swarm run. Each message',
     'I send you is a self-contained audit request — do not carry context',
@@ -158,7 +141,6 @@ function buildAuditPrompt(input: AuditInput): string {
     '',
     '## Mission',
     directive?.trim() || '(no directive recorded)',
-    ...tierBlock,
     '',
     '## Acceptance criteria (verdict each, numbered)',
     criteriaList,

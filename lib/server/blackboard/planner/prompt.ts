@@ -28,34 +28,10 @@ import path from 'node:path';
 
 import { listBoardItems } from '../store';
 
-// Tier ladder for the ambition ratchet (see "Tiered
-// execution"). Used by buildPlannerPrompt when `escalationTier` is set —
-// the auto-ticker bumps tier on each idle-stop attempt and calls the
-// planner with the new tier, asking for work strictly above the prior
-// tier's class. The order is load-bearing — planners that jump tiers
-// without earning them tend to hallucinate ambition. MAX_TIER is the
-// safety valve; runs do eventually stop past tier 5.
-//
-// 2026-04-26: canonical home of MAX_TIER moved to auto-ticker/types.ts
-// so the ticker's lightweight read paths don't drag this giant planner
-// module. TIER_LADDER stays here because only the prompt consumes it.
-export const TIER_LADDER: ReadonlyArray<{ tier: number; name: string; shape: string }> = [
-  { tier: 1, name: 'Polish', shape: 'small fixes, test gaps, doc corrections, tightening existing functionality' },
-  { tier: 2, name: 'Structural', shape: 'refactors for maintainability, architecture improvements, complexity reduction' },
-  { tier: 3, name: 'Capabilities', shape: "new features that extend the product's core value" },
-  { tier: 4, name: 'Research', shape: 'experimental directions, architectural shifts, external integrations' },
-  { tier: 5, name: 'Vision', shape: 'challenge assumptions, propose wholly new directions' },
-];
-
-function tierName(tier: number): string {
-  return TIER_LADDER.find((t) => t.tier === tier)?.name ?? `Tier ${tier}`;
-}
-
 export function buildPlannerPrompt(
   directive: string | undefined,
   boardContext?: PlannerBoardContext,
   readme?: string | null,
-  escalationTier?: number,
   teamRoles?: readonly string[],
 ): string {
   const base =
@@ -104,31 +80,6 @@ export function buildPlannerPrompt(
       '',
       'OPEN / IN-PROGRESS — other agents are working on these, do NOT duplicate:',
       activeLines,
-      '',
-    );
-  }
-
-  if (escalationTier && escalationTier >= 1) {
-    const name = tierName(escalationTier);
-    const ladderLines = TIER_LADDER.map(
-      (t) => `  Tier ${t.tier} (${t.name}): ${t.shape}`,
-    ).join('\n');
-    sections.push(
-      '## Ambition ratchet — tier escalation',
-      '',
-      `This sweep is an ESCALATION. Prior tiers of work have drained from the`,
-      `board; the team is ready for more ambitious work. You are entering`,
-      `**Tier ${escalationTier} (${name})**.`,
-      '',
-      'Tier ladder:',
-      ladderLines,
-      '',
-      `Your todos MUST target Tier ${escalationTier} ambition or higher. Do NOT`,
-      `propose work at tiers below ${escalationTier} even if gaps remain there —`,
-      `the team has moved past those. If you genuinely believe no Tier`,
-      `${escalationTier}+ work is warranted for this project, call todowrite`,
-      `with an empty array and include a one-line note in your reasoning`,
-      `explaining why the run should end here.`,
       '',
     );
   }

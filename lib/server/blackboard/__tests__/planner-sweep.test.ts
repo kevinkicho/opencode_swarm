@@ -217,24 +217,6 @@ describe('runPlannerSweep · cold-start seeding', () => {
     });
   });
 
-  it('threads escalationTier into the prompt when set', async () => {
-    await runPlannerSweep('run_test', {
-      includeReadme: false,
-      escalationTier: 3,
-    });
-    const args = mocks.postSessionMessageServer.mock.calls[0];
-    const prompt = args[2] as string;
-    expect(prompt).toMatch(/tier|TIER/i);
-  });
-
-  it('inherits meta.currentTier when escalationTier opt is omitted', async () => {
-    mocks.getRun.mockResolvedValue(makeMeta({ currentTier: 4 }));
-    await runPlannerSweep('run_test', { includeReadme: false });
-    const args = mocks.postSessionMessageServer.mock.calls[0];
-    const prompt = args[2] as string;
-    // Tier ladder names from planner.ts; tier 4 should produce escalation language.
-    expect(prompt).toMatch(/tier|TIER/i);
-  });
 });
 
 // === Guard: existing-board protection ======================================

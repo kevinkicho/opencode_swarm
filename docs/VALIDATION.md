@@ -133,54 +133,7 @@ execute` (has a 15-min turn ceiling vs 10-min default).
 
 ---
 
-## 3. Ambition-ratchet tier 2+ escalation
-
-**What it does.** When a ticker-driven pattern drains its board and
-would auto-idle-stop, the auto-ticker instead fires an escalation
-sweep at the next tier (Polish → Structural → Capabilities → Research
-→ Vision; `MAX_TIER = 5`). Stops only when every tier returns empty.
-
-**Why not yet validated.** Every run so far either:
-- hit Zen quota before draining (ticker stopped before escalation),
-  or
-- had a broad enough directive that tier-1 work hadn't drained yet.
-
-**Setup.** Use a smaller, well-scoped target (e.g. a small utility
-repo) with a narrow directive so tier 1 drains quickly.
-
-**Invocation.**
-```bash
-curl -X POST http://localhost:<port>/api/swarm/run \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "pattern": "blackboard",
-    "workspace": "/abs/path/to/small/repo",
-    "directive": "Fix the listed bugs in KNOWN_LIMITATIONS.md.",
-    "teamSize": 2,
-    "persistentSweepMinutes": 15
-  }'
-```
-
-**Pass signals.**
-- Board drains (all items `done` or `stale`).
-- `TickerSnapshot.currentTier` advances 1 → 2 visibly in the UI tier
-  chip.
-- Log line `[board/auto-ticker] ... tier escalation 1→2`.
-- Meta.json persists the new `currentTier` (check with
-  `cat .opencode_swarm/runs/<id>/meta.json | jq .currentTier`).
-
-**Fail signals.**
-- Board drains but ticker enters `stopped · auto-idle` instead of
-  escalating → `attemptTierEscalation` didn't fire, check
-  `consecutiveDrainedSweeps` counter.
-- Escalation fires but planner emits tier-1 todos anyway → prompt's
-  tier ladder isn't strict enough; tighten in `buildPlannerPrompt`.
-- Tier regresses after restart → `updateRunMeta` write failed
-  silently, check for a `teamRoles persist failed` log line.
-
----
-
-## 4. Non-ticker patterns — real-repo load test
+## 3. Non-ticker patterns — real-repo load test
 
 **What it does.** Council, map-reduce, debate-judge, critic-loop all
 typecheck and each has its own orchestrator module. None has been

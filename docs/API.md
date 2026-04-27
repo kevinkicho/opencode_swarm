@@ -76,7 +76,7 @@ Create a new multi-session run.
   enableCriticGate?: boolean;      // opt-in anti-busywork gate (any pattern)
   enableVerifierGate?: boolean;    // opt-in Playwright verifier (any pattern)
   workspaceDevUrl?: string;        // required when enableVerifierGate=true
-  continuationOf?: string;         // prior swarmRunID — inherits workspace + source + currentTier
+  continuationOf?: string;         // prior swarmRunID — inherits workspace + source
 }
 ```
 
@@ -84,7 +84,6 @@ Create a new multi-session run.
 - `workspace` may be omitted — inherited from the prior run's meta
 - If `workspace` is set, it must match the prior run's workspace (400 otherwise — prevents silent forks)
 - `source` is inherited when unset
-- `meta.currentTier` is seeded from the prior run's current tier, so the first planner sweep targets the inherited ambition layer instead of resetting to tier 1
 - `pattern`, `directive`, `teamSize`, `bounds`, `teamRoles` are NOT inherited — those are deliberate per-run choices
 
 **Response 201**
@@ -229,7 +228,7 @@ Inspect the auto-ticker state.
 
 `TickerSnapshot` shape is in `lib/server/blackboard/auto-ticker.ts` —
 the important fields are `consecutiveIdle`, `stopped`, `stopReason`,
-`startedAtMs`, `stoppedAtMs`, `currentTier`, `retryAfterEndsAtMs`.
+`startedAtMs`, `stoppedAtMs`, `retryAfterEndsAtMs`.
 
 `state: 'none'` means never-started (distinct from `stopped: true`).
 
