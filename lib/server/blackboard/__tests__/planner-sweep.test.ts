@@ -205,14 +205,20 @@ describe('runPlannerSweep · cold-start seeding', () => {
     expect(args[3]).toEqual({ agent: 'plan', model: undefined });
   });
 
-  it('routes planner via teamModels[0] (skipping plan agent) when pinned', async () => {
+  it('routes planner via plan agent + teamModels[0] when pinned (model overrides agent default)', async () => {
+    // 2026-04-27: pre-fix shape was `agent: undefined` when pinned, on
+    // the assumption opencode would default-resolve. Empirically that
+    // dropped tool definitions from the dispatch — model produced
+    // prose, never invoked todowrite (Q42 shape). Fix: always pass
+    // `agent: 'plan'`; the `model` field overrides the agent's
+    // configured default model. This test pins the new shape.
     mocks.getRun.mockResolvedValue(
       makeMeta({ teamModels: ['ollama/glm-5.1:cloud'] }),
     );
     await runPlannerSweep('run_test', { includeReadme: false });
     const args = mocks.postSessionMessageServer.mock.calls[0];
     expect(args[3]).toEqual({
-      agent: undefined,
+      agent: 'plan',
       model: 'ollama/glm-5.1:cloud',
     });
   });

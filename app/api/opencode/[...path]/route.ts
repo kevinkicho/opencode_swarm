@@ -37,6 +37,51 @@ const STRIP_REQ_HEADERS = new Set([
   'cookie',
 ]);
 
+// Proxy-level TTL cache for GET /session/{id}/message — opencode's
+// /message endpoint serializes the full message graph for a session,
+// which on long runs (17+ msgs × N parts each) regularly takes 10-15s
+// per call. The browser fires these from multiple surfaces (live-runs
+// hook + per-session inspector + SSE-driven refetch fallback) and
+// each fires its own fetch through this proxy. Without dedupe, a
+// 30s page-load fans out 5+ identical /message fetches, each blocking
+// for 10-15s. A 3s TTL collapses rapid duplicates to one upstream
+// hit while keeping the data fresh enough for the polling cadence
+// (browsers poll at 3-4s intervals).
+//
+// Only caches GET responses with status 200; SSE streams (text/event-
+// stream) are passed through untouched. Cache key includes the full
+// path + query so different sessions don't collide.
+//
+// Profiled 2026-04-27: page hydrate fanned 51 fetches over 60s; the
+// /message lane was the dominant pole (5 × 10-15s per session, 3
+// sessions). Cache target hit rate ~50% (every other poll within 3s
+// of a prior).
+const MSG_CACHE_KEY = Symbol.for('opencode_swarm.proxyMsgCache.v1');
+const MSG_CACHE_TTL_MS = 3000;
+interface MsgCacheEntry {
+  body: ArrayBuffer;
+  contentType: string;
+  fetchedAt: number;
+}
+function getMsgCache(): Map<string, MsgCacheEntry> {
+  const g = globalThis as { [MSG_CACHE_KEY]?: Map<string, MsgCacheEntry> };
+  const slot = g[MSG_CACHE_KEY];
+  if (slot instanceof Map) return slot;
+  const next = new Map<string, MsgCacheEntry>();
+  g[MSG_CACHE_KEY] = next;
+  return next;
+}
+// Trim cache periodically to keep size bounded — entries past TTL are
+// useless and accumulating sessions over a long-running dev process
+// would leak memory.
+function pruneMsgCache(): void {
+  const cache = getMsgCache();
+  const now = Date.now();
+  for (const [key, entry] of cache) {
+    if (now - entry.fetchedAt > MSG_CACHE_TTL_MS * 4) cache.delete(key);
+  }
+}
+
 // Response headers we must not forward back to the browser.
 const STRIP_RES_HEADERS = new Set([
   'content-encoding',
@@ -114,6 +159,25 @@ async function proxy(
 
   const target = `/${params.path.join('/')}${req.nextUrl.search}`;
 
+  // Cache check: only GET /session/{id}/message — that's the slow lane
+  // we're trying to dedupe. All other requests fall through to the
+  // upstream untouched.
+  const isMessageGet =
+    req.method === 'GET' &&
+    params.path.length === 3 &&
+    params.path[0] === 'session' &&
+    params.path[2] === 'message';
+  if (isMessageGet) {
+    pruneMsgCache();
+    const cache = getMsgCache();
+    const cached = cache.get(target);
+    if (cached && Date.now() - cached.fetchedAt < MSG_CACHE_TTL_MS) {
+      const headers = new Headers({ 'content-type': cached.contentType });
+      headers.set('x-proxy-cache', 'hit');
+      return new Response(cached.body, { status: 200, headers });
+    }
+  }
+
   const forwardHeaders = new Headers();
   req.headers.forEach((value, key) => {
     if (!STRIP_REQ_HEADERS.has(key.toLowerCase())) forwardHeaders.set(key, value);
@@ -141,6 +205,26 @@ async function proxy(
   upstream.headers.forEach((value, key) => {
     if (!STRIP_RES_HEADERS.has(key.toLowerCase())) outHeaders.set(key, value);
   });
+
+  // Cache write: only on a successful GET /message. Buffer the body
+  // (small, 10-200KB typical) and store. Subsequent reads within TTL
+  // serve from cache. Streaming responses (SSE on /event) skip this
+  // path because isMessageGet only matches /session/X/message.
+  if (isMessageGet && upstream.status === 200) {
+    try {
+      const body = await upstream.arrayBuffer();
+      const contentType = upstream.headers.get('content-type') ?? 'application/json';
+      getMsgCache().set(target, { body, contentType, fetchedAt: Date.now() });
+      outHeaders.set('x-proxy-cache', 'miss');
+      return new Response(body, {
+        status: upstream.status,
+        statusText: upstream.statusText,
+        headers: outHeaders,
+      });
+    } catch {
+      // Fall through to streaming pass-through if buffering fails.
+    }
+  }
 
   return new Response(upstream.body, {
     status: upstream.status,

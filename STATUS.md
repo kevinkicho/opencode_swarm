@@ -105,6 +105,49 @@ Not urgent.
   to check: `app/page.tsx` (Drawer wiring), `components/timeline-flow/
   sub-components.tsx` (EventCard onClick), `app/page-internals/use-
   page-state.ts` or similar (focus state handler).
+- **Runs picker line-item click + retro link don't work** (reported
+  2026-04-27). Repro: open the runs picker (status rail "runs" button);
+  click a row, or click the "retro" affordance on a row. Expected: row
+  click navigates to `/?swarmRun=<id>`, retro link navigates to
+  `/retro/<id>`. Actual: nothing. Suspect: row Link's href construction
+  in `components/swarm-runs-picker.tsx` (the PickerPanel's `<Link>`
+  may not be receiving the click — could be the Popover capturing
+  events, the row's `onMouseDown` stopping propagation for some
+  inner span, or the Link's `href` ending up undefined for some rows).
+  Files to check: `components/swarm-runs-picker.tsx` (row + retro
+  Link wiring), `components/ui/popover.tsx` (event handling — the
+  popover already had a `onMouseDown stopPropagation` from the
+  earlier ARIA-fix work; might be over-stopping clicks meant for
+  the row).
+- **Run-detail URL takes 30+ seconds to load** (reported 2026-04-27).
+  Repro: open `/?swarmRun=<id>` for a run with 3-4 sessions in a
+  Windows browser pointed at the WSL dev. Cold-mount fans out N
+  parallel `/api/opencode/session/<sid>/message` and `/diff` fetches
+  + a snapshot poll + the runs list (89KB). Same class as STATUS.md
+  "Known limitations · Initial hydration on huge runs" — fix paths
+  there are: stagger initial hydrate, range-limit messages to last K
+  with full history on scroll up. Add this report as a concrete
+  reproducer for that line. Probably worth pairing with measurement:
+  capture timing of every fetch the page mounts and find the long
+  poles before guessing.
+
+**UI redesign queued (deferred):**
+- **Chat-bubble view as alternate main** (reported 2026-04-27). User
+  feedback: timeline is hard to follow what's actually happening.
+  Existing surface (`components/turn-cards-view.tsx` + 'turn cards' tab
+  in left rail) is a card-based alternative; promotion to MAIN view
+  would invert the default. Recommended approach: add a top-level view
+  toggle between "timeline" and "chat" rather than replacing — keep the
+  timeline accessible for users who want the diagram of inter-agent
+  coordination, but default new runs to a chronological per-agent
+  message stream that reads like Slack/ChatGPT (lane → channel,
+  message-part → bubble, tool-call → folded bubble preview, A2A wire →
+  reply-arrow). Files likely involved: `app/page.tsx` (view router),
+  `components/turn-cards-view.tsx` (existing seed), `app/page-internals/
+  use-modal-state.ts` (or wherever active-view lives). Real scope: ~1-2
+  days; the existing turn-cards-view already has the per-message render
+  surface, the wiring change is making it the default + adding lane
+  grouping + tool-call folding.
 
 **UI/UX test surface gaps the sweep can't reach** (560 assertions
 live; only items below pass the right-size gate per

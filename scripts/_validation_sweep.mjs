@@ -63,82 +63,87 @@ function emit(level, kind, payload) {
 
 // ─── Per-pattern contracts ────────────────────────────────────────────────
 
+// Deadlines tightened 2026-04-27 per user "fail fast" feedback
+// (was 120-360s; now ~30-180s based on observed healthy timings).
+// Floor at 30s for first-tokens — sub-30s would fail legitimate
+// healthy runs since even fast models take ~16-22s to start.
 const CONTRACTS = {
   blackboard: {
     teamSize: 3,
     runCapMin: 5,
-    monitorCapSec: 420,
+    monitorCapSec: 360,
     directive:
       'Briefly survey the README. Identify 3 concrete improvements; each agent claims one and posts a finding to the board. Stop after 3 findings.',
     successSignals: [
-      { name: 'first-tokens', deadlineSec: 120, check: (s) => s.tokensTotal > 0 },
-      { name: 'planner-output', deadlineSec: 300, check: (s) => s.planRevisions > 0 },
-      { name: 'board-populated', deadlineSec: 360, check: (s) => s.itemsTotal > 0 },
-      { name: 'first-done', deadlineSec: 420, check: (s) => s.doneCount > 0 },
+      { name: 'first-tokens', deadlineSec: 30, check: (s) => s.tokensTotal > 0 },
+      { name: 'planner-output', deadlineSec: 120, check: (s) => s.planRevisions > 0 },
+      { name: 'board-populated', deadlineSec: 180, check: (s) => s.itemsTotal > 0 },
+      { name: 'first-done', deadlineSec: 300, check: (s) => s.doneCount > 0 },
     ],
   },
   council: {
     teamSize: 3,
     runCapMin: 3,
-    monitorCapSec: 360,
+    monitorCapSec: 240,
     directive:
       'Briefly survey the README. Each member: argue for ONE concrete improvement. Convergence is fine after one round.',
     successSignals: [
-      { name: 'first-tokens', deadlineSec: 120, check: (s) => s.tokensTotal > 0 },
-      { name: 'r1-complete', deadlineSec: 180, check: (s) => s.allSessionsMsgCount >= 2 },
-      { name: 'r2-complete', deadlineSec: 240, check: (s) => s.allSessionsMsgCount >= 4 },
-      { name: 'r3-complete', deadlineSec: 300, check: (s) => s.allSessionsMsgCount >= 6 },
+      { name: 'first-tokens', deadlineSec: 30, check: (s) => s.tokensTotal > 0 },
+      { name: 'r1-complete', deadlineSec: 90, check: (s) => s.allSessionsCompletedAssistants >= 1 },
+      { name: 'r2-complete', deadlineSec: 150, check: (s) => s.allSessionsCompletedAssistants >= 2 },
+      { name: 'r3-complete', deadlineSec: 210, check: (s) => s.allSessionsCompletedAssistants >= 3 },
     ],
   },
   'map-reduce': {
     teamSize: 3,
     runCapMin: 5,
-    monitorCapSec: 420,
+    monitorCapSec: 300,
     directive:
       'Survey the README in 3 parallel slices (top, middle, bottom). Each mapper: extract ONE concrete improvement. Synth: combine into one final list.',
     successSignals: [
-      { name: 'first-tokens', deadlineSec: 120, check: (s) => s.tokensTotal > 0 },
-      { name: 'all-mappers-active', deadlineSec: 240, check: (s) => s.allSessionsMsgCount >= 1 },
-      { name: 'mapper-drafts-complete', deadlineSec: 360, check: (s) => s.allSessionsMsgCount >= 2 },
+      { name: 'first-tokens', deadlineSec: 30, check: (s) => s.tokensTotal > 0 },
+      { name: 'all-mappers-active', deadlineSec: 60, check: (s) => s.sessionsWithMessages >= 3 },
+      { name: 'mapper-drafts-complete', deadlineSec: 240, check: (s) => s.allSessionsCompletedAssistants >= 1 },
     ],
   },
   'orchestrator-worker': {
     teamSize: 3,
     runCapMin: 5,
-    monitorCapSec: 420,
+    monitorCapSec: 360,
     directive:
       'Briefly survey the README. Orchestrator: identify 2 concrete improvements and dispatch one each to two workers using the task tool. Stop after both workers report back.',
     successSignals: [
-      { name: 'first-tokens', deadlineSec: 120, check: (s) => s.tokensTotal > 0 },
-      // session 0 = orchestrator; expect a `task` tool call within 120s
-      // (this is the Q34 shape — orchestrator stuck without dispatching
-      // is the canonical failure mode for this pattern).
-      { name: 'orchestrator-dispatches-task', deadlineSec: 180, check: (s) => s.toolCallsBySession[0]?.task > 0 },
-      { name: 'workers-receive-prompts', deadlineSec: 240, check: (s) => s.sessionsWithMessages >= 2 },
+      { name: 'first-tokens', deadlineSec: 30, check: (s) => s.tokensTotal > 0 },
+      // session 0 = orchestrator; expect a `task` tool call within 90s
+      // (Q34 shape — orchestrator stuck without dispatching is the
+      // canonical failure mode for this pattern). Was 180s; tightened
+      // 2026-04-27. Healthy orchestrators dispatch within 30-60s.
+      { name: 'orchestrator-dispatches-task', deadlineSec: 90, check: (s) => s.toolCallsBySession[0]?.task > 0 },
+      { name: 'workers-receive-prompts', deadlineSec: 150, check: (s) => s.sessionsWithMessages >= 2 },
     ],
   },
   'debate-judge': {
     teamSize: 3,
     runCapMin: 4,
-    monitorCapSec: 360,
+    monitorCapSec: 240,
     directive:
       'Briefly survey the README. Two generators: each propose ONE concrete improvement. Judge: pick the strongest with WINNER: <id>.',
     successSignals: [
-      { name: 'first-tokens', deadlineSec: 120, check: (s) => s.tokensTotal > 0 },
-      { name: 'all-sessions-active', deadlineSec: 180, check: (s) => s.sessionsWithMessages >= 3 },
-      { name: 'all-drafts-complete', deadlineSec: 300, check: (s) => s.allSessionsMsgCount >= 2 },
+      { name: 'first-tokens', deadlineSec: 30, check: (s) => s.tokensTotal > 0 },
+      { name: 'all-sessions-active', deadlineSec: 60, check: (s) => s.sessionsWithMessages >= 3 },
+      { name: 'all-drafts-complete', deadlineSec: 180, check: (s) => s.allSessionsCompletedAssistants >= 1 },
     ],
   },
   'critic-loop': {
     teamSize: 2,
     runCapMin: 5,
-    monitorCapSec: 420,
+    monitorCapSec: 240,
     directive:
       'Briefly survey the README. Worker: propose ONE concrete improvement. Critic: review and respond with APPROVED: <reason> or REVISE: <reason>.',
     successSignals: [
-      { name: 'first-tokens', deadlineSec: 120, check: (s) => s.tokensTotal > 0 },
-      { name: 'worker-draft', deadlineSec: 180, check: (s) => s.sessionsWithMessages >= 1 },
-      { name: 'critic-active', deadlineSec: 240, check: (s) => s.sessionsWithMessages >= 2 },
+      { name: 'first-tokens', deadlineSec: 30, check: (s) => s.tokensTotal > 0 },
+      { name: 'worker-draft', deadlineSec: 90, check: (s) => s.allSessionsCompletedAssistants >= 1 },
+      { name: 'critic-active', deadlineSec: 120, check: (s) => s.sessionsWithMessages >= 2 },
     ],
   },
 };
@@ -267,7 +272,14 @@ async function runPattern(pattern) {
     const sessionProbes = await Promise.all(sessionIDs.map(probeSession));
 
     // ─── Build state object for signal checks ─────────────────────────
+    // Note distinction:
+    //   msgCount = total messages (user + assistant, completed or not)
+    //   completedAssistantCount = only fully-completed assistant turns
+    // The latter is the honest signal for "round N complete" — earlier
+    // contracts that used msgCount fired prematurely on user-prompt +
+    // in-progress-assistant. Tightened 2026-04-27.
     const allSessionsMsgCount = Math.min(...sessionProbes.map((p) => p.msgCount), Infinity);
+    const allSessionsCompletedAssistants = Math.min(...sessionProbes.map((p) => p.completedAssistantCount), Infinity);
     const sessionsWithMessages = sessionProbes.filter((p) => p.msgCount > 0).length;
     const toolCallsBySession = sessionProbes.map((p) => p.toolCalls);
     const items = snap.board?.items ?? snap.items ?? [];
@@ -285,6 +297,7 @@ async function runPattern(pattern) {
       doneCount,
       errorCount,
       allSessionsMsgCount: allSessionsMsgCount === Infinity ? 0 : allSessionsMsgCount,
+      allSessionsCompletedAssistants: allSessionsCompletedAssistants === Infinity ? 0 : allSessionsCompletedAssistants,
       sessionsWithMessages,
       toolCallsBySession,
     };

@@ -123,10 +123,16 @@ export function teamSizeWarningMessage(
 // pre-fill them. Caller-supplied values always win — this only fires
 // for unset fields. See route.ts::applyPatternDefaults.
 //
-// Three ollama-tier models power the defaults:
-//   glm-5.1:cloud          — planner seat only (blackboard session[0],
-//                            orchestrator-worker session[0]); fast
-//                            structured-JSON for the planning sweep.
+// Default model lineup powering pattern seats:
+//   ollama/deepseek-v4-pro:cloud — planner seat only (blackboard
+//                            session[0], orchestrator-worker session[0]);
+//                            1M-token context, fast structured-JSON for
+//                            the planning sweep. Routed via the user's
+//                            ollama (locally pulled, served via
+//                            ollama-cloud). Requires opencode.json's
+//                            provider.ollama.models block to register
+//                            the model — opencode doesn't auto-discover
+//                            ollama's pulled tags.
 //   gemma4:31b-cloud       — every team / critic / verifier / drafter /
 //                            judge seat across every pattern (per
 //                            2026-04-25 evening directive)
@@ -135,18 +141,32 @@ export function teamSizeWarningMessage(
 //                            pattern). Strongest reasoning tier for the
 //                            "is this criterion met?" gate.
 //
-// 2026-04-27 deepseek-v4-pro:cloud attempt + revert: tried swapping
-// PLANNER → ollama/deepseek-v4-pro:cloud (commit d64483e). 6-pattern
-// validation sweep showed both deepseek-using patterns (blackboard +
-// orchestrator-worker) FAIL with no-first-tokens at 180s, while
-// gemma-only patterns (council, map-reduce, debate-judge, critic-loop)
-// all PASS within 16-20s. F1 watchdog log: "session ... silent 91s —
-// provider may be unreachable". Prewarm endpoint succeeded; chat-
-// completion dispatch silently stalled. Model is selectable in
-// opencode but not actually wired through ollama-cloud's completion
-// path. deepseek-v4-pro:cloud KEPT in lib/model-catalog.ts and
-// lib/zen-catalog.ts so the user can still pick it manually for
-// debugging; only the default reverted.
+// 2026-04-27 PLANNER swap saga (preserved as load-bearing detail):
+//   1. glm-5.1:cloud was the planner default (worked but slow on
+//      long-context plan prompts).
+//   2. Tried ollama/deepseek-v4-pro:cloud — silently stalled because
+//      opencode.json didn't register the model under ollama provider.
+//   3. Briefly swapped to opencode-go/deepseek-v4-pro (provider where
+//      opencode bundle had it registered). Worked but routed via
+//      opencode-go's hosted bundle, not user's ollama — not user intent.
+//   4. Registered deepseek-v4-pro:cloud in opencode.json's
+//      provider.ollama.models block. Live A/B (2026-04-27 16:25):
+//      gemma4:31b-cloud via ollama → 3 parts in 20s ✓
+//      deepseek-v4-pro:cloud via ollama → 0 parts at 60s+ ✗
+//      Same exact dispatch path. Confirms ollama→ollama-cloud chain
+//      doesn't reliably route deepseek-v4-pro:cloud at this revision.
+//   5. Reverted PLANNER to ollama/glm-5.1:cloud. deepseek-v4-pro:cloud
+//      KEPT in catalog as manually-selectable but flagged broken for
+//      the planner seat. To re-attempt: confirm ollama-cloud's
+//      deepseek-v4-pro endpoint is responding (try `ollama run
+//      deepseek-v4-pro:cloud` directly) before switching the default.
+//
+// Companion fix shipped this session: planner sweep + orchestrator-
+// worker dispatch were passing `agent: undefined` when teamModels[0]
+// was set, stripping tool definitions from the dispatch. Fix: always
+// pass `agent: 'plan'` (planner) or `agent: 'build'` (orchestrator)
+// so tool defs flow regardless of which model is pinned. Empirically
+// verified: with agent set → tool-calls; without → prose only.
 //
 // `teamModels(n)` returns a length-`n` array; session[0] is planner-
 // shaped for blackboard-family patterns, synthesizer for map-reduce,

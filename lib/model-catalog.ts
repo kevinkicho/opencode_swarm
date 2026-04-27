@@ -87,7 +87,7 @@ export const modelCatalog: ModelRef[] = [
     label: 'nemotron-3-super',
     provider: 'ollama',
     family: 'nemotron',
-    pricing: { input: 0, output: 0 },
+    pricing: { input: 0.02, output: 0.02 },
     limitTag: 'ollama max',
   },
   {
@@ -95,7 +95,7 @@ export const modelCatalog: ModelRef[] = [
     label: 'gemma4:31b',
     provider: 'ollama',
     family: 'gemma',
-    pricing: { input: 0, output: 0 },
+    pricing: { input: 0.02, output: 0.02 },
     limitTag: 'ollama max',
   },
   {
@@ -103,7 +103,7 @@ export const modelCatalog: ModelRef[] = [
     label: 'kimi-k2.6',
     provider: 'ollama',
     family: 'kimi',
-    pricing: { input: 0, output: 0 },
+    pricing: { input: 0.02, output: 0.02 },
     limitTag: 'ollama max',
   },
   {
@@ -111,23 +111,24 @@ export const modelCatalog: ModelRef[] = [
     label: 'glm-5.1',
     provider: 'ollama',
     family: 'glm',
-    pricing: { input: 0, output: 0 },
+    pricing: { input: 0.02, output: 0.02 },
     limitTag: 'ollama max',
   },
   {
-    // Available in opencode's model picker but does NOT dispatch
-    // through ollama-cloud as of 2026-04-27: prewarm endpoint
-    // succeeds (warm in 0.8s) but chat-completion silently stalls
-    // (F1 watchdog fires after 91s of session silence). Tried as
-    // PLANNER default and reverted. Kept here so the model is
-    // selectable in the new-run modal for debugging / future fix
-    // attempts. Don't use as a default until a sweep verdict
-    // confirms first-tokens fire.
+    // 2026-04-27: deepseek-v4-pro:cloud routed via the user's ollama
+    // (locally pulled via `ollama pull deepseek-v4-pro:cloud`). Earlier
+    // confusion: I noticed deepseek-v4-pro registered under opencode's
+    // bundled `opencode-go` provider and switched to that path; user
+    // corrected — they want ollama specifically. Resolution: register
+    // the model in opencode.json under `provider.ollama.models` so the
+    // ollama provider routes it. See user's opencode.json edit
+    // 2026-04-27 (added deepseek-v4-pro:cloud alongside the existing
+    // 4 ollama-cloud models). 1M context per the model spec.
     id: 'ollama/deepseek-v4-pro:cloud',
     label: 'deepseek-v4-pro',
     provider: 'ollama',
     family: 'deepseek',
-    pricing: { input: 0, output: 0 },
+    pricing: { input: 0.02, output: 0.02 },
     limitTag: 'ollama max',
   },
   {
@@ -135,7 +136,7 @@ export const modelCatalog: ModelRef[] = [
     label: 'mistral-large-3:675b',
     provider: 'ollama',
     family: 'mistral',
-    pricing: { input: 0, output: 0 },
+    pricing: { input: 0.02, output: 0.02 },
     limitTag: 'ollama max',
   },
 ];

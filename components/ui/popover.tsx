@@ -83,11 +83,33 @@ export function Popover({
   // nested-interactive between the role-button span and the inner
   // <button>. cloneElement merges the props onto the real trigger,
   // and the wrapper becomes presentation-only positioning.
+  //
+  // 2026-04-27: discovered a second class of bug — `getReferenceProps()`
+  // returns an `onClick` (the popover's toggle handler), and a naive
+  // spread overwrites any onClick the trigger child already has. Timeline
+  // event cards (`<Popover><button onClick={() => onFocus(msg.id)}>...`)
+  // had their `onFocus` silently dropped: clicking opened the popover
+  // panel but the inspector drawer never got the focus signal because
+  // its setter never fired. Fix: explicitly merge the trigger's existing
+  // onClick with the reference-props onClick so both run.
+  const refProps = getReferenceProps() as Record<string, unknown> & {
+    onClick?: (e: React.MouseEvent) => void;
+  };
+  const childExistingProps = (isValidElement(children)
+    ? (children as ReactElement<Record<string, unknown>>).props
+    : {}) as Record<string, unknown> & {
+    onClick?: (e: React.MouseEvent) => void;
+  };
+  const mergedOnClick = (e: React.MouseEvent): void => {
+    refProps.onClick?.(e);
+    if (!e.defaultPrevented) childExistingProps.onClick?.(e);
+  };
   const childRefMerge = isValidElement(children)
     ? cloneElement(children as ReactElement<Record<string, unknown>>, {
         ref: refs.setReference,
         id: triggerId,
-        ...getReferenceProps(),
+        ...refProps,
+        onClick: mergedOnClick,
       } as Record<string, unknown>)
     : children;
 
@@ -111,8 +133,18 @@ export function Popover({
                   !width && (wide ? 'min-w-[280px]' : 'min-w-[220px]')
                 )}
                 style={width ? { width } : undefined}
-                onMouseDown={(e) => e.stopPropagation()}
               >
+                {/* Earlier shape included `onMouseDown stopPropagation`
+                    on this wrapper as defensive paranoia. Removed
+                    2026-04-27 — Floating UI's `useDismiss({outsidePress})`
+                    already excludes the floating tree from outside-press
+                    detection, so the stopPropagation served no real
+                    purpose AND it interfered with click-event sequencing
+                    on anchor children: Next.js <Link> inside the popover
+                    (e.g. swarm-runs-picker rows + retro link) wouldn't
+                    navigate when clicked. Removing the stopPropagation
+                    fixes that without affecting the popover's own
+                    outside-click dismiss behavior. */}
                 {content(close)}
               </span>
             </span>

@@ -58,12 +58,18 @@ const PRICES: Record<string, ZenPrice> = {
   'minimax-m2-5-free':{input: 0,   output: 0,   cached: 0 },
   'nemotron-free':   { input: 0,   output: 0,   cached: 0 },
   'big-pickle':      { input: 0,   output: 0,   cached: 0 },
-  // Ollama bundle (ollama.com max monthly plan). Subscription-billed,
-  // so per-token cost resolves to 0 and callers that sum tokens×price
-  // see ollama as a bundled line in the cost-dashboard — same shape
-  // as opencode-go runs. Added 2026-04-24 with the three-tier
-  // stance reversal; see DESIGN.md §9.
-  'ollama-bundle':   { input: 0,   output: 0,   cached: 0 },
+  // Ollama bundle (ollama.com max plan). User-confirmed pricing
+  // 2026-04-27: $100/mo flat with ~1.25B tokens/week quota
+  // (interpretation: 4 weeks × 1.25B = 5B tokens/month at full
+  // utilization). The plan doesn't differentiate input/output, so
+  // both rates point at the same imputed unit cost:
+  //   $100 / 5,000,000,000 tokens = $0.02 per 1M tokens per direction
+  // Cost formula is `in_tokens×in_rate + out_tokens×out_rate`, so
+  // setting both rates to $0.02/1M means a 1M-token run (any
+  // input/output split) costs $0.02. Cached = 0 (no cache tier).
+  // If quota is actually monthly (not weekly), divide ÷4 → $0.08 per
+  // 1M; user can correct here.
+  'ollama-bundle':   { input: 0.02, output: 0.02, cached: 0 },
 };
 
 // Order matters: more specific patterns first (e.g. `-pro` before the generic

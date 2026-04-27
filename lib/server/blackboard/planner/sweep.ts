@@ -162,24 +162,27 @@ export async function runPlannerSweep(
  boardContext,
  readme,
  );
- // Planner dispatch. Two channels, one wins:
- // 1. Team-model pinning (meta.teamModels[0]): when the new-run-
- // modal picker supplied a specific model for session 0, honor
- // it. This is explicit user intent for "this run runs on
- // <model>" — overrides the default plan-agent override so a
- // user can force the planner onto ollama even when their
- // opencode.json has a 'plan' agent pointing at a zen model.
- // 2. Default: route through opencode's `plan` agent-config so
- // users can pin a smarter/more-expensive model for the planner
- // via opencode.json's `agent.plan.model`, while leaving worker
- // turns on whatever default model is cheap. Before this, the
- // planner defaulted to the `build` agent (same model as
- // workers), which wasted reasoning quality on simple worker
- // tasks or overpaid on planning. See
- // feedback_zen_model_preference.md.
+ // Planner dispatch. Always route through opencode's `plan` agent —
+ // the agent carries tool definitions (todowrite, todoread, read, etc.)
+ // into the model dispatch. Without an agent, opencode dispatches
+ // without tool definitions, so even tool-capable models like
+ // opencode-go/deepseek-v4-pro produce prose-only assistant turns.
+ //
+ // Empirically verified 2026-04-27: same model with `agent:'build'`
+ // tool-calls correctly; with no agent (just `model`), only text. The
+ // pre-2026-04-27 shape `agent: pinnedModel ? undefined : 'plan'`
+ // dropped the agent in the pinned-model path, producing the Q34-shape
+ // failure: model generates fluent prose, never invokes todowrite,
+ // board stays empty, workers idle. Run run_mohrfodp_xw8ht1 caught
+ // it: 16 completed assistant turns, 0 tool calls, 631K tokens burned.
+ //
+ // Team-model pinning (meta.teamModels[0]) layers on TOP: when set,
+ // opencode's `model` field overrides the agent's configured default
+ // model. So user picking `opencode-go/deepseek-v4-pro` routes through
+ // `plan` for tool definitions but uses deepseek for inference.
  const pinnedModel = meta.teamModels?.[0];
  await postSessionMessageServer(sessionID, meta.workspace, prompt, {
- agent: pinnedModel ? undefined : 'plan',
+ agent: 'plan',
  model: pinnedModel,
  });
 

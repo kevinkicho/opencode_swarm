@@ -54,18 +54,19 @@ export const zenModels: ZenModel[] = [
   { id: 'glm-5.1',           label: 'glm 5.1',           family: 'zhipu',     in: 1.4,  out: 4.4,   cacheRead: 0.26,  cacheWrite: 0    },
   { id: 'glm-5',             label: 'glm 5',             family: 'zhipu',     in: 1.0,  out: 3.2,   cacheRead: 0.2,   cacheWrite: 0    },
   { id: 'minimax-m2.5',      label: 'minimax m2.5',      family: 'minimax',   in: 0.3,  out: 1.2,   cacheRead: 0.06,  cacheWrite: 0    },
-  // Ollama-max tier (ollama.com subscription). IDs include the
-  // `ollama/` prefix so `providerOf` in transform.ts routes them to
-  // the `ollama` Provider, and `priceFor` in pricing.ts returns 0
-  // (subscription). User must configure opencode.json with an
-  // `ollama` provider block before these route cleanly. See
-  // docs/DESIGN.md §ollama tier.
-  { id: 'ollama/nemotron-3-super:cloud',      label: 'nemotron 3 super (ollama)',    family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
-  { id: 'ollama/gemma4:31b-cloud',            label: 'gemma4 31b (ollama)',          family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
-  { id: 'ollama/kimi-k2.6:cloud',             label: 'kimi k2.6 (ollama)',           family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
-  { id: 'ollama/glm-5.1:cloud',               label: 'glm 5.1 (ollama)',             family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
-  { id: 'ollama/deepseek-v4-pro:cloud',       label: 'deepseek v4 pro (ollama)',     family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
-  { id: 'ollama/mistral-large-3:675b-cloud',  label: 'mistral large 3 675b (ollama)', family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
+  // Ollama-max tier (ollama.com subscription, $100/mo, ~1.25B
+  // tokens/week quota). IDs include the `ollama/` prefix so
+  // `providerOf` in transform.ts routes them to the `ollama` Provider.
+  // `priceFor` in pricing.ts imputes per-token cost from
+  // bundle ÷ quota → $0.02 per 1M tokens (each direction). User must
+  // configure opencode.json with an `ollama` provider block before
+  // these route cleanly. See docs/DESIGN.md §ollama tier.
+  { id: 'ollama/nemotron-3-super:cloud',      label: 'nemotron 3 super (ollama)',    family: 'ollama', in: 0.02, out: 0.02, cacheRead: 0, cacheWrite: 0 },
+  { id: 'ollama/gemma4:31b-cloud',            label: 'gemma4 31b (ollama)',          family: 'ollama', in: 0.02, out: 0.02, cacheRead: 0, cacheWrite: 0 },
+  { id: 'ollama/kimi-k2.6:cloud',             label: 'kimi k2.6 (ollama)',           family: 'ollama', in: 0.02, out: 0.02, cacheRead: 0, cacheWrite: 0 },
+  { id: 'ollama/glm-5.1:cloud',               label: 'glm 5.1 (ollama)',             family: 'ollama', in: 0.02, out: 0.02, cacheRead: 0, cacheWrite: 0 },
+  { id: 'ollama/deepseek-v4-pro:cloud',       label: 'deepseek v4 pro (ollama)',     family: 'ollama', in: 0.02, out: 0.02, cacheRead: 0, cacheWrite: 0 },
+  { id: 'ollama/mistral-large-3:675b-cloud',  label: 'mistral large 3 675b (ollama)', family: 'ollama', in: 0.02, out: 0.02, cacheRead: 0, cacheWrite: 0 },
 ];
 
 export const familyMeta: Record<ZenFamily, { label: string; color: string }> = {

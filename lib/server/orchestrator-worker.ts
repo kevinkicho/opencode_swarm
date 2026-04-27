@@ -103,25 +103,26 @@ export async function runOrchestratorWorkerKickoff(
   const orchestratorSessionID = meta.sessionIDs[0];
   const workerCount = meta.sessionIDs.length - 1;
 
-  // Post the orchestrator-framing message with agent='orchestrator'
-  // The UI's roster role labeling comes from `meta.teamRoles` via
-  // roleNamesBySessionID() — NOT from this `agent` field. Earlier code
-  // passed `agent: 'orchestrator'` here trying to override the default
-  // 'build' agent opencode seeds, but 'orchestrator' isn't an opencode
-  // built-in agent so opencode silently 204'd the entire intro post
-  // (#7.Q37 caught this at compile time after Q33 surfaced the same
-  // class of bug on the actions buttons). Effect: orchestrator session
-  // never got its role-framed intro on every orchestrator-worker run
-  // — likely a contributing cause of Q34 (opencode-frozen recurrence,
-  // 2/2 runs at ~min 12). Now passing only the model pin; opencode uses
-  // the session's default agent and the intro actually lands.
+  // Post the orchestrator-framing message. Pass agent='build' explicitly
+  // so opencode includes tool definitions (the `task` tool especially —
+  // that's how the orchestrator dispatches to worker sessions). Earlier
+  // code passed `agent: 'orchestrator'` (silent-204'd by opencode since
+  // 'orchestrator' isn't a built-in), then dropped the agent entirely
+  // assuming opencode would default to 'build'. But empirical test on
+  // 2026-04-27 (run_mohrfodp_xw8ht1) showed no-agent dispatch produces
+  // text-only assistant turns — orchestrator generated 16 completed
+  // turns / 631K tokens, never invoked the `task` tool, workers idle.
+  // Same shape as the blackboard planner-sweep agent-drop bug; same fix.
+  // 'build' is opencode's full-tool default agent; the `model` field
+  // overrides build's configured default model so we still pin to the
+  // user's teamModels[0] choice.
   const intro = buildOrchestratorIntroPrompt(meta.directive, workerCount);
   try {
     await postSessionMessageServer(
       orchestratorSessionID,
       meta.workspace,
       intro,
-      { model: meta.teamModels?.[0] },
+      { agent: 'build', model: meta.teamModels?.[0] },
     );
     console.log(
       `[orchestrator-worker] run ${swarmRunID}: orchestrator intro posted to ${orchestratorSessionID.slice(-8)}`,
