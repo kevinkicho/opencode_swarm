@@ -11,6 +11,12 @@ import { createRequire } from 'node:module';
 
 const args = process.argv.slice(2);
 const SKIP_TSC = args.includes('--skip-tsc') || process.env.DEV_SKIP_TSC === '1';
+// Opt into turbopack's beta dev compiler. Measured 2026-04-27: ~13%
+// faster cold compile on this codebase (25s vs 29s for / on a fresh
+// .next). Modest because we have 2415 modules + WSL2 filesystem caps
+// the gain; some setups see 2×+. Off by default until turbopack is
+// GA stable, since it's still flagged beta in Next.js 14.2.
+const TURBO = args.includes('--turbo') || process.env.DEV_TURBO === '1';
 
 const PORT_FILE = '.dev-port';
 const MIN = 49152;
@@ -145,7 +151,9 @@ const devEnv = {
 // stdio:'inherit' is preserved so the child's output still streams
 // to our terminal — detached normally implies no parent stdio
 // linkage, but explicit inherit keeps the dev server logs visible.
-const child = spawn('next', ['dev', '-p', String(port)], {
+const nextArgs = ['dev', '-p', String(port)];
+if (TURBO) nextArgs.push('--turbo');
+const child = spawn('next', nextArgs, {
   stdio: 'inherit',
   shell: true,
   env: devEnv,

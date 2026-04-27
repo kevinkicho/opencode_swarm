@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/dev.mjs",
+    "dev:turbo": "node scripts/dev.mjs --turbo",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
