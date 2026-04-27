@@ -1,9 +1,8 @@
 //
 // Pattern → kickoff function dispatch table. Each pattern's kickoff
-// lives in its own module (lib/server/{orchestrator-worker,role-
-// differentiated,critic-loop,debate-judge,council,map-reduce}.ts);
-// this file is just the lookup that maps a pattern + parsed request
-// to the right invocation.
+// lives in its own module (lib/server/{orchestrator-worker,critic-
+// loop,debate-judge,council,map-reduce}.ts); this file is just the
+// lookup that maps a pattern + parsed request to the right invocation.
 //
 // Why a function-returning table rather than a `Promise<unknown>`-
 // keyed map: each kickoff has a different opts shape (criticMaxIterations
@@ -17,7 +16,6 @@ import 'server-only';
 import { runCouncilRounds } from '../../council';
 import { runMapReduceSynthesis } from '../../map-reduce';
 import { runOrchestratorWorkerKickoff } from '../../orchestrator-worker';
-import { runRoleDifferentiatedKickoff } from '../../role-differentiated';
 import { runCriticLoopKickoff } from '../../critic-loop';
 import { runDebateJudgeKickoff } from '../../debate-judge';
 import type { SwarmRunRequest } from '../../../swarm-run-types';
@@ -70,14 +68,6 @@ export function invokeKickoff(
       return {
         label: 'orchestrator-worker',
         promise: runOrchestratorWorkerKickoff(runID, {
-          persistentSweepMinutes: parsed.persistentSweepMinutes,
-        }),
-      };
-
-    case 'role-differentiated':
-      return {
-        label: 'role-differentiated',
-        promise: runRoleDifferentiatedKickoff(runID, {
           persistentSweepMinutes: parsed.persistentSweepMinutes,
         }),
       };

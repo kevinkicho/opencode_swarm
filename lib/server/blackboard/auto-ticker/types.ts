@@ -122,10 +122,6 @@ export interface TickerState {
   // a live-countdown chip ("retry 3h 47m") on rate-limited runs.
   // Absent on any other stop reason.
   retryAfterEndsAtMs?: number;
-  // last-fire timestamp. Throttles repeated WARN logs to once per
-  // ROLE_IMBALANCE_REPEAT_MS window so a persistent imbalance doesn't
-  // spam the dev console. Absent until the first imbalance fires.
-  roleImbalanceWarnedAtMs?: number;
   // Periodic re-sweep cadence for long-running runs. When > 0, fires a
   // fresh planner sweep every N ms so an overnight run keeps producing
   // work as the codebase evolves. When > 0, the auto-idle stop logic is

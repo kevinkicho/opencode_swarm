@@ -157,21 +157,10 @@ export async function runPlannerSweep(
  // mandatory tool call to read it.
  const readme =
  opts.includeReadme === false ? null : await readWorkspaceReadme(meta.workspace);
- // Role-differentiated runs get `[role:<name>]` prefix instructions
- // so the planner can route todos to specialized workers. Other
- // patterns (self-organizing or role-implicit) get the plain prompt.
- // meta.teamRoles is persisted by role-differentiated.ts kickoff so
- // it's populated even if the user didn't supply an explicit list.
- const teamRolesForPrompt =
- meta.pattern === 'role-differentiated' && meta.teamRoles && meta.teamRoles.length > 0
- ? meta.teamRoles
- : undefined;
-
  const prompt = buildPlannerPrompt(
  meta.directive,
  boardContext,
  readme,
- teamRolesForPrompt,
  );
  // Planner dispatch. Two channels, one wins:
  // 1. Team-model pinning (meta.teamModels[0]): when the new-run-
@@ -228,7 +217,7 @@ export async function runPlannerSweep(
  // run carries a durable record of what survived the sweep. Today's
  // #73 plumbing only wraps iterative orchestrator LOOPS; this path
  // is the planner sweep, used by every blackboard-family pattern
- // (blackboard / orchestrator-worker / role-differentiated). Without
+ //. Without
  // this, a planner-side silent abort makes the run go to status=error
  // with NO finding row — the run "just died" with nothing to read on
  // the board.

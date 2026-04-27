@@ -348,59 +348,6 @@ describe('tickCoordinator · skipped exits', () => {
     }
   });
 
-  it('skipped:role-budget-hit when picked session role exceeds cap', async () => {
-    const meta = makeMeta({
-      pattern: 'role-differentiated',
-      roleBudgets: { engineer: 100 },
-    });
-    mocks.getRun.mockResolvedValue(meta);
-    mocks.roleNamesBySessionID.mockReturnValue(
-      new Map([['ses_a', 'engineer']]),
-    );
-    // Return one assistant message with high tokens to exceed cap.
-    mocks.getSessionMessagesServer.mockResolvedValue([
-      {
-        info: {
-          id: 'msg_high',
-          sessionID: 'ses_a',
-          role: 'assistant',
-          time: { created: Date.now() - 60_000, completed: Date.now() - 30_000 },
-          tokens: {
-            total: 200,
-            input: 100,
-            output: 100,
-            reasoning: 0,
-            cache: { read: 0, write: 0 },
-          },
-        },
-        parts: [],
-      },
-    ] as OpencodeMessage[]);
-    const result = await tickCoordinator('run_test', {
-      restrictToSessionID: 'ses_a',
-    });
-    expect(result.status).toBe('skipped');
-    if (result.status === 'skipped') {
-      expect(result.reason).toMatch(/role-budget/);
-    }
-  });
-
-  it('skipped:strict-role-no-match when no todos match the session role', async () => {
-    mocks.getRun.mockResolvedValue(
-      makeMeta({ pattern: 'role-differentiated', strictRoleRouting: true }),
-    );
-    mocks.roleNamesBySessionID.mockReturnValue(new Map([['ses_a', 'engineer']]));
-    mocks.listBoardItems.mockReturnValue([
-      makeItem({ preferredRole: 'reviewer' }),
-    ]);
-    const result = await tickCoordinator('run_test', {
-      restrictToSessionID: 'ses_a',
-    });
-    expect(result.status).toBe('skipped');
-    if (result.status === 'skipped') {
-      expect(result.reason).toMatch(/strict-role/);
-    }
-  });
 });
 
 // === Stale exits ============================================================

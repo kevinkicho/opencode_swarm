@@ -3,7 +3,7 @@
 // These regex-based strippers are the contract between the planner's
 // todowrite emission and the board's typed columns (requiresVerification,
 // preferredRole, expectedFiles, sourceDrafts, isCriterion, roleNote).
-// A drift breaks Playwright grounding, role-differentiated routing,
+// A drift breaks Playwright grounding, routing,
 // CAS file-scope, and the traceability story silently.
 //
 // Migrated from scripts/_parser_smoke.mjs (which we kept as a runnable
@@ -236,7 +236,7 @@ describe('stripFromTag', () => {
  });
 });
 
-describe('stripRoleNoteTag (role-differentiated I3)', () => {
+describe('stripRoleNoteTag', () => {
  it('strips simple [rolenote:tester]', () => {
  expect(
  stripRoleNoteTag('[rolenote:tester] Focus on Playwright not unit tests'),

@@ -18,8 +18,8 @@ SaaS, never multi-tenant. Prototype-grade — clarity beats optionality.
    shape, workspace path encoding, zombie turns). Read before wiring a new
    opencode call site.
 3. **`docs/PATTERNS.md`** — orchestration pattern cheatsheet (blackboard,
-   map-reduce, council, orchestrator-worker, role-differentiated, debate-judge,
-   critic-loop). One paragraph each.
+   map-reduce, council, orchestrator-worker, debate-judge, critic-loop).
+   One paragraph each.
 4. **`docs/API.md`** — greppable HTTP endpoint catalog for *our* routes.
 5. **`docs/VALIDATION.md`** — runbook for features shipped but not yet
    exercised live.

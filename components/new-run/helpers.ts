@@ -61,18 +61,6 @@ export const API_RECIPES: ReadonlyArray<{
 }'`,
   },
   {
-    pattern: 'role-differentiated',
-    hint: 'pinned specialties: architect, tester, security, …',
-    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
-  "pattern": "role-differentiated",
-  "workspace": "C:/Users/kevin/Workspace/<repo>",
-  "directive": "Build feature X end-to-end",
-  "teamSize": 4,
-  "teamRoles": ["architect","builder","tester","security"],
-  "persistentSweepMinutes": 20
-}'`,
-  },
-  {
     pattern: 'critic-loop',
     hint: 'worker drafts → critic reviews → loop to APPROVED',
     body: `curl -X POST http://localhost:49187/api/swarm/run -d '{

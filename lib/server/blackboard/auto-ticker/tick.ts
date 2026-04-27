@@ -14,7 +14,6 @@ import { maybeRunAudit } from './audit';
 import { checkHardCaps } from './hard-caps';
 import { liveCoordinator } from './live-exports';
 import { checkLiveness } from './liveness';
-import { checkRoleImbalance } from './policies';
 import { snapshot, tickers } from './state';
 import { runPeriodicSweep } from './sweep';
 import { stopAutoTicker } from './stop';
@@ -209,10 +208,6 @@ export async function fanout(swarmRunID: string): Promise<void> {
   if (!ready) return;
   // Re-check after the await — could have been stopped while resolving run.
   if (s.stopped) return;
-  // Role-imbalance watchdog.
-  // Cheap (single SQL read + per-role aggregation); throttled by run-
-  // age + last-warn timestamp so a persistent imbalance doesn't spam.
-  void checkRoleImbalance(s);
   // Fire per-session ticks without awaiting. Each has its own inFlight
   // guard, so slow sessions don't block fast ones. Orchestrator-worker
   // runs skip the orchestrator — it's the planner, not a worker.

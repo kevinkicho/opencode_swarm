@@ -38,7 +38,7 @@ export async function dispatchPrompt(
   const prompt = buildWorkPrompt(todo);
 
   // Pattern-aware opencode agent-config routing for the worker's prompt.
-  // Hierarchical patterns (orchestrator-worker, role-differentiated,
+ // Hierarchical patterns (orchestrator-worker,,
   // debate-judge, critic-loop) map session → role → opencode agent-config
   // name from opencode.json. Blackboard's planner/worker labels are
   // display-only — opencodeAgentForSession returns undefined for it.
@@ -46,7 +46,7 @@ export async function dispatchPrompt(
 
   // Team-model pinning: per-session model from the new-run-modal team
   // picker. Overrides the agent route when both are set (intended
-  // precedence for role-differentiated runs).
+ // precedence for runs).
   // run's pinned `synthesisModel` regardless of which session claims.
   const sessionIdx = meta.sessionIDs.indexOf(sessionID);
   const pinnedModel =

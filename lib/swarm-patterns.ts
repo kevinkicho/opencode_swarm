@@ -76,15 +76,6 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     accent: 'rust',
     recommendedMax: 8,
   },
-  'role-differentiated': {
-    label: 'roles',
-    tagline: 'n workers with pinned roles (architect, tester, …)',
-    shape: 'N specialized roles · optional [role:X] soft routing',
-    fit: 'work with clear sub-disciplines (frontend/backend, code/docs/tests)',
-    available: true,
-    accent: 'iris',
-    recommendedMax: 6,
-  },
   'debate-judge': {
     label: 'debate',
     tagline: 'n generators propose, one judge evaluates and picks',
@@ -170,8 +161,8 @@ export interface PatternDefaults {
   // When true and the request didn't explicitly set enableAuditorGate,
   // the route handler spawns a dedicated auditor opencode session at
   // run creation. Only meaningful for blackboard-family patterns
-  // (blackboard / orchestrator-worker / role-differentiated) — the
-  // route validator rejects it elsewhere.
+  // (blackboard / orchestrator-worker) — the route validator rejects
+  // it elsewhere.
   enableAuditorGate?: boolean;
 }
 
@@ -249,14 +240,6 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // session[0] model. Workers stay on GEMMA — they don't run the
     // planner sweep, just claim/implement todos.
     teamModels: (n) => [GLM, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
-  },
-  'role-differentiated': {
-    // All roles on GEMMA per 2026-04-25 evening directive. Was
-    // {docs: GLM, ...GEMMA}; the docs lane was on GLM for cost but
-    // monoculture wins under the new rule. teamRoles rotates through
-    // the canonical role list when the request doesn't supply its own.
-    teamModels: (n) => Array(n).fill(GEMMA),
-    teamRoles: ['architect', 'builder', 'tester', 'reviewer', 'security', 'docs', 'ux', 'data'],
   },
   'debate-judge': {
     // Judge + generators all on GEMMA per 2026-04-25 evening directive.

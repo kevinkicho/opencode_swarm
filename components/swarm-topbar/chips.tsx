@@ -76,7 +76,7 @@ export function AbortChip({
 // auto-disarm so an accidental press doesn't kill the run on the next
 // click), second click executes. Distinct from AbortChip because the
 // soft abort only targets the primary session — multi-session runs
-// (council, debate-judge, role-differentiated, etc.) keep N-1 sessions
+// keep N-1 sessions
 // alive AND the orchestrator coroutine, which then waits forever for a
 // session that's already idle. Hard-stop tears down the whole run via
 // /api/swarm/run/:id/stop. See task #105.

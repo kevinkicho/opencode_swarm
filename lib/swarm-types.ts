@@ -26,7 +26,6 @@ export type SwarmPattern =
   | 'map-reduce'
   | 'council'
   | 'orchestrator-worker'
-  | 'role-differentiated'
   | 'debate-judge'
   | 'critic-loop';
 

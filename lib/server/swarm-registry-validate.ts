@@ -26,7 +26,6 @@ const KNOWN_PATTERNS: ReadonlySet<SwarmPattern> = new Set<SwarmPattern>([
   'none',
   'blackboard',
   'orchestrator-worker',
-  'role-differentiated',
   'council',
   'critic-loop',
   'debate-judge',

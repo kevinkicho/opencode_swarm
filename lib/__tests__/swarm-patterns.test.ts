@@ -15,7 +15,6 @@ describe('patternMeta.recommendedMax', () => {
       'map-reduce',
       'council',
       'orchestrator-worker',
-      'role-differentiated',
       'debate-judge',
       'critic-loop',
     ];
@@ -29,7 +28,6 @@ describe('patternMeta.recommendedMax', () => {
     expect(patternMeta.council.recommendedMax).toBe(5);
     expect(patternMeta['map-reduce'].recommendedMax).toBe(5);
     expect(patternMeta['orchestrator-worker'].recommendedMax).toBe(8);
-    expect(patternMeta['role-differentiated'].recommendedMax).toBe(6);
     expect(patternMeta['debate-judge'].recommendedMax).toBe(4);
     expect(patternMeta['critic-loop'].recommendedMax).toBe(2);
     expect(patternMeta.none.recommendedMax).toBe(1);

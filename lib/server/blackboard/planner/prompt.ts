@@ -32,7 +32,6 @@ export function buildPlannerPrompt(
   directive: string | undefined,
   boardContext?: PlannerBoardContext,
   readme?: string | null,
-  teamRoles?: readonly string[],
 ): string {
   const base =
     directive?.trim() ||
@@ -156,31 +155,6 @@ export function buildPlannerPrompt(
     'carry the prefix. The prefix opts the todo into a browser-automated',
     "check after the critic gate approves; overflagging just slows the",
     'swarm, so be selective.',
-    ...(teamRoles && teamRoles.length > 0
-      ? [
-          '',
-          '**Routing todos to role-differentiated workers.** This run has',
-          `specialized workers with pinned roles: ${teamRoles.join(', ')}.`,
-          'When a todo fits one role obviously better than the others,',
-          'prefix it with `[role:<name>]` (combine with `[verify]` if both',
-          'apply; `[verify] [role:tester] …` is fine). Example:',
-          '`[role:tester] Add unit tests for the heatmap merge reducer`.',
-          'Items without a role prefix are claimed by any available',
-          'worker, which is the right default — reserve the prefix for',
-          'work that would be meaningfully lower-quality outside that',
-          'role. Unknown role names are treated as no-prefix.',
-          '',
-          '**Refining a role on the fly.** If you observe the workload',
-          "drifting and a role's self-concept needs sharpening (e.g. the",
-          'tester should specialize in Playwright not unit tests for this',
-          'mission), emit ONE todowrite entry whose content is',
-          '`[rolenote:<role>] <one or two sentences of clarification>`.',
-          'These are NOT todos — they get routed to that role\'s session',
-          'as a clarification message instead of landing on the board.',
-          'Use sparingly (zero or one per sweep), only when the role',
-          'would meaningfully misallocate effort without the nudge.',
-        ]
-      : []),
     '',
     'Rules:',
     '- todowrite must fire within your first 12 tool calls total.',

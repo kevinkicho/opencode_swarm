@@ -62,7 +62,7 @@ Create a new multi-session run.
 ```ts
 {
   pattern: "blackboard" | "map-reduce" | "council" | "orchestrator-worker"
-         | "role-differentiated" | "debate-judge" | "critic-loop";
+         | "debate-judge" | "critic-loop";
   workspace: string;               // absolute path to the target repo
   source?: string;                 // repo URL (for display / memory scoping)
   directive?: string;              // optional seed; blank = swarm infers
@@ -70,7 +70,6 @@ Create a new multi-session run.
   teamSize?: number;               // pattern-dependent defaults (see PATTERN_TEAM_SIZE)
   bounds?: { costCap?, tokenCap?, minutesCap?, zenCeiling?, goCeiling? };
   persistentSweepMinutes?: number; // > 0 disables auto-idle-stop (ticker patterns)
-  teamRoles?: string[];            // role-differentiated only
   criticMaxIterations?: number;    // critic-loop only
   debateMaxRounds?: number;        // debate-judge only
   enableCriticGate?: boolean;      // opt-in anti-busywork gate (any pattern)
@@ -84,7 +83,7 @@ Create a new multi-session run.
 - `workspace` may be omitted — inherited from the prior run's meta
 - If `workspace` is set, it must match the prior run's workspace (400 otherwise — prevents silent forks)
 - `source` is inherited when unset
-- `pattern`, `directive`, `teamSize`, `bounds`, `teamRoles` are NOT inherited — those are deliberate per-run choices
+- `pattern`, `directive`, `teamSize`, `bounds` are NOT inherited — those are deliberate per-run choices
 
 **Response 201**
 ```ts
@@ -330,7 +329,7 @@ debugging only.
 Bulk reopen — every `stale` item transitions to `open`, clearing
 `ownerAgentId` / `fileHashes` / `staleSinceSha` / retry-count note.
 Also auto-starts the ticker if it was stopped and the pattern is in
-`TICKER_PATTERNS` (blackboard, orchestrator-worker, role-differentiated).
+`TICKER_PATTERNS`.
 
 **Body:** `{}`.
 

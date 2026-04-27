@@ -370,69 +370,6 @@ describe('runPlannerSweep · criterion + role-note handling', () => {
     expect(kinds).toContain('todo');
   });
 
-  it('dispatches role-notes to matching role sessions (not as board items)', async () => {
-    mocks.getRun.mockResolvedValue(
-      makeMeta({
-        pattern: 'role-differentiated',
-        sessionIDs: ['ses_planner_a', 'ses_engineer_b', 'ses_reviewer_c'],
-        teamRoles: ['planner', 'engineer', 'reviewer'],
-      }),
-    );
-    mocks.roleNamesBySessionID.mockReturnValue(
-      new Map([
-        ['ses_planner_a', 'planner'],
-        ['ses_engineer_b', 'engineer'],
-        ['ses_reviewer_c', 'reviewer'],
-      ]),
-    );
-    mocks.waitForSessionIdle.mockImplementation(async (sessionID: string) => {
-      const turn = makeTodowriteTurn(sessionID, [
-        { content: '[rolenote:engineer] focus on the backend wiring first' },
-        { content: 'add the status banner' },
-      ]);
-      return {
-        ok: true,
-        messages: [turn],
-        newIDs: new Set([turn.info.id]),
-      };
-    });
-    const result = await runPlannerSweep('run_test', { includeReadme: false });
-    // The role-note doesn't land on the board.
-    expect(result.items).toHaveLength(1);
-    expect(result.items[0].kind).toBe('todo');
-    // postSessionMessageServer is called twice: once for the planner prompt,
-    // once for the role-note dispatch to ses_engineer_b.
-    expect(mocks.postSessionMessageServer).toHaveBeenCalledTimes(2);
-    const noteCall = mocks.postSessionMessageServer.mock.calls[1];
-    expect(noteCall[0]).toBe('ses_engineer_b');
-    expect(noteCall[2]).toMatch(/role-clarification/i);
-  });
-
-  it('drops role-note for unknown role with a warn (no postSessionMessageServer)', async () => {
-    mocks.getRun.mockResolvedValue(
-      makeMeta({
-        pattern: 'role-differentiated',
-        teamRoles: ['planner', 'engineer'],
-      }),
-    );
-    mocks.roleNamesBySessionID.mockReturnValue(
-      new Map([['ses_planner_a', 'planner']]),
-    );
-    mocks.waitForSessionIdle.mockImplementation(async (sessionID: string) => {
-      const turn = makeTodowriteTurn(sessionID, [
-        { content: '[rolenote:nonexistent] focus on something' },
-        { content: 'add the status banner' },
-      ]);
-      return {
-        ok: true,
-        messages: [turn],
-        newIDs: new Set([turn.info.id]),
-      };
-    });
-    await runPlannerSweep('run_test', { includeReadme: false });
-    // Only the planner prompt fires. Note is dropped.
-    expect(mocks.postSessionMessageServer).toHaveBeenCalledTimes(1);
-  });
 });
 
 // === Plan-revision logging ==================================================

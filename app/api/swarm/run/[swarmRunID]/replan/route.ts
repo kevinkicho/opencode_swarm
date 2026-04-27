@@ -20,7 +20,7 @@
 // ollama-cloud's worst-case latency.
 //
 // Pattern-agnostic: works on any pattern that uses the blackboard's
-// planner sweep (blackboard, orchestrator-worker, role-differentiated).
+// planner sweep.
 // The strategy tab on the orchestrator-worker pattern is the primary
 // consumer; other patterns can hit this endpoint too if/when they grow
 // a re-plan UI.

@@ -25,10 +25,6 @@ describe('turnTimeoutFor — per-pattern dispatch timeout', () => {
  expect(turnTimeoutFor('orchestrator-worker')).toBe(10 * 60_000);
  });
 
- it('role-differentiated: 10 minutes', () => {
- expect(turnTimeoutFor('role-differentiated')).toBe(10 * 60_000);
- });
-
  it('unknown pattern: falls back to default 10 minutes', () => {
  expect(turnTimeoutFor('unknown-pattern')).toBe(10 * 60_000);
  expect(turnTimeoutFor('')).toBe(10 * 60_000);
@@ -40,7 +36,6 @@ describe('zombieThresholdFor — per-pattern silent-turn threshold', () => {
  for (const p of [
  'blackboard',
  'orchestrator-worker',
- 'role-differentiated',
  'critic-loop',
  'debate-judge',
  'map-reduce',
@@ -195,7 +190,7 @@ describe('relativizeToWorkspace — path normalization', () => {
 // stale-note with the actual opencode info.error text instead of the
 // generic "turn errored". Drift here either drops useful provider error
 // detail (rate-limit, context-exceeded, model-specific) on the floor —
-// the exact hole that bit role-differentiated in MAXTEAM-2026-04-26 —
+// the exact hole that bit in MAXTEAM-2026-04-26 —
 // or surfaces unfiltered stale errors from before the dispatch window.
 
 function makeMsg(overrides: Partial<{

@@ -8,8 +8,8 @@
 //   - all others  → uniform directive across surviving sessions.
 //
 // Patterns with custom intros (blackboard / orchestrator-worker /
-// role-differentiated / debate-judge / critic-loop) skip this branch
-// entirely — their kickoff modules post pattern-specific intros instead.
+// debate-judge / critic-loop) skip this branch entirely — their
+// kickoff modules post pattern-specific intros instead.
 //
 // Per-session post failures log and continue. The session exists, the
 // composer can re-fire the prompt, and one slow member shouldn't stall
@@ -29,7 +29,6 @@ import type { SwarmPattern } from '../../swarm-types';
 const PATTERNS_WITH_CUSTOM_INTRO: ReadonlySet<SwarmPattern> = new Set([
   'blackboard',
   'orchestrator-worker',
-  'role-differentiated',
   'debate-judge',
   'critic-loop',
 ]);

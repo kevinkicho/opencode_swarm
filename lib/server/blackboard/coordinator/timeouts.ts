@@ -16,7 +16,6 @@ const DEFAULT_TURN_TIMEOUT_MS = 10 * 60_000;
 const TURN_TIMEOUTS_MS: Record<string, number> = {
   blackboard: 10 * 60_000,
   'orchestrator-worker': 10 * 60_000,
-  'role-differentiated': 10 * 60_000,
 };
 
 export function turnTimeoutFor(pattern: string): number {
@@ -29,14 +28,13 @@ export function turnTimeoutFor(pattern: string): number {
 // active in-flight turn. After this many ms, the picker treats the turn
 // as stale: auto-aborts it and dispatches to the session anyway.
 //
-// Only blackboard-family patterns (blackboard / orchestrator-worker /
-// role-differentiated) run through tickCoordinator, so those are the
-// only values that matter in practice.
+// Only blackboard-family patterns (blackboard / orchestrator-worker)
+// run through tickCoordinator, so those are the only values that
+// matter in practice.
 const ZOMBIE_TURN_THRESHOLD_DEFAULT_MS = 10 * 60_000;
 const ZOMBIE_TURN_THRESHOLDS_MS: Record<string, number> = {
   blackboard: 10 * 60_000,
   'orchestrator-worker': 10 * 60_000,
-  'role-differentiated': 10 * 60_000,
 };
 
 export function zombieThresholdFor(pattern: string): number {

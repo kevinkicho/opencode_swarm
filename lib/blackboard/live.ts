@@ -251,7 +251,7 @@ export function deriveBoardAgents(
   // Optional mapping from ownerAgentId → role name. When provided, agents
   // with a matching owner ID use the role name (truncated for chip fit)
   // instead of the default numeric label. Builds role visibility on
-  // hierarchical patterns (orchestrator-worker, role-differentiated,
+ // hierarchical patterns (orchestrator-worker,,
   // debate-judge, critic-loop) without changing the fallback behavior
   // for self-organizing runs.
   roleNames?: ReadonlyMap<string, string>,

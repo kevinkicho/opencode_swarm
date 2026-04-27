@@ -87,10 +87,6 @@ const DebateRail = dynamic(
   ),
   { ssr: false },
 );
-const RolesRail = dynamic(
-  lazyWithRetry(() => import('@/components/roles-rail').then((m) => m.RolesRail)),
-  { ssr: false },
-);
 const MapRail = dynamic(
   lazyWithRetry(() => import('@/components/map-rail').then((m) => m.MapRail)),
   { ssr: false },
@@ -193,10 +189,6 @@ const VIEW_PATTERN_GATES: Record<string, ViewConfig> = {
   debate: {
     enabled: (ctx) => ctx.pattern === 'debate-judge',
     hint: 'debate-judge: N generators propose, judge picks',
-  },
-  roles: {
-    enabled: (ctx) => ctx.pattern === 'role-differentiated',
-    hint: 'per-role lanes · architect / tester / writer …',
   },
   map: {
     enabled: (ctx) => ctx.pattern === 'map-reduce',
@@ -452,15 +444,13 @@ function PageBody({
   // "board" tab and the main-view "board" toggle read from the same
   // EventSource. Null when the run's pattern doesn't drive the board —
   // hooks short-circuit to empty state without opening a connection.
-  // Patterns that populate the board: blackboard (obviously), plus the
-  // hierarchical patterns that seed a board via a planner phase —
-  // orchestrator-worker, role-differentiated.
+  // Patterns that populate the board: blackboard (obviously) plus
+  // orchestrator-worker (which seeds a board via the planner session).
   const boardPatterns: ReadonlySet<string> = useMemo(
     () =>
       new Set<string>([
         'blackboard',
         'orchestrator-worker',
-        'role-differentiated',
       ]),
     [],
   );
@@ -800,18 +790,6 @@ function PageBody({
                 return (
                   <ProfileBoundary id="debate-rail">
                     <DebateRail slots={liveSlots} embedded onInspectSession={selectSession} />
-                  </ProfileBoundary>
-                );
-              case 'roles':
-                return (
-                  <ProfileBoundary id="roles-rail">
-                    <RolesRail
-                      live={liveBoard}
-                      roleNames={boardRoleNames ?? new Map()}
-                      sessionIDs={swarmRunMeta?.sessionIDs ?? []}
-                      embedded
-                      onInspectSession={selectSession}
-                    />
                   </ProfileBoundary>
                 );
               case 'map':

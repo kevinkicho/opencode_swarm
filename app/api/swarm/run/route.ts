@@ -136,15 +136,6 @@ export async function POST(req: NextRequest): Promise<Response> {
   if (defaults.synthesisModel && !parsed.synthesisModel) {
     parsed.synthesisModel = defaults.synthesisModel;
   }
-  if (defaults.teamRoles && !parsed.teamRoles && parsed.pattern === 'role-differentiated') {
-    // Cycle or truncate to teamSize so the roles array lines up with
-    // the session count (role-differentiated.ts validates this pairing).
-    const roles: string[] = [];
-    for (let i = 0; i < teamSize; i += 1) {
-      roles.push(defaults.teamRoles[i % defaults.teamRoles.length]);
-    }
-    parsed.teamRoles = roles;
-  }
   // enableAuditorGate default. Caller-undefined → take the pattern's
   // default; explicit boolean from caller always wins (validator above
   // already coerced it onto parsed). Spawning the auditor seat is the

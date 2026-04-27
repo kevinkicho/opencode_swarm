@@ -35,13 +35,6 @@ export function roleNamesFromMeta(
       });
       break;
     }
-    case 'role-differentiated': {
-      meta.sessionIDs.forEach((sid, i) => {
-        const role = meta.teamRoles?.[i];
-        if (role) out.set(ownerIdForSession(sid), role);
-      });
-      break;
-    }
     case 'debate-judge': {
       meta.sessionIDs.forEach((sid, i) => {
         out.set(ownerIdForSession(sid), i === 0 ? 'judge' : `generator-${i}`);
@@ -102,13 +95,6 @@ export function roleNamesBySessionID(
     case 'orchestrator-worker': {
       meta.sessionIDs.forEach((sid, i) => {
         out.set(sid, i === 0 ? 'orchestrator' : `worker-${i}`);
-      });
-      break;
-    }
-    case 'role-differentiated': {
-      meta.sessionIDs.forEach((sid, i) => {
-        const role = meta.teamRoles?.[i];
-        if (role) out.set(sid, role);
       });
       break;
     }

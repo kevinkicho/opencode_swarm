@@ -1,9 +1,8 @@
 // Session cleanup on run end for non-ticker patterns.
 //
-// Ticker-backed patterns (blackboard / orchestrator-worker /
-// role-differentiated) already abort their
-// sessions via `stopAutoTicker` when the ticker stops (commit 21ee57e
-// and the shutdown-hook work). The other four patterns
+// Ticker-backed patterns (blackboard / orchestrator-worker) already
+// abort their sessions via `stopAutoTicker` when the ticker stops
+// (commit 21ee57e and the shutdown-hook work). The other four patterns
 // (council / map-reduce / debate-judge / critic-loop) orchestrate to
 // completion in a single async function and then return — with no
 // abort, their sessions may carry a lingering in-flight turn past

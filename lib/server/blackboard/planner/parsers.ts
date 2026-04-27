@@ -79,8 +79,7 @@ export function stripVerifyTag(content: string): {
 // Strips the `[role:<name>]` opt-in prefix from a todo's content and
 // returns the resolved preferredRole. Same wire-protocol rationale as
 // stripVerifyTag — overload the content field since todowrite has no
-// side channel. Role names are normalized to the same shape as
-// role-differentiated.ts::normalizeRoleName (lowercase kebab, alnum +
+// side channel. Role names are normalized (lowercase kebab, alnum +
 // hyphen only, ≤ 24 chars) so a typo like `[role: Tester ]` still
 // matches `tester` downstream. Applies idempotently after
 // stripVerifyTag so `[verify] [role:tester] ...` composes.

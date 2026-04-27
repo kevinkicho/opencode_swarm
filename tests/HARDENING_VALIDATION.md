@@ -49,7 +49,6 @@ holding under future changes.
 | D4 #2 — dispatch coordinator | HARDENING_PLAN.md#D4 | `lib/server/blackboard/coordinator/__tests__/dispatch.test.ts` | scaffold |
 | D4 #3 — transform fixtures | HARDENING_PLAN.md#D4 | `lib/opencode/__tests__/transform-fixtures.test.ts` | scaffold |
 | D4 #4a — orchestrator-worker | HARDENING_PLAN.md#D4 | `tests/integration/orchestrator-worker.test.ts` | integration-scaffold |
-| D4 #4b — role-differentiated | HARDENING_PLAN.md#D4 | `tests/integration/role-differentiated.test.ts` | integration-scaffold |
 | D4 #4c — critic-loop | HARDENING_PLAN.md#D4 | `tests/integration/critic-loop.test.ts` | integration-scaffold |
 | D4 #4d — debate-judge | HARDENING_PLAN.md#D4 | `tests/integration/debate-judge.test.ts` | integration-scaffold |
 | D4 #4e — council | HARDENING_PLAN.md#D4 | `tests/integration/council.test.ts` | integration-scaffold |

@@ -20,8 +20,9 @@ the entire premise.
 **On roles.** Roles are a per-run choice, not a project-level ideology.
 Self-organizing patterns (blackboard, council, stigmergy) have no pinned
 roles — agents self-select. Hierarchical patterns (orchestrator-worker,
-role-differentiated, debate-judge) carry explicit roles when the work needs
-them. The pattern picks the role model; the human picks the pattern.
+debate-judge, critic-loop) carry implicit roles when the work needs them
+(orchestrator vs worker, judge vs generator, critic vs worker). The
+pattern picks the role model; the human picks the pattern.
 
 Every agent has a **name** and an optional self-authored **focus line**
 (`"reviewing the router diff"`). Hierarchical patterns may add a **role**

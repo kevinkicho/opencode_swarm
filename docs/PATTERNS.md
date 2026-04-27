@@ -73,18 +73,6 @@ to teamSize=8 in the 2026-04-26 stress test.
 
 **Sizing.** Up to 8.
 
-### role-differentiated
-
-Each worker session is pinned to a role (architect, implementer, tester,
-…). Strict-role-routing optionally enforces "implementer items only go to
-implementer sessions." Per-role budgets cap spend per role.
-
-**Files.** `lib/server/role-differentiated.ts`.
-
-**Strengths.** When the work has natural sub-categories.
-
-**Sizing.** ≤6.
-
 ### debate-judge
 
 N generator sessions each propose a solution; one judge session picks a
@@ -130,7 +118,7 @@ Empirical from real runs:
 
 | Profile | Patterns |
 |---|---|
-| **Parallel-redundant** (survives single-session shocks) | blackboard, council, role-differentiated |
+| **Parallel-redundant** (survives single-session shocks) | blackboard, council |
 | **Serial-critical** (one stalled session crashes the run) | orchestrator-worker, critic-loop, debate-judge, map-reduce reduce-phase |
 
 Pick parallel-redundant when:

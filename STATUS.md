@@ -51,7 +51,7 @@ patterns survive.
 
 | Profile | Patterns | Notes |
 |---|---|---|
-| **Robust** | blackboard, council, role-differentiated | Use for important runs |
+| **Robust** | blackboard, council | Use for important runs |
 | **Serial-critical** | orchestrator-worker, critic-loop, debate-judge | F1 silent-turn aborts mid-flow; partial completion before failure |
 | **Asymmetric** | map-reduce | MAP robust, REDUCE brittle (synthesizer reads ~30K tokens of N drafts → silent turns under GEMMA) |
 
@@ -97,7 +97,6 @@ for invocation):
 
 **Pattern-design improvements** (need a live run to validate):
 - map-reduce I1: synthesis-critic gate.
-- role-differentiated I4: per-role token budgets.
 - stigmergy: heat-picked-timeline-chip.
 
 ---
