@@ -537,14 +537,16 @@ async function deriveSessionRow(
     // opencode marks MessageAbortedError on the trailing assistant turn
     // whenever our /abort fires (cap-stop, manual /stop, operator abort,
     // F1 silent-watchdog stop). All four are *graceful terminations* —
-    // the run did what it was supposed to do and was shut down cleanly.
-    // Treating them as `error` was making cap-stopped runs (the cleanest
-    // outcome we have) show red in the picker. Other error names (provider
-    // failures, parse errors, model timeouts) still escalate to `error`.
+    // the session is no longer producing and won't be revived without a
+    // new prompt. Under the renamed schema (#176) that's `stale` per-
+    // session — the run-level fold consults the ticker before deciding
+    // whether the run as a whole is alive-but-quiet (idle) or stopped
+    // (stale). Other error names (provider failures, parse errors,
+    // model timeouts) still escalate to `error` so the picker shows red.
     const errName = (info.error as { name?: string } | null | undefined)?.name;
     if (errName === 'MessageAbortedError') {
       return {
-        status: 'idle',
+        status: 'stale',
         lastActivityTs: info.time.completed ?? info.time.created,
         costTotal,
         tokensTotal,
@@ -558,6 +560,10 @@ async function deriveSessionRow(
     };
   }
   if (info.time.completed) {
+    // Assistant turn completed cleanly. Per-session this is "alive but
+    // quiet" (idle); the run-level fold reconciles against the ticker —
+    // a stopped ticker promotes idle → stale (the run is over, not just
+    // between turns).
     return { status: 'idle', lastActivityTs: info.time.completed, costTotal, tokensTotal };
   }
   // No completed, no error — either actively producing or zombie.
@@ -567,20 +573,26 @@ async function deriveSessionRow(
   return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal };
 }
 
-// Priority for folding N per-session statuses into one run-level status.
-// Ordered so the aggregate answers the picker's real question — "what does
-// this run most need my attention for?" — without losing information:
-//   live   → someone is actively producing tokens, eclipses everything
-//   error  → at least one session is in a failure state, needs surfacing
-//   stale  → at least one session is a likely zombie (no completed, old)
-//   idle   → every session has completed cleanly
-//   unknown → we couldn't probe or nothing has happened yet
-// Higher number wins. Any session at a given level pins the run there.
+// Priority for folding N per-session statuses into one pre-ticker run-level
+// status. The fold answers "what does this run most need my attention for"
+// without losing information; ticker reconciliation (in deriveRunRow) then
+// applies the alive/stopped axis on top.
+//
+//   error  → at least one session reported a real failure (highest)
+//   live   → at least one session is currently producing tokens
+//   idle   → at least one session is between turns (waiting)
+//   stale  → at least one session is a zombie / cleanly aborted
+//   unknown → no probe data
+//
+// Higher number wins. Any session at a given level pins the fold there.
+// Ordering changed from old schema (live > error > stale > idle) so error
+// dominates everything — a single failed session is the most actionable
+// signal regardless of what its peers are doing.
 const STATUS_PRIORITY: Record<SwarmRunStatus, number> = {
-  live: 4,
-  error: 3,
-  stale: 2,
-  idle: 1,
+  error: 4,
+  live: 3,
+  idle: 2,
+  stale: 1,
   unknown: 0,
 };
 
@@ -639,54 +651,83 @@ export async function deriveRunRow(
     }
   }
 
-  // #7.Q28 + #7.Q35 — ticker-snapshot consultation. Two corrections:
-  //
-  // Q28 (live-during-active): per-session "between turns" idleness
-  // shouldn't classify a run that's still being dispatched as `idle`.
-  // Empirical: a 60-min orchestrator-worker run shows every session as
-  // `idle` whenever the workers complete a turn between dispatches
-  // (their trailing assistant has time.completed set). The per-session
-  // classifier is correct at that microsecond; the run-level answer
-  // isn't. Promote to `live` whenever a non-stopped ticker exists.
-  //
-  // Q35 (failure-vs-clean stop distinction): post-Q27, MessageAbortedError
-  // sessions classify as `idle`. But the ticker can stop for many reasons
-  // — graceful (wall-clock-cap / commits-cap / todos-cap / manual /
-  // auto-idle / operator-hard-stop) or failure (opencode-frozen /
-  // zen-rate-limit / replan-loop-exhausted). Without distinguishing,
-  // a silently-frozen run looks identical to a successfully-capped one
-  // in the picker. Promote `idle` → `error` when the stopReason is in
-  // the failure set so the picker's dot color tells truth.
-  //
-  // Dynamic import keeps swarm-registry decoupled from the ticker
-  // module's globalThis registry.
-  if (status === 'idle') {
-    try {
-      // Read-only path: import directly from auto-ticker/state instead
-      // of the heavy auto-ticker index. The index transitively pulls
-      // tick.ts → coordinator → planner — ~1100 unnecessary modules
-      // that Next.js dev compiles into every snapshot/runs-list call.
-      // Same fix shape as the snapshot/retro routes.
-      const { getTickerSnapshot } = await import('./blackboard/auto-ticker/state');
-      const ticker = getTickerSnapshot(meta.swarmRunID);
-      if (ticker) {
-        if (!ticker.stopped) {
-          status = 'live';
-        } else if (
-          ticker.stopReason === 'opencode-frozen' ||
+  status = await reconcileWithTicker(meta.swarmRunID, status);
+  return { status, lastActivityTs, costTotal, tokensTotal };
+}
+
+// Apply the alive/stopped axis from the auto-ticker on top of a session-
+// fold status. The ticker is authoritative on liveness — sessions only see
+// their own tail and can't tell "between dispatches" from "done forever".
+//
+//   ticker.stopped:
+//     - reason in failure-set (opencode-frozen / zen-rate-limit /
+//       replan-loop-exhausted) → 'error'  (#7.Q35)
+//     - any session reported a real error → 'error'
+//     - else → 'stale' (cleanly stopped: cap-stop, manual stop, normal
+//       completion, MessageAbortedError everywhere)
+//   ticker not stopped:
+//     - 'error' from session fold survives (live-with-issue)
+//     - 'live' from session fold survives (actively producing)
+//     - else (idle/stale/unknown) → 'idle' (alive but quiet — between
+//       dispatches, planner waiting; was previously force-promoted to
+//       'live' by the old Q28 logic, which hid the quiet state)
+//   no ticker info available:
+//     - keep error / live as-is
+//     - idle from session fold → 'stale' (no ticker = run is over;
+//       a completed-cleanly trail without a ticker reads as 'done',
+//       not 'alive-and-quiet')
+//
+// Dynamic import keeps swarm-registry decoupled from the ticker
+// module's globalThis registry.
+async function reconcileWithTicker(
+  swarmRunID: string,
+  sessionFoldStatus: SwarmRunStatus,
+): Promise<SwarmRunStatus> {
+  let tickerSeen = false;
+  let tickerRunning = false;
+  let tickerFailureStop = false;
+  try {
+    // Read-only path: import directly from auto-ticker/state instead
+    // of the heavy auto-ticker index. The index transitively pulls
+    // tick.ts → coordinator → planner — ~1100 unnecessary modules
+    // that Next.js dev compiles into every snapshot/runs-list call.
+    // Same fix shape as the snapshot/retro routes.
+    const { getTickerSnapshot } = await import('./blackboard/auto-ticker/state');
+    const ticker = getTickerSnapshot(swarmRunID);
+    if (ticker) {
+      tickerSeen = true;
+      tickerRunning = !ticker.stopped;
+      tickerFailureStop =
+        ticker.stopped &&
+        (ticker.stopReason === 'opencode-frozen' ||
           ticker.stopReason === 'zen-rate-limit' ||
-          ticker.stopReason === 'replan-loop-exhausted'
-        ) {
-          status = 'error';
-        }
+          ticker.stopReason === 'replan-loop-exhausted');
+    }
+  } catch {
+    // ticker registry unreachable — fall through to no-ticker case below.
+  }
+
+  let status = sessionFoldStatus;
+
+  if (tickerSeen) {
+    if (tickerRunning) {
+      if (status !== 'error' && status !== 'live') {
+        status = 'idle';
       }
-    } catch {
-      // ticker registry unreachable — keep idle. The picker already
-      // tolerates this case via its existing classifier.
+    } else {
+      if (tickerFailureStop) {
+        status = 'error';
+      } else if (status !== 'error') {
+        status = 'stale';
+      }
+    }
+  } else {
+    if (status === 'idle') {
+      status = 'stale';
     }
   }
 
-  return { status, lastActivityTs, costTotal, tokensTotal };
+  return status;
 }
 
 // Per-session token/cost rows + the aggregate, in one fan-out. Separate from
@@ -766,8 +807,15 @@ export async function deriveRunTokens(
     }
   });
 
+  // Reconcile the totals.status against the ticker so the breakdown
+  // and the picker show the same alive/stopped axis. Per-session statuses
+  // in `sessions` stay raw — callers visualizing the dashboard want the
+  // pre-reconciliation truth (idle = "this session has completed its turn"
+  // is meaningful at the per-session row even when the run is still live).
+  const reconciledStatus = await reconcileWithTicker(meta.swarmRunID, status);
+
   return {
-    totals: { tokens: tokensTotal, cost: costTotal, lastActivityTs, status },
+    totals: { tokens: tokensTotal, cost: costTotal, lastActivityTs, status: reconciledStatus },
     sessions,
   };
 }

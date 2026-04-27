@@ -31,9 +31,16 @@ const REPO_COL_WIDTH = 200;
 
 // Status color priority when a day has multiple runs. Reads top-to-bottom:
 // a single failure in the group escalates the cell tone — status is a
-// signal, not a vote.
-const STATUS_PRIORITY: SwarmRunStatus[] = ['error', 'stale', 'live', 'idle', 'unknown'];
+// signal, not a vote. Re-ordered 2026-04-26 (#176): stale (cleanly stopped)
+// no longer outranks live/idle — under the new schema stale means "done,
+// no concern" rather than "zombie hang".
+const STATUS_PRIORITY: SwarmRunStatus[] = ['error', 'live', 'idle', 'stale', 'unknown'];
 
+// Tone palette for the day-cell. Distinct from the picker's mint-pulse
+// scheme: this view emphasizes "is anyone burning compute right now" so
+// live = amber (actively-spending), idle = mint (alive but calm), stale
+// = fog (done, neutral). The picker's mental model is "what's still
+// attached to compute"; this view's is "who burned compute today."
 const STATUS_TONE: Record<SwarmRunStatus, string> = {
   live: 'bg-amber',
   idle: 'bg-mint',

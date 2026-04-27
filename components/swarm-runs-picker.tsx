@@ -29,14 +29,24 @@ import { IconSearch } from './icons';
 // Color + dot styling per status bucket. Lives alongside the picker so the
 // topbar status dot can import the same table — one source of truth for
 // what "live" looks like visually.
+//
+// 2026-04-26 (#176) — visual realigned to the renamed schema:
+//   live  = mint pulse        — actively producing tokens
+//   idle  = mint solid (calm) — alive but quiet (between dispatches)
+//   error = rust              — has issue (live or stopped, both red)
+//   stale = fog-500           — stopped (was amber; the muted gray reads
+//                                "done, no concern" rather than warning)
+//   unknown = fog-700         — couldn't tell
+// Pre-attentive rule: pulsing = actively burning compute; solid mint =
+// alive but calm; gray = stopped; red = attention.
 export const STATUS_VISUAL: Record<
   SwarmRunStatus,
   { dot: string; label: string; rank: number; tone: string }
 > = {
   live:    { dot: 'bg-mint animate-pulse', label: 'live',    rank: 0, tone: 'text-mint' },
-  stale:   { dot: 'bg-amber',              label: 'stale',   rank: 1, tone: 'text-amber' },
+  idle:    { dot: 'bg-mint',               label: 'idle',    rank: 1, tone: 'text-mint' },
   error:   { dot: 'bg-rust',               label: 'error',   rank: 2, tone: 'text-rust' },
-  idle:    { dot: 'bg-fog-500',            label: 'idle',    rank: 3, tone: 'text-fog-400' },
+  stale:   { dot: 'bg-fog-500',            label: 'stale',   rank: 3, tone: 'text-fog-400' },
   unknown: { dot: 'bg-fog-700',            label: '—',       rank: 4, tone: 'text-fog-700' },
 };
 
@@ -132,23 +142,29 @@ function PickerPanel({
           return haystack.includes(q);
         })
       : rows;
-    // #7.Q29 — sort live runs to the top, then strict newest-first by
-    // createdAt for everything else. The original "rank → createdAt
-    // tiebreak" shape buried newer runs under older same-rank runs:
-    // a stale run from yesterday would sit above an idle run from
-    // today, because stale outranks idle. That broke the picker for
-    // post-validation review (today's clean idle runs hidden behind
-    // yesterday's stale residue). Live still wins because in-flight
-    // is what the user almost always wants first; status dot color
-    // still communicates the bucket for non-live rows.
+    // #7.Q29 — sort actively-alive runs to the top, then strict newest-
+    // first by createdAt for everything else. Three-bucket: live (0) →
+    // idle (1) → everything else (2). The "alive" cluster (live + idle)
+    // are the ones still consuming compute or about to; the user wants
+    // to see them ahead of stopped/done runs. Within bucket we tiebreak
+    // on createdAt desc so today's runs always sit above yesterday's
+    // residue regardless of whose status is "louder."
     return [...base].sort((a, b) => {
-      const aLive = a.status === 'live' ? 0 : 1;
-      const bLive = b.status === 'live' ? 0 : 1;
-      if (aLive !== bLive) return aLive - bLive;
+      const aBucket = a.status === 'live' ? 0 : a.status === 'idle' ? 1 : 2;
+      const bBucket = b.status === 'live' ? 0 : b.status === 'idle' ? 1 : 2;
+      if (aBucket !== bBucket) return aBucket - bBucket;
       return b.meta.createdAt - a.meta.createdAt;
     });
   }, [rows, query]);
 
+  // "Alive" = live + idle (both have a running ticker). "Live" is
+  // actively-producing only. The header surfaces alive — that's what
+  // the user wants to know when scanning ("how many runs are still
+  // attached to compute?"); the dot color tells them which sub-state.
+  const aliveCount = useMemo(
+    () => rows.filter((r) => r.status === 'live' || r.status === 'idle').length,
+    [rows]
+  );
   const liveCount = useMemo(
     () => rows.filter((r) => r.status === 'live').length,
     [rows]
@@ -160,8 +176,8 @@ function PickerPanel({
       ? 'scanning…'
       : query
         ? `${filtered.length} of ${rows.length}`
-        : liveCount > 0
-          ? `${liveCount} live · ${rows.length} total`
+        : aliveCount > 0
+          ? `${liveCount} live · ${aliveCount} alive · ${rows.length} total`
           : `${rows.length} ${rows.length === 1 ? 'run' : 'runs'}`;
 
   return (

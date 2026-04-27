@@ -328,21 +328,34 @@ export interface SwarmRunResponse {
 // --- run lifecycle status ---------------------------------------------------
 
 // Classification of a run's execution state, derived server-side from the
-// tail of the run's primary session messages. Not persisted — this is a
-// live derivation, valid only for the moment the list endpoint replies.
+// tail of the run's primary session messages, then reconciled against the
+// auto-ticker's authoritative liveness. Not persisted — this is a live
+// derivation, valid only for the moment the list endpoint replies.
 //
-//   live     — most recent assistant turn is in-flight (no completed, no
-//              error, recent activity). The run is actively producing.
-//   idle     — most recent assistant turn completed cleanly. The run is
-//              between turns; may still accept more prompts.
-//   error    — most recent assistant turn carries an error. Needs
-//              attention; not automatically retried.
-//   stale    — in-flight assistant turn older than the staleness threshold.
-//              Opencode can leave zombie turns (no completed, no error) if
-//              a session crashes mid-turn; we surface these separately so
-//              users know the run isn't actually progressing.
-//   unknown  — primary session has no messages yet, or the status probe
-//              itself failed. Not an error — just "we couldn't tell."
+// The base axis is alive vs stopped. Within "alive" the schema also
+// captures attention signals (issue showing, no current activity) that
+// the user wants surfaced separately so the picker isn't a guessing game.
+//
+//   live     — ticker is running AND at least one session is currently
+//              producing tokens. The run is actively consuming compute.
+//   idle     — ticker is running BUT no session is currently producing.
+//              Common between dispatches (planner sweep waiting, all
+//              workers between turns). The run is alive but quiet —
+//              this is a flag-flavor of live.
+//   error    — at least one session reported a real error (not a clean
+//              MessageAbortedError). Needs attention. Can layer on top
+//              of live OR stale — error wins the priority either way.
+//   stale    — ticker is stopped (cap-stop, manual stop, normal completion,
+//              cleanly aborted). The run is no longer consuming compute.
+//              Includes legacy zombie sessions that hung past the threshold.
+//   unknown  — couldn't probe any session, or run has no sessions yet.
+//              Not an error — just "we couldn't tell."
+//
+// Renamed 2026-04-26 (ledger #176): the previous schema had `idle` =
+// "completed cleanly" and `stale` = "zombie only". Users reported
+// confusion (an "idle" run reads as still-alive, but most idle runs in
+// the picker were actually completed). The new mental model: alive vs
+// stopped is the primary axis, with `idle`/`error` as flag-flavors.
 export type SwarmRunStatus = 'live' | 'idle' | 'error' | 'stale' | 'unknown';
 
 // One row in GET /api/swarm/run's response. `meta` is the persisted record;

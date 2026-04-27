@@ -20,6 +20,11 @@ import type { SwarmRunListRow, SwarmRunStatus } from '@/lib/swarm-run-types';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { Tooltip } from './ui/tooltip';
 
+// Tone palette for the repo runs list. Mirrors projects-matrix: this
+// view emphasizes "is anyone burning compute right now" so live = amber
+// (actively-spending), idle = mint (alive but quiet), stale = fog
+// (stopped, neutral). The picker uses a different palette (live = mint
+// pulse) because its mental model is "what's still attached to compute."
 const STATUS_TONE: Record<SwarmRunStatus, string> = {
   live: 'text-amber',
   idle: 'text-mint',
