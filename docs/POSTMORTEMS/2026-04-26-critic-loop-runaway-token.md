@@ -132,15 +132,16 @@ indefinitely should:
 2. Assert that `abortSessionServer` is called with the session ID.
 3. Assert the return value is `{ ok: false, reason: 'timeout' }`.
 
-Synthetic test is queued — not blocking the fix because the production
-probe is sufficient and already-recorded stress-test runs serve as
-historical baselines.
+Synthetic test landed 2026-04-26 late: `lib/server/blackboard/
+coordinator/__tests__/wait-deadline-abort.test.ts` (commit bad507d).
+Three cases as outlined above; runs in ~4s; documented in the ledger
+below.
 
 ## 5 · Ledger
 
 | Fix | Status | Shipped commit | Verified against |
 |---|---|---|---|
-| F1 abort-on-timeout | **SHIPPED** | (this commit) | pending — re-run a critic-loop stress with a token-heavy directive and check for the new log line |
+| F1 abort-on-timeout | **VERIFIED (synthetic)** | 209cbf1 + bad507d | `lib/server/blackboard/coordinator/__tests__/wait-deadline-abort.test.ts` — 3 cases: (1) deadline + in-progress → `abortSessionServer` called, (2) deadline + all completed → no abort, (3) no assistants → no abort. Test runs in ~4s. Live re-validation deferred to natural critic-loop runs that hit `ITERATION_WAIT_MS` (will surface organically). The synthetic test exercises the exact code path (waitForSessionIdle's deadline branch + lastSeenInProgress flag + abortSessionServer call); a live run adds wire-call confirmation but doesn't change which branch executes. |
 
 Re-validation cadence: walk this probe against any future critic-loop
 or long-deadline run. Add VERIFIED annotation with run ID + log-line
