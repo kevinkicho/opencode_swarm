@@ -123,12 +123,18 @@ export function teamSizeWarningMessage(
 // pre-fill them. Caller-supplied values always win — this only fires
 // for unset fields. See route.ts::applyPatternDefaults.
 //
-// Three ollama-tier models power the defaults after 2026-04-25 evening
-// directives:
-//   glm-5.1:cloud          — planner seat only (blackboard session[0]);
-//                            fast structured-JSON for the planning sweep
+// Three ollama-tier models power the defaults:
+//   deepseek-v4-pro:cloud  — planner seat only (blackboard session[0],
+//                            orchestrator-worker session[0]); fast
+//                            structured-JSON for the planning sweep.
+//                            Replaced glm-5.1:cloud as the default
+//                            planner 2026-04-27 per user. glm-5.1 is
+//                            still in the catalog and selectable
+//                            manually; this swap only changes the
+//                            unset-teamModels[0] default.
 //   gemma4:31b-cloud       — every team / critic / verifier / drafter /
-//                            judge seat across every pattern
+//                            judge seat across every pattern (per
+//                            2026-04-25 evening directive)
 //   nemotron-3-super:cloud — dedicated auditor seat on blackboard runs
 //                            (enableAuditorGate default-on for that
 //                            pattern). Strongest reasoning tier for the
@@ -139,7 +145,7 @@ export function teamSizeWarningMessage(
 // orchestrator for orchestrator-worker, judge for debate-judge,
 // worker for critic-loop. Convention defined in each pattern's
 // orchestrator module; this table matches them.
-const GLM = 'ollama/glm-5.1:cloud';
+const PLANNER = 'ollama/deepseek-v4-pro:cloud';
 const GEMMA = 'ollama/gemma4:31b-cloud';
 const NEMOTRON = 'ollama/nemotron-3-super:cloud';
 
@@ -177,14 +183,17 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // session[0] = planner (display-only role); sessions[1..N-1] = workers.
     // Auditor lives in its own session (enableAuditorGate default-on per
     // 2026-04-25 evening directive). Model assignment per directive:
-    //   planner  → GLM     (fast structured-JSON for the planner sweep)
+    //   planner  → PLANNER (deepseek-v4-pro:cloud — fast structured-JSON
+    //                       for the planner sweep, swapped from glm-5.1
+    //                       2026-04-27 per user; glm-5.1 still selectable
+    //                       manually in the catalog)
     //   workers  → GEMMA
     //   critic   → GEMMA
     //   verifier → GEMMA
     //   auditor  → NEMOTRON (strongest reasoning tier, batch-rare cadence
     //                        — every K commits + tier escalation + run end
     //                        — so its slower latency is amortized)
-    teamModels: (n) => [GLM, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
+    teamModels: (n) => [PLANNER, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
     criticModel: GEMMA,
     verifierModel: GEMMA,
     auditorModel: NEMOTRON,
@@ -219,7 +228,8 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // sessions[1..N-1] = workers.
     //
     // Model rationale (2026-04-26 update — Q34 root-cause fix):
-    //   orchestrator → GLM (same as blackboard's planner seat)
+    //   orchestrator → PLANNER (same as blackboard's planner seat;
+    //                            deepseek-v4-pro:cloud as of 2026-04-27)
     //   workers      → GEMMA
     //
     // History: was NEMOTRON pre-2026-04-25 (step-loop cost issue), then
@@ -239,7 +249,7 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // orchestrator IS a planner seat; it should match blackboard's
     // session[0] model. Workers stay on GEMMA — they don't run the
     // planner sweep, just claim/implement todos.
-    teamModels: (n) => [GLM, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
+    teamModels: (n) => [PLANNER, ...Array(Math.max(0, n - 1)).fill(GEMMA)],
   },
   'debate-judge': {
     // Judge + generators all on GEMMA per 2026-04-25 evening directive.

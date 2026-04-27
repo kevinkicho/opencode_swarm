@@ -92,7 +92,7 @@ export interface ModelRef {
   id: string;
   label: string;
   provider: Provider;
-  family: 'claude' | 'gpt' | 'gemini' | 'qwen' | 'kimi' | 'glm' | 'mimo' | 'minimax' | 'nemotron' | 'gemma' | 'mistral';
+  family: 'claude' | 'gpt' | 'gemini' | 'qwen' | 'kimi' | 'glm' | 'mimo' | 'minimax' | 'nemotron' | 'gemma' | 'mistral' | 'deepseek';
   pricing?: { input: number; output: number };
   limitTag?: string;
 }

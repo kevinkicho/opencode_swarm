@@ -115,6 +115,18 @@ export const modelCatalog: ModelRef[] = [
     limitTag: 'ollama max',
   },
   {
+    // Default planner/orchestrator-seat model as of 2026-04-27
+    // (replaces ollama/glm-5.1:cloud per user). glm-5.1 stays in
+    // the catalog above and is still selectable manually; new runs
+    // that don't override teamModels[0] now get deepseek instead.
+    id: 'ollama/deepseek-v4-pro:cloud',
+    label: 'deepseek-v4-pro',
+    provider: 'ollama',
+    family: 'deepseek',
+    pricing: { input: 0, output: 0 },
+    limitTag: 'ollama max',
+  },
+  {
     id: 'ollama/mistral-large-3:675b-cloud',
     label: 'mistral-large-3:675b',
     provider: 'ollama',

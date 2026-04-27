@@ -64,6 +64,7 @@ export const zenModels: ZenModel[] = [
   { id: 'ollama/gemma4:31b-cloud',            label: 'gemma4 31b (ollama)',          family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
   { id: 'ollama/kimi-k2.6:cloud',             label: 'kimi k2.6 (ollama)',           family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
   { id: 'ollama/glm-5.1:cloud',               label: 'glm 5.1 (ollama)',             family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
+  { id: 'ollama/deepseek-v4-pro:cloud',       label: 'deepseek v4 pro (ollama)',     family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
   { id: 'ollama/mistral-large-3:675b-cloud',  label: 'mistral large 3 675b (ollama)', family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
 ];
 
