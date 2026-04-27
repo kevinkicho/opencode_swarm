@@ -1,8 +1,9 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useMutation } from '@tanstack/react-query';
 import { Modal } from './ui/modal';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
@@ -45,13 +46,24 @@ export function SpawnAgentModal({
   directory: string | null;
 }) {
   const router = useRouter();
-  const [modelId, setModelId] = useState<string>(zenModels[0].id);
-  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
-  const [name, setName] = useState('');
-  const [directive, setDirective] = useState('');
-  const [spawnState, setSpawnState] = useState<SpawnState>('idle');
+  // Form state consolidated — HARDENING_PLAN.md#C8 useState-count reduction.
+  // 7 useState pairs → 1 form object + 1 mode + 1 mutation (no useState).
+  const [form, setForm] = useState<{
+    modelId: string;
+    selectedSkills: Set<string>;
+    name: string;
+    directive: string;
+  }>({
+    modelId: zenModels[0].id,
+    selectedSkills: new Set(),
+    name: '',
+    directive: '',
+  });
+  const { modelId, selectedSkills, name, directive } = form;
+  const setModelId = (v: string) => setForm((p) => ({ ...p, modelId: v }));
+  const setName = (v: string) => setForm((p) => ({ ...p, name: v }));
+  const setDirective = (v: string) => setForm((p) => ({ ...p, directive: v }));
   const [spawnMode, setSpawnMode] = useState<SpawnMode>('idle');
-  const [spawnError, setSpawnError] = useState<string | null>(null);
 
   const autoId = 'agent-03';
   const trimmedName = name.trim();
@@ -65,23 +77,59 @@ export function SpawnAgentModal({
     !!directory &&
     (spawnMode === 'idle' || trimmedDirective.length > 0);
 
+  // HARDENING_PLAN.md#E9 — useMutation replaces the prior 3-state flow
+  // (spawnState / spawnError + try/catch). TanStack manages pending +
+  // success + error uniformly; the verified→navigate handoff stays as a
+  // setTimeout so the verified UI render persists across the transition.
+  const spawnMutation = useMutation({
+    mutationFn: async (input: {
+      title: string | undefined;
+      activate: boolean;
+    }): Promise<{ id: string }> => {
+      if (!directory) throw new Error('no directory');
+      const session = await createSessionBrowser(directory, input.title);
+      if (input.activate && trimmedDirective) {
+        await postSessionMessageBrowser(session.id, directory, trimmedDirective);
+      }
+      return session;
+    },
+    onSuccess: (session) => {
+      // Short pause lets the verified state render before navigation so the
+      // user sees the transition instead of a modal that just vanishes.
+      setTimeout(() => {
+        onClose();
+        router.push(`/?session=${encodeURIComponent(session.id)}`);
+      }, 350);
+    },
+  });
+  const spawnState: SpawnState = spawnMutation.isPending
+    ? 'verifying'
+    : spawnMutation.isError
+      ? 'failed'
+      : spawnMutation.isSuccess
+        ? 'verified'
+        : 'idle';
+  const spawnError = spawnMutation.error
+    ? (spawnMutation.error as Error).message
+    : null;
+
   useEffect(() => {
-    if (open) {
-      setSpawnState('idle');
-      setSpawnError(null);
-    }
+    if (open) spawnMutation.reset();
+    // Effect intentionally re-runs only on `open` so a manual mutation
+    // reset doesn't loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const toggleSkill = (id: string) => {
-    setSelectedSkills((prev) => {
-      const next = new Set(prev);
+  const toggleSkill = useCallback((id: string) => {
+    setForm((prev) => {
+      const next = new Set(prev.selectedSkills);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      return next;
+      return { ...prev, selectedSkills: next };
     });
-  };
+  }, []);
 
-  const handleSpawn = async () => {
+  const handleSpawn = () => {
     if (spawnState === 'verifying' || !canSpawn || !directory) return;
     // Title priority: explicit name → first line of directive (capped) → let
     // opencode pick its default. Keeps the session picker readable.
@@ -89,25 +137,7 @@ export function SpawnAgentModal({
     const derivedTitle =
       firstLine.length > 80 ? firstLine.slice(0, 77).trimEnd() + '…' : firstLine;
     const title = trimmedName || derivedTitle || undefined;
-
-    setSpawnState('verifying');
-    setSpawnError(null);
-    try {
-      const session = await createSessionBrowser(directory, title);
-      if (spawnMode === 'active' && trimmedDirective) {
-        await postSessionMessageBrowser(session.id, directory, trimmedDirective);
-      }
-      setSpawnState('verified');
-      // Short pause lets the verified state render before navigation so the
-      // user sees the transition instead of a modal that just vanishes.
-      setTimeout(() => {
-        onClose();
-        router.push(`/?session=${encodeURIComponent(session.id)}`);
-      }, 350);
-    } catch (err) {
-      setSpawnState('failed');
-      setSpawnError((err as Error).message);
-    }
+    spawnMutation.mutate({ title, activate: spawnMode === 'active' });
   };
 
   return (

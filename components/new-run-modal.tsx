@@ -49,6 +49,7 @@ import {
   PriceCell,
   InitiateTooltip,
 } from './new-run/sub-components';
+import { useNewRunForm } from './new-run/use-new-run-form';
 
 // Helper types + constants moved to ./new-run/helpers.ts
 // Visual subcomponents moved to ./new-run/sub-components.tsx
@@ -57,17 +58,23 @@ import {
 // scrolling past hundreds of lines of presentation primitives.
 
 export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [sourceValue, setSourceValue] = useState('');
-  const [workspacePath, setWorkspacePath] = useState('');
-  const [pattern, setPattern] = useState<SwarmPattern>('none');
-  const [teamCounts, setTeamCounts] = useState<Record<string, number>>({});
-  const [directive, setDirective] = useState('');
-  const [unbounded, setUnbounded] = useState(true);
-  const [costCap, setCostCap] = useState(5);
-  const [minutesCap, setMinutesCap] = useState(15);
-  const [branchStrategy, setBranchStrategy] = useState<BranchStrategy>('push-new-branch');
-  const [branchName, setBranchName] = useState<string>(generateRunId);
-  const [startMode, setStartMode] = useState<StartMode>('dry-run');
+  // Form state is consolidated via useNewRunForm (11 fields → 1 reducer
+  // hook). Local setter aliases below preserve the existing JSX call
+  // sites without churn. HARDENING_PLAN.md#C8 — this drops the modal's
+  // useState count from 13 to 3 (form + recipesOpen + copiedPattern;
+  // launching comes from launchMutation.isPending).
+  const { form, setField, bumpTeamCount, clearTeam } = useNewRunForm();
+  const { sourceValue, workspacePath, pattern, teamCounts, directive, unbounded, costCap, minutesCap, branchStrategy, branchName, startMode } = form;
+  const setSourceValue = (v: string) => setField('sourceValue', v);
+  const setWorkspacePath = (v: string) => setField('workspacePath', v);
+  const setPattern = (v: SwarmPattern) => setField('pattern', v);
+  const setDirective = (v: string) => setField('directive', v);
+  const setUnbounded = (v: boolean) => setField('unbounded', v);
+  const setCostCap = (v: number) => setField('costCap', v);
+  const setMinutesCap = (v: number) => setField('minutesCap', v);
+  const setBranchStrategy = (v: BranchStrategy) => setField('branchStrategy', v);
+  const setBranchName = (v: string) => setField('branchName', v);
+  const setStartMode = (v: StartMode) => setField('startMode', v);
   const [recipesOpen, setRecipesOpen] = useState(false);
   const [copiedPattern, setCopiedPattern] = useState<SwarmPattern | null>(null);
   const router = useRouter();
@@ -201,19 +208,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     launchMutation.mutate(body);
   };
 
-  const bumpCount = (id: string, delta: number) => {
-    setTeamCounts((prev) => {
-      const current = prev[id] ?? 0;
-      const next = Math.max(0, Math.min(12, current + delta));
-      if (next === 0) {
-        const { [id]: _drop, ...rest } = prev;
-        return rest;
-      }
-      return { ...prev, [id]: next };
-    });
-  };
-
-  const clearTeam = () => setTeamCounts({});
+  const bumpCount = (id: string, delta: number) => bumpTeamCount(id, delta);
 
   const browseForWorkspace = async () => {
     const picker = (window as unknown as {
