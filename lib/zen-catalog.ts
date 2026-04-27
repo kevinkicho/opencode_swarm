@@ -59,7 +59,7 @@ export const zenModels: ZenModel[] = [
   // the `ollama` Provider, and `priceFor` in pricing.ts returns 0
   // (subscription). User must configure opencode.json with an
   // `ollama` provider block before these route cleanly. See
-  // docs/ARCHITECTURE.md §ollama tier.
+  // docs/DESIGN.md §ollama tier.
   { id: 'ollama/nemotron-3-super:cloud',      label: 'nemotron 3 super (ollama)',    family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
   { id: 'ollama/gemma4:31b-cloud',            label: 'gemma4 31b (ollama)',          family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },
   { id: 'ollama/kimi-k2.6:cloud',             label: 'kimi k2.6 (ollama)',           family: 'ollama', in: 0, out: 0, cacheRead: 0, cacheWrite: 0 },

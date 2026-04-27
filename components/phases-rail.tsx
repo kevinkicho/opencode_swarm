@@ -12,7 +12,6 @@
 // complete — synthesizing", "Synthesis complete — execution started".
 // Each banner renders for ~20s of continuous phase-active state.
 //
-// Spec frozen in docs/PATTERN_DESIGN/deliberate-execute.md §3.
 
 import clsx from 'clsx';
 import { useMemo, useRef } from 'react';
@@ -25,7 +24,6 @@ import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 import { countLines, turnText } from './rails/_shared';
 
-// HARDENING_PLAN.md#C15 — `turnText` and `countLines` lifted to
 // components/rails/_shared.ts.
 
 // Token-jaccard convergence, same as council-rail. Kept inline so the
@@ -254,7 +252,7 @@ export function PhasesRail({
 // stack. Phase chronologically appends content (deliberation rounds
 // → synthesis row → execution counters), so bottom-stick lands the
 // user on the active phase. Content signal: deliberation count +
-// synthesis presence + execution total. (IMPLEMENTATION_PLAN 6.7+6.8.)
+// synthesis presence + execution total.
 function PhasesScrollBody({
   deliberation,
   synthesis,

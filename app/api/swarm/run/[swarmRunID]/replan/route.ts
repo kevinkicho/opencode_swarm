@@ -1,4 +1,3 @@
-// Re-plan on-demand endpoint. PATTERN_DESIGN/orchestrator-worker.md I3.
 //
 // POST /api/swarm/run/:swarmRunID/replan
 //   body: {} (or omitted)

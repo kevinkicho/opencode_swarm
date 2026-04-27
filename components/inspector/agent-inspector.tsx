@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C14 — inspector/sub-components.tsx decomposition.
 //
 // Per-agent inspector panel + its 3 helpers (ModelSwapRow / ModelPicker /
 // BudgetPanel). Lifted from sub-components.tsx so the main file isn't

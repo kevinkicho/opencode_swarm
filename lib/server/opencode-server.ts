@@ -102,7 +102,6 @@ export async function createSessionServer(
 // prototype scale each call is a few KB, acceptable for a 4s poll over a
 // small ledger.
 //
-// HARDENING_PLAN.md#E1 — in-flight + 500ms TTL dedup. Pre-fix: the snapshot
 // route fired Promise.all([deriveRunRowCached, deriveRunTokens]); both fan
 // out to deriveSessionRow → getSessionMessagesServer for the SAME sessionIDs.
 // For an 8-session run that's 16 opencode probes when 8 would suffice.
@@ -261,7 +260,7 @@ export async function postSessionMessageServer(
   // Two layers (2026-04-24 evening):
   //   (1) Text-only check on the new prompt — catches a single
   //       oversized prompt at dispatch time
-  //   (2) Conversation-context check (IMPLEMENTATION_PLAN 6.10) —
+  //   (2) Conversation-context check —
   //       fetches the session's latest assistant message and uses
   //       its `tokens.input` as the baseline for what opencode will
   //       assemble on the NEXT call (system prompt + tool defs +

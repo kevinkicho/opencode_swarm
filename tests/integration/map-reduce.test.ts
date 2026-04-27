@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D4 #4f — map-reduce pattern integration test.
 //
 // Promised by 2026-04-25 postmortem F3. Scaffold until validated.
 

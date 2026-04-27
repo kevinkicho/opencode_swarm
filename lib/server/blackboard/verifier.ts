@@ -21,7 +21,7 @@
 //   own Playwright script via bash + npx playwright inside its turn;
 //   we don't ship test code from our side.
 //
-// See SWARM_PATTERNS.md "Tiered execution" companion layer #2 and
+// See "Tiered execution" companion layer #2 and
 // memory/project_ambition_ratchet.md for the design decision context.
 
 import 'server-only';
@@ -61,7 +61,6 @@ export interface VerifierReviewResult {
 
 // Per-run mutex (same pattern as critic.ts).
 //
-// HARDENING_PLAN.md#D2 — pinned on globalThis so HMR doesn't reset
 // the lock map mid-flight.
 const VERIFIER_LOCKS_KEY = Symbol.for('opencode_swarm.verifierLocks.v1');
 function verifierLocks(): Map<string, Promise<unknown>> {

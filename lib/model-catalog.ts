@@ -81,7 +81,7 @@ export const modelCatalog: ModelRef[] = [
   // show the split by message volume, not dollars. Added 2026-04-24
   // alongside the three-tier stance reversal. User must configure
   // opencode.json to route the `ollama/` model IDs to an ollama provider
-  // endpoint — see docs/ARCHITECTURE.md.
+  // endpoint — see docs/DESIGN.md.
   {
     id: 'ollama/nemotron-3-super:cloud',
     label: 'nemotron-3-super',

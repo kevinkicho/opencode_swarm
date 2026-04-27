@@ -1,5 +1,5 @@
 // Orchestrator-worker pattern — pilot for the hierarchical branch
-// re-opened 2026-04-23 (see DESIGN.md §1, SWARM_PATTERNS.md §5).
+// re-opened 2026-04-23 (see DESIGN.md §1, ).
 //
 // Shape: N sessions under one run. Session 0 is the orchestrator — it
 // owns the mission, plans the work, and re-strategizes mid-run.

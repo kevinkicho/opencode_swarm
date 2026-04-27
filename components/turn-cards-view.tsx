@@ -27,7 +27,6 @@ import type { Agent } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 import { compact } from '@/lib/format';
-// HARDENING_PLAN.md#C14 — TurnCardRow + format helpers + accentStripe
 // + statusGlyph/Tone + CARD_COLLAPSED_HEIGHT lifted to
 // ./turn-cards-view/turn-card-row.tsx so this file stays focused on
 // the AgentColumn + virtualization machinery. The main file imports

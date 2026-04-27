@@ -1,6 +1,5 @@
 // Visual-fix audit. Loads the page in headless Chromium and runs
 // targeted assertions for each "SHIPPED-UNVERIFIED" item from
-// IMPLEMENTATION_PLAN Phase 7. Output is per-item PASS / FAIL /
 // INDETERMINATE with the specific evidence used.
 //
 //   node scripts/_audit-visual-fixes.mjs <runID>

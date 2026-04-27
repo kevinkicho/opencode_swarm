@@ -1,5 +1,4 @@
 // Coordinator tick endpoint — one round of "pick an open todo + idle
-// session, claim it, send work, finalize". Step 3b/3c of SWARM_PATTERNS.md §1.
 //
 // POST /api/_debug/swarm-run/:swarmRunID/tick
 //   body: { timeoutMs?: number }
@@ -8,7 +7,6 @@
 // the timeout fires. The auto-ticker drives progress in production runs;
 // this route is for smoke-scripts/curl ops debugging only.
 //
-// HARDENING_PLAN.md#C9 / FU.5 — moved from /api/swarm/run/[id]/board/tick
 // to /api/_debug/swarm-run/[id]/tick 2026-04-26 because this is an
 // ops-only endpoint, not used from the UI. Path matches the sweep
 // endpoint's _debug-namespace move.
@@ -31,7 +29,6 @@ export const runtime = 'nodejs';
 const MIN_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 10 * 60_000;
 
-// HARDENING_PLAN.md#C5 — `TickBody` lifted to lib/api-types.ts as
 // BoardTickBody.
 type TickBody = BoardTickBody;
 

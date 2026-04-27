@@ -1,5 +1,5 @@
 // Plan revisions store + delta computation. Backs the orchestrator-
-// worker `strategy` tab (PATTERN_DESIGN/orchestrator-worker.md §3 +
+// worker `strategy` tab ( +
 // I2). Logged at the end of every `runPlannerSweep`, regardless of
 // pattern — the strategy tab consumes it for orchestrator-worker
 // runs, but the data is pattern-agnostic so re-sweeps on any pattern
@@ -348,7 +348,6 @@ export function recordPlanRevision(input: {
       input.planMessageId,
       createdAt,
     );
-  // HARDENING_PLAN.md#E4 — fan the new revision out on the bus so the
   // strategy tab's SSE consumer (useStrategy) can update without
   // polling. lastInsertRowid widens to bigint on big rowids; coerce to
   // number — the strategy table's id column is INTEGER PRIMARY KEY so

@@ -31,7 +31,6 @@ export async function runPeriodicSweep(state: TickerState): Promise<void> {
   if (state.stopped) return;
   if (state.resweepInFlight) return;
 
-  // PATTERN_DESIGN/orchestrator-worker.md I1 — same cap as the
   // tier-escalation path. A long-running orchestrator-worker run
   // can rack up sweeps via either path; the cap counts both.
   if (await orchestratorReplanCapHit(state.swarmRunID)) {
@@ -89,7 +88,6 @@ export async function runPeriodicSweep(state: TickerState): Promise<void> {
       // there's active work, the planner-is-quiet state is normal
       // (workers are still chewing through the last sweep's output).
       //
-      // PATTERN_DESIGN/blackboard.md I2 — retry-exhausted ratchet
       // re-kick. Open items carrying a `[retry:N]` note where N≥2
       // are workers-refused-twice, not active work. Treating them as
       // "active" stranded run_mob31bx6_jzdfs2 — the ratchet stayed

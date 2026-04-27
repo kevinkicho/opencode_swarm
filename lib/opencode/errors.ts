@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R4 — typed error vocabulary for opencode failures.
 //
 // Pre-fix: lib/opencode/{client,live}.ts threw bare
 // `new Error(\`opencode ${path} -> HTTP ${res.status}\`)` at 5 sites.

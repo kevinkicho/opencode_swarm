@@ -1,9 +1,9 @@
 // Cross-policy helpers shared by the auto-ticker's decision paths.
 //
 // Three concerns currently live here:
-//   1. role-imbalance watchdog (PATTERN_DESIGN/role-differentiated.md I2)
-//   2. retry-exhausted detector (PATTERN_DESIGN/blackboard.md I2)
-//   3. orchestrator-worker re-plan cap (PATTERN_DESIGN/orchestrator-worker.md I1)
+//   1. role-imbalance watchdog
+//   2. retry-exhausted detector
+//   3. orchestrator-worker re-plan cap
 //
 // Each is small (< 50 lines) and pure-ish (single side effect = console.warn
 // for role-imbalance; the rest are pure reads). They get grouped here
@@ -19,7 +19,7 @@ import { listBoardItems } from '../store';
 import { listPlanRevisions } from '../plan-revisions';
 import type { TickerState } from './types';
 
-// ─── Role-imbalance watchdog (PATTERN_DESIGN/role-differentiated.md I2) ──
+// ─── Role-imbalance watchdog ──
 
 // After 15 min of run wallclock, check whether any pinned role has
 // claimed zero items while another has claimed ≥ 5. Log WARN once
@@ -69,12 +69,12 @@ export async function checkRoleImbalance(state: TickerState): Promise<void> {
       `[${busy.map(([r, n]) => `${r}=${n}`).join(', ')}]; ` +
       `consider a manual re-prompt to surface work for the idle role(s). ` +
       `Per-role claimed counts: ${summary}. ` +
-      `(PATTERN_DESIGN/role-differentiated.md I2)`,
+ ``,
   );
   state.roleImbalanceWarnedAtMs = Date.now();
 }
 
-// ─── Retry-exhausted detector (PATTERN_DESIGN/blackboard.md I2) ──────────
+// ─── Retry-exhausted detector ──────────
 
 // Detect items that workers refused at least twice. The retryOrStale
 // path tags these with a `[retry:N]` note; once N≥2 the item should
@@ -92,7 +92,7 @@ export function isRetryExhausted(note: string | null | undefined): boolean {
   return Number.isFinite(n) && n >= RETRY_EXHAUSTED_THRESHOLD;
 }
 
-// ─── Orchestrator-worker re-plan cap (PATTERN_DESIGN/orchestrator-worker.md I1) ──
+// ─── Orchestrator-worker re-plan cap ──
 
 // The cap counts ALL planner sweeps for the run (initial + re-plans),
 // so MAX_ORCHESTRATOR_REPLANS = 6 means 1 initial + 5 re-plans before

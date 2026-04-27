@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C10 — live.ts split.
 //
 // Backend-health observation hooks. useOpencodeHealth polls /project at
 // the cheapest possible cadence (single round-trip, light response) and
@@ -72,7 +71,6 @@ async function opencodeHealthFetcher(): Promise<HealthSnapshot> {
 // that's ~5 s of downtime before UI goes stale — fast enough to be
 // felt, slow enough to tolerate a single failed request.
 //
-// HARDENING_PLAN.md#E3 — the bible flagged this as "spawns N independent
 // 5s pollers". Audit confirmed that's not actually true: the underlying
 // /project poll is already TanStack-deduped via OPENCODE_HEALTH_QUERY_KEY,
 // so any number of useOpencodeHealth callers share one refetchInterval

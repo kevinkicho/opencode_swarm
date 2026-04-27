@@ -6,7 +6,6 @@ import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
 import { computeAttention, type Attention } from '@/lib/agent-status';
-// HARDENING_PLAN.md#C14 — accent / status / attention lookup tables
 // lifted to ./agent-roster/_shared.ts so AgentRow + ActiveTodoChip +
 // AttentionBadge can import them without crossing back into this file.
 import { kindTone, type AttentionKind } from './agent-roster/_shared';

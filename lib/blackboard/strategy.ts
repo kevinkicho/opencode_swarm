@@ -2,7 +2,6 @@
 
 // Plan-revisions read hook. Backs the orchestrator-worker `strategy` tab.
 //
-// HARDENING_PLAN.md#E4 — migrated 2026-04-26 from a 5s poll on
 // /api/swarm/run/:id/strategy to SSE consumption via
 // board-events-multiplexer. Cold-load still goes through one fetch so
 // the rail renders immediately on mount; subsequent updates flow through

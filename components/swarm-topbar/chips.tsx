@@ -103,7 +103,6 @@ export function HardStopChip({ swarmRunID }: { swarmRunID: string }) {
     return () => clearTimeout(t);
   }, [phase]);
 
-  // HARDENING_PLAN.md#E9 — useMutation for the inner fetch. Phase
   // ('idle' | 'armed' | 'busy' | 'done') stays as useState because it's
   // a multi-step UI state machine that includes pre-fetch states the
   // mutation doesn't model directly. Mutation drives only busy/done/error.
@@ -266,7 +265,7 @@ export function BudgetChip({
 
 // Ambition-ratchet tier indicator. Renders as a compact chip next to the
 // run-anchor chip. Reads currentTier / maxTier / tierExhausted off the
-// ticker snapshot — see SWARM_PATTERNS.md "Tiered execution". The chip
+// ticker snapshot — see "Tiered execution". The chip
 // is decorative (no click handler); its job is "let the user see the
 // ratchet climb in real time without opening the ticker debug endpoint."
 export function TierChip({
@@ -425,7 +424,7 @@ export function RunHealthChip({
             : tickerStopReason === 'zen-rate-limit'
               ? 'opencode-zen returned 429 — backoff in effect'
               : tickerStopReason === 'replan-loop-exhausted'
-                ? 'orchestrator hit the re-plan cap — human intervention needed (PATTERN_DESIGN/orchestrator-worker.md I1)'
+                ? 'orchestrator hit the re-plan cap — human intervention needed'
                 : `ticker stopped on ${tickerStopReason}`,
         severity: 'error',
       });

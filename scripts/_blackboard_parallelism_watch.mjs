@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Watches a blackboard run and reports whether work is spread across
-// multiple sessions. Parallelism fix validation for SWARM_PATTERNS.md §1
+// multiple sessions. Parallelism fix validation for 
 // Open questions → Blackboard parallelism (2026-04-22).
 //
 // Usage: node scripts/_blackboard_parallelism_watch.mjs <origin> <swarmRunID> [iters]

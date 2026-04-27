@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C6 + #E8 — page.tsx decomposition.
 //
 // Pre-extraction, page.tsx mixed three concerns:
 //   1. Fetching raw diff text via useSessionDiff(...)

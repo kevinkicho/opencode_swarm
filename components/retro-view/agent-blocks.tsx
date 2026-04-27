@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C14 — retro-view decomposition.
 //
 // Per-agent blocks for the retro view. Lifted from retro-view.tsx so
 // the main file reads as the run-level concerns (header / overview /

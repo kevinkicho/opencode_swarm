@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C5 — typed env-var module.
 //
 // Pre-fix: 12 distinct env vars were read directly via process.env.X
 // across 13 files, each with its own ?? '...' fallback inline. No

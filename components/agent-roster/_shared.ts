@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C14 — agent-roster decomposition.
 //
 // Cross-cutting bits used by both the main AgentRoster (table-level)
 // and the AgentRow sub-tree (row-level). Lifted into a sibling so the

@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C6 + #E8 — page.tsx decomposition.
 //
 // SwarmView is the consolidated render contract: nine derived shapes
 // (agents, agentOrder, messages, runMeta, providerSummary, runPlan,

@@ -6,7 +6,6 @@
 // surfaces between them when MAP finishes and the synthesize item lands
 // on the board.
 //
-// Spec frozen in docs/PATTERN_DESIGN/map-reduce.md §3.
 //
 // Data sources:
 //   - slots (LiveSwarmSessionSlot[]) — per-session messages for output
@@ -46,7 +45,6 @@ interface ReduceRow {
   outputLines: number;
 }
 
-// HARDENING_PLAN.md#C15 — `turnText` and `countLines` lifted to
 // components/rails/_shared.ts.
 
 // Extract the scope annotation from the first user message. Convention
@@ -230,7 +228,7 @@ export function MapRail({
 
 // Stick-to-bottom scrollable body for the MAP+REDUCE stack. Reduce
 // row appends BELOW the map sessions when the synthesize item lands;
-// auto-stick puts the user on the active phase. (IMPLEMENTATION_PLAN
+// auto-stick puts the user on the active phase. (
 // 6.7+6.8.)
 function MapScrollBody({
   mapRows,
@@ -331,7 +329,6 @@ const REDUCE_STATUS_TONE: Record<ReduceRow['status'], string> = {
   stale: 'text-amber',
 };
 
-// HARDENING_PLAN.md#C15 — `compactNum` lifted to rails/_shared.ts (the
 // shared version absorbs map-rail's strict-superset M branch).
 
 function MapRowEl({

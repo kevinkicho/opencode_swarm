@@ -44,7 +44,6 @@ export function stopAutoTicker(
   s.stoppedAtMs = Date.now();
   s.stopReason = reason;
 
-  // PATTERN_DESIGN/blackboard.md I3 — persist the final snapshot to
   // SQLite so getTickerSnapshot can reconstruct a stopped-state
   // response after dev restart / HMR. Synchronous + cheap (single
   // INSERT/REPLACE); failure here is logged but doesn't block the
@@ -65,7 +64,6 @@ export function stopAutoTicker(
   if (s.livenessTimer) clearInterval(s.livenessTimer);
   s.livenessTimer = null;
 
-  // HARDENING_PLAN.md#E4 — emit the final stopped snapshot so SSE
   // subscribers see the transition without polling.
   emitTickerTick(swarmRunID, snapshot(s));
 

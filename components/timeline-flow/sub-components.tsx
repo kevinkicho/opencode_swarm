@@ -36,7 +36,6 @@ export function ChipCard({
   y: number;
   focused: boolean;
 }) {
-  // HARDENING_PLAN.md#C7 — onFocus from TimelineInteractionContext.
   const { onFocus } = useTimelineInteraction();
   const m = chip.msg;
   const streaming = chip.phase === 'streaming';
@@ -205,7 +204,6 @@ export function EventCard({
   todoByTaskMessageId: Map<string, TodoItem>;
   onJumpToTodo: (todoId: string) => void;
 }) {
-  // HARDENING_PLAN.md#C7 — onFocus from TimelineInteractionContext.
   const { onFocus } = useTimelineInteraction();
   const { msg, cardX, accent, isIO, phase, progress, fromName, toNames, dimmed } = evt;
   const labelTop = eventLabel(msg);

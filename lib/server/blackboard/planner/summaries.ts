@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C12 — planner.ts split.
 //
 // Operator-visible summary builders for planner-sweep failures. Three
 // failure shapes the run can land in, each with a distinct fix path:

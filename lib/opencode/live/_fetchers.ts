@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C10 — live.ts split.
 //
 // Browser-side HTTP fetchers + query-key factories + the CostCapError
 // class. Talks to our Next.js proxy at `/api/opencode/*` — the proxy

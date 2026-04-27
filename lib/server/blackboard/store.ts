@@ -196,7 +196,6 @@ export interface TransitionInput {
   staleSinceSha?: string | null;
   note?: string | null;
   setCompletedAt?: boolean;
-  // PATTERN_DESIGN/stigmergy.md heat-picked-timeline-chip — set true
   // by the coordinator at claim time when heat-weighted picking chose
   // this item over what age-only ordering would have. Persisted on
   // the row; surfaced as an amber chip in board-rail.
@@ -288,7 +287,6 @@ export function _dangerouslyClearRun(swarmRunID: string): number {
 }
 
 // Delete a list of board items in a single transaction. Used by
-// PATTERN_DESIGN/deliberate-execute.md I1's synthesis-verifier gate
 // when a verifier rejection means the seeded todos need to be cleared
 // before a retry. Skips emitting per-item events — clear-and-reseed
 // is a coarse op the UI handles via the next snapshot frame.

@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // Per-part flattening of opencode messages → AgentMessage[]. The output
 // is what the timeline renders: one entry per message-part, with

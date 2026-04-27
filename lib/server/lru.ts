@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D3 — bounded LRU caches.
 //
 // Pre-fix: swarm-registry.ts had three unbounded Map caches (metaCache,
 // derivedRowCache, sessionIndex) plus tree/route.ts treeCache. At

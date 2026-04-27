@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // Diff parsers for the inspector's history-drawer + cards-view file
 // list. opencode's /diff endpoint returns one entry per file (session-

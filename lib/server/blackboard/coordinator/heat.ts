@@ -7,7 +7,6 @@
 // tiebreak. A todo with no file attribution scores 0 and falls back
 // to oldest-first, which is the correct degenerate case.
 //
-// PATTERN_DESIGN/stigmergy.md I1 — heat half-life decay. Without this,
 // editCount accumulates forever and an early-hot file dominates the
 // score for hours after it's been quiet, anchoring the swarm. Decay
 // weights each file's contribution by 0.5^(Δt / HEAT_HALF_LIFE_MS),
@@ -24,7 +23,6 @@ import 'server-only';
 import type { FileHeat } from '../../../opencode/transform';
 import { OPENCODE_HEAT_HALF_LIFE_S } from '../../../config';
 
-// HARDENING_PLAN.md#C5 — half-life pulled from typed config. Default
 // 7200s = 2h; values ≤ 0 fall back to the historical 30-min default
 // for safety.
 const HEAT_HALF_LIFE_DEFAULT_MS = 30 * 60 * 1000;
@@ -78,7 +76,6 @@ export function scoreTodoByHeat(
     }
     if (weight > 0) {
       score += decayedCount * weight;
-      // PATTERN_DESIGN/stigmergy.md I4 — per-worker warmth bonus.
       // Picker sorts ascending (low-heat = preferred), so subtracting
       // here biases the picked session toward files it has already
       // touched (exploitation). Coefficient 0.5 keeps the global

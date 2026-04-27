@@ -2,7 +2,6 @@
 
 // Client-side EventSource multiplexer for /board/events.
 //
-// HARDENING_PLAN.md#E4 — pre-fold, the run page opened three separate
 // poll/stream connections per swarmRunID:
 //   1. EventSource at /board/events (useLiveBoard)
 //   2. 5s poll on /board/ticker (useLiveTicker)

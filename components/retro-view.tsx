@@ -77,7 +77,7 @@ function fmtDuration(ms: number): string {
   return rm ? `${h}h ${rm}m` : `${h}h`;
 }
 
-// fmtTokens + OUTCOME_TONE moved to ./retro-view/_shared.ts (HARDENING_PLAN.md#C14
+// fmtTokens + OUTCOME_TONE moved to ./retro-view/_shared.ts (
 // — agent-blocks.tsx depends on them too).
 
 function fmtCost(usd: number): string {
@@ -384,7 +384,6 @@ function GenerateRollupCard({ swarmRunID }: { swarmRunID: string }) {
 }
 
 function RollupGenerateButton({ swarmRunID }: { swarmRunID: string }) {
-  // HARDENING_PLAN.md#E9 — useMutation replaces document.activeElement
   // mutation + manual error label. Pre-fix the click handler grabbed
   // the active element by side effect, mutated its disabled+textContent
   // imperatively, and reloaded the page on success. Now state is React-

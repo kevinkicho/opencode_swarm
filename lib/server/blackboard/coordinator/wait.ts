@@ -57,7 +57,7 @@ const SESSION_IDLE_QUIET_MS = 2000;
 const SILENT_WARN_MS = 90 * 1000;
 const SILENT_ERROR_MS = 240 * 1000;
 
-// Tool-loop detector threshold — PATTERN_DESIGN/blackboard.md 6.12.
+// Tool-loop detector threshold — 6.12.
 // 10 consecutive identical tool errors (same tool name + same error
 // message) within a single turn means the model is stuck retrying a
 // structurally-broken call. Each retry burns ~10-30 K input tokens
@@ -137,7 +137,7 @@ export async function waitForSessionIdle(
   // keeps burning tokens on the abandoned turn. Tracking in-progress
   // here lets the deadline path abort exactly the runaway case.
   let lastSeenInProgress = false;
-  // Tool-loop detector — PATTERN_DESIGN/blackboard.md 6.12. Some
+ // Tool-loop detector — 6.12. Some
   // models (notably gemma4:31b-cloud on the `edit` tool) burn entire
   // turns retrying a structurally-broken tool call with near-identical
   // arguments — e.g. an `oldString` that doesn't match because of
@@ -282,7 +282,7 @@ export async function waitForSessionIdle(
       if (toolLoopCount >= TOOL_LOOP_THRESHOLD) {
         const [tool, err] = (suffixKey ?? '|').split('|', 2);
         console.error(
-          `[coordinator] session ${sessionID} tool-loop: ${toolLoopCount} consecutive '${tool}' errors with same message ("${(err ?? '').slice(0, 80)}…") — aborting (PATTERN_DESIGN/blackboard.md 6.12)`,
+          `[coordinator] session ${sessionID} tool-loop: ${toolLoopCount} consecutive '${tool}' errors with same message ("${(err ?? '').slice(0, 80)}…") — aborting`,
         );
         try {
           await abortSessionServer(sessionID, workspace);

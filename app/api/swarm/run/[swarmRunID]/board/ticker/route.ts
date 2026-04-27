@@ -16,7 +16,6 @@
 import type { NextRequest } from 'next/server';
 
 import { getRun } from '@/lib/server/swarm-registry';
-// HARDENING_PLAN.md#E6 — Q46-style import-graph slim. Import the
 // state-only `getTickerSnapshot` directly from the leaf module so the
 // 5s-polled GET handler doesn't transitively pull tick.ts → coordinator
 // → planner. start/stop only run on POST and are dynamic-imported there.
@@ -46,7 +45,6 @@ export async function GET(
   return Response.json(body, { status: 200 });
 }
 
-// HARDENING_PLAN.md#C5 — `PostBody` lifted to lib/api-types.ts as
 // BoardTickerPostBody. Field comments live with the canonical type.
 type PostBody = BoardTickerPostBody;
 

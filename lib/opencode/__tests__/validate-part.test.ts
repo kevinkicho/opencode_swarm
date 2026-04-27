@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R2 — SDK schema-drift firewall.
 //
 // Tests for `lib/opencode/validate-part.ts`. The validator's contract:
 // given an opaque opencode message-part shape, return either

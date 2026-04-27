@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // todowrite → TodoItem[] projection. Each todowrite call fully replaces
 // the prior list, so only the LAST invocation matters. Where possible,

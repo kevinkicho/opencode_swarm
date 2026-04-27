@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D1 — atomic-rename file write + per-key mutex.
 //
 // Problem: `fs.writeFile(path, content)` is NOT crash-atomic on POSIX.
 // `O_TRUNC` happens before any byte is written. A SIGKILL between

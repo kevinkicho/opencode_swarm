@@ -24,7 +24,6 @@ import { getSessionMessagesServer, getSessionDiffServer } from '../opencode-serv
 import type { OpencodeMessage } from '../../opencode/types';
 import type { SwarmRunMeta } from '../../swarm-run-types';
 import type { AgentRollup, RunRetro } from './types';
-// HARDENING_PLAN.md#C13 — pure-compute helpers + reducers extracted to
 // rollup-compute.ts. This module owns orchestration + I/O only:
 // captureSessionDiffs (opencode + DB write) and generateRollup (the
 // fan-out + persist orchestrator).

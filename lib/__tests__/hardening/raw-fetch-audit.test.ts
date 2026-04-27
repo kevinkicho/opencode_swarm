@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#E2 — raw fetch audit.
 //
 // Four pages do `fetch('/api/swarm/run')` directly instead of using the
 // `useSwarmRuns` TanStack hook. Result: 4 cold-load round trips that
@@ -99,7 +98,7 @@ describe('hardening · E2 · raw fetch audit', () => {
       const msg = [
         `E2 violations: ${violations.length} raw GET fetch(es) bypass canonical hooks.`,
         `Migrate to useSwarmRuns / useOpencodeHealth / useLiveSessions for cache dedup.`,
-        `See HARDENING_PLAN.md#E2.`,
+ `See `,
         '',
         ...violations.map((v) => `  ${v.file}:${v.line} → fetch('${v.endpoint}')`),
       ].join('\n');

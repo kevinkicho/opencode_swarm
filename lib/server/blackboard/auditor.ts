@@ -89,7 +89,6 @@ export interface AuditResult {
 // Per-run mutex. Same pattern + rationale as critic.ts's mutex:
 // opencode won't accept concurrent prompts on the same session.
 //
-// HARDENING_PLAN.md#D2 — pinned on globalThis so HMR doesn't reset
 // the lock map mid-flight.
 const AUDIT_LOCKS_KEY = Symbol.for('opencode_swarm.auditLocks.v1');
 function auditLocks(): Map<string, Promise<unknown>> {

@@ -53,7 +53,6 @@ export function getRetro(swarmRunID: string): {
       // generator can be re-run to rewrite it.
       continue;
     }
-    // HARDENING_PLAN.md#R7 — discriminator validator. Pre-fix the cast
     // `as AgentRollup | RunRetro` trusted the parsed JSON without
     // checking the kind field. A row with missing/wrong kind would
     // propagate undefined into UI consumers. Validator returns null

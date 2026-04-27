@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R1 — pattern-kickoff sync-throw guard.
 //
 // The 201-zombie bug class: every per-pattern kickoff in app/api/swarm/run/
 // route.ts fires fire-and-forget with `.catch((err) => console.warn(...))`.

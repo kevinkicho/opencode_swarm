@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C12 — planner.ts split.
 //
 // Wire-protocol parsers for the planner's todowrite output. opencode's
 // todowrite tool only accepts {content, status, priority} — to thread
@@ -41,13 +40,11 @@ export interface RawTodo {
   // dropped when this is true — criteria are auditor-verdict targets,
   // not worker-dispatch targets.
   isCriterion?: boolean;
-  // PATTERN_DESIGN/deliberate-execute.md I2 — synthesis traceability.
   // Computed by latestTodosFrom from a `[from:1,3]` content prefix the
   // synthesizer emits during phase 2. 1-based, deduped, max 8 entries.
   // Undefined for non-deliberate-execute paths and for synthesis runs
   // where the model didn't tag.
   sourceDrafts?: number[];
-  // PATTERN_DESIGN/role-differentiated.md I3 — per-sweep role-intro
   // append. When the planner emits `[rolenote:<role>] <text>`, the
   // entry is NOT a todo — it's a side-channel clarification message
   // that runPlannerSweep routes to the matching role's session and
@@ -138,7 +135,7 @@ export function stripFilesTag(content: string): {
 }
 
 // Strips the `[rolenote:<name>]` prefix — per-sweep role-intro append
-// (PATTERN_DESIGN/role-differentiated.md I3). Returns the role name on
+//. Returns the role name on
 // match (normalized like stripRoleTag); the consumer treats the entry
 // as a side-channel clarification rather than a todo. Same kebab/length
 // normalization so a typo like `[rolenote: Tester ]` still routes to
@@ -165,7 +162,7 @@ export function stripRoleNoteTag(content: string): {
 }
 
 // Strips the `[from:1,3]` prefix — synthesis traceability for
-// deliberate-execute (PATTERN_DESIGN/deliberate-execute.md I2). Source
+// deliberate-execute. Source
 // indices are 1-based (matches "Draft from member 1" labels in the
 // synthesizer's prompt input). Caps at 8 entries to bound storage and
 // rejects non-positive integers, so a malformed `[from:0,abc,3]` parses

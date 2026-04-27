@@ -3,7 +3,7 @@
 // If the escalation seeds items → reset idle counters + record the new
 // tier. If it produces zero → bump tier anyway so the next cascade
 // tries the tier above; at MAX_TIER, flip `tierExhausted` so the next
-// cascade stops for real. See SWARM_PATTERNS.md "Tiered execution"
+// cascade stops for real. See "Tiered execution"
 // for the full contract; memory/project_ambition_ratchet.md for the
 // design decision context.
 //
@@ -27,7 +27,6 @@ import type { TickerState } from './types';
 export async function attemptTierEscalation(state: TickerState): Promise<void> {
   const swarmRunID = state.swarmRunID;
 
-  // HARDENING_PLAN.md#D8 — self-guarding CAS. Pre-fix the caller did
   // `if (!state.resweepInFlight) { state.resweepInFlight = true; void
   // attemptTierEscalation(state); }` — a read-then-set race where two
   // concurrent tickSession calls past the auto-stop threshold both
@@ -41,7 +40,6 @@ export async function attemptTierEscalation(state: TickerState): Promise<void> {
   if (state.resweepInFlight) return;
   state.resweepInFlight = true;
 
-  // PATTERN_DESIGN/orchestrator-worker.md I1 — hard cap on re-plan
   // loops. Only enforced for orchestrator-worker. Self-organizing
   // patterns can re-plan freely. Read meta on the same path we use
   // elsewhere (~ms cost; the cap check is rare).
@@ -105,7 +103,7 @@ export async function attemptTierEscalation(state: TickerState): Promise<void> {
       for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
     } else {
       // This tier had nothing to propose. Before bumping or exhausting,
-      // try cold-file seeding (PATTERN_DESIGN/stigmergy.md I3) — there
+      // try cold-file seeding — there
       // may be untouched workspace files the swarm hasn't explored.
       // If that seeds work, keep the run alive at the current tier.
       let coldSeeded = 0;

@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C14 — agent-roster decomposition.
 //
 // Per-agent row in the roster table, plus its two private helpers
 // (ActiveTodoChip + AttentionBadge). Lifted from agent-roster.tsx so

@@ -7,7 +7,6 @@
 // preferredRole vs. claimant mismatches ("tester kept claiming
 // security-tagged items") at a glance.
 //
-// Spec frozen in docs/PATTERN_DESIGN/role-differentiated.md §3.
 //
 // Data: comes from two sources joined client-side:
 //   - boardRoleNames (passed down from page.tsx) — sessionID → role
@@ -49,7 +48,6 @@ interface RoleRow {
 // they're observation-shaped; security gets rust because failures there
 // are higher-stakes than failures elsewhere). Maps to our existing tone
 // classes — keep aligned with palette references in
-// PATTERN_DESIGN/role-differentiated.md §3.
 const ROLE_ACCENT: Record<string, string> = {
   architect: 'bg-iris',
   builder: 'bg-molten',

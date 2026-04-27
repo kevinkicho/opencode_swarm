@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C2 — app/api/swarm/run/route.ts split.
 //
 // Initial-directive dispatch — posts the user's directive to every
 // surviving session in parallel as the run's first turn. Two shapes:

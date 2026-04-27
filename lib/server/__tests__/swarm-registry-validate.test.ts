@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R7 — JSON.parse on disk validators.
 //
 // Pre-fix: swarm-registry.ts:251 cast `JSON.parse(raw) as SwarmRunMeta`
 // directly. A truncated or hand-edited meta.json passes the cast and

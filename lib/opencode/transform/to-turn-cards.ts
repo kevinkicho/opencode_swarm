@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // Card-view projection — one card per (user prompt → assistant reply) pair.
 // Unlike toLiveTurns (patch-gated), this preserves every turn including the

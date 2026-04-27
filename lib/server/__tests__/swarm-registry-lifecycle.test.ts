@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D4 #1 — swarm-registry lifecycle test (the keystone).
 //
 // swarm-registry.ts is the most-imported server module in the repo (33
 // callers, 867 LOC). It had ZERO tests prior to this. Status derivation,

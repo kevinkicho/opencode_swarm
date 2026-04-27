@@ -43,7 +43,6 @@ const STARTUP_CLEANUP_HORIZON_MS = 48 * 60 * 60 * 1000;
 // queue item.
 const STARTUP_CLEANUP_RECENT_ACTIVITY_MS = 5 * 60 * 1000;
 
-// HARDENING_PLAN.md#R3 — extracted from the inline loop in `tickers()`
 // so the orphan-vs-alive decision is independently testable. Returns
 // `'alive'` when the run was active inside RECENT_ACTIVITY_MS; returns
 // `'orphan'` otherwise (including when deriveRunRow throws — see the
@@ -303,7 +302,6 @@ export function getTickerSnapshot(swarmRunID: string): TickerSnapshot | null {
   const s = tickers().get(swarmRunID);
   if (s) return snapshot(s);
 
-  // PATTERN_DESIGN/blackboard.md I3 — fallback to the persisted
   // snapshot when no in-memory state exists. After dev restart the
   // tickers map is empty; without this hydration the UI sees
   // "ticker never ran" instead of the original stop reason.

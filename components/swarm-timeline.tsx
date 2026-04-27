@@ -99,7 +99,6 @@ export function SwarmTimeline({
   const { clockSec } = usePlayback();
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  // HARDENING_PLAN.md#C7 — TimelineInteractionContext value. Pre-fix
   // onFocus / onSelectAgent / roleNames were drilled 4-5 levels deep
   // through TimelineFlow → EventCard/ChipCard → TimelineNodeCard. The
   // provider hangs them off the subtree so consumers read via hook.

@@ -68,7 +68,6 @@ export function TimelineFlow({
   rowHeights: number[];
   allMessages: AgentMessage[];
   focusedId: string | null;
-  // HARDENING_PLAN.md#C7 — onFocus pulled from
   // TimelineInteractionContext via useTimelineInteraction() rather
   // than drilled here.
   onClearFocus: () => void;
@@ -81,7 +80,6 @@ export function TimelineFlow({
   todoByTaskMessageId: Map<string, TodoItem>;
   onJumpToTodo: (todoId: string) => void;
 }) {
-  // HARDENING_PLAN.md#C7 — interaction handlers via context, not props.
   const { onFocus } = useTimelineInteraction();
 
   const estimateSize = useCallback(

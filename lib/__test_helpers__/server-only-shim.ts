@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D6 — vitest shim for the `server-only` directive.
 //
 // Every file under lib/server/ declares `import 'server-only';` so the
 // Next.js bundler refuses to ship them into the client. Vitest's Vite

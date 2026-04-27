@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R5 — API error response shape conformance.
 //
 // Asserts that every `Response.json({ error: ... }, { status: ... })` site
 // in app/api/ uses the canonical { error: string; detail?: string; hint?: string }
@@ -162,7 +161,7 @@ describe('hardening · R5 · API error response shape', () => {
       const msg = [
         `R5 violations: ${allViolations.length} error responses use a non-canonical shape.`,
         `Canonical: { error: string; detail?: string; hint?: string }`,
-        `See HARDENING_PLAN.md#R5.`,
+ `See `,
         '',
         ...allViolations.map((v) => `  ${v.file}:${v.line} · ${v.reason}`),
       ].join('\n');

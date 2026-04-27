@@ -1,4 +1,3 @@
-// PATTERN_DESIGN/blackboard.md I1 — auto-replan on CAS drift.
 //
 // Fired from the commit-time drift check in dispatch. Schedules a fresh
 // planner sweep so a replacement todo lands within seconds of drift,
@@ -34,7 +33,7 @@ export async function scheduleCasDriftReplan(
     }
     const { runPlannerSweep } = await import('../planner');
     console.log(
-      `[coordinator] CAS-drift replan firing for ${swarmRunID} on ${driftedPaths.length} drifted file(s) (PATTERN_DESIGN/blackboard.md I1)`,
+      `[coordinator] CAS-drift replan firing for ${swarmRunID} on ${driftedPaths.length} drifted file(s)`,
     );
     await runPlannerSweep(swarmRunID, {
       overwrite: true,

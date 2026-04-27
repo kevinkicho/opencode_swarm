@@ -3,7 +3,7 @@
 // A "swarm run" is one logical run that wraps N opencode sessions under a
 // single coordinator. At v1 N=1 and the pattern is always 'none' — the
 // shape generalizes to N when blackboard / map-reduce / council backends
-// ship (see SWARM_PATTERNS.md §"Backend gap").
+// ship.
 //
 // Ownership: these types are shared between the browser (POST body, event
 // consumer) and the Next.js route handler. Keep server-only types in
@@ -87,14 +87,13 @@ export interface SwarmRunRequest {
   // Ignored when enableAuditorGate is false.
   auditEveryNCommits?: number;
   // Synthesis-verifier gate (deliberate-execute pattern only,
-  // PATTERN_DESIGN/deliberate-execute.md I1). When true, after the
   // synthesis phase seeds todos, a peer session (NOT the synthesizer)
   // reviews them: "are these concrete, claimable, independent?"
   // APPROVED → execution starts. REVISE → seeded items are cleared
   // and synthesis runs once more with the verifier's feedback. Capped
   // at 1 retry to avoid infinite loops. Default false.
   enableSynthesisVerifier?: boolean;
-  // Council convergence auto-stop (PATTERN_DESIGN/council.md I1).
+  // Council convergence auto-stop.
   // When true AND mean-pairwise-token-jaccard convergence on any
   // round ≥ COUNCIL_CONVERGENCE_THRESHOLD (0.85), the council loop
   // skips remaining rounds and proceeds to synthesis/handoff.
@@ -102,7 +101,6 @@ export interface SwarmRunRequest {
   // Council pattern only; deliberate-execute also uses runCouncilRounds
   // and inherits the flag's behavior when set.
   autoStopOnConverge?: boolean;
-  // PATTERN_DESIGN/map-reduce.md I4 — deterministic synthesis model.
   // When set, the coordinator forces this model for any board item
   // with `kind === 'synthesize'` regardless of which session claims
   // it. Reason: synthesis quality varies sharply across models, and
@@ -113,7 +111,7 @@ export interface SwarmRunRequest {
   // undefined → use whatever the claiming session's model would be.
   // Map-reduce pattern only — ignored by other patterns.
   synthesisModel?: string;
-  // Strict role routing (PATTERN_DESIGN/role-differentiated.md I1).
+  // Strict role routing.
   // When true, the coordinator picker filters out items whose
   // `preferredRole` doesn't match the picked session's role. Default
   // false (soft bias only — mismatched items are still claimable but
@@ -121,7 +119,6 @@ export interface SwarmRunRequest {
   // "only the security role should touch authentication code."
   // Role-differentiated pattern only.
   strictRoleRouting?: boolean;
-  // PATTERN_DESIGN/role-differentiated.md I4 — per-role token budgets.
   // Map of role-name → total-token ceiling. When a role's accumulated
   // assistant-message tokens reach the ceiling, the coordinator picker
   // refuses to dispatch new work to that role's session(s). Other
@@ -132,7 +129,6 @@ export interface SwarmRunRequest {
   // only future claims are denied. Default undefined → no caps.
   // Role-differentiated pattern only (other patterns ignore).
   roleBudgets?: Record<string, number>;
-  // PATTERN_DESIGN/map-reduce.md I3 — partial-map tolerance knob.
   // When set, the synthesis-wait stage tolerates per-member failures
   // by proceeding with whatever drafts arrived as long as at least
   // `minMembers` succeeded AND at most `maxMemberFailures` errored.
@@ -143,7 +139,6 @@ export interface SwarmRunRequest {
     minMembers: number;
     maxMemberFailures: number;
   };
-  // PATTERN_DESIGN/map-reduce.md I1 — synthesis-critic gate.
   // When true, after the synthesizer completes, a peer session
   // (any non-synthesizer member) reviews the synthesis against the
   // original member drafts and returns APPROVED or REVISE + feedback.
@@ -264,24 +259,23 @@ export interface SwarmRunMeta {
   // auditor is enabled. See SwarmRunRequest for semantics.
   auditEveryNCommits?: number;
   // Synthesis-verifier mirror — deliberate-execute pattern only.
-  // PATTERN_DESIGN/deliberate-execute.md I1. No dedicated session;
   // the verifier reuses sessionIDs[1] (peer member, not the
   // synthesizer at sessionIDs[0]).
   enableSynthesisVerifier?: boolean;
-  // Council convergence auto-stop mirror — PATTERN_DESIGN/council.md I1.
+  // Council convergence auto-stop mirror
   autoStopOnConverge?: boolean;
-  // Strict role routing mirror — PATTERN_DESIGN/role-differentiated.md I1.
+  // Strict role routing mirror
   strictRoleRouting?: boolean;
-  // Per-role token-budget caps mirror — PATTERN_DESIGN/role-differentiated.md I4.
+  // Per-role token-budget caps mirror
   roleBudgets?: Record<string, number>;
-  // Partial-map tolerance mirror — PATTERN_DESIGN/map-reduce.md I3.
+  // Partial-map tolerance mirror
   partialMapTolerance?: {
     minMembers: number;
     maxMemberFailures: number;
   };
-  // Synthesis-critic mirror — PATTERN_DESIGN/map-reduce.md I1.
+  // Synthesis-critic mirror
   enableSynthesisCritic?: boolean;
-  // Synthesis-model pin mirror — PATTERN_DESIGN/map-reduce.md I4.
+  // Synthesis-model pin mirror
   synthesisModel?: string;
   // Per-gate model pins mirrored from the request. See SwarmRunRequest
   // for semantics. Each gate's reviewer module reads these from meta
@@ -312,7 +306,6 @@ export interface SwarmRunResponse {
   swarmRunID: string;
   sessionIDs: string[];
   meta: SwarmRunMeta;
-  // HARDENING_PLAN.md#R1 — gate-session spawn failures surfaced.
   // Critic / verifier / auditor sessions are spawned best-effort:
   // a failure used to fall through to undefined silently, so a run
   // with `enableAuditorGate: true` could launch with no auditor

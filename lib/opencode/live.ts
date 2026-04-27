@@ -3,7 +3,6 @@
 // Browser-side opencode client. Talks to our Next.js proxy at `/api/opencode/*`
 // — the proxy injects Basic auth server-side, so no credentials ship here.
 //
-// HARDENING_PLAN.md#C10 — split into per-concern hook files under
 // lib/opencode/live/ on 2026-04-26. This file is now a re-export barrel
 // so the 16+ import sites don't churn. Per-file responsibilities:
 //

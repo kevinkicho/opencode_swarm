@@ -43,7 +43,7 @@
 // differentiated) delegate ongoing orchestration to the auto-ticker.
 
 // Deliberate-execute pattern — hierarchical pattern #5 (compositional).
-// See SWARM_PATTERNS.md §9.
+// See .
 //
 // Shape: council deliberation (multi-round peer-revise) → one session
 // synthesizes converged drafts into concrete todos via todowrite →
@@ -79,11 +79,9 @@ import { recordPartialOutcome } from './degraded-completion';
 import { extractLatestAssistantText } from './harvest-drafts';
 import type { OpencodeMessage } from '../opencode/types';
 
-// HARDENING_PLAN.md#C18 — TIMINGS + THRESHOLDS lifted to pattern-tunables.ts.
 import { THRESHOLDS, TIMINGS } from './pattern-tunables';
 const SYNTHESIS_WAIT_MS = TIMINGS.deliberateExecute.synthesisWaitMs;
 
-// PATTERN_DESIGN/deliberate-execute.md I4 — directive-complexity classifier.
 // Deliberation-then-execute pays for its richer framing in tokens (N sessions
 // × N rounds of peer-revise before any code lands). For trivial directives
 // the cost outweighs the benefit — the user picked the wrong pattern.
@@ -131,7 +129,6 @@ export function classifyDirectiveComplexity(directive: string): DirectiveComplex
   return { small, charCount, verbCount, verbs: [...verbs] };
 }
 
-// PATTERN_DESIGN/deliberate-execute.md I1 — synthesis-verifier gate.
 // Verification runs on a peer session (not the synthesizer) and asks
 // the same model that helped deliberate to critique the seeded todos
 // for concreteness / claimability / independence. Cap retries at 1
@@ -232,7 +229,6 @@ function seedTodosFromExtract(
 // so the same per-teamSize policy lights up here. Caller-supplied
 // `opts.deliberationRounds` still wins. (#98)
 
-// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
 // harvest-drafts.ts.
 
 function buildSynthesisPrompt(
@@ -308,14 +304,13 @@ export async function runDeliberateExecuteKickoff(
   }
   if (meta.sessionIDs.length < 2) return;
 
-  // PATTERN_DESIGN/deliberate-execute.md I4 — directive-complexity WARN.
   // Inform-only: operator's pattern choice stands; we just surface a
   // signal that this run might be paying deliberation cost for nothing.
   if (meta.directive) {
     const complexity = classifyDirectiveComplexity(meta.directive);
     if (complexity.small) {
       console.warn(
-        `[deliberate-execute] run ${swarmRunID} — directive looks small (${complexity.charCount} chars, ${complexity.verbCount} action verbs: ${complexity.verbs.join(', ') || '∅'}). The deliberation phase may not pay for itself; consider 'blackboard' pattern next time. (PATTERN_DESIGN/deliberate-execute.md I4)`,
+        `[deliberate-execute] run ${swarmRunID} — directive looks small (${complexity.charCount} chars, ${complexity.verbCount} action verbs: ${complexity.verbs.join(', ') || '∅'}). The deliberation phase may not pay for itself; consider 'blackboard' pattern next time.`,
       );
     }
   }
@@ -510,7 +505,6 @@ export async function runDeliberateExecuteKickoff(
     `[deliberate-execute] run ${swarmRunID}: synthesis seeded ${seededIds.length} todos`,
   );
 
-  // PATTERN_DESIGN/deliberate-execute.md I1 — synthesis-verifier gate.
   // Optional. Uses a peer session (sessionIDs[1]) to review the seeded
   // todos. APPROVED → proceed. REVISE → clear seeded items, post the
   // verifier feedback to the synthesizer, re-run synthesis, re-seed.
@@ -525,7 +519,7 @@ export async function runDeliberateExecuteKickoff(
         .map((t) => t.content.trim())
         .filter(Boolean);
       console.log(
-        `[deliberate-execute] run ${swarmRunID}: synthesis-verifier review on session ${verifierSID.slice(-8)} (PATTERN_DESIGN/deliberate-execute.md I1)`,
+        `[deliberate-execute] run ${swarmRunID}: synthesis-verifier review on session ${verifierSID.slice(-8)}`,
       );
       const verifierKnownIDs = new Set(
         (

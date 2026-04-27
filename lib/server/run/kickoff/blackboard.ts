@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C2 — app/api/swarm/run/route.ts split.
 //
 // Blackboard kickoff — the only inline kickoff branch in route.ts that
 // wasn't already in a sibling pattern module. Lifted here so the

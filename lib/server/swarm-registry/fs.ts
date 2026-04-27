@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#W5.1 — fs/derive split.
 //
 // Filesystem-backed registry for swarm runs. Runs live under
 // `.opencode_swarm/runs/<swarmRunID>/` with two files:
@@ -6,7 +5,7 @@
 //   meta.json      - SwarmRunMeta, written once at createRun()
 //   events.ndjson  - one SwarmRunEvent per line, appended by the multiplexer
 //
-// Design choices (see docs/ARCHITECTURE.md §Tier 2 and SWARM_PATTERNS.md
+// Design choices (see docs/DESIGN.md §Tier 2 and 
 // §"Backend gap" for the why):
 //
 // - JSON over SQLite: zero deps, grep-able, survives server restart.
@@ -43,7 +42,6 @@ import type {
   SwarmRunRequest,
 } from '../../swarm-run-types';
 
-// HARDENING_PLAN.md#C5 — env reads consolidated in lib/config.ts.
 // OPENCODE_SWARM_ROOT default is repo-root/.opencode_swarm; override
 // via env for deployments that want runs under a different root.
 import { OPENCODE_SWARM_ROOT as ROOT } from '../../config';
@@ -77,7 +75,6 @@ function eventsGzPath(swarmRunID: string): string {
 // the answer is stable for the life of a run, so we keep a process-local
 // Map seeded by createRun() and lazily refilled from disk on miss.
 //
-// HARDENING_PLAN.md#D3 — bounded LRU. Pre-fix this was an unbounded
 // Map; in long-lived dev it accumulated every session ID across every
 // run (including deleted runs) forever. 2000 entries is generous for
 // the prototype scale (~20 sessions × 100 runs); each entry is just
@@ -176,20 +173,19 @@ export async function createRun(
     auditorSessionID: extras.auditorSessionID,
     auditEveryNCommits: req.auditEveryNCommits,
     // Synthesis-verifier gate — deliberate-execute pattern only.
-    // PATTERN_DESIGN/deliberate-execute.md I1. No dedicated session;
     // the verifier reuses sessionIDs[1].
     enableSynthesisVerifier: req.enableSynthesisVerifier ? true : undefined,
-    // Council convergence auto-stop — PATTERN_DESIGN/council.md I1.
+    // Council convergence auto-stop
     autoStopOnConverge: req.autoStopOnConverge ? true : undefined,
-    // Strict role routing — PATTERN_DESIGN/role-differentiated.md I1.
+    // Strict role routing
     strictRoleRouting: req.strictRoleRouting ? true : undefined,
-    // Per-role budgets — PATTERN_DESIGN/role-differentiated.md I4.
+    // Per-role budgets
     roleBudgets: req.roleBudgets,
-    // Partial-map tolerance — PATTERN_DESIGN/map-reduce.md I3.
+    // Partial-map tolerance
     partialMapTolerance: req.partialMapTolerance,
-    // Synthesis-critic — PATTERN_DESIGN/map-reduce.md I1.
+    // Synthesis-critic
     enableSynthesisCritic: req.enableSynthesisCritic ? true : undefined,
-    // Synthesis-model pin — PATTERN_DESIGN/map-reduce.md I4.
+    // Synthesis-model pin
     synthesisModel: req.synthesisModel,
     // Per-gate model pins (2026-04-24). Each gate's reviewer module
     // reads meta.<gate>Model and passes it on postSessionMessageServer
@@ -210,7 +206,6 @@ export async function createRun(
     teamModels: extras.teamModels,
   };
   await fs.mkdir(runDir(swarmRunID), { recursive: true });
-  // HARDENING_PLAN.md#D1 — atomic-rename write so a crash mid-write
   // doesn't leave a 0-byte meta.json that getRun parse-throws on.
   await atomicWriteFile(metaPath(swarmRunID), JSON.stringify(meta, null, 2));
   // Touch events.ndjson so the multiplexer can append without a separate
@@ -241,7 +236,6 @@ export async function createRun(
 // Keyed by globalThis so HMR module reloads don't lose the cache —
 // matches the same pattern as the F7 baselineCache in opencode-server.ts.
 const META_CACHE_TTL_MS = 2000;
-// HARDENING_PLAN.md#D3 — bounded LRU. Pre-fix this was an unbounded
 // Map; a long-lived dev process accumulated entries forever. 500
 // entries is well above any realistic prototype run count and cheap
 // in memory (~2 KB meta × 500 = ~1 MB worst case).
@@ -272,7 +266,6 @@ export async function getRun(swarmRunID: string): Promise<SwarmRunMeta | null> {
     try {
       parsed = JSON.parse(raw);
     } catch (parseErr) {
-      // HARDENING_PLAN.md#R7 — JSON parse failure on disk read.
       // Pre-fix: this would throw and propagate up; downstream callers
       // saw the failure as "run is broken" without context. Treat as
       // missing — the validator path warns once, then null cascades.
@@ -308,7 +301,6 @@ export async function getRun(swarmRunID: string): Promise<SwarmRunMeta | null> {
 // Read-modify-write of meta.json for post-create mutations. The file
 // is small (< 2 KB even for the largest configs).
 //
-// HARDENING_PLAN.md#D1 — wrapped in a per-swarmRunID mutex so two
 // concurrent updateRunMeta calls don't lost-update each other. Pre-fix
 // the read-modify-write was unsynchronized: caller A reads { tier: 1 },
 // caller B reads { tier: 1 }, both modify, A writes { tier: 2 }, B
@@ -495,7 +487,6 @@ export async function* readEvents(
     const sinceTs = opts.sinceTs;
     for await (const line of lines) {
       if (!line) continue;
-      // HARDENING_PLAN.md#R7 — validate event shape per line.
       // Pre-fix the cast trusted any line that parsed as JSON,
       // including hand-edited noise that would have surfaced as
       // undefined fields downstream.

@@ -20,7 +20,6 @@ export default defineConfig({
     // in tests.
     alias: {
       '@/': path.resolve(__dirname, './') + '/',
-      // HARDENING_PLAN.md#D6 — every server module declares
       // `import 'server-only';`. Next.js bundler resolves this to the
       // real package (a no-op on the server, throw on the client). In
       // vitest we run server-side only, so alias to an empty shim.

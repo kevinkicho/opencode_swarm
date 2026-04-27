@@ -1,10 +1,9 @@
-// Initial planner sweep — step 3a of SWARM_PATTERNS.md §1.
+// Initial planner sweep — step 3a of .
 //
 // Given a live swarm run with an empty board, prompts one of the run's
 // sessions to emit a todowrite list and translates each todo into an open
 // board item. This is the seed that gives other agents something to claim.
 //
-// HARDENING_PLAN.md#C12 — split into 4 files under lib/server/blackboard/planner/
 // on 2026-04-26. This file is now a re-export barrel so the 6 import sites
 // don't churn. Per-file responsibilities:
 //
@@ -36,7 +35,6 @@
 
 import 'server-only';
 
-// HARDENING_PLAN.md#C17 — `mintItemId` extracted to ./item-ids to break
 // the planner ↔ degraded-completion import cycle. Imported AND re-
 // exported here so existing callers don't need to update their imports.
 export { mintItemId } from './item-ids';

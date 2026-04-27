@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C12 — planner.ts split.
 //
 // The planner-sweep orchestrator. Steps:
 //   1. Resolve run + session, guard against double-sweep on a populated
@@ -95,7 +94,6 @@ export interface PlannerSweepResult {
   planMessageID: string | null;
 }
 
-// PATTERN_DESIGN/blackboard.md I4 — criterion authoring preflight.
 // Returns true when the criterion text is concrete enough for the
 // auditor to verdict against. False on:
 //   - too short (< MIN_CRITERION_CHARS)
@@ -132,7 +130,7 @@ export async function runPlannerSweep(
     includeReadme?: boolean;
     // When set, the prompt includes a tier-escalation preamble instructing
     // the planner to emit work at this tier or higher. See MAX_TIER and
-    // TIER_LADDER above, and SWARM_PATTERNS.md "Tiered execution". The
+ // TIER_LADDER above, and "Tiered execution". The
     // auto-ticker's idle-stop path sets this; normal first-sweeps leave it
     // undefined so the planner isn't pressured to invent ambition.
     escalationTier?: number;
@@ -330,7 +328,6 @@ export async function runPlannerSweep(
   const items: BoardItem[] = [];
   let offset = 0;
   let droppedCriteria = 0;
-  // PATTERN_DESIGN/role-differentiated.md I3 — collect role-notes for
   // dispatch after the board-insert loop so they don't get tangled up
   // with createdAtMs offsets or revision logging.
   const roleNotes: Array<{ role: string; text: string }> = [];
@@ -341,13 +338,12 @@ export async function runPlannerSweep(
     }
     const content = raw.content.trim();
     if (!content) continue;
-    // PATTERN_DESIGN/blackboard.md I4 — criterion authoring preflight.
     // Vague criteria ("make the app better") get UNCLEAR-forever from
     // the auditor and clutter the contract. Drop them silently with a
     // WARN; the planner can re-emit on the next sweep.
     if (raw.isCriterion && !isViableCriterion(content)) {
       console.warn(
-        `[planner] dropping vague criterion: "${content}" (PATTERN_DESIGN/blackboard.md I4)`,
+        `[planner] dropping vague criterion: "${content}"`,
       );
       droppedCriteria += 1;
       continue;
@@ -402,7 +398,6 @@ export async function runPlannerSweep(
     });
   }
 
-  // PATTERN_DESIGN/role-differentiated.md I3 — dispatch role-notes
   // after the board insert. Each note is posted to the matching
   // role's session as a clarification message. Failures log and
   // continue — a missed note doesn't justify aborting the sweep.
@@ -416,7 +411,7 @@ export async function runPlannerSweep(
         const sid = sidByRole.get(note.role);
         if (!sid) {
           console.warn(
-            `[planner] role-note for unknown role '${note.role}' dropped (PATTERN_DESIGN/role-differentiated.md I3)`,
+            `[planner] role-note for unknown role '${note.role}' dropped`,
           );
           return;
         }

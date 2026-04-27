@@ -1,11 +1,10 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // File-heat projection — stigmergy v0. Aggregates every patch part's
 // `files` list across the run into per-file edit counts + distinct-session
 // counts + last-touched timestamps. Used by the heat rail in LeftTabs to
 // answer "which files has the swarm actually converged on?" without
 // prescribing any coordinator behavior. Observation, not assignment —
-// matches the project's no-role-hierarchy stance (SWARM_PATTERNS.md §2).
+// matches the project's no-role-hierarchy stance.
 //
 // Stigmergy v1 (server-side picker bias) graduated to a real signal in
 // lib/server/blackboard/coordinator/heat.ts; this transformer remains the
@@ -19,7 +18,6 @@ export interface FileHeat {
   distinctSessions: number;  // how many different opencode sessions touched it
   lastTouchedMs: number;     // most recent assistant completion time that touched it
   sessionIDs: string[];      // deduped; agents in the roster index by session.id
-  // PATTERN_DESIGN/stigmergy.md I2 — per-session edit counts. Lets
   // consumers detect "session 3 edits src/auth/ constantly while the
   // rest avoid it" — a specialization signal that the flat sessionIDs
   // list can't surface. Keys are the same opencode sessionIDs that

@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C17 — break the planner ↔ degraded-completion cycle.
 //
 // `mintItemId` was originally inside planner.ts. degraded-completion.ts
 // imported it; planner.ts in turn imported recordPartialOutcome from

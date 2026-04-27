@@ -1,4 +1,3 @@
-// IMPLEMENTATION_PLAN Phase-7 verification suite — runs the 10 probes
 // that gate SHIPPED-UNVERIFIED → VERIFIED on the Q1–Q15 backlog.
 //
 //   node scripts/_verify-q-suite.mjs               # uses .dev-port, root URL

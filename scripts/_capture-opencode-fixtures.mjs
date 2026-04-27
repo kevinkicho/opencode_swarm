@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// HARDENING_PLAN.md#D7 — capture opencode JSON fixtures.
 //
 // Walks recent runs in .opencode_swarm/runs/, fetches messages from
 // each session via the live opencode at :4097, picks representative

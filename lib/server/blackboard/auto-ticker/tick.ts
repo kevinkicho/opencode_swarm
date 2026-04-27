@@ -79,7 +79,6 @@ async function ensureSlots(state: TickerState): Promise<boolean> {
   if (state.sessionIDs.length > 0) return true;
   const meta = await getRun(state.swarmRunID);
   if (!meta) return false;
-  // HARDENING_PLAN.md#D8 — idempotent-race property documented.
   // Two concurrent fanout() callers can both pass the first guard, both
   // await getRun, and both reach this block. The inner write of
   // `state.sessionIDs` and `state.slots` is content-deterministic
@@ -190,7 +189,7 @@ async function tickSession(
       slots.length > 0 &&
       slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP)
     ) {
-      // Ambition ratchet (see SWARM_PATTERNS.md "Tiered execution"). On
+      // Ambition ratchet. On
       // idle cascade we try a tier-N+1 planner escalation. If it seeds
       // items, the ticker keeps going at the new tier. Stage 2 (user's
       // 2026-04-24 termination-precedence decision): MAX_TIER does NOT
@@ -199,7 +198,6 @@ async function tickSession(
       // re-sweep at MAX_TIER again (throttled by MIN_MS_BETWEEN_SWEEPS).
       // Only hard caps (commitsCap / todosCap / minutesCap) or a manual
       // stop end the run.
-      // HARDENING_PLAN.md#D8 — attemptTierEscalation owns the flag now
       // (sets at entry, clears on all exit paths). Pre-fix the caller
       // checked-then-set the flag, which raced under two concurrent
       // tickSession calls. The inner check is now a fast-path optimization
@@ -221,7 +219,6 @@ async function tickSession(
     );
   } finally {
     slot.inFlight = false;
-    // HARDENING_PLAN.md#E4 — fan the ticker snapshot out on the bus so the
     // run page's `useLiveTicker` SSE consumer can update without polling
     // /board/ticker. Fires once per tick — listeners that want lower
     // cadence can sample. No-op when nothing's subscribed.
@@ -236,7 +233,7 @@ export async function fanout(swarmRunID: string): Promise<void> {
   if (!ready) return;
   // Re-check after the await — could have been stopped while resolving run.
   if (s.stopped) return;
-  // Role-imbalance watchdog (PATTERN_DESIGN/role-differentiated.md I2).
+  // Role-imbalance watchdog.
   // Cheap (single SQL read + per-role aggregation); throttled by run-
   // age + last-warn timestamp so a persistent imbalance doesn't spam.
   void checkRoleImbalance(s);

@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C4 — tickCoordinator decomposition phase 5.
 //
 // commitDone — final transitionStatus from in-progress → done. The CAS
 // can lose if something else moved the row mid-flight (rare; the

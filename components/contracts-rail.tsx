@@ -8,8 +8,6 @@
 // per kind so the user can answer "what's actually contractually
 // settled vs still in flight?" without reading every row's tooltip.
 //
-// Spec frozen in docs/PATTERN_DESIGN/blackboard.md §3. UI work shipped
-// 2026-04-24 (Phase 1.1 of docs/IMPLEMENTATION_PLAN.md).
 //
 // Aesthetic: dense h-5 rows, monospace, tabular-nums, ink/fog/molten/
 // mint/iris/amber palette only, micro-labels (10px uppercase
@@ -350,7 +348,6 @@ function Chip({
 
 // One contract row — dense h-5, all columns aligned via grid so eyes
 // can scan vertically by column. Spec column widths frozen in
-// PATTERN_DESIGN/blackboard.md §3.
 function ContractRow({ item }: { item: BoardItem }) {
   const sig = parseNote(item.note);
 

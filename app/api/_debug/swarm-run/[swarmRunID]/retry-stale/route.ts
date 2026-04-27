@@ -2,7 +2,6 @@
 //
 // POST /api/_debug/swarm-run/:swarmRunID/retry-stale   body: {}
 //
-// HARDENING_PLAN.md#C9 / FU.5 — moved from /api/swarm/run/[id]/board/
 // retry-stale to /api/_debug/swarm-run/[id]/retry-stale 2026-04-26.
 // Operational-recovery endpoint, no UI button (per the original audit
 // note that flagged this as orphan). The /api/_debug/* prefix marks
@@ -47,7 +46,7 @@ export const runtime = 'nodejs';
 // Patterns whose ticker is responsible for dispatching board work. Extending
 // auto-restart to a pattern without a blackboard-style loop would silently
 // no-op — better to be explicit so a future `foo-execute` pattern adder knows
-// to add itself here. See ARCHITECTURE.md §1.5.1.
+// to add itself here. See DESIGN.md §1.5.1.
 const TICKER_PATTERNS: ReadonlySet<string> = new Set([
   'blackboard',
   'orchestrator-worker',

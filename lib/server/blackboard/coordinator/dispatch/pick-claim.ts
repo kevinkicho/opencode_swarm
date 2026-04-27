@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C4 — tickCoordinator decomposition phase 1.
 //
 // pickClaim — select an open todo and an idle session, then transition
 // the todo open → claimed → in-progress via SQL CAS. Returns either:
@@ -149,7 +148,6 @@ export async function pickClaim(
     ? roleNamesBySessionID(meta).get(pickedSession)
     : undefined;
 
-  // PATTERN_DESIGN/role-differentiated.md I4 — per-role token budgets.
   if (
     meta.roleBudgets &&
     sessionRole &&
@@ -168,7 +166,7 @@ export async function pickClaim(
     }
     if (spent >= cap) {
       console.log(
-        `[coordinator] role-budget: ${sessionRole} hit ${spent}/${cap} tokens — denying claim (PATTERN_DESIGN/role-differentiated.md I4)`,
+        `[coordinator] role-budget: ${sessionRole} hit ${spent}/${cap} tokens — denying claim`,
       );
       return {
         kind: 'skip',
@@ -192,7 +190,6 @@ export async function pickClaim(
     };
   });
 
-  // PATTERN_DESIGN/role-differentiated.md I1 — strict role routing.
   if (meta.strictRoleRouting && sessionRole) {
     const before = scored.length;
     const kept = scored.filter(
@@ -200,7 +197,7 @@ export async function pickClaim(
     );
     if (kept.length === 0 && before > 0) {
       console.log(
-        `[coordinator] strict-role: session ${pickedSession?.slice(-8)} role=${sessionRole} has no matching todos (${before} candidates filtered) — skipping (PATTERN_DESIGN/role-differentiated.md I1)`,
+        `[coordinator] strict-role: session ${pickedSession?.slice(-8)} role=${sessionRole} has no matching todos (${before} candidates filtered) — skipping`,
       );
       return {
         kind: 'skip',
@@ -247,7 +244,6 @@ export async function pickClaim(
   }
   const todo = finalQueue[0].todo;
 
-  // PATTERN_DESIGN/stigmergy.md heat-picked-timeline-chip — flag this
   // claim with `pickedByHeat: true` when stigmergy actually shifted the
   // order.
   let pickedByHeat = false;
@@ -286,7 +282,6 @@ export async function pickClaim(
   // Claim-time hash anchoring (2026-04-24 declared-roles alignment).
   // SHA anchors the planner-declared expectedFiles BEFORE transitioning
   // to 'claimed' so runGateChecks's drift check has its baseline.
-  // HARDENING_PLAN.md#E5 — parallelize sha7 reads.
   let claimAnchors: { path: string; sha: string }[] | null = null;
   if (todo.expectedFiles && todo.expectedFiles.length > 0) {
     claimAnchors = await Promise.all(

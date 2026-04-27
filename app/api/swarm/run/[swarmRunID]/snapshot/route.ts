@@ -1,4 +1,3 @@
-// Aggregated swarm-run snapshot — IMPLEMENTATION_PLAN 6.5.
 //
 // GET /api/swarm/run/:swarmRunID/snapshot
 //   → SnapshotResponse

@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C10 — live.ts split.
 //
 // Permission-request observation + reply hook. opencode emits
 // `permission.asked` when a tool call needs approval and blocks the

@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C10 — live.ts split.
 //
 // Swarm-run-aware live hooks: useLiveSwarmRun (resolve a swarmRunID to
 // its meta + primary session) and useLiveSwarmRunMessages (live view
@@ -171,7 +170,6 @@ export interface LiveSwarmRunMessagesSnapshot {
 export function useLiveSwarmRunMessages(
   meta: SwarmRunMeta | null,
   fallbackPollMs = 30_000,
-  // IMPLEMENTATION_PLAN 6.4 — per-session visibility gating.
   // When set, SSE events for sessionIDs NOT in this list skip the
   // refetch path. Hydrate still loads all sessions (cold-load needs
   // full state); subsequent updates for hidden sessions are dropped.
@@ -376,7 +374,6 @@ export function useLiveSwarmRunMessages(
       if (parsed.type === 'message.part.updated') {
         const messageID = props.messageID;
         if (!messageID) return false;
-        // HARDENING_PLAN.md#R2 — validate the part shape before merging.
         // Pre-fix the cast `props.part as OpencodePart` trusted whatever
         // opencode emitted; a new part type or missing required field
         // (Q34/Q42 class) silently corrupted the slot. Validator returns

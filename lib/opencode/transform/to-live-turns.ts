@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // One entry per assistant turn that committed file edits. The diff viewer
 // uses this to build the turn list. `files` comes from the patch part, which

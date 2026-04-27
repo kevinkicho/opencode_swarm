@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D8 — verification test for the resweepInFlight
 // CAS-tighten fix in tier-escalation.ts.
 //
 // Pre-fix: tick.ts:193 did `if (!state.resweepInFlight) {

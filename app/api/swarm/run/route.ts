@@ -6,7 +6,6 @@
 // pattern='none' (opencode native); N>=2 for multi-session presets like
 // 'council' where each session is a parallel member of the same run.
 // Patterns without coordinator code still reject at request time (501);
-// see SWARM_PATTERNS.md §"Backend gap" for the roadmap.
 //
 // Lifecycle on success:
 //   1. parseRequest (lib/server/run/validate.ts) — pull a typed
@@ -26,7 +25,6 @@
 //      kickoff that rejects in the first 150ms returns 5xx instead of 201
 //   9. return { swarmRunID, sessionIDs, meta, gateFailures? } to the browser
 //
-// HARDENING_PLAN.md#C2 — split 2026-04-26. Validation tables, parser,
 // continuation resolver, and per-pattern kickoff dispatch all moved to
 // lib/server/run/. The route file is now the orchestration shell that
 // wires those modules together.
@@ -80,7 +78,7 @@ export async function POST(req: NextRequest): Promise<Response> {
     return Response.json(
       {
         error: `pattern '${parsed.pattern}' is not implemented yet`,
-        hint: 'pattern="none", "council", and "blackboard" ship today — see SWARM_PATTERNS.md',
+ hint: 'pattern="none", "council", and "blackboard" ship today — see ',
       },
       { status: 501 }
     );
@@ -281,7 +279,6 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Step 4: per-pattern kickoff via the dispatcher table.
   //
-  // HARDENING_PLAN.md#R1 — every kickoff goes through the sync-throw
   // guard. If the kickoff settles (rejects) within the 150ms window, the
   // route returns 5xx with `{ error: 'kickoff-failed', detail }` instead
   // of 201 with a phantom run. If it's still pending after the window,

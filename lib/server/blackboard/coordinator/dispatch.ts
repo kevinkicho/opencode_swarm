@@ -1,7 +1,6 @@
 // Coordinator tick — steps 3b (idle detection) + 3c (claim + work + commit)
-// of SWARM_PATTERNS.md §1.
+// of .
 //
-// HARDENING_PLAN.md#C4 — decomposed into 5 phase helpers under
 // lib/server/blackboard/coordinator/dispatch/ on 2026-04-26. Pre-split,
 // tickCoordinatorImpl was 832 LOC with 14 exit paths. The helpers are
 // each independently legible:
@@ -15,7 +14,7 @@
 //
 // Concurrency model: concurrent calls are safe IFF each call targets a
 // distinct session via opts.restrictToSessionID. The auto-ticker uses this
-// to fan out per-session tickers for parallelism (SWARM_PATTERNS.md §1
+// to fan out per-session tickers for parallelism (
 // Open questions → Blackboard parallelism). CAS at the SQL layer protects
 // against two sessions racing on the same todo (the loser gets `skipped:
 // claim lost race`). Calls without restrictToSessionID still use the
@@ -35,7 +34,6 @@ import { awaitTurn } from './dispatch/await-turn';
 import { runGateChecks } from './dispatch/run-gate-checks';
 import { commitDone } from './dispatch/commit-done';
 
-// HARDENING_PLAN.md#D9 — per-swarmRunID dispatch mutex.
 //
 // Pre-fix: tickCoordinator had no per-run lock. The auto-ticker fans out
 // via restrictToSessionID with a per-session inFlight flag, but a user

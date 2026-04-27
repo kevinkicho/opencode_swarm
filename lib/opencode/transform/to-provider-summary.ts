@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // Provider rollup — per-provider (zen / go / ollama) tally of distinct
 // agent count, total tokens, total cost. Drives the topbar provider

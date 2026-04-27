@@ -1,5 +1,5 @@
 // UI metadata for the orchestration-pattern picker in new-run-modal.
-// The canonical catalog lives in `SWARM_PATTERNS.md` — keep taglines and
+// The canonical catalog lives in `` — keep taglines and
 // availability flags in sync there when promoting a preset.
 
 import type { SwarmPattern } from './swarm-types';
@@ -9,7 +9,7 @@ export interface PatternMeta {
   tagline: string;          // short description shown inside the tile
   // Concrete mechanics — rendered as a second dimmer line under the
   // tagline so users can eyeball "how many sessions / what loop / what
-  // ceiling" without reading SWARM_PATTERNS.md. Keep ≤ ~55 chars to fit
+ // ceiling" without reading . Keep ≤ ~55 chars to fit
   // two-line tiles cleanly.
   shape: string;
   // When to reach for it. One line, hover-revealable in the tile or

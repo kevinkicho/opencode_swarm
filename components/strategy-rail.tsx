@@ -6,7 +6,6 @@
 // (added+removed > 0 or rephrased > 0). Fog-muted when a sweep
 // confirmed the existing plan without changes.
 //
-// Spec frozen in docs/PATTERN_DESIGN/orchestrator-worker.md §3.
 //
 // Data flow: useStrategy polls /api/swarm/run/:id/strategy on a 5s
 // cadence. The endpoint reads plan_revisions (one row per sweep,
@@ -45,10 +44,8 @@ export function StrategyRail({
   const { revisions, loading, error } = useStrategy(swarmRunID);
   const [expandedId, setExpandedId] = useState<number | null>(null);
 
-  // PATTERN_DESIGN/orchestrator-worker.md I3 — manual replan trigger.
   // POST /api/swarm/run/:id/replan returns 202 immediately.
   //
-  // HARDENING_PLAN.md#E9 — useMutation for uniform pending/error/disabled
   // state. The transient "queued" → "idle" auto-reset is preserved via
   // a useEffect tied to the mutation's status.
   const replanMutation = useMutation({
@@ -153,7 +150,7 @@ function wrap(
         type="button"
         onClick={fireReplan}
         disabled={replanState === 'firing'}
-        title="Trigger a fresh planner sweep on this run (PATTERN_DESIGN/orchestrator-worker.md I3)"
+        title="Trigger a fresh planner sweep on this run"
         className={clsx(
           'ml-auto h-5 px-1.5 rounded border bg-ink-900/60 font-mono text-[9.5px] uppercase tracking-widest2 transition cursor-pointer',
           replanTone,

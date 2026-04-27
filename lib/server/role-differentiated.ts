@@ -1,5 +1,4 @@
 // Role-differentiated pattern — hierarchical pattern #2 (see
-// SWARM_PATTERNS.md §6).
 //
 // Shape: N workers, each with a pinned role (architect, tester,
 // security, ux, …). Every session gets a role-framed intro + the

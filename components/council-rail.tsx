@@ -7,7 +7,6 @@
 // each column = one member's draft length. A trailing convergence chip
 // summarizes how close the drafts are to each other.
 //
-// Spec frozen in docs/PATTERN_DESIGN/council.md §3.
 //
 // Convergence metric: pairwise token-jaccard on the last-round drafts
 // (cheap, deterministic, order-invariant). >0.8 = high (mint), 0.5-0.8
@@ -35,7 +34,6 @@ interface MemberDraft {
   // For round ≥2: diff vs prior round of same member. Null otherwise.
   diffVsPrior: string | null;
   status: 'pending' | 'drafting' | 'completed' | 'errored';
-  // PATTERN_DESIGN/council.md I2 — per-member direction persistence.
   // Token-jaccard between this member's draft in this round and their
   // own draft in the prior round. Null on R1 or when either side is
   // missing. >0.85 = stayed put; 0.5–0.85 = evolved; <0.5 = position
@@ -54,7 +52,6 @@ interface RoundRow {
   status: 'pending' | 'in-progress' | 'done';
 }
 
-// HARDENING_PLAN.md#C15 — `turnText` and `countLines` lifted to
 // components/rails/_shared.ts. Pre-fix duplicated 5x across rails.
 
 function diffSummary(prev: string, next: string): string {
@@ -141,7 +138,6 @@ function convergenceLabel(value: number | null): string {
   return 'low';
 }
 
-// PATTERN_DESIGN/council.md I2 — stance bucket from self-jaccard.
 // Three buckets matched to the convergence chip's tone palette so
 // the eye groups them intuitively: stable = mint (no movement),
 // evolved = fog-muted (some refinement), shifted = amber (strong
@@ -170,7 +166,7 @@ export function CouncilRail({
   // Accepted but not wired in v1 — council rows are rounds, not sessions,
   // so inspector wiring needs cell-level (per-member) clicks which
   // require restructuring the row component. Page passes this so a
-  // future cell-level enhancement is non-breaking. IMPLEMENTATION_PLAN
+ // future cell-level enhancement is non-breaking. 
   // 6.9 v2.
   onInspectSession: _onInspectSession,
 }: {
@@ -285,7 +281,6 @@ export function CouncilRail({
   );
 }
 
-// Stick-to-bottom-enabled body — IMPLEMENTATION_PLAN 6.7 + 6.8.
 function CouncilListBody({
   rows,
   memberCount,
@@ -347,7 +342,6 @@ const CONV_TEXT: Record<'mint' | 'amber' | 'rust' | 'fog', string> = {
   fog: 'text-fog-700',
 };
 
-// HARDENING_PLAN.md#C15 — `compactNum` lifted to rails/_shared.ts.
 
 function CouncilRowEl({
   row,

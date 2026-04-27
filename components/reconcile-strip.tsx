@@ -7,7 +7,7 @@ import type { Agent, AgentMessage } from '@/lib/swarm-types';
 // Council reconcile surface. Shown above the composer when every member of a
 // multi-session run has finished at least one draft and no one is still
 // thinking. Each member gets a click-to-focus pill that jumps the timeline to
-// that member's latest assistant turn — matching SWARM_PATTERNS.md §4's "human
+// that member's latest assistant turn — matching 
 // reconcile" framing without pinning an auto-judge role.
 //
 // Action contract (added 2026-04-21):

@@ -32,7 +32,7 @@ export interface TickerSnapshot {
     | { status: 'skipped'; reason: string };
   lastRanAtMs?: number;
   startedAtMs: number;
-  // Ambition-ratchet state (server side: SWARM_PATTERNS.md "Tiered
+ // Ambition-ratchet state (server side: "Tiered
   // execution"). currentTier 1-indexed; tierExhausted means MAX_TIER was
   // attempted and returned zero — next cascade will stop the ticker.
   currentTier: number;
@@ -78,7 +78,7 @@ export interface LiveBoard {
 
 // Frame types live in board-events-multiplexer.ts now — see that module
 // for the full union including ticker.tick + strategy.update folded into
-// the same SSE channel (HARDENING_PLAN.md#E4).
+// the same SSE channel.
 import { subscribeBoardEvents } from './board-events-multiplexer';
 
 // listBoardItems on the server orders by (created_ms DESC, id ASC). Mirror
@@ -109,7 +109,7 @@ export function useLiveBoard(swarmRunID: string | null): LiveBoard {
 
     // Subscribe via the multiplexer so this hook shares ONE EventSource
     // with useLiveTicker / useStrategy on the same swarmRunID
-    // (HARDENING_PLAN.md#E4). Ticker/strategy frames pass through
+    //. Ticker/strategy frames pass through
     // ignored — those hooks own their own derivation.
     const unsubscribe = subscribeBoardEvents(
       swarmRunID,
@@ -146,7 +146,7 @@ export function useLiveBoard(swarmRunID: string | null): LiveBoard {
 // reloads. Falls back gracefully for non-`ag_*` shapes.
 const DERIVED_ACCENTS: BoardAgent['accent'][] = ['molten', 'mint', 'iris', 'amber', 'fog'];
 
-// Ticker observability + control. SSE-driven as of HARDENING_PLAN.md#E4
+// Ticker observability + control. SSE-driven as of 
 // (2026-04-26): ticker.tick frames flow through the same /board/events
 // EventSource as board mutations and strategy revisions, multiplexed
 // client-side so the run page opens ONE connection per swarmRunID. The

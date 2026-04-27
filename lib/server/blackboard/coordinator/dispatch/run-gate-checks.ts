@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C4 — tickCoordinator decomposition phase 4.
 //
 // runGateChecks — between "turn completed" and "mark done", run four
 // gates in order. Any rejection bounces the item to stale; pass-through
@@ -54,7 +53,6 @@ export async function runGateChecks(
   // and compare against the claim-time anchor. A mismatch means the
   // file moved under us — UNLESS the file is in editedPaths, in
   // which case the change is the worker's own legitimate edit.
-  // HARDENING_PLAN.md#E5 — parallelize sha7 reads.
   if (todo.expectedFiles && todo.expectedFiles.length > 0 && todo.fileHashes) {
     const editedSet = new Set(editedPaths);
     const candidates = todo.fileHashes.filter((a) => !editedSet.has(a.path));
@@ -91,7 +89,6 @@ export async function runGateChecks(
         staleSinceSha: driftedPaths[0],
       });
       if (rolled.ok) {
-        // PATTERN_DESIGN/blackboard.md I1 — auto-replan on CAS drift.
         // Fire-and-forget a focused planner sweep so a replacement
         // todo lands in seconds rather than waiting for the next
         // periodic sweep.
@@ -113,7 +110,6 @@ export async function runGateChecks(
   // Compute commit-time file hashes for whatever was edited. A turn
   // that produced no edits (skip / text answer / q-reply) still
   // commits to done — the todo was addressed without a patch.
-  // HARDENING_PLAN.md#E5 — parallelize sha7 reads.
   const fileHashes: { path: string; sha: string }[] = (
     await Promise.all(
       editedPaths.map(async (rel) => {

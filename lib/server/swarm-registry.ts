@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#W5.1 — fs/derive split.
 //
 // Backward-compat barrel. The implementation lives in:
 //   - ./swarm-registry/fs.ts     — persistence (createRun / getRun /

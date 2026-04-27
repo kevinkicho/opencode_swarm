@@ -60,7 +60,7 @@ import { useNewRunForm } from './new-run/use-new-run-form';
 export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   // Form state is consolidated via useNewRunForm (11 fields → 1 reducer
   // hook). Local setter aliases below preserve the existing JSX call
-  // sites without churn. HARDENING_PLAN.md#C8 — this drops the modal's
+ // sites without churn. — this drops the modal's
   // useState count from 13 to 3 (form + recipesOpen + copiedPattern;
   // launching comes from launchMutation.isPending).
   const { form, setField, bumpTeamCount, clearTeam } = useNewRunForm();
@@ -120,7 +120,6 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     workspacePath.trim().length > 0 &&
     (branchStrategy !== 'push-new-branch' || branchName.trim().length > 0);
 
-  // HARDENING_PLAN.md#E9 — useMutation for the run-create POST.
   // Pre-fix: useState pair `launching` + `launchError` driven by
   // try/catch around the fetch. Post-fix: TanStack manages pending +
   // error state uniformly; SWARM_RUNS_QUERY_KEY invalidation lives in

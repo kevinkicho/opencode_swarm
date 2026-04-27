@@ -1,4 +1,4 @@
-// Critic-loop pattern — hierarchical pattern #4 (see SWARM_PATTERNS.md §8).
+// Critic-loop pattern — hierarchical pattern #4.
 //
 // Shape: exactly 2 sessions. Session 0 = worker, session 1 = critic.
 // Worker produces a draft, critic reviews, worker revises. Loop
@@ -35,7 +35,6 @@ const CRITIC_AGENT_NAME = 'critic';
 // is generous for substantive work — critic usually replies faster
 // (~1-2 min) but the worker's first draft or a deep revision can run
 // 5-10 min.
-// HARDENING_PLAN.md#C18 — wait window + nitpick conf cap lifted to
 // pattern-tunables.ts.
 import { THRESHOLDS, TIMINGS } from './pattern-tunables';
 const ITERATION_WAIT_MS = TIMINGS.critic.iterationWaitMs;
@@ -45,7 +44,6 @@ const ITERATION_WAIT_MS = TIMINGS.critic.iterationWaitMs;
 // feedback without looping on perfection-seeking.
 const DEFAULT_MAX_ITERATIONS = 3;
 
-// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
 // harvest-drafts.ts. Pre-fix duplicated character-identical here.
 
 function buildWorkerIntroPrompt(directive: string | undefined): string {
@@ -73,7 +71,7 @@ function buildCriticIntroPrompt(directive: string | undefined): string {
     '',
     'Sit tight until the worker produces a draft. You will receive the',
     'draft and your job is to review it rigorously. When you review,',
-    'reply in EXACTLY this structured shape (PATTERN_DESIGN/critic-loop.md I1):',
+    'reply in EXACTLY this structured shape:',
     '',
     '  ```yaml',
     '  verdict: APPROVED | REVISE',
@@ -131,7 +129,6 @@ function buildRevisionPrompt(
   ].join('\n');
 }
 
-// PATTERN_DESIGN/critic-loop.md I1 — structured verdict contract.
 // Parses the YAML-ish block at the top of the critic's reply and
 // returns the verdict + confidence + scope + issues. Tolerant of
 // minor formatting variation (loose yaml, missing fields default to
@@ -254,7 +251,7 @@ export async function runCriticLoopKickoff(
   // but make the risk visible in the dev console.
   if (workerModel && criticModel && workerModel === criticModel) {
     console.warn(
-      `[critic-loop] run ${swarmRunID}: worker and critic share model '${workerModel}' — feedback quality may regress toward self-approval (PATTERN_DESIGN/critic-loop.md I4)`,
+      `[critic-loop] run ${swarmRunID}: worker and critic share model '${workerModel}' — feedback quality may regress toward self-approval`,
     );
   }
 
@@ -304,7 +301,6 @@ export async function runCriticLoopKickoff(
       .map((m) => m.info.id),
   );
 
-  // PATTERN_DESIGN/critic-loop.md I2 — auto-terminate on nitpick
   // loop. Track the last few verdicts; if iterations N-1 and N are
   // both REVISE + WORDING + confidence ≤ 3, the critic is fixating
   // on phrasing rather than substance — ship the current draft and
@@ -472,7 +468,7 @@ export async function runCriticLoopKickoff(
     // we have a two-iteration window of WORDING+low-confidence REVISE.
     if (iter >= 2 && isNitpickStreak()) {
       console.log(
-        `[critic-loop] run ${swarmRunID} iter ${iter}: auto-terminating — nitpick streak (last 2 = REVISE+WORDING+confidence≤${NITPICK_CONF_MAX}). Shipping draft N=${iter} (PATTERN_DESIGN/critic-loop.md I2)`,
+        `[critic-loop] run ${swarmRunID} iter ${iter}: auto-terminating — nitpick streak (last 2 = REVISE+WORDING+confidence≤${NITPICK_CONF_MAX}). Shipping draft N=${iter}`,
       );
       try {
         await postSessionMessageServer(

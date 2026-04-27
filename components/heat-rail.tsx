@@ -26,7 +26,6 @@ import {
   ViewToggleButton,
 } from './heat-rail/sub-components';
 
-// HARDENING_PLAN.md#C17 — moved to heat-rail/types.ts to break the
 // heat-rail ↔ sub-components import cycle. Re-exported so existing
 // callers (page.tsx etc.) don't need to update their imports.
 export type { DiffStatsByPath } from './heat-rail/types';

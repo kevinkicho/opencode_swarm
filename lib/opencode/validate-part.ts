@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R2 — SDK schema-drift firewall.
 //
 // opencode's SDK types declare which message-part shapes we expect; the
 // transform.ts narrowing trusts those shapes via TS-only filters. When

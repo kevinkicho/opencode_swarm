@@ -191,7 +191,7 @@ export function LeftTabs({
               <div className="space-y-0.5 max-w-[260px]">
                 <div className="font-mono text-[11px] text-fog-200">blackboard</div>
                 <div className="font-mono text-[10.5px] text-fog-500">
-                  shared board — items claimed via CAS, status transitions live-streamed (SWARM_PATTERNS.md §1).
+                  shared board — items claimed via CAS, status transitions live-streamed.
                 </div>
               </div>
             }

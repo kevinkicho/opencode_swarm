@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C10 — live.ts split.
 //
 // Single-session live hooks: useLiveSession (one session's messages +
 // metadata, SSE-driven), useSessionDiff (lazy diff fetch, immutable per
@@ -162,7 +161,7 @@ export function useLiveSession(
 // drawer opens). Refetches when the session's lastUpdated changes so
 // edits from a newly-finished turn appear without a manual refresh.
 //
-// Migrated to TanStack Query (IMPLEMENTATION_PLAN 6.3) — gives free
+// Migrated to TanStack Query — gives free
 // cross-component dedup (multiple drawers / inspectors asking for the
 // same diff share one cache entry) and automatic cache hits across
 // drawer open/close cycles. Earlier custom implementation re-fetched

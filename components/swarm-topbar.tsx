@@ -225,12 +225,6 @@ export function SwarmTopbar({
             <IconSettings size={14} />
           </button>
         </Tooltip>
-
-        <Tooltip content="kevin team admin" side="bottom" align="end">
-          <button className="fluent-btn font-mono text-2xs text-fog-300" aria-label="account">
-            kk
-          </button>
-        </Tooltip>
       </div>
     </header>
   );

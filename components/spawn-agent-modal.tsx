@@ -46,7 +46,7 @@ export function SpawnAgentModal({
   directory: string | null;
 }) {
   const router = useRouter();
-  // Form state consolidated — HARDENING_PLAN.md#C8 useState-count reduction.
+ // Form state consolidated — useState-count reduction.
   // 7 useState pairs → 1 form object + 1 mode + 1 mutation (no useState).
   const [form, setForm] = useState<{
     modelId: string;
@@ -77,7 +77,6 @@ export function SpawnAgentModal({
     !!directory &&
     (spawnMode === 'idle' || trimmedDirective.length > 0);
 
-  // HARDENING_PLAN.md#E9 — useMutation replaces the prior 3-state flow
   // (spawnState / spawnError + try/catch). TanStack manages pending +
   // success + error uniformly; the verified→navigate handoff stays as a
   // setTimeout so the verified UI render persists across the transition.

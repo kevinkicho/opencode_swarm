@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C2 — app/api/swarm/run/route.ts split.
 //
 // Continuation inheritance: when req.continuationOf is set, look up the
 // prior run and fill in fields the new run should inherit (workspace,

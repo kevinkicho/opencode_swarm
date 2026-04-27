@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-// HARDENING_PLAN.md#D6 — add `import 'server-only';` to every file under
 // lib/server/ that doesn't already have it. Inserts after the leading
 // block-comment header so the file's purpose comment stays at the top
 // for grep-readability.

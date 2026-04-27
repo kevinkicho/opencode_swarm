@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C18 — pattern-runtime tunables consolidation.
 //
 // Pre-fix: ~13 magic-number constants scattered across the 5 pattern
 // files (council, critic-loop, debate-judge, deliberate-execute,
@@ -63,10 +62,9 @@ export const TIMINGS = {
 
 export const THRESHOLDS = {
   council: {
-    // Token-jaccard similarity threshold above which the council
-    // is considered "converged" (Q98 / I1 in PATTERN_DESIGN/
-    // council.md). 0.85 picked empirically — more lenient and
-    // false convergence triggers; stricter and convergence rarely
+    // Token-jaccard similarity threshold above which the council is
+    // considered "converged". 0.85 picked empirically — more lenient
+    // and false convergence triggers; stricter and convergence rarely
     // fires before the round cap.
     convergence: 0.85,
   },

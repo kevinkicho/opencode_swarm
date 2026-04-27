@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D4 #2 — dispatch coordinator unit tests.
 //
 // `tickCoordinator` in dispatch.ts is the heart of the blackboard work
 // loop. The Q34 silent-drop class lives here; so do the CAS races, the

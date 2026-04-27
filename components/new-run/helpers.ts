@@ -27,7 +27,7 @@ export function extractRepoName(url: string): string {
 // Curl-recipe reference shown in a collapsible block at the bottom of
 // the modal. Docs-as-copy: each entry is a working example of POST
 // /api/swarm/run for that pattern. Kept alongside the modal rather
-// than in SWARM_PATTERNS.md because discoverability matters here —
+// than in because discoverability matters here
 // users see the tile grid and immediately ask "what does the API
 // body look like?".
 //

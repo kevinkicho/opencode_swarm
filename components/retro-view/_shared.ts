@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C14 — retro-view decomposition.
 //
 // Cross-cutting bits used by both the main RetroView (run-level) and
 // the AgentRollupCard sub-tree (agent-level). Pulling them out lets

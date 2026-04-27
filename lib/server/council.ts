@@ -68,7 +68,6 @@ export function recommendedDeliberationRounds(teamSize: number): number {
   return DEFAULT_MAX_ROUNDS;
 }
 
-// HARDENING_PLAN.md#C18 — TIMINGS + THRESHOLDS lifted to
 // lib/server/pattern-tunables.ts. Local aliases keep call sites stable;
 // stress-tests can override the canonical constants there.
 import { THRESHOLDS, TIMINGS } from './pattern-tunables';
@@ -110,7 +109,6 @@ export function meanPairwiseJaccard(texts: string[]): number | null {
   return pairs > 0 ? sum / pairs : null;
 }
 
-// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
 // harvest-drafts.ts (the helper module shared with map-reduce + others).
 // Pre-fix this function existed character-identical in 6 files; the
 // drift risk was real.
@@ -145,7 +143,6 @@ function buildRoundPrompt(
       'where you can, and flag irreconcilable differences clearly. Respond now.';
   }
 
-  // PATTERN_DESIGN/council.md I3 — minority-view preservation. On the
   // final round, instruct each member to spell out any dissenting
   // position (their own or another member's) explicitly, so a 3-vs-2
   // split doesn't quietly collapse into the majority's text. Doesn't
@@ -258,7 +255,6 @@ export async function runCouncilRounds(
       });
       return;
     }
-    // PATTERN_DESIGN/council.md I4 — per-member wait runs in parallel
     // so each member gets the full ROUND_WAIT_MS. Sequential waits
     // would have shared the deadline (member 5 starts with member 1's
     // remaining time) and the round-end could've blown past the
@@ -292,7 +288,6 @@ export async function runCouncilRounds(
     }
     lastCompletedRound = roundNum - 1; // round (roundNum-1) drafts are now in hand
 
-    // PATTERN_DESIGN/council.md I1 — convergence-detection auto-stop.
     // The drafts we just harvested are responses to round (roundNum-1)'s
     // prompt (or the initial directive when roundNum=2). If they converge
     // tightly enough, skip remaining rounds and let the caller proceed
@@ -305,7 +300,7 @@ export async function runCouncilRounds(
       );
       if (conv !== null && conv >= COUNCIL_CONVERGENCE_THRESHOLD) {
         console.log(
-          `[council] run ${swarmRunID} — R${roundNum - 1} convergence ${(conv * 100).toFixed(0)}% ≥ ${(COUNCIL_CONVERGENCE_THRESHOLD * 100).toFixed(0)}% — auto-stopping rounds (PATTERN_DESIGN/council.md I1)`,
+          `[council] run ${swarmRunID} — R${roundNum - 1} convergence ${(conv * 100).toFixed(0)}% ≥ ${(COUNCIL_CONVERGENCE_THRESHOLD * 100).toFixed(0)}% — auto-stopping rounds`,
         );
         return;
       }

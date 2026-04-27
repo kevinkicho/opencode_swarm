@@ -1,4 +1,4 @@
-// Map-reduce orchestration — SWARM_PATTERNS.md §3.
+// Map-reduce orchestration.
 //
 // Map phase: every session gets the same base directive plus its own scope
 // annotation ("your slice: src/api/"). Sessions work in parallel; the backend
@@ -96,7 +96,6 @@ export async function deriveSlices(
   return buckets.map((b) => b.join(', '));
 }
 
-// PATTERN_DESIGN/map-reduce.md I2 — scope imbalance detector.
 // deriveSlices buckets dirs by count, not size. A repo where one top-level
 // dir holds 90% of the code produces a wildly imbalanced map: one member
 // drowns in work while siblings finish in seconds. We can't auto-rebalance
@@ -107,7 +106,6 @@ export async function deriveSlices(
 // and compute max:min. If the ratio exceeds 5x, log a single WARN naming
 // each slice with its size. Cheap (~ms on small repos, capped on large
 // repos by the recursion cost) and fire-and-forget — never blocks kickoff.
-// HARDENING_PLAN.md#C18 — TIMINGS + THRESHOLDS lifted to pattern-tunables.ts.
 import { THRESHOLDS, TIMINGS } from './pattern-tunables';
 const SCOPE_IMBALANCE_THRESHOLD = THRESHOLDS.mapReduce.scopeImbalance;
 const SCOPE_CODE_EXTS = new Set<string>([
@@ -175,7 +173,7 @@ export async function detectScopeImbalance(
     .map((s, i) => `${s}=${(sizes[i] / 1024).toFixed(0)}KB`)
     .join('  ');
   console.warn(
-    `[map-reduce] PATTERN_DESIGN/map-reduce.md I2 — scope imbalance: max:min = ${ratio.toFixed(1)}x (threshold ${SCOPE_IMBALANCE_THRESHOLD}x); ${summary}`,
+ `[map-reduce] — scope imbalance: max:min = ${ratio.toFixed(1)}x (threshold ${SCOPE_IMBALANCE_THRESHOLD}x); ${summary}`,
   );
 }
 
@@ -220,7 +218,6 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   // Per-session wait deadline. 25 minutes is generous for a map phase — if
   // any one session blows this we log and skip its output in the synthesis
   // (better to ship N-1 drafts than hang forever).
-  // PATTERN_DESIGN/map-reduce.md I3 — parallel waits so a hung member
   // doesn't block sibling waits sequentially. Each wait runs to its own
   // deadline; the slow ones don't penalize the fast ones.
   const SESSION_WAIT_MS = TIMINGS.mapReduce.sessionWaitMs;
@@ -268,7 +265,6 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
     return;
   }
 
-  // PATTERN_DESIGN/map-reduce.md I3 — partial-map tolerance gate. When
   // the operator opts in, refuse to proceed unless the floor of
   // successful drafts is met AND the ceiling of failures isn't
   // exceeded. Without the knob, we always proceed with whatever
@@ -277,7 +273,7 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   if (tolerance) {
     if (present.length < tolerance.minMembers) {
       console.warn(
-        `[map-reduce] run ${swarmRunID} — only ${present.length}/${meta.sessionIDs.length} drafts harvested, below minMembers=${tolerance.minMembers} — synthesis aborted (PATTERN_DESIGN/map-reduce.md I3)`,
+        `[map-reduce] run ${swarmRunID} — only ${present.length}/${meta.sessionIDs.length} drafts harvested, below minMembers=${tolerance.minMembers} — synthesis aborted`,
       );
       recordPartialOutcome(swarmRunID, {
         pattern: 'map-reduce',
@@ -289,7 +285,7 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
     }
     if (failedCount > tolerance.maxMemberFailures) {
       console.warn(
-        `[map-reduce] run ${swarmRunID} — ${failedCount} member(s) failed, above maxMemberFailures=${tolerance.maxMemberFailures} — synthesis aborted (PATTERN_DESIGN/map-reduce.md I3)`,
+        `[map-reduce] run ${swarmRunID} — ${failedCount} member(s) failed, above maxMemberFailures=${tolerance.maxMemberFailures} — synthesis aborted`,
       );
       recordPartialOutcome(swarmRunID, {
         pattern: 'map-reduce',
@@ -301,7 +297,7 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
     }
     if (failedCount > 0) {
       console.log(
-        `[map-reduce] run ${swarmRunID} — proceeding with ${present.length}/${meta.sessionIDs.length} drafts, ${failedCount} failures within tolerance (PATTERN_DESIGN/map-reduce.md I3)`,
+        `[map-reduce] run ${swarmRunID} — proceeding with ${present.length}/${meta.sessionIDs.length} drafts, ${failedCount} failures within tolerance`,
       );
     }
   }
@@ -370,7 +366,6 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
       console.log(
         `[map-reduce] run ${swarmRunID} — synthesis claimed by ${outcome.sessionID} and completed`,
       );
-      // PATTERN_DESIGN/map-reduce.md I1 — synthesis-critic gate. Opt-in
       // peer review of the synthesis against the original drafts. Loop
       // the synthesizer back on REVISE, capped at MAX_REVISIONS so a
       // disagreeable critic can't burn unbounded tokens.
@@ -411,7 +406,6 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   );
 }
 
-// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
 // harvest-drafts.ts (the helper module map-reduce already imports
 // from). Pre-fix duplicated character-identical here.
 
@@ -475,7 +469,6 @@ function buildSynthesisPrompt(
   }
 
   const presentCount = drafts.filter((d) => d.text !== null).length;
-  // PATTERN_DESIGN/map-reduce.md I3 — surface partial-map state to the
   // synthesizer so it knows the input is incomplete and can call out
   // the gap rather than papering over it.
   const failureNote =
@@ -511,7 +504,6 @@ function buildSynthesisPrompt(
   ].join('\n');
 }
 
-// PATTERN_DESIGN/map-reduce.md I1 — synthesis-critic gate.
 //
 // Reuses an idle peer session (any non-synthesizer in meta.sessionIDs)
 // as the critic — keeps the infra simple, matches deliberate-execute I1.
@@ -707,7 +699,7 @@ async function runSynthesisCriticGate(
     const { verdict, feedback } = parseCriticVerdict(criticText);
     if (verdict === 'approved') {
       console.log(
-        `[map-reduce] run ${swarmRunID} — synthesis APPROVED by critic on attempt ${attempt} (PATTERN_DESIGN/map-reduce.md I1)`,
+        `[map-reduce] run ${swarmRunID} — synthesis APPROVED by critic on attempt ${attempt}`,
       );
       return;
     }
@@ -720,7 +712,7 @@ async function runSynthesisCriticGate(
 
     // REVISE — re-prompt the synthesizer with the feedback.
     console.log(
-      `[map-reduce] run ${swarmRunID} — synthesis REVISE on attempt ${attempt} (PATTERN_DESIGN/map-reduce.md I1)`,
+      `[map-reduce] run ${swarmRunID} — synthesis REVISE on attempt ${attempt}`,
     );
     if (attempt >= MAX_SYNTHESIS_CRITIC_REVISIONS) {
       console.warn(

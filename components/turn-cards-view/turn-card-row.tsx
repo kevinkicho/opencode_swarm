@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C14 — turn-cards-view decomposition.
 //
 // Per-turn card sub-component plus its 3 formatters. Lifted from
 // turn-cards-view.tsx so the main file holds the AgentColumn +

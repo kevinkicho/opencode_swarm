@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D6 — server-only enforcement.
 //
 // Every file under lib/server/ should declare `import 'server-only';` as
 // the first non-comment line. This is the Next.js convention for marking a
@@ -70,7 +69,7 @@ describe('hardening · D6 · server-only enforcement', () => {
       const msg = [
         `D6 violations: ${missing.length} of ${files.length} server modules lack \`import 'server-only';\`.`,
         `Add it as the first non-comment line to prevent accidental client bundling.`,
-        `See HARDENING_PLAN.md#D6.`,
+ `See `,
         '',
         ...missing.slice(0, 30).map((f) => `  ${f}`),
         ...(missing.length > 30 ? [`  ... and ${missing.length - 30} more`] : []),

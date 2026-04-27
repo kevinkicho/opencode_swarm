@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C12 — planner.ts split.
 //
 // Prompt construction for the planner sweep — directive + README +
 // board context + tier escalation preamble + standing instruction
@@ -29,7 +28,7 @@ import path from 'node:path';
 
 import { listBoardItems } from '../store';
 
-// Tier ladder for the ambition ratchet (see SWARM_PATTERNS.md "Tiered
+// Tier ladder for the ambition ratchet (see "Tiered
 // execution"). Used by buildPlannerPrompt when `escalationTier` is set —
 // the auto-ticker bumps tier on each idle-stop attempt and calls the
 // planner with the new tier, asking for work strictly above the prior

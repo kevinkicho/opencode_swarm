@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C8 — new-run-modal decomposition.
 //
 // Consolidates the 11 form-state useStates that lived inline at
 // components/new-run-modal.tsx into a single reducer-shaped hook. The

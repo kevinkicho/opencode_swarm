@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R3 — empty-catch allowlist.
 //
 // Empty `catch {}` and `catch (e) {}` blocks silence errors. The audit
 // found 3 trivial ones in stream-cleanup paths plus 1 real bug-magnet
@@ -82,7 +81,7 @@ describe('hardening · R3 · empty-catch allowlist', () => {
         `Either add a `,
         `(a) console.warn(...) inside the catch (preferred — preserves forensic trail), OR`,
         `(b) add the file:line to ALLOWLIST in this test with a comment explaining why.`,
-        `See HARDENING_PLAN.md#R3.`,
+ `See `,
         '',
         ...unexpected.map((s) => `  ${s.file}:${s.line}`),
       ].join('\n');

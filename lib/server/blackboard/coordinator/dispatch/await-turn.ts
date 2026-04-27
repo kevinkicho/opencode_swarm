@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C4 — tickCoordinator decomposition phase 3.
 //
 // awaitTurn — block until the worker's assistant turn completes, then
 // classify the outcome:

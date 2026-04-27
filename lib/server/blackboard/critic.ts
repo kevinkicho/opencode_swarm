@@ -31,7 +31,7 @@
 //   eventually matters, the follow-up is a fresh critic session per run
 //   tier, not per review.
 //
-// See SWARM_PATTERNS.md "Tiered execution" companion layer #1 and
+// See "Tiered execution" companion layer #1 and
 // memory/project_ambition_ratchet.md for the decision context.
 
 import 'server-only';
@@ -75,7 +75,6 @@ export interface CriticReviewResult {
 // committing at once would both try to post to the critic and one would
 // 409. The second would fail-open (accept) and we'd miss its review.
 //
-// HARDENING_PLAN.md#D2 — pinned on globalThis so Next.js HMR doesn't
 // reset the lock map mid-flight. Pre-fix this was a plain `const Map`;
 // any module reload would let a second concurrent review through.
 const CRITIC_LOCKS_KEY = Symbol.for('opencode_swarm.criticLocks.v1');

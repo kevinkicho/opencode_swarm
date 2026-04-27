@@ -36,7 +36,6 @@ export type {
   OpencodeStepFinishPart,
 } from './types';
 
-// HARDENING_PLAN.md#C5 — env reads via lib/config.ts.
 import {
   OPENCODE_BASIC_PASS,
   OPENCODE_BASIC_USER,

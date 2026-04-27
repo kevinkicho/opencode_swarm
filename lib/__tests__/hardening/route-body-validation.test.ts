@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R6 — typed request body validators.
 //
 // Four routes accept POST bodies via `(await req.json()) as TheBody` with
 // no field-level typeof checks. After R6 ships, each should call a
@@ -72,7 +71,7 @@ describe('hardening · R6 · request body validation', () => {
       const msg = [
         `R6 violations: ${violations.length} route(s) cast req.json() to a typed shape without runtime validation.`,
         `Add a parseFooBody(raw): { ok: true; body } | { ok: false; error } helper.`,
-        `See HARDENING_PLAN.md#R6.`,
+ `See `,
         '',
         ...violations.map((v) => `  ${v.file}:${v.line}`),
       ].join('\n');

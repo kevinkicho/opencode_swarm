@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C4 — tickCoordinator decomposition phase 2.
 //
 // dispatchPrompt — post the worker's todo prompt to opencode. Snapshots
 // the message-ID set immediately before the post so awaitTurn can diff
@@ -48,7 +47,6 @@ export async function dispatchPrompt(
   // Team-model pinning: per-session model from the new-run-modal team
   // picker. Overrides the agent route when both are set (intended
   // precedence for role-differentiated runs).
-  // PATTERN_DESIGN/map-reduce.md I4 — synthesize items run on the
   // run's pinned `synthesisModel` regardless of which session claims.
   const sessionIdx = meta.sessionIDs.indexOf(sessionID);
   const pinnedModel =

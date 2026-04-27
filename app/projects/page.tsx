@@ -14,7 +14,6 @@ import { SWARM_RUNS_QUERY_KEY, useSwarmRuns } from '@/lib/opencode/live';
 // workspace happens client-side in ProjectsMatrix; at prototype scale
 // (tens to a few hundred runs) that's cheap.
 //
-// HARDENING_PLAN.md#E2 — uses the canonical useSwarmRuns hook so this
 // page shares the TanStack queryKey + dedup with the run picker. Pre-fix
 // this page did its own raw fetch + useState/useEffect, costing one
 // extra cold-load round-trip every time the user navigated here.

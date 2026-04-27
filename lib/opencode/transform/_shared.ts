@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // Helpers shared across the per-transformer files. Pre-split, these all
 // lived as module-private functions in lib/opencode/transform.ts. Pulling

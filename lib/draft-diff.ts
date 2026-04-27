@@ -1,6 +1,6 @@
 // Line-level draft diff via LCS — used by critic-loop iterations rail
 // (and any other surface that needs "how much changed between two text
-// blobs"). Backs PATTERN_DESIGN/critic-loop.md I3.
+// blobs"). Backs 
 //
 // The previous implementation in iterations-rail.tsx took a set
 // symmetric difference of unique trimmed lines — fast, but it

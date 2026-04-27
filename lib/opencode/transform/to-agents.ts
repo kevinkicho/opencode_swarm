@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // Roster projection — derives Agent[] (one row per assistant identity in
 // the run) plus an agentOrder array preserving first-appearance order.

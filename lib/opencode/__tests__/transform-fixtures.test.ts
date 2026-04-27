@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D4 #3 + #D7 — transform tested against real
 // opencode JSON fixtures.
 //
 // Pre-fix transform.ts had 17 unit tests covering only parsers

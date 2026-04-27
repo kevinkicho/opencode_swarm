@@ -237,7 +237,7 @@ function ToolPanel({
 }
 
 // AgentInspector + ModelSwapRow + ModelPicker + BudgetPanel moved to
-// ./agent-inspector.tsx (HARDENING_PLAN.md#C14). Re-exported below
+// ./agent-inspector.tsx. Re-exported below
 // for back-compat with sub-components.tsx import sites.
 export { AgentInspector } from './agent-inspector';
 

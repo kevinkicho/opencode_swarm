@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C2 — app/api/swarm/run/route.ts split.
 //
 // Opt-in gate-session spawner. Three sessions can be requested:
 //
@@ -11,7 +10,6 @@
 // to "same as if the flag was off," which is a safer failure mode than
 // blocking run creation on an opt-in feature.
 //
-// HARDENING_PLAN.md#R1 — gateFailures used to fall through to undefined
 // silently; now they surface in the 201 response so the user has a
 // signal that an enabled gate didn't actually come up.
 

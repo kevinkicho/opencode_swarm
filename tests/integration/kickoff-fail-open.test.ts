@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R1 — kickoff sync-throw must NOT return 201.
 //
 // Today: when the per-pattern orchestrator throws on its first await
 // (bad model name, opencode unreachable, planner-prompt build error),

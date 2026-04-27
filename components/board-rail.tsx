@@ -14,7 +14,6 @@ import type { SwarmPattern } from '@/lib/swarm-types';
 import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import type { FileHeat } from '@/lib/opencode/transform';
 import { Tooltip } from './ui/tooltip';
-// HARDENING_PLAN.md#C14 — TickerChip lifted to a sibling file so the
 // main file stays under 500 LOC. Imports and usage unchanged.
 import { TickerChip } from './board-rail/ticker-chip';
 import { BoardRailRow } from './board-rail/board-rail-row';
@@ -38,7 +37,7 @@ import { BoardRailRow } from './board-rail/board-rail-row';
 // KIND_GLYPH / KIND_TONE / retryCountFromNote moved to ./board-rail/
 // board-rail-row.tsx (only consumer is BoardRailRow, lifted in W5.18).
 
-// Stigmergy decoration helpers (PATTERN_DESIGN/stigmergy.md §3, Phase
+// Stigmergy decoration helpers (, Phase
 // 1.6). Mirrors coordinator.ts::scoreTodoByHeat — full-path mention
 // in todo content scores 2× the file's edit count, basename-only match
 // (≥4 chars) scores 1×. Sum across all matched files in the heat map
@@ -52,7 +51,6 @@ function fileBasename(path: string): string {
   return idx < 0 ? norm : norm.slice(idx + 1);
 }
 
-// PATTERN_DESIGN/stigmergy.md I1 — heat half-life decay. Mirrors the
 // server-side decayFactor in coordinator.ts so the row's bar reflects
 // what the picker would actually score. Default half-life is 30 min;
 // no env override on the client (server's OPENCODE_HEAT_HALF_LIFE_S
@@ -133,7 +131,7 @@ export function BoardRail({
   // rendered inline in the empty-state. Null for other patterns.
   deliberationProgress?: DeliberationProgress | null;
   // Per-file heat data for the stigmergy decoration. Empty array →
-  // no decoration rendered. PATTERN_DESIGN/stigmergy.md §3.
+ // no decoration rendered. 
   heat?: FileHeat[];
 }) {
   const items = live.items ?? [];

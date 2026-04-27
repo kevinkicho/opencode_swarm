@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C4 — tickCoordinator decomposition.
 //
 // Per-call context object threaded through the 5-helper pipeline
 // (pickClaim → dispatchPrompt → awaitTurn → runGateChecks → commitDone).

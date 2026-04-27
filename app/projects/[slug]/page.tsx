@@ -31,7 +31,6 @@ export default function ProjectDetailPage() {
   const params = useParams<{ slug: string }>();
   const slug = decodeURIComponent(params.slug);
 
-  // HARDENING_PLAN.md#E2 — useSwarmRuns shares queryKey with the picker
   // so this page reuses cached data instead of triggering a separate
   // round trip on every navigation.
   const { rows, error } = useSwarmRuns({ intervalMs: 30000 });

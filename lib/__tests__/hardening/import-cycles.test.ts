@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C17 — direct import cycles.
 //
 // Two known cycles per the call-graph analysis:
 //   - lib/server/blackboard/planner.ts ⟷ lib/server/degraded-completion.ts
@@ -115,7 +114,7 @@ describe('hardening · C17 · direct import cycles', () => {
       const msg = [
         `C17 violations: ${cycles.length} direct import cycle(s).`,
         `Extract shared types to a third file to break each cycle.`,
-        `See HARDENING_PLAN.md#C17.`,
+ `See `,
         '',
         ...cycles.map(([a, b]) => `  ${a} ⟷ ${b}`),
       ].join('\n');

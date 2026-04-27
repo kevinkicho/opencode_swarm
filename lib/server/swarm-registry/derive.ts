@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#W5.1 — fs/derive split.
 //
 // Live-derivation layer for swarm runs. Computes per-session and per-run
 // status / tokens / cost by probing opencode's session-message endpoint,
@@ -15,7 +14,6 @@
 
 import 'server-only';
 
-// HARDENING_PLAN.md#FU.3 (Q47 follow-up) — getSessionMessagesServer is
 // dynamic-imported inside deriveSessionRow rather than static-imported
 // here. Static import pulls the full opencode-server graph (~1100
 // modules) into every route that imports swarm-registry, even routes
@@ -474,7 +472,6 @@ interface CachedRow {
 // — actively-live runs are still up-to-date when something happens.
 const CACHE_TTL_MS = 10_000;
 
-// HARDENING_PLAN.md#D3 — bounded LRU. Pre-fix unbounded; in long-lived
 // dev a deleted run's CachedRow never expired. 500 is the same bound
 // as metaCache (paired keying — both keyed on swarmRunID).
 const DERIVED_CACHE_MAX = 500;

@@ -3,7 +3,7 @@
 // out of lib/blackboard-mock.ts when the SQLite store landed; the mock file
 // now re-exports from here and retains MOCK_AGENTS / MOCK_BOARD only.
 //
-// See SWARM_PATTERNS.md §1 for the semantic model (claim/question/todo/finding
+// See 
 // + optimistic-CAS-with-file-hashes lifecycle). The types are deliberately
 // narrow — anything that would graduate to policy (retention, re-plan interval,
 // stale-retry bounds) belongs in the routing modal, not here.
@@ -17,7 +17,7 @@
 //   - synthesize — map-reduce reduce-phase work. Content is the full synthesis
 //                  prompt (member drafts already embedded). Coordinator posts
 //                  content verbatim instead of wrapping in the "edit relevant
-//                  files" todo preamble. See SWARM_PATTERNS.md §3 v2 migration
+// files" todo preamble. See 
 //                  and lib/server/map-reduce.ts::runMapReduceSynthesis for the
 //                  dispatch contract.
 //   - criterion  — an acceptance condition the auditor verdicts against
@@ -94,19 +94,16 @@ export interface BoardItem {
   // pair in fileHashes as the CAS anchor; at commit time it re-hashes
   // the expectedFiles NOT in the worker's edited paths and rejects the
   // commit on drift (another worker modified the file under us). See
-  // SWARM_PATTERNS.md §1 "Implementation modules" and ollama-swarm's
   // blackboard spec for the design rationale.
   // Undefined → worker unconstrained, no CAS protection (pre-Stage-1
   // behavior; kept working so legacy runs + un-tagged todos still move).
   expectedFiles?: string[];
-  // PATTERN_DESIGN/deliberate-execute.md I2 — synthesis traceability.
   // 1-based member-draft indices that contributed to this todo, parsed
   // from a `[from:1,3]` content prefix the synthesizer emits. Only set
   // on deliberate-execute runs; other patterns leave it undefined.
   // Lets a future inspector drawer answer "why does this todo exist?"
   // by linking back to the member drafts that motivated it.
   sourceDrafts?: number[];
-  // PATTERN_DESIGN/stigmergy.md "heat-picked-timeline-chip" — set true
   // by the coordinator when the heat-weighted picker preferred this
   // item over what age-only ordering would have chosen. Diagnostic
   // signal that stigmergy actually shifted the dispatch (vs. when the

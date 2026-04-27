@@ -22,7 +22,6 @@ import type { SwarmRunMeta } from '@/lib/swarm-run-types';
 //                                       the aesthetic can be validated offline)
 //   - /board-preview?swarmRun=<id>    → live data over the SQLite-backed API at
 //                                       /api/swarm/run/:id/board (step 4 of
-//                                       SWARM_PATTERNS.md §1 roadmap)
 //
 // Layout: a 5-column pipeline (open → claimed → active → stale → done).
 // Kanban-ish, but the column ordering encodes time not priority — "stale" sits

@@ -1,4 +1,4 @@
-// Cold-file seeding — PATTERN_DESIGN/stigmergy.md I3.
+// Cold-file seeding
 //
 // When the auto-ticker drains the board AND a tier-escalation sweep
 // produces no new work, the run is at risk of stopping with workspace
@@ -161,7 +161,7 @@ export async function attemptColdFileSeeding(
   }
   if (seeded > 0) {
     console.log(
-      `[cold-file-seed] ${swarmRunID}: seeded ${seeded} exploration todo(s) for cold files (PATTERN_DESIGN/stigmergy.md I3)`,
+      `[cold-file-seed] ${swarmRunID}: seeded ${seeded} exploration todo(s) for cold files`,
     );
   }
   return seeded;

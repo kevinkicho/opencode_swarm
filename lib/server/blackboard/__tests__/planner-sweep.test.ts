@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D4 #5 — runPlannerSweep tests.
 //
 // `runPlannerSweep` orchestrates the planner LLM call: prompt build,
 // dispatch via postSessionMessageServer, wait for the assistant turn,

@@ -1,4 +1,4 @@
-// Persistent ticker stop snapshots. PATTERN_DESIGN/blackboard.md I3.
+// Persistent ticker stop snapshots. 
 //
 // The in-memory tickers map is process-local; on dev-server restart
 // or HMR module reload, every run's stop reason vanishes and the UI

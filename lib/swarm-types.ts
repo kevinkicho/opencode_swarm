@@ -1,5 +1,5 @@
 // canonical vocabulary from opencode SDK
-// see docs/opencode-vocabulary.md for authoritative source
+// see docs/opencode-quirks.md for authoritative source
 
 // Three provider tiers, all routed through opencode:
 //   zen    — opencode's pay-per-token marketplace (Claude, GPT, Gemini, …)
@@ -18,7 +18,7 @@ export type Provider = 'zen' | 'go' | 'ollama' | 'byok';
 
 // Run-wide orchestration shape. `none` is opencode native (one session,
 // task-tool for sub-agents). Others are coordinator-above-opencode presets
-// defined in SWARM_PATTERNS.md. Presence of a pattern type does NOT imply a
+// defined in . Presence of a pattern type does NOT imply a
 // backend exists — `lib/swarm-patterns.ts` carries the `available` flag.
 export type SwarmPattern =
   | 'none'
@@ -119,7 +119,7 @@ export interface Agent {
   // agent's assistant messages. Surfaced by LaneMeter as a fallback
   // when the live throughput rate is 0 — without these, idle/dead lanes
   // show "out — in —" placeholders that read as "no data" even though
-  // cumulative totals exist. (PATTERN_DESIGN/blackboard.md, STATUS.md
+ // cumulative totals exist. (, STATUS.md
   // 2026-04-24 lane-meter fix.)
   tokensIn: number;
   tokensOut: number;

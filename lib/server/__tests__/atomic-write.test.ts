@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D1 — atomic-rename file write + per-key mutex.
 //
 // Tests for `lib/server/atomic-write.ts`. Verifies that:
 //   1. atomicWriteFile produces a complete file (never 0-byte partial)

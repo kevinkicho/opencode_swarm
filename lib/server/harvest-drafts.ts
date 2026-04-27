@@ -108,7 +108,6 @@ export async function harvestDrafts(
 // "last assistant text" convention used across the orchestrator
 // modules.
 //
-// HARDENING_PLAN.md#C1 — exported here as the canonical source.
 // Pre-fix: this function existed character-identical in 6 files
 // (council, critic-loop, debate-judge, deliberate-execute, map-reduce,
 // harvest-drafts) under copy-paste. Drift risk: a fix in one site

@@ -14,7 +14,6 @@ import { SWARM_RUNS_QUERY_KEY, useSwarmRuns } from '@/lib/opencode/live';
 // aggregation at v1 — at prototype scale (tens of runs) the grouping
 // happens in CrossPresetMetrics::computePatternStats.
 //
-// HARDENING_PLAN.md#E2 — uses the canonical useSwarmRuns hook so this
 // page shares the TanStack queryKey + dedup with the picker. Pre-fix
 // it did its own raw fetch + useState/useEffect, costing one extra
 // cold-load round trip.

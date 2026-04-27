@@ -195,7 +195,6 @@ function querySummaries(req: RecallRequest, limit: number): RecallResponse {
 
   let tokenEstimate = 0;
   const items: RecallSummaryItem[] = rows.map((r) => {
-    // HARDENING_PLAN.md#R7 — validate the kind discriminator before
     // the union cast. Pre-fix the cast trusted any parsed JSON; a row
     // missing the kind field would propagate into UI as agent-shaped
     // garbage. Validator returns null on shape failure (warn-once).

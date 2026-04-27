@@ -75,7 +75,6 @@ export type StopReason =
   | 'wall-clock-cap'
   | 'commits-cap'
   | 'todos-cap'
-  // PATTERN_DESIGN/orchestrator-worker.md I1. The orchestrator pattern
   // can loop forever if every re-plan sweep proposes work that workers
   // stale out (file contention, complexity underestimation). This cap
   // bounds the loop at MAX_ORCHESTRATOR_REPLANS sweeps; the run stops
@@ -124,7 +123,6 @@ export interface TickerState {
   // (the initial sweep's tier); each auto-idle escalation tries tier+1.
   // `tierExhausted` goes true when an escalation at MAX_TIER produced
   // zero items — then the next idle cascade actually stops. See
-  // SWARM_PATTERNS.md "Tiered execution" for the full semantics.
   resweepInFlight: boolean;
   currentTier: number;
   tierExhausted: boolean;
@@ -158,7 +156,6 @@ export interface TickerState {
   // a live-countdown chip ("retry 3h 47m") on rate-limited runs.
   // Absent on any other stop reason.
   retryAfterEndsAtMs?: number;
-  // PATTERN_DESIGN/role-differentiated.md I2 — role-imbalance watchdog
   // last-fire timestamp. Throttles repeated WARN logs to once per
   // ROLE_IMBALANCE_REPEAT_MS window so a persistent imbalance doesn't
   // spam the dev console. Absent until the first imbalance fires.
@@ -209,7 +206,7 @@ export interface TickerSnapshot {
   lastOutcome?: TickOutcome;
   lastRanAtMs?: number;
   startedAtMs: number;
-  // Ambition-ratchet state (see SWARM_PATTERNS.md "Tiered execution").
+  // Ambition-ratchet state.
   // currentTier is 1-indexed and starts at 1; auto-idle cascades try
   // tier+1 via attemptTierEscalation. tierExhausted means MAX_TIER was
   // tried and produced zero items — next cascade will stop the ticker.

@@ -1,6 +1,6 @@
 // Strategy / plan-revisions endpoint — reads the plan_revisions ledger
 // for a run. Backs the orchestrator-worker pattern's `strategy` tab
-// (PATTERN_DESIGN/orchestrator-worker.md §3 + I2). Pattern-agnostic:
+//. Pattern-agnostic:
 // any run that's done at least one planner sweep has rows here, but
 // the UI only surfaces them for orchestrator-worker today.
 //

@@ -31,7 +31,6 @@ import type { StopResponse } from '@/lib/api-types';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// HARDENING_PLAN.md#C5 — `StopResponse` lifted to lib/api-types.ts.
 
 export async function POST(
   _req: NextRequest,

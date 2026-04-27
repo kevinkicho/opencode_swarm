@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C15 — shared rail helpers.
 //
 // Pre-fix: `turnText`, `countLines`, `compactNum` were copy-pasted
 // character-identical across council-rail, debate-rail, iterations-rail,

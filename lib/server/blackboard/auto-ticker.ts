@@ -1,4 +1,4 @@
-// Auto-ticker — step 3d of SWARM_PATTERNS.md §1.
+// Auto-ticker — step 3d of .
 //
 // Per-run heartbeat that calls tickCoordinator on an interval so a
 // blackboard run makes progress without an external driver. Starts when
@@ -9,7 +9,7 @@
 // to the first idle session and awaiting the whole claim→work→commit
 // cycle before returning. That serialized everything: with N sessions and
 // M todos, one session did all M claims sequentially while the others sat
-// idle (see SWARM_PATTERNS.md §1 Open questions → Blackboard parallelism
+// idle (see 
 // for the incident record). Now: one timer per run, but each fire dispatches
 // a per-session tick via `void tickSession(...)`. Each session has its own
 // inFlight guard, so a slow session (5-min assistant turn) doesn't block

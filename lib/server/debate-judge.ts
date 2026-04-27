@@ -1,4 +1,4 @@
-// Debate-judge pattern — hierarchical pattern #3 (see SWARM_PATTERNS.md §7).
+// Debate-judge pattern — hierarchical pattern #3.
 //
 // Shape: N sessions. Session 0 = judge. Sessions 1..N-1 = generators.
 // Generators each produce a proposal for the directive (independently,
@@ -26,12 +26,10 @@ import type { OpencodeMessage } from '../opencode/types';
 const JUDGE_AGENT_NAME = 'judge';
 const GENERATOR_AGENT_PREFIX = 'generator-';
 
-// HARDENING_PLAN.md#C18 — round wait lifted to pattern-tunables.ts.
 import { TIMINGS } from './pattern-tunables';
 const ROUND_WAIT_MS = TIMINGS.debate.roundWaitMs;
 const DEFAULT_MAX_ROUNDS = 2;
 
-// HARDENING_PLAN.md#C1 — `extractLatestAssistantText` lifted to
 // harvest-drafts.ts.
 
 function buildGeneratorIntroPrompt(
@@ -73,7 +71,7 @@ function buildJudgeIntroPrompt(
     '',
     'Sit tight until the generators produce their proposals. Once you',
     "receive them, your job is to evaluate rigorously and deliver a",
-    'verdict in exactly this structured shape (PATTERN_DESIGN/debate-',
+ 'verdict in exactly this structured shape (',
     'judge.md I1):',
     '',
     '  WINNER: generator-N (confidence: K/5) — <one-line reason>',
@@ -87,7 +85,7 @@ function buildJudgeIntroPrompt(
     '',
     'Start your reply with one of WINNER / MERGE / REVISE (case-',
     'insensitive). On WINNER and MERGE, include `(confidence: K/5)`',
-    'where K is 1-5 (PATTERN_DESIGN/debate-judge.md I4). 5 = clearly',
+    'where K is 1-5. 5 = clearly',
     'best, 4 = strong preference, 3 = better-than-others, 2 = close',
     'call, 1 = could go either way. Be honest about close calls — the',
     'UI shows the score so the user can spot when a winner barely',
@@ -147,12 +145,10 @@ function buildRevisionPrompt(
 export interface JudgeVerdict {
   verdict: 'winner' | 'merge' | 'revise' | 'unclear';
   body: string;
-  // PATTERN_DESIGN/debate-judge.md I1 — per-generator structured
   // bullets. Map keys are generator indices (1..N); values are the
   // verdict's bullet list for that generator. Empty when the reply
   // didn't conform to the structured contract — fallback path.
   bulletsByGenerator: Map<number, string[]>;
-  // PATTERN_DESIGN/debate-judge.md I4 — judge confidence on
   // WINNER/MERGE verdicts. 1-5 scale; null when the judge didn't
   // emit a parseable score (older models, REVISE verdicts where
   // confidence isn't applicable, or non-conforming replies).
@@ -239,7 +235,6 @@ export function classifyJudgeReply(text: string): JudgeVerdict {
   };
 }
 
-// PATTERN_DESIGN/debate-judge.md I2 — feedback-addressed detection.
 // Given a generator's R(N+1) proposal text and the bullets the judge
 // asked it to address in R(N), count how many bullets the proposal
 // engaged with. Engagement is detected by token-jaccard ≥ 0.4 against
@@ -313,7 +308,7 @@ export async function runDebateJudgeKickoff(
       const distinct = new Set(generatorModels);
       if (distinct.size === 1) {
         console.warn(
-          `[debate-judge] run ${swarmRunID}: ${generatorCount} generators all use '${generatorModels[0]}' — debate may converge trivially (PATTERN_DESIGN/debate-judge.md I3)`,
+          `[debate-judge] run ${swarmRunID}: ${generatorCount} generators all use '${generatorModels[0]}' — debate may converge trivially`,
         );
       }
     }
@@ -378,7 +373,6 @@ export async function runDebateJudgeKickoff(
     for (const m of msgs) knownJudge.add(m.info.id);
   }
 
-  // PATTERN_DESIGN/debate-judge.md I2 — feedback-addressed detection
   // bookkeeping. Stores the prior round's per-generator bullets so
   // the current round's drafts can be checked against them. Empty
   // until the first REVISE verdict.
@@ -518,7 +512,7 @@ export async function runDebateJudgeKickoff(
         const meanFrac = totalFrac / totalGen;
         if (meanFrac < I2_ADDRESSED_THRESHOLD) {
           console.warn(
-            `[debate-judge] run ${swarmRunID} round ${round}: generators addressed only ${(meanFrac * 100).toFixed(0)}% of judge's prior REVISE bullets (${totalGen} gen with bullets) — auto-stopping (PATTERN_DESIGN/debate-judge.md I2)`,
+            `[debate-judge] run ${swarmRunID} round ${round}: generators addressed only ${(meanFrac * 100).toFixed(0)}% of judge's prior REVISE bullets (${totalGen} gen with bullets) — auto-stopping`,
           );
           recordPartialOutcome(swarmRunID, {
             pattern: 'debate-judge',

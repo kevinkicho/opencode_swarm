@@ -1,7 +1,6 @@
 'use client';
 
 // Inline markdown renderer for assistant message bodies. Phase 5.2 of
-// IMPLEMENTATION_PLAN — replaces raw `whitespace-pre-wrap` text with
 // react-markdown so headings, lists, code fences, and links render
 // inside the inspector / event panel.
 //

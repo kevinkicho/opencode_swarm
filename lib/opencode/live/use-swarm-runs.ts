@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C10 — live.ts split.
 //
 // Run-list + run-snapshot + run-events hooks. Three closely-related
 // hooks that all hit `/api/swarm/run/...` endpoints (not opencode):
@@ -224,7 +223,6 @@ async function swarmRunsFetcher(): Promise<SwarmRunListRow[]> {
 }
 
 // ─── useSwarmRunSnapshot ──────────────────────────────────────────────────
-// IMPLEMENTATION_PLAN 6.6 follow-up. Single aggregator-endpoint fetch
 // that replaces the cold-load fan-out (useLiveSwarmRun + useLiveTicker
 // initial + useLiveBoard initial + derivedRow lookup against
 // useSwarmRuns). Backend endpoint at /api/swarm/run/:id/snapshot was

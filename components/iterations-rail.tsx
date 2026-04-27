@@ -6,8 +6,6 @@
 // loop actually plays out). Each iteration produces two rows: a worker
 // draft (#N) and a critic review (#Nr).
 //
-// Spec frozen in docs/PATTERN_DESIGN/critic-loop.md §3. Implements
-// PATTERN_DESIGN ledger entry `iterations-tab`.
 //
 // Data: per-session message arrays from useLiveSwarmRunMessages.slots.
 // Critic-loop kickoff (lib/server/critic-loop.ts) pins session 0 = worker,
@@ -41,12 +39,12 @@ interface IterationRow {
   // ms timestamp of message creation, used for sort + display.
   ts: number | null;
   // Structured diff snapshot for drafts past iteration 1; reviews carry
-  // null. PATTERN_DESIGN/critic-loop.md I3 — backs the `key` column with
+ // null. — backs the `key` column with
   // line-LCS counts (proper diff, not set-symmetric difference) and
   // gives a future inspector drawer a place to fetch hunks from.
   diff: DraftDiff | null;
   // Session that produced this row, used for inspector wiring
-  // (IMPLEMENTATION_PLAN.md 6.9). Worker rows carry the worker's
+  //. Worker rows carry the worker's
   // sessionID; critic rows carry the critic's. Null when the slot
   // wasn't classified (mock data / older runs).
   sessionID: string | null;
@@ -55,15 +53,13 @@ interface IterationRow {
 // Extract assistant turn body as plain text. Walks parts, concatenates
 // text + reasoning content. Skips tool / step parts since they're
 // orchestration noise from the iteration-flow POV.
-// HARDENING_PLAN.md#C15 — `turnText` lifted to rails/_shared.ts.
 
 // Cheap line-count for a string. Matches what the inspector drawer
 // would show as draft length; consistent across rows.
-// HARDENING_PLAN.md#C15 — `countLines` lifted to rails/_shared.ts.
 
-// Diff against the previous draft via shared LCS helper. PATTERN_DESIGN
-// /critic-loop.md I3 — kept in lib/draft-diff.ts so the inspector drawer
-// (and any future surface) can compute the same numbers.
+// Diff against the previous draft via shared LCS helper — kept in
+// lib/draft-diff.ts so the inspector drawer (and any future surface)
+// can compute the same numbers.
 
 // Parse the critic verdict from review text. critic-loop's prompt
 // contract (buildCriticIntroPrompt, lib/server/critic-loop.ts) asks
@@ -222,7 +218,7 @@ export function IterationsRail({
 
 // Stick-to-bottom-enabled scrollable body. Co-locates the scroll-ref +
 // hook + floating "latest" button so every chronological rail follows
-// the same shape. (2026-04-24, IMPLEMENTATION_PLAN 6.7+6.8.)
+// the same shape.
 function IterationsListBody({
   rows,
   finalApproved,
@@ -313,7 +309,6 @@ function fmtTimeOfDay(ms: number | null): string {
   return `${hh}:${mm}`;
 }
 
-// HARDENING_PLAN.md#C15 — `compactNum` lifted to rails/_shared.ts.
 
 function IterationRowEl({
   row,

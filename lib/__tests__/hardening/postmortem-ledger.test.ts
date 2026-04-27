@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D5 — postmortem ledger discipline.
 //
 // Every postmortem in docs/POSTMORTEMS/ has a Ledger section. Every entry
 // in that section must declare a status (SHIPPED / PARTIAL / PENDING /
@@ -94,7 +93,7 @@ describe('hardening · D5 · postmortem ledger discipline', () => {
       const msg = [
         `D5 violations: ${issues.length} VERIFIED claim(s) lack a backing artifact.`,
         `Each VERIFIED status must point to a run ID, test path, or "pending future run" marker.`,
-        `See HARDENING_PLAN.md#D5.`,
+ `See `,
         '',
         ...issues.map((v) => `  ${v.file}:${v.line} · ${v.reason}`),
       ].join('\n');

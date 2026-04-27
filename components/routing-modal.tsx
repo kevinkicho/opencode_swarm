@@ -48,7 +48,6 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
   // pre-W5.16 wasOpenRef + 6-pair setter dance with a single useState +
   // a one-shot useEffect on `open`. Save writes draft back to the
   // context; reset writes defaults directly to the context.
-  // HARDENING_PLAN.md#C8 (2026-04-26).
   const [draft, setDraft] = useState<RoutingBounds>(bounds);
   useEffect(() => {
     // Re-hydrate on every open-transition (closed → open). The effect

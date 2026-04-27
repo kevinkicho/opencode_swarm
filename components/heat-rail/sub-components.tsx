@@ -10,7 +10,6 @@ import type { Agent } from '@/lib/swarm-types';
 import { Tooltip } from '../ui/tooltip';
 import { accentBadge, fmtAgo, splitPath, stripWorkspace } from './utils';
 import { buildTree, flattenTree, type TreeNode } from './tree';
-// HARDENING_PLAN.md#C17 — import from leaf types module instead of
 // the parent heat-rail.tsx (which itself imports from this file).
 import type { DiffStatsByPath } from './types';
 

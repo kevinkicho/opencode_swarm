@@ -2,7 +2,6 @@
 // (Agent[] / AgentMessage[] / RunMeta / ProviderSummary[]) so the existing
 // timeline, roster, and inspector can render it with zero component changes.
 //
-// HARDENING_PLAN.md#C11 — split into per-transformer files under
 // lib/opencode/transform/ on 2026-04-26. This file is now a re-export
 // barrel so the 16 import sites don't churn. Module-private helpers
 // (providerOf / derivedCost / familyOf / etc.) live in

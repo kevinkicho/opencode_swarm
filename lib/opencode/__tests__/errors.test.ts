@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R4 — typed Opencode errors.
 //
 // Tests for `lib/opencode/errors.ts`. Verifies that:
 //   1. Each subclass exposes its kind discriminator + payload fields

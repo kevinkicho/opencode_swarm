@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C14 — board-rail decomposition.
 //
 // Per-item row in the inline board rail. Lifted from board-rail.tsx
 // along with its 5 helpers: KIND_GLYPH/TONE (kind tone tables),
@@ -46,7 +45,7 @@ function retryCountFromNote(note: string | null | undefined): number {
   return m ? Math.max(0, parseInt(m[1] ?? '0', 10)) : 0;
 }
 
-// Tone steps from PATTERN_DESIGN/stigmergy.md: 0 = fog-700 (cold,
+// Tone steps from : 0 = fog-700 (cold,
 // picker-preferred), 1-20% of max = amber/30, 20-50% = amber/50,
 // 50-100% = molten/40 (hot, picker avoids on the exploratory bias).
 function heatBarTone(scoreFraction: number): string {
@@ -168,7 +167,7 @@ export function BoardRailRow({
         {item.pickedByHeat && (
           <span
             className="shrink-0 font-mono text-[10px] text-amber"
-            title="heat-weighted pick — stigmergy preferred this over oldest-first (PATTERN_DESIGN/stigmergy.md)"
+            title="heat-weighted pick — stigmergy preferred this over oldest-first"
             aria-label="heat-weighted pick"
           >
             🜂

@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C13 — pure compute helpers for rollup.ts.
 //
 // Pre-fix: lib/server/memory/rollup.ts was 593 lines mixing capture
 // (opencode HTTP fetch + diff upsert), pure compute (reducers + hash

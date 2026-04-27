@@ -6,7 +6,6 @@
 // another. The user gets a one-screen answer to "what did each
 // generator say each round, and how did the judge call it?"
 //
-// Spec frozen in docs/PATTERN_DESIGN/debate-judge.md §3.
 //
 // Slot layout (per debate-judge kickoff in lib/server/debate-judge.ts):
 //   slots[0]   = judge   (agent='judge')
@@ -43,7 +42,6 @@ interface RoundRow {
   status: 'pending' | 'deliberating' | 'done';
 }
 
-// HARDENING_PLAN.md#C15 — `turnText` and `countLines` lifted to
 // components/rails/_shared.ts.
 
 function diffSummary(prev: string, next: string): string {
@@ -124,7 +122,7 @@ export function DebateRail({
   // Accepted but not wired in v1 — debate rows are rounds, not sessions,
   // so inspector wiring needs cell-level (per-generator / judge) clicks
   // which require restructuring the row component. Page passes this so
-  // a future cell-level enhancement is non-breaking. IMPLEMENTATION_PLAN
+ // a future cell-level enhancement is non-breaking. 
   // 6.9 v2.
   onInspectSession: _onInspectSession,
 }: {
@@ -295,7 +293,6 @@ const STATUS_TONE: Record<RoundRow['status'], string> = {
   done: 'text-fog-500',
 };
 
-// HARDENING_PLAN.md#C15 — `compactNum` lifted to rails/_shared.ts.
 
 function DebateRowEl({
   row,
@@ -308,7 +305,6 @@ function DebateRowEl({
 }) {
   // Cap visible generator columns at 4 for layout; collapse extras into
   // a "+N more" chip. Most debate runs are 2-4 generators per the
-  // SWARM_PATTERNS.md guidance.
   const visibleGens = row.generators.slice(0, 4);
   const overflowGens = row.generators.length - visibleGens.length;
 
@@ -392,7 +388,6 @@ function DebateRowEl({
   );
 }
 
-// Stick-to-bottom-enabled body — IMPLEMENTATION_PLAN 6.7 + 6.8.
 function DebateListBody({
   rows,
   generatorCount,

@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D2 — globalThis-keyed locks survive HMR.
 //
 // `criticLocks`, `verifierLocks`, `auditLocks` are plain `const Map`
 // declarations. On Next.js HMR, the module is replaced and the lock map
@@ -86,7 +85,7 @@ describe('hardening · D2 · lock map HMR survival', () => {
             `D2 violation: ${lock.path} declares \`const ${lock.lockVarName} = new Map(...)\``,
             `which is replaced on HMR, resetting the lock state.`,
             `Pin via Symbol.for('opencode_swarm.${lock.symbolHint}') the way lib/server/blackboard/bus.ts does.`,
-            `See HARDENING_PLAN.md#D2.`,
+ `See `,
           ].join('\n'),
         );
       }

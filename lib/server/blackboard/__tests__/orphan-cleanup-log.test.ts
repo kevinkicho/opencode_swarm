@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#R3 — orphan cleanup forensic log.
 //
 // Pre-fix the catch at lib/server/blackboard/auto-ticker/state.ts:82
 // was empty: a transient opencode hiccup during startup orphan-cleanup

@@ -20,7 +20,7 @@ import type { SwarmRunEvent, SwarmRunMeta } from '../../swarm-run-types';
 
 // A part-updated event carries the opencode MessagePart inline. We only
 // unpack the fields we store; the rest is discarded. See
-// docs/opencode-vocabulary.md for the authoritative part shape.
+// docs/opencode-quirks.md for the authoritative part shape.
 interface PartUpdatedProps {
   part?: {
     id?: string;

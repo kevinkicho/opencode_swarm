@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D4 #4a — orchestrator-worker pattern integration test.
 //
 // Promised by 2026-04-25 postmortem F3. Status: scaffold (it.skip) until
 // success criterion is validated against a real run. Mirror the

@@ -7,7 +7,6 @@
 //   - ticker.tick             — auto-ticker fanout settled (auto-ticker)
 //   - strategy.update         — new plan-revision row (plan-revisions.ts)
 //
-// HARDENING_PLAN.md#E4 — folded ticker + strategy into the same bus
 // 2026-04-26 so the run page only opens ONE EventSource per swarmRunID
 // instead of polling /board/ticker (5s) and /strategy (5s) on top of
 // the SSE board stream.

@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#D3 — bounded LRU caches.
 //
 // Tests for `lib/server/lru.ts`. Verifies: basic Map semantics, eviction
 // of the least-recently-used entry, get-promotes, set-of-existing-key-

@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C7 — TimelineInteractionContext.
 //
 // Pre-fix: `onFocus`, `onSelectAgent`, `roleNames` drilled 5 levels
 // deep through SwarmTimeline → TimelineFlow → EventCard / ChipCard →

@@ -1,6 +1,5 @@
 'use client';
 
-// HARDENING_PLAN.md#C14 — board-rail decomposition.
 //
 // Ticker-state chip + its 3 helpers. Lifted from board-rail.tsx so the
 // main file stays focused on the BoardRail layout + BoardRailRow

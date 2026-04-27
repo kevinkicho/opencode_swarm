@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C2 — app/api/swarm/run/route.ts split.
 //
 // Pattern → kickoff function dispatch table. Replaces the 9-branch
 // if-chain that was 142 LOC inline at app/api/swarm/run/route.ts:889-971.

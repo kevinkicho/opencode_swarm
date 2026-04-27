@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C11 — transform.ts split.
 //
 // Run-level metadata projection — title, status, started/elapsed, cost,
 // tokens, cwd. Drives the topbar chips + run-status indicator. Everything

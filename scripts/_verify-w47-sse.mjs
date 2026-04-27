@@ -4,7 +4,6 @@
 //
 //   node scripts/_verify-w47-sse.mjs <swarmRunID>
 //
-// HARDENING_PLAN.md#E4 verification gate: "Network panel shows 1 SSE
 // connection per-run page, no /board/ticker or /strategy polls."
 
 import { readFileSync, existsSync } from 'node:fs';

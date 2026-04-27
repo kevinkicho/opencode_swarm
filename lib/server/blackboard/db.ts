@@ -21,7 +21,6 @@ import type { Database as DB } from 'better-sqlite3';
 import { readFileSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-// HARDENING_PLAN.md#C5 — env reads via lib/config.ts.
 import { OPENCODE_SWARM_ROOT as ROOT } from '../../config';
 
 const DB_PATH = path.join(ROOT, 'blackboard.sqlite');

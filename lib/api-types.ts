@@ -1,4 +1,3 @@
-// HARDENING_PLAN.md#C5 — central registry for HTTP API request/response
 // shapes that cross the server-client boundary.
 //
 // Pre-fix: 7 inline interfaces lived inside individual app/api/**/route.ts
@@ -77,7 +76,7 @@ export interface CostCapGateBlock {
   costCap: number;
 }
 
-// ----- canonical error response shape (HARDENING_PLAN.md#R5) --------------
+// ----- canonical error response shape --------------
 
 // Every Response.json error site uses this shape. Discriminator-style
 // fields (swarmRunID, sessionIDs, attempts, etc.) accompany when

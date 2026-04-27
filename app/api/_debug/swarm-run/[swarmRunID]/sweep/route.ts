@@ -1,4 +1,3 @@
-// Planner sweep endpoint — step 3a of SWARM_PATTERNS.md §1.
 //
 // POST /api/_debug/swarm-run/:swarmRunID/sweep
 //   body: { overwrite?: boolean, timeoutMs?: number }
@@ -7,7 +6,6 @@
 // each todo into an open board item. Synchronous on the client side — the
 // response lands after the assistant turn completes or the timeout fires.
 //
-// HARDENING_PLAN.md#C9 / FU.5 — moved from /api/swarm/run/[id]/board/sweep
 // to /api/_debug/swarm-run/[id]/sweep 2026-04-26 because this is an
 // operational-recovery endpoint (curl-callable for debugging, not used
 // from the UI). The /api/_debug/* prefix marks it as such; the public
@@ -33,7 +31,6 @@ export const runtime = 'nodejs';
 const MIN_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 5 * 60_000;
 
-// HARDENING_PLAN.md#C5 — `SweepBody` lifted to lib/api-types.ts as
 // BoardSweepBody. Local alias retained so the rest of this file's
 // references don't churn.
 type SweepBody = BoardSweepBody;

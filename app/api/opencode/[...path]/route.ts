@@ -63,7 +63,6 @@ function gatedSessionID(
 // Result shape for the gate check. `null` means "let the prompt through";
 // an object means "block with this 402 body".
 //
-// HARDENING_PLAN.md#C5 — type lifted to lib/api-types.ts (CostCapGateBlock).
 type GateBlock = CostCapGateBlock;
 
 // On probe failure (opencode unreachable, session vanished) we return null
