@@ -321,7 +321,7 @@ cycles tighten.
 | 8.W4.4 | Parallelize 3 `sha7` await loops in `dispatch.ts` | #E5 | 30m | (covered by W3.1 dispatch test) | **SHIPPED** |
 | 8.W4.5 | `board/ticker` Q46-style import-graph fix | #E6 | 30m | (manual: cold-compile probe ≤200 modules) | **SHIPPED** |
 | 8.W4.6 | Audit other multi-method routes for same pattern | #E7 | 1-2h | (audit notes only) | **SHIPPED** |
-| 8.W4.7 | Fold ticker + strategy frames into `/board/events` SSE; drop 2 polls | #E4 | 2-3h | (manual: Network panel shows 1 SSE not 3 polls) | **SHIPPED** (commit e60ff3c — bus extended, multiplexer added, useLiveTicker + useStrategy migrated to SSE; validation pending) |
+| 8.W4.7 | Fold ticker + strategy frames into `/board/events` SSE; drop 2 polls | #E4 | 2-3h | (manual: Network panel shows 1 SSE not 3 polls) | **SHIPPED + VERIFIED** (commit e60ff3c; verified via `scripts/_verify-w47-sse.mjs`: 1 /board/events, 0 /board/ticker polls, 0 /strategy polls — gate cleared) |
 | 8.W4.8 | `useMutation` migration for 4 POST raw-fetch sites | #E9 | 2-3h | (manual: each mutation has uniform pending/error/disabled state) | **SHIPPED** |
 
 **Commits this wave produces:** ~6 (E5 piggybacks on W3.1; E6+E7 group; E4 standalone; E9 standalone).
