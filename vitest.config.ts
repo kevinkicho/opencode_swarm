@@ -6,6 +6,9 @@ import path from 'node:path';
 // Test layout:
 //   - Co-located: `lib/**/__tests__/*.test.ts` for module-scoped unit tests
 //     (parsers, transforms, helpers — no opencode/network dependency).
+//   - Co-located component/hook tests: `**/__tests__/*.test.tsx` opt into
+//     jsdom via the `// @vitest-environment jsdom` file directive. The
+//     default env stays `node` so unit tests don't pay the jsdom tax.
 //   - Top-level: `tests/integration/*.test.ts` for tests that hit the live
 //     stack (dev server + opencode). Gated on env so CI runs only the unit
 //     layer by default; integration tests opt-in via VITEST_INTEGRATION=1.
@@ -14,6 +17,12 @@ import path from 'node:path';
 // Vite-style config, identical assertion API to jest. Not adding jest
 // because vitest covers everything we need with less ceremony.
 export default defineConfig({
+  // JSX is handled by Next.js (`jsx: preserve` in tsconfig), so we have to
+  // tell esbuild to emit the React 17+ automatic runtime here. Without
+  // this, .test.tsx files fail with `React is not defined`.
+  esbuild: {
+    jsx: 'automatic',
+  },
   test: {
     // Resolve `@/*` paths the same way Next.js does (matches tsconfig.json
     // `paths`). Without this, imports like `@/lib/server/...` would fail
@@ -30,7 +39,14 @@ export default defineConfig({
     // env var so CI doesn't try to spawn real swarm runs on every push.
     include: process.env.VITEST_INTEGRATION
       ? ['tests/integration/**/*.test.ts']
-      : ['lib/**/__tests__/**/*.test.ts'],
+      : [
+          'lib/**/__tests__/**/*.test.ts',
+          'components/**/__tests__/**/*.test.tsx',
+          'app/**/__tests__/**/*.test.tsx',
+        ],
+    setupFiles: process.env.VITEST_INTEGRATION
+      ? []
+      : ['./lib/__test_helpers__/vitest-setup.ts'],
     // Reasonable defaults for our use case.
     environment: 'node',
     globals: false, // explicit imports — no surprise globals

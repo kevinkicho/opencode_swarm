@@ -5,6 +5,7 @@ import {
   cloneElement,
   isValidElement,
   useCallback,
+  useId,
   useState,
   type ReactElement,
   type ReactNode,
@@ -67,6 +68,13 @@ export function Popover({
 
   const close = useCallback(() => setOpen(false), []);
 
+  // The trigger gets a stable id so the floating dialog can point
+  // `aria-labelledby` at it — axe's `aria-dialog-name` rule requires a
+  // dialog to have an accessible name, and the trigger's visible text is
+  // the natural choice. Without this, the popover panel is an unnamed
+  // dialog (axe-flagged: serious).
+  const triggerId = useId();
+
   // Attach the ARIA-bearing reference props directly to the trigger
   // child (typically a <button>) instead of wrapping it in a span that
   // carries those attributes. Wrapping was triggering axe's
@@ -78,6 +86,7 @@ export function Popover({
   const childRefMerge = isValidElement(children)
     ? cloneElement(children as ReactElement<Record<string, unknown>>, {
         ref: refs.setReference,
+        id: triggerId,
         ...getReferenceProps(),
       } as Record<string, unknown>)
     : children;
@@ -92,6 +101,7 @@ export function Popover({
           <span
             ref={refs.setFloating}
             style={{ ...floatingStyles, zIndex: 75 }}
+            aria-labelledby={triggerId}
             {...getFloatingProps()}
           >
             <span style={styles} className="block">
