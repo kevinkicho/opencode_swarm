@@ -193,6 +193,10 @@ export function SwarmTimeline({
   );
 
   const totalHeight = rowHeights.reduce((a, b) => a + b, 0) + TOP_PAD * 2;
+  // Natural width: gutter + one lane's worth per agent. Don't floor this
+  // (was previously Math.max(_, 800) — that overflowed narrow viewports
+  // at the empty state where totalWidth degenerates to gutter-only).
+  // The parent scroll container handles wide-canvas cases via overflow-auto.
   const totalWidth = TIMELINE_GUTTER_WIDTH + agentOrder.length * LANE_WIDTH;
 
   // Stick-to-bottom: shared `useStickToBottom` hook governs both the
@@ -255,7 +259,7 @@ export function SwarmTimeline({
           // to bottom. Before this pad, "scroll to latest" landed with
           // the final message visually behind the chip.
           style={{
-            width: Math.max(totalWidth, 800),
+            width: totalWidth,
             minHeight: totalHeight + HEADER_HEIGHT + 56,
             paddingBottom: 56,
           }}
@@ -446,7 +450,7 @@ export function SwarmTimeline({
             style={{
               top: HEADER_HEIGHT,
               left: 0,
-              width: Math.max(totalWidth, 800),
+              width: totalWidth,
               height: totalHeight,
             }}
           >
@@ -463,7 +467,7 @@ export function SwarmTimeline({
                 onClearFocus={onClearFocus}
                 selectedAgentId={selectedAgentId}
                 clockSec={clockSec}
-                totalWidth={Math.max(totalWidth, 800)}
+                totalWidth={totalWidth}
                 totalHeight={totalHeight}
                 scrollRef={scrollRef}
                 scrollMargin={HEADER_HEIGHT + TOP_PAD}

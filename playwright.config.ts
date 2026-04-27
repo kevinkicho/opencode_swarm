@@ -48,10 +48,30 @@ export default defineConfig({
       animations: 'disabled',
     },
   },
+  // Three viewport projects so the overflow probe runs at every
+  // breakpoint we care about. Narrow regressions (the 768px timeline
+  // overflow that snuck past the original baseline) only catch when we
+  // actually render at narrow widths — single-viewport baselines miss
+  // these by construction.
+  //
+  // Visual baseline diffs (baselines.spec.ts) are scoped to desktop only
+  // via testIgnore on the narrow + mobile projects — keeping 9 PNGs
+  // instead of 3 isn't worth the maintenance cost when the structural
+  // overflow probe already covers narrow correctness.
   projects: [
     {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      name: 'chromium-desktop',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 1440, height: 900 } },
+    },
+    {
+      name: 'chromium-narrow',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 768, height: 900 } },
+      testIgnore: /baselines\.spec\.ts/,
+    },
+    {
+      name: 'chromium-mobile',
+      use: { ...devices['Desktop Chrome'], viewport: { width: 375, height: 812 } },
+      testIgnore: /baselines\.spec\.ts/,
     },
   ],
 });
