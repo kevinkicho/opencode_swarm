@@ -1,8 +1,20 @@
-// Process-local event bus for blackboard item mutations. The SSE endpoint
-// at `/api/swarm/run/:id/board/events` subscribes here; the store emits
-// after every successful insert / transition. Keeping the bus in-process
-// is fine because the blackboard DB is already singleton-scoped by file
-// path (see `./db.ts`) — any code that mutates the board runs inside the
+// Process-local event bus for per-run state mutations. The SSE endpoint
+// at `/api/swarm/run/:id/board/events` subscribes here; emit sites in
+// the store, auto-ticker, and plan-revisions push events through.
+//
+// Three event families share one bus:
+//   - item.{inserted,updated} — board mutations (store.ts)
+//   - ticker.tick             — auto-ticker fanout settled (auto-ticker)
+//   - strategy.update         — new plan-revision row (plan-revisions.ts)
+//
+// HARDENING_PLAN.md#E4 — folded ticker + strategy into the same bus
+// 2026-04-26 so the run page only opens ONE EventSource per swarmRunID
+// instead of polling /board/ticker (5s) and /strategy (5s) on top of
+// the SSE board stream.
+//
+// Keeping the bus in-process is fine because the blackboard DB is
+// already singleton-scoped by file path (see `./db.ts`) — any code
+// that mutates the board / ticker / plan-revisions runs inside the
 // same Node process that serves the SSE stream.
 //
 // HMR safety: pin the subscriber map on `globalThis` so route reloads
@@ -11,10 +23,14 @@
 import 'server-only';
 
 import type { BoardItem } from '@/lib/blackboard/types';
+import type { PlanRevisionWire } from '@/lib/blackboard/strategy';
+import type { TickerSnapshot } from './auto-ticker/types';
 
 export type BoardEvent =
   | { type: 'item.inserted'; item: BoardItem }
-  | { type: 'item.updated'; item: BoardItem };
+  | { type: 'item.updated'; item: BoardItem }
+  | { type: 'ticker.tick'; snapshot: TickerSnapshot }
+  | { type: 'strategy.update'; revision: PlanRevisionWire };
 
 type Listener = (event: BoardEvent) => void;
 
@@ -48,6 +64,16 @@ export function emitBoardEvent(swarmRunID: string, event: BoardEvent): void {
       console.warn('[blackboard/bus] listener threw:', (err as Error).message);
     }
   }
+}
+
+/** Convenience emitter for ticker-state changes. No-op when no subscribers. */
+export function emitTickerTick(swarmRunID: string, snapshot: TickerSnapshot): void {
+  emitBoardEvent(swarmRunID, { type: 'ticker.tick', snapshot });
+}
+
+/** Convenience emitter for plan-revision writes. No-op when no subscribers. */
+export function emitStrategyUpdate(swarmRunID: string, revision: PlanRevisionWire): void {
+  emitBoardEvent(swarmRunID, { type: 'strategy.update', revision });
 }
 
 export function subscribeBoardEvents(

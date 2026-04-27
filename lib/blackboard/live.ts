@@ -76,15 +76,10 @@ export interface LiveBoard {
   error: string | null;
 }
 
-interface BoardSnapshotFrame {
-  type: 'board.snapshot';
-  items: BoardItem[];
-}
-interface BoardItemFrame {
-  type: 'board.item.inserted' | 'board.item.updated';
-  item: BoardItem;
-}
-type BoardFrame = BoardSnapshotFrame | BoardItemFrame;
+// Frame types live in board-events-multiplexer.ts now — see that module
+// for the full union including ticker.tick + strategy.update folded into
+// the same SSE channel (HARDENING_PLAN.md#E4).
+import { subscribeBoardEvents } from './board-events-multiplexer';
 
 // listBoardItems on the server orders by (created_ms DESC, id ASC). Mirror
 // that here so incremental upserts don't drift from the shape a fresh GET
@@ -112,50 +107,33 @@ export function useLiveBoard(swarmRunID: string | null): LiveBoard {
     // array once per frame and hand it to setItems.
     const byId = new Map<string, BoardItem>();
 
-    const es = new EventSource(`/api/swarm/run/${swarmRunID}/board/events`);
-
-    es.onmessage = (ev) => {
-      let frame: BoardFrame;
-      try {
-        frame = JSON.parse(ev.data) as BoardFrame;
-      } catch {
-        return;
-      }
-      // HARDENING_PLAN.md#R2 — exhaustive switch with default branch.
-      // Pre-fix: an `if/else` assumed any non-snapshot frame was an
-      // item-update, so a new frame type from the server would either
-      // crash on undefined frame.item or silently shadow real updates.
-      // The default warn surfaces drift in dev logs.
-      switch (frame.type) {
-        case 'board.snapshot':
+    // Subscribe via the multiplexer so this hook shares ONE EventSource
+    // with useLiveTicker / useStrategy on the same swarmRunID
+    // (HARDENING_PLAN.md#E4). Ticker/strategy frames pass through
+    // ignored — those hooks own their own derivation.
+    const unsubscribe = subscribeBoardEvents(
+      swarmRunID,
+      (frame) => {
+        if (frame.type === 'board.snapshot') {
           byId.clear();
           for (const it of frame.items) byId.set(it.id, it);
-          break;
-        case 'board.item.inserted':
-        case 'board.item.updated':
+          setItems(sortBoardItems([...byId.values()]));
+          setError(null);
+        } else if (
+          frame.type === 'board.item.inserted' ||
+          frame.type === 'board.item.updated'
+        ) {
           byId.set(frame.item.id, frame.item);
-          break;
-        default:
-          // Compile-time exhaustiveness: if a new BoardFrame variant is
-          // added, TypeScript flags this assignment. Runtime: log so a
-          // server-side frame addition without client update is visible.
-          console.warn('[blackboard.live] unknown board frame', frame);
-          return;
-      }
-      setItems(sortBoardItems([...byId.values()]));
-      setError(null);
-    };
+          setItems(sortBoardItems([...byId.values()]));
+          setError(null);
+        }
+        // ticker.tick and strategy.update pass through silently here —
+        // the multiplexer fans them out to other subscribers.
+      },
+      (err) => setError(err),
+    );
 
-    es.onerror = () => {
-      // EventSource auto-reconnects; surface the error so the UI can hint
-      // at a dropped stream, but don't clear items — the last snapshot is
-      // still the best view we have.
-      setError('board stream disconnected');
-    };
-
-    return () => {
-      es.close();
-    };
+    return unsubscribe;
   }, [swarmRunID]);
 
   return { items, error };
@@ -168,14 +146,25 @@ export function useLiveBoard(swarmRunID: string | null): LiveBoard {
 // reloads. Falls back gracefully for non-`ag_*` shapes.
 const DERIVED_ACCENTS: BoardAgent['accent'][] = ['molten', 'mint', 'iris', 'amber', 'fog'];
 
-// Ticker observability + control. Polls at a slower cadence than the
-// board itself (5s vs 2s) because ticker state changes on the tick
-// boundary (10s default) — no value in outrunning that.
+// Ticker observability + control. SSE-driven as of HARDENING_PLAN.md#E4
+// (2026-04-26): ticker.tick frames flow through the same /board/events
+// EventSource as board mutations and strategy revisions, multiplexed
+// client-side so the run page opens ONE connection per swarmRunID. The
+// 5s poll the prior implementation kept open is gone.
 //
-// Migrated to TanStack Query (#109) — multiple consumers (topbar,
-// strategy rail, ticker chip) share one cache entry instead of each
-// running its own poller.
-const TICKER_POLL_MS = 5000;
+// Cold-start behavior: the SSE channel only emits on transitions, so
+// the first subscriber needs an initial state. Two paths:
+//   1. The multiplexer caches the most recent ticker.tick frame and
+//      replays it to late subscribers — covers the case where the
+//      ticker was already running before this hook mounted.
+//   2. If no tick has fired yet (run created but ticker hasn't ticked
+//      once), useLiveTicker returns { state: 'none' } as before.
+//
+// Start/stop control still goes through the existing
+// /api/swarm/run/:id/board/ticker POST — unchanged from the polling
+// implementation. The mutation's onSuccess updates local state
+// immediately so the user sees instant feedback before the SSE
+// confirms.
 
 export interface LiveTicker {
   state: TickerState;
@@ -185,30 +174,42 @@ export interface LiveTicker {
   busy: boolean;
 }
 
-const tickerQueryKey = (swarmRunID: string) =>
-  ['swarm', 'ticker', swarmRunID] as const;
-
-async function fetchTicker(swarmRunID: string): Promise<TickerState> {
-  const r = await fetch(`/api/swarm/run/${swarmRunID}/board/ticker`, {
-    cache: 'no-store',
-  });
-  const data = await r.json();
-  if (!r.ok) {
-    throw new Error((data as { error?: string }).error ?? `HTTP ${r.status}`);
-  }
-  return data as TickerState;
+// Convert a TickerSnapshot frame from the wire into a TickerState
+// discriminated union. The server emits the snapshot fields flat; the
+// client UI wants the `state: 'active' | 'stopped'` arm to drive
+// rendering. Matches the prior fetchTicker shape so callers don't churn.
+function tickerStateFromSnapshot(snap: TickerSnapshot): TickerState {
+  return snap.stopped
+    ? { state: 'stopped', ...snap }
+    : { state: 'active', ...snap };
 }
 
 export function useLiveTicker(swarmRunID: string | null): LiveTicker {
-  const queryClient = useQueryClient();
-  const q = useQuery({
-    queryKey: swarmRunID ? tickerQueryKey(swarmRunID) : ['swarm', 'ticker', '__none__'],
-    queryFn: () => fetchTicker(swarmRunID!),
-    enabled: !!swarmRunID,
-    refetchInterval: TICKER_POLL_MS,
-    placeholderData: (prev) => prev,
-    retry: false,
-  });
+  const [state, setState] = useState<TickerState>({ state: 'none' });
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!swarmRunID) {
+      setState({ state: 'none' });
+      setError(null);
+      return;
+    }
+    const unsubscribe = subscribeBoardEvents(
+      swarmRunID,
+      (frame) => {
+        if (frame.type === 'board.ticker.tick') {
+          // The wire shape is the TickerSnapshot the server emits; coerce
+          // through `unknown` because the multiplexer's TickerState type
+          // hint loses the discriminator until tickerStateFromSnapshot
+          // re-derives it.
+          setState(tickerStateFromSnapshot(frame.snapshot as unknown as TickerSnapshot));
+          setError(null);
+        }
+      },
+      (err) => setError(err),
+    );
+    return unsubscribe;
+  }, [swarmRunID]);
 
   const mutation = useMutation({
     mutationFn: async (action: 'start' | 'stop') => {
@@ -225,19 +226,22 @@ export function useLiveTicker(swarmRunID: string | null): LiveTicker {
       return data as TickerState;
     },
     onSuccess: (data) => {
-      if (swarmRunID) {
-        queryClient.setQueryData(tickerQueryKey(swarmRunID), data);
-      }
+      // Optimistic local update so the UI reflects the action without
+      // waiting for the next SSE tick. The server will emit a fresh
+      // snapshot on the next tick that confirms (or corrects) this.
+      setState(data);
     },
   });
 
-  const state: TickerState = q.data ?? { state: 'none' };
-  const errorObj = mutation.error ?? q.error;
-  const error = errorObj instanceof Error ? errorObj.message : null;
+  const errorObj = mutation.error
+    ? (mutation.error instanceof Error
+        ? mutation.error.message
+        : String(mutation.error))
+    : error;
 
   return {
     state: swarmRunID ? state : { state: 'none' },
-    error,
+    error: errorObj,
     start: async () => {
       await mutation.mutateAsync('start').catch(() => undefined);
     },

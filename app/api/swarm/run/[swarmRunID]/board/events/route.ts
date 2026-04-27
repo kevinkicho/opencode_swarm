@@ -56,10 +56,19 @@ export async function GET(
       emit('board.snapshot', { items: listBoardItems(swarmRunID) });
 
       const unsubscribe = subscribeBoardEvents(swarmRunID, (event: BoardEvent) => {
-        if (event.type === 'item.inserted') {
-          emit('board.item.inserted', { item: event.item });
-        } else {
-          emit('board.item.updated', { item: event.item });
+        switch (event.type) {
+          case 'item.inserted':
+            emit('board.item.inserted', { item: event.item });
+            return;
+          case 'item.updated':
+            emit('board.item.updated', { item: event.item });
+            return;
+          case 'ticker.tick':
+            emit('board.ticker.tick', { snapshot: event.snapshot });
+            return;
+          case 'strategy.update':
+            emit('board.strategy.update', { revision: event.revision });
+            return;
         }
       });
 

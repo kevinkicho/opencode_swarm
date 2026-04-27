@@ -21,6 +21,7 @@
 import 'server-only';
 
 import { blackboardDb } from './db';
+import { emitStrategyUpdate } from './bus';
 
 export interface PlanRevision {
   id: number;
@@ -324,7 +325,8 @@ export function recordPlanRevision(input: {
   excerpt: string | null;
   planMessageId: string | null;
 }): void {
-  blackboardDb()
+  const createdAt = Date.now();
+  const result = blackboardDb()
     .prepare(
       `INSERT INTO plan_revisions
        (swarm_run_id, round, added_json, removed_json, rephrased_json,
@@ -344,8 +346,28 @@ export function recordPlanRevision(input: {
       JSON.stringify(input.boardSnapshot),
       input.excerpt,
       input.planMessageId,
-      Date.now(),
+      createdAt,
     );
+  // HARDENING_PLAN.md#E4 — fan the new revision out on the bus so the
+  // strategy tab's SSE consumer (useStrategy) can update without
+  // polling. lastInsertRowid widens to bigint on big rowids; coerce to
+  // number — the strategy table's id column is INTEGER PRIMARY KEY so
+  // we never approach Number.MAX_SAFE_INTEGER for a single dev's runs.
+  emitStrategyUpdate(input.swarmRunID, {
+    id: Number(result.lastInsertRowid),
+    swarmRunID: input.swarmRunID,
+    round: input.round,
+    added: input.added,
+    removed: input.removed,
+    rephrased: input.rephrased,
+    addedCount: input.added.length,
+    removedCount: input.removed.length,
+    rephrasedCount: input.rephrased.length,
+    boardSnapshot: input.boardSnapshot,
+    excerpt: input.excerpt,
+    planMessageId: input.planMessageId,
+    createdAt,
+  });
 }
 
 export function nextRoundForRun(swarmRunID: string): number {

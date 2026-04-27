@@ -1,11 +1,16 @@
 'use client';
 
-// Plan-revisions read hook. Backs the orchestrator-worker `strategy`
-// tab. TanStack Query for transparent dedup if multiple subviews ever
-// need the data; refetch interval matches the board's 2s cadence so
-// fresh sweeps surface within ~2s.
+// Plan-revisions read hook. Backs the orchestrator-worker `strategy` tab.
+//
+// HARDENING_PLAN.md#E4 — migrated 2026-04-26 from a 5s poll on
+// /api/swarm/run/:id/strategy to SSE consumption via
+// board-events-multiplexer. Cold-load still goes through one fetch so
+// the rail renders immediately on mount; subsequent updates flow through
+// `board.strategy.update` frames on the same SSE channel as the board.
 
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState } from 'react';
+
+import { subscribeBoardEvents } from './board-events-multiplexer';
 
 export interface PlanRevisionWire {
   id: number;
@@ -50,17 +55,60 @@ export function useStrategy(swarmRunID: string | null): {
   loading: boolean;
   error: string | null;
 } {
-  const q = useQuery({
-    queryKey: ['swarm', 'strategy', swarmRunID],
-    queryFn: () => fetchStrategy(swarmRunID!),
-    enabled: swarmRunID !== null,
-    refetchInterval: 5000,
-    placeholderData: (prev) => prev,
-    retry: false,
-  });
-  return {
-    revisions: q.data?.revisions ?? [],
-    loading: q.isLoading,
-    error: q.error ? (q.error as Error).message : null,
-  };
+  const [revisions, setRevisions] = useState<PlanRevisionWire[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Cold-load: fetch the historical revisions on mount so the rail renders
+  // immediately. Subsequent updates land via SSE — no polling.
+  useEffect(() => {
+    if (!swarmRunID) {
+      setRevisions([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    fetchStrategy(swarmRunID)
+      .then((data) => {
+        if (cancelled) return;
+        setRevisions(data.revisions);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [swarmRunID]);
+
+  // Live updates via the board-events SSE channel.
+  useEffect(() => {
+    if (!swarmRunID) return;
+    const unsubscribe = subscribeBoardEvents(
+      swarmRunID,
+      (frame) => {
+        if (frame.type === 'board.strategy.update') {
+          setRevisions((prior) => {
+            // Append + dedup by id so an SSE replay of an already-seen
+            // revision doesn't duplicate the row. Newest-last matches
+            // the cold-load order (revisions table is ORDER BY round ASC).
+            if (prior.some((r) => r.id === frame.revision.id)) return prior;
+            return [...prior, frame.revision];
+          });
+        }
+      },
+      (err) => setError(err),
+    );
+    return unsubscribe;
+  }, [swarmRunID]);
+
+  return { revisions, loading, error };
 }

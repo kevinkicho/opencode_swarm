@@ -28,7 +28,9 @@ const SCAN_DIRS = ['lib', 'app', 'components'].map((d) => join(REPO_ROOT, d));
 const ALLOWLIST = new Set<string>([
   // Stream cleanup — controller.close()/reader.releaseLock() can throw
   // if the stream is already closed; catching is the canonical pattern.
-  'app/api/swarm/run/[swarmRunID]/board/events/route.ts:80',
+  // board/events route line shifted from 80 → 89 in 2026-04-26 W4.7
+  // ticker+strategy SSE fold (added a switch for the new frame types).
+  'app/api/swarm/run/[swarmRunID]/board/events/route.ts:89',
   'app/api/swarm/run/[swarmRunID]/events/route.ts:92',
   'app/api/swarm/run/[swarmRunID]/events/route.ts:238',
 ]);

@@ -9,6 +9,7 @@ import 'server-only';
 
 import { abortSessionServer } from '../../opencode-server';
 import { getRun } from '../../swarm-registry';
+import { emitTickerTick } from '../bus';
 import { persistTickerSnapshot } from '../ticker-snapshots';
 import { maybeRunAudit } from './audit';
 import { snapshot, tickers } from './state';
@@ -63,6 +64,10 @@ export function stopAutoTicker(
   s.periodicSweepTimer = null;
   if (s.livenessTimer) clearInterval(s.livenessTimer);
   s.livenessTimer = null;
+
+  // HARDENING_PLAN.md#E4 — emit the final stopped snapshot so SSE
+  // subscribers see the transition without polling.
+  emitTickerTick(swarmRunID, snapshot(s));
 
   // Fire-and-forget abort on every session associated with this run.
   // Purpose: ensure no opencode assistant turn keeps streaming tokens

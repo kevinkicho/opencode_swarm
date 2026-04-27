@@ -9,12 +9,13 @@ import 'server-only';
 
 import { liveExports } from '../../hmr-exports';
 import { getRun } from '../../swarm-registry';
+import { emitTickerTick } from '../bus';
 import { maybeRunAudit } from './audit';
 import { checkHardCaps } from './hard-caps';
 import { liveCoordinator } from './live-exports';
 import { checkLiveness } from './liveness';
 import { checkRoleImbalance } from './policies';
-import { tickers } from './state';
+import { snapshot, tickers } from './state';
 import { runPeriodicSweep } from './sweep';
 import { attemptTierEscalation } from './tier-escalation';
 import {
@@ -220,6 +221,11 @@ async function tickSession(
     );
   } finally {
     slot.inFlight = false;
+    // HARDENING_PLAN.md#E4 — fan the ticker snapshot out on the bus so the
+    // run page's `useLiveTicker` SSE consumer can update without polling
+    // /board/ticker. Fires once per tick — listeners that want lower
+    // cadence can sample. No-op when nothing's subscribed.
+    emitTickerTick(state.swarmRunID, snapshot(state));
   }
 }
 
