@@ -14,6 +14,12 @@ describe('pattern: council', () => {
     if (run) await abortRun(run);
   });
 
+  // 2026-04-26 attempt: harness works, test ran 150s before timing out.
+  // The 120s predicate (every council member has tokens > 0) wasn't met
+  // within the budget — opencode's cloud-model latency is variable, and
+  // a council with teamSize=3 needs all 3 sessions to have produced
+  // any output. Re-skipped pending criterion-tuning per the bible's
+  // verification gate ("Tune the success criterion against a real run").
   it.skip(
     'completes ≥1 deliberation round within 120s',
     async () => {
