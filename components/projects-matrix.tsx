@@ -393,6 +393,12 @@ function DayCell({ dayMs, runs }: { dayMs: number; runs?: SwarmRunListRow[] }) {
   const cell = (
     <button
       type="button"
+      // Day cells render as small colored squares — visually clear but
+      // opaque to screen readers without an explicit label. axe flags
+      // this as `button-name` (critical). Pull the day, run count, and
+      // dominant status into the aria-label so the popover content is
+      // discoverable without sighted UI.
+      aria-label={`${fmtDayLong(dayMs)} · ${runs.length} run${runs.length === 1 ? '' : 's'} · ${status}`}
       className={clsx(
         'shrink-0 grid place-items-center relative cursor-pointer hover:ring-1 hover:ring-fog-500 transition',
         isToday && 'bg-molten/[0.04]',

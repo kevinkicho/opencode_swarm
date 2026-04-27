@@ -45,7 +45,7 @@ export default function ProjectDetailPage() {
   );
 
   return (
-    <div className="flex flex-col h-screen w-screen bg-ink-900 bg-noise">
+    <main className="flex flex-col h-screen w-screen bg-ink-900 bg-noise">
       <header className="shrink-0 flex items-center justify-between px-4 h-10 hairline-b bg-ink-850/60">
         <div className="flex items-center gap-3">
           <Link
@@ -91,6 +91,6 @@ export default function ProjectDetailPage() {
       ) : (
         <RepoRunsView rows={matching} />
       )}
-    </div>
+    </main>
   );
 }

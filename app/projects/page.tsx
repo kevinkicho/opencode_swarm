@@ -26,12 +26,14 @@ export default function ProjectsPage() {
   }, [queryClient]);
 
   return (
-    <ProjectsMatrix
-      rows={rows}
-      loading={rows.length === 0 && !error}
-      error={error}
-      onRefresh={onRefresh}
-      refreshing={false}
-    />
+    <main>
+      <ProjectsMatrix
+        rows={rows}
+        loading={rows.length === 0 && !error}
+        error={error}
+        onRefresh={onRefresh}
+        refreshing={false}
+      />
+    </main>
   );
 }

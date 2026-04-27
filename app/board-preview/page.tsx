@@ -157,7 +157,7 @@ function BoardPreviewInner() {
   }, [isLive, items]); // items in deps so live mode re-anchors between polls
 
   return (
-    <div className="min-h-screen bg-ink-950 text-fog-100 font-sans">
+    <main className="min-h-screen bg-ink-950 text-fog-100 font-sans">
       <header className="h-12 hairline-b mica flex items-center px-4 gap-3 sticky top-0 z-10">
         <Link
           href="/"
@@ -258,7 +258,7 @@ function BoardPreviewInner() {
           );
         })}
       </div>
-    </div>
+    </main>
   );
 }
 

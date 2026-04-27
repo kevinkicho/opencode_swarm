@@ -45,11 +45,13 @@ export default function RetroPage({ params }: PageProps) {
   // fine; the retro view's failure header simply doesn't render.
   const ticker = getTickerSnapshot(params.swarmRunID);
   return (
-    <RetroView
-      swarmRunID={params.swarmRunID}
-      retro={data?.retro ?? null}
-      agentRollups={data?.agentRollups ?? []}
-      ticker={ticker}
-    />
+    <main>
+      <RetroView
+        swarmRunID={params.swarmRunID}
+        retro={data?.retro ?? null}
+        agentRollups={data?.agentRollups ?? []}
+        ticker={ticker}
+      />
+    </main>
   );
 }

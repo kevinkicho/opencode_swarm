@@ -697,12 +697,14 @@ function PartLegend({
         </div>
       )}
     >
-      <Tooltip
-        content="part-type toggles · multi-choice show/hide for each opencode part (text, reasoning, tool, patch, …) · independent of the quick-filter preset"
-        side="bottom"
-      >
+      {/* Tooltip wrapper removed (#7.Q42 sweep): Popover's cloneElement
+          ref-fwd doesn't work on Tooltip (function component, no
+          forwardRef), warning fires on every render. The Popover's
+          panel already explains the filter; the button-level hint
+          moves to a `title` attr instead. */}
         <button
           type="button"
+          title="part-type toggles · multi-choice show/hide for each opencode part (text, reasoning, tool, patch, …)"
           className={clsx(
             'flex items-center gap-1.5 h-6 px-2 rounded hairline transition cursor-pointer',
             active ? 'border-molten/30 bg-molten/5' : 'bg-ink-900 hover:border-ink-500',
@@ -722,7 +724,6 @@ function PartLegend({
             </span>
           )}
         </button>
-      </Tooltip>
     </Popover>
   );
 }
