@@ -99,6 +99,31 @@ for invocation):
 - map-reduce I1: synthesis-critic gate.
 - stigmergy: heat-picked-timeline-chip.
 
+**UI/UX test surface — gaps from the 2026-04-27 full sweep**
+(552 assertions live; the items below are what the sweep can't reach):
+
+- **Streaming / SSE realtime updates.** No test exercises the path
+  "agent emits a token → lane row updates / part chip animates." The
+  rendering pipeline is complex enough that a snapshot won't catch
+  regressions; needs an integration test with a fake SSE server or a
+  Playwright probe on a controlled live run.
+- **End-to-end run lifecycle.** spawn → land on home → see lanes →
+  broadcast → see responses → close. Each piece is unit-tested but the
+  flow itself isn't. Probably best done as a Playwright integration
+  test against a stubbed `/api/swarm/run` and `/api/opencode/**`.
+- **Form validation in modals.** new-run (source URL parsing, cap
+  edge values, required-field), routing rules editor, spawn-agent.
+  Component-level vitest tests with userEvent.
+- **xyflow timeline interactions.** drag, zoom, lane reorder, node
+  selection. Currently only `buildRow` layout math is tested.
+- **Cross-browser.** Chromium-only today. Firefox + WebKit projects
+  in `playwright.config.ts` would multiply the sweep across browsers
+  for free.
+- **WCAG AA color-contrast.** 500-node opt-out for the muted secondary
+  palette (`text-fog-600/700`). Re-baselining the dark theme to AA
+  (#6c7480+) would let the rule re-engage but changes the visual
+  language.
+
 ---
 
 ## Postmortem follow-ups
