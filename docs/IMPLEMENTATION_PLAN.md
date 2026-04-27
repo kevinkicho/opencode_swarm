@@ -346,8 +346,8 @@ Do incrementally — each item is independently mergeable.
 | 8.W5.10 | `app/page.tsx` extract `useSwarmView` + `useDiffStats` hooks | #C6 + #E8 | 3-4h | (manual: page.tsx ≤1050 LOC, hook count ≤22) | **SHIPPED** (1206 → 1092 LOC · commit b918d95) |
 | 8.W5.11 | `swarm-timeline.tsx` add `TimelineInteractionContext` | #C7 | 1-2h | (manual: prop list shrinks ≥3) | **SHIPPED** |
 | 8.W5.12 | Split `lib/opencode/live.ts` into 6 hook files | #C10 | 4-6h | each new file ≤300 LOC | PENDING |
-| 8.W5.13 | Split `lib/opencode/transform.ts` into per-transformer files | #C11 | 3-4h | each new file ≤300 LOC | PENDING |
-| 8.W5.14 | Split `lib/server/blackboard/planner.ts` into 4 files | #C12 | 3-5h | each new file ≤400 LOC | PENDING (now unblocked by W3.3) |
+| 8.W5.13 | Split `lib/opencode/transform.ts` into per-transformer files | #C11 | 3-4h | each new file ≤300 LOC | **SHIPPED** (10 files, all ≤300 · commit f85fab6) |
+| 8.W5.14 | Split `lib/server/blackboard/planner.ts` into 4 files | #C12 | 3-5h | each new file ≤400 LOC | **SHIPPED** (4 sibling files + 76-LOC barrel · commit 535630e; sweep.ts 492 LOC slightly over but justified — 8-phase orchestrator concentrates naturally) |
 | 8.W5.15 | Split `lib/server/memory/rollup.ts` (capture/compute/persist) | #C13 | 2-3h | each new file ≤250 LOC | **SHIPPED** |
 | 8.W5.16 | Decompose `new-run-modal` + `spawn-agent-modal` + `routing-modal` | #C8 | 4-5h | each ≤500 LOC; modal opens cleanly | PENDING |
 | 8.W5.17 | Close 2 import cycles | #C17 | 30m | `import-cycles.test.ts` flips | **SHIPPED** |
