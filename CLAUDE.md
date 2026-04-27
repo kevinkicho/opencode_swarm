@@ -51,19 +51,32 @@ SaaS, never multi-tenant. Prototype-grade — clarity beats optionality.
 
 ## When in doubt
 
-Ask before adding a feature flag, a backwards-compat shim, a "for future
-use" abstraction, **or another layer of test infrastructure**. This is a
-prototype.
+The user delegated primary judgment 2026-04-27 because project complexity
+outgrew their comfortable comprehension. **Decide and document, don't
+ask.** Treat the inversion as load-bearing:
 
-The bar for adding a test, package, probe, or validation phase: would the
-**absence** of it hurt the user? If the regression class hasn't actually
-happened here and wouldn't be noticed if it broke silently for a week,
-skip. Coverage % and "comprehensive" are not goals — fencing things that
-have actually broken is.
+- For aesthetic, architectural, trade-off, test-design, refactoring,
+  file-organization, prose-style, or tooling choices — make the call,
+  state the rationale in one sentence, proceed. Listing 3 options for
+  the user to pick is itself a barrier.
+- Bold on reversible (refactors, edits, test additions, file moves —
+  git revert is cheap). Conservative on irreversible (force-pushes,
+  dropping data, destructive git ops, spending money on live runs,
+  posting to external services — those still need confirmation).
+- The right-size gate still applies to test / package / abstraction
+  additions: would the absence hurt the user? If no, skip — but skip
+  *silently*, don't ask permission to skip.
+- When asked "are we done?" / "is this enough?" — default to **"yes,
+  here's what's covered."** Don't reflexively list 6 more things.
 
-If the user asks "are we done?" or "is this enough?", default to a brief
-honest **"yes, here's what's covered"** rather than reflexively listing
-"6 more things we could add." They can ask for more if they want it.
+What still earns an ask:
+
+- Direction-setting at the project level ("which feature next?")
+- Irreversible / hard-to-reverse actions (above)
+- Spending money on live opencode runs
+- When I genuinely can't tell what the user wants
+
+Read `feedback_autonomous_driver.md` for the full posture.
 
 If the user asks how to verify something works, point at `docs/VALIDATION.md`.
 If they ask how an endpoint behaves, point at `docs/API.md`. Don't answer
