@@ -90,9 +90,56 @@ export async function snapshot(run: SpawnedRun): Promise<Record<string, unknown>
   return (await res.json()) as Record<string, unknown>;
 }
 
-// Poll the snapshot endpoint at ~3s cadence until predicate returns
-// true OR timeout. Returns whether the predicate succeeded. Tests
-// assert on the boolean rather than throw, so the test failure
+// Per-session shape from the /snapshot endpoint's `tokens.sessions[]`.
+// IMPORTANT: snapshot session info lives at `tokens.sessions`, NOT at
+// the top-level `sessions` field. Pre-2026-04-26 the integration tests
+// read `(snap as any).sessions` and the predicate never matched —
+// every test failed with "false" even when work had completed.
+//
+// This helper hides the path so test authors can't get it wrong again,
+// and so a future shape change requires only one edit.
+export interface SnapshotSession {
+  sessionID: string;
+  tokens: number;
+  cost: number;
+  lastActivityTs: number;
+  /** Live-derived per-session status — 'idle' once the session has stopped emitting. */
+  status: 'idle' | 'thinking' | 'working' | 'waiting' | 'paused' | 'done' | 'error';
+  role?: string;
+}
+
+export function snapSessions(snap: Record<string, unknown>): SnapshotSession[] {
+  const tokens = (snap as { tokens?: { sessions?: SnapshotSession[] } }).tokens;
+  return tokens?.sessions ?? [];
+}
+
+/** True when every session shows status='idle' and the run has accumulated some tokens. */
+function allSessionsIdleAfterWork(snap: Record<string, unknown>): boolean {
+  const sessions = snapSessions(snap);
+  if (sessions.length === 0) return false;
+  const tokensTotal = (snap as { tokens?: { totals?: { tokens?: number } } }).tokens?.totals?.tokens ?? 0;
+  if (tokensTotal === 0) return false;
+  return sessions.every((s) => s.status === 'idle' || s.status === 'done');
+}
+
+/** True when the run-derived status is terminal — no further progress expected. */
+function runStatusTerminal(snap: Record<string, unknown>): boolean {
+  const status = (snap as { derivedRow?: { status?: string } }).derivedRow?.status
+    ?? (snap as { status?: string }).status
+    ?? '';
+  return status === 'done' || status === 'stopped' || status === 'error' || status === 'stale';
+}
+
+// Poll the snapshot endpoint at ~3s cadence. Returns when:
+//   1. predicate returns true (success), OR
+//   2. the run has reached a no-more-progress state — every session
+//      idle/done with tokens already accumulated, OR run-status terminal
+//      — at which point we do ONE final predicate check and return its
+//      result. This avoids waiting the full timeoutMs on a run that's
+//      clearly finished its work but didn't trip the success criterion.
+//   3. timeoutMs elapses (absolute upper bound).
+//
+// Tests assert on the boolean rather than throw, so the test failure
 // reason is more informative.
 export async function waitForCondition(
   run: SpawnedRun,
@@ -100,15 +147,25 @@ export async function waitForCondition(
   timeoutMs: number,
 ): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
+  let lastSnap: Record<string, unknown> | null = null;
   while (Date.now() < deadline) {
     try {
       const snap = await snapshot(run);
+      lastSnap = snap;
       if (predicate(snap)) return true;
+      // Short-circuit: run is done and won't produce more output. Final
+      // check + bail. No point waiting another N polls.
+      if (allSessionsIdleAfterWork(snap) || runStatusTerminal(snap)) {
+        return predicate(snap);
+      }
     } catch {
       // Transient — keep polling. The deadline still bounds it.
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
+  // Final check on the last snap before declaring failure — a slow last
+  // poll can leave the success state unobserved.
+  if (lastSnap !== null && predicate(lastSnap)) return true;
   return false;
 }
 

@@ -11,9 +11,10 @@
 //      to reach the success condition reliably.
 
 import { afterAll, describe, expect, it } from 'vitest';
-import { spawnRun, waitForCondition, abortRun, type SpawnedRun } from './_harness';
+import { spawnRun, waitForCondition, abortRun, snapSessions, type SpawnedRun } from './_harness';
 
-const TIMEOUT_MS = 90_000;
+// 2026-04-26 evening: tuned to 180s per cloud-model latency slack.
+const TIMEOUT_MS = 180_000;
 
 describe('pattern: orchestrator-worker', () => {
   let run: SpawnedRun | null = null;
@@ -22,8 +23,8 @@ describe('pattern: orchestrator-worker', () => {
     if (run) await abortRun(run);
   });
 
-  it.skip(
-    'orchestrator delegates to workers and gathers ≥1 worker reply within 90s',
+  it(
+    'orchestrator delegates to workers and gathers ≥1 worker reply within 180s',
     async () => {
       run = await spawnRun({
         pattern: 'orchestrator-worker',
@@ -35,18 +36,14 @@ describe('pattern: orchestrator-worker', () => {
         bounds: { minutesCap: 2 },
       });
 
-      // Success: at least one worker session has a completed assistant
-      // turn carrying any text content (the worker's reply to the
-      // orchestrator). The /snapshot.sessions array is the read.
+      // Success: at least one worker session has produced tokens.
+      // Worker sessions = everything but session[0] (the orchestrator).
       const success = await waitForCondition(
         run,
         (snap) => {
-          const sessions = (snap as { sessions?: Array<{ id: string; tokens?: number }> })
-            .sessions ?? [];
-          // Worker sessions are everything but session[0] (the orchestrator).
+          const sessions = snapSessions(snap);
           const workers = sessions.slice(1);
-          // A worker that has produced any tokens has dispatched a real reply.
-          return workers.some((s) => (s.tokens ?? 0) > 0);
+          return workers.some((s) => s.tokens > 0);
         },
         TIMEOUT_MS,
       );
