@@ -17,3 +17,8 @@ tmp/
 demo-log/
 .perf/
 C:\\Users\\kevin\\AppData\\Local\\lighthouse.*
+# Playwright @playwright/test artifacts. Baselines under
+# tests/visual/*-snapshots/ ARE versioned (those are the ground truth);
+# only diff/actual outputs from a failing visual run are noise.
+test-results/
+playwright-report/

@@ -104,6 +104,7 @@ const StrategyRail = dynamic(
   { ssr: false },
 );
 import { SwarmComposer, type ComposerTarget } from '@/components/swarm-composer';
+import { resolveSendTargets } from '@/lib/composer-targets';
 import { CostCapBanner } from '@/components/cost-cap-banner';
 import { PermissionStrip } from '@/components/permission-strip';
 import { ReconcileStrip } from '@/components/reconcile-strip';
@@ -977,25 +978,11 @@ function PageBody({
           // dedupes the (rare) case where two agents share a session
           // (e.g. one session running planner + synthesizer roles).
           // Agents without a sessionID (anything pre-bind) are skipped.
-          if (target.kind === 'broadcast') {
-            const sessionIDs = new Set<string>();
-            for (const a of agents) {
-              if (a.sessionID) sessionIDs.add(a.sessionID);
-            }
-            for (const sid of sessionIDs) {
-              void safePost(sid, liveDirectory, body, undefined, 'composer-broadcast');
-            }
-            return;
+          const sessionIDs = resolveSendTargets(target, agents, liveSessionId);
+          const tag = target.kind === 'broadcast' ? 'composer-broadcast' : 'composer';
+          for (const sid of sessionIDs) {
+            void safePost(sid, liveDirectory, body, undefined, tag);
           }
-          const targetAgent = agents.find((a) => a.id === target.id);
-          const targetSessionID = targetAgent?.sessionID ?? liveSessionId;
-          void safePost(
-            targetSessionID,
-            liveDirectory,
-            body,
-            undefined,
-            'composer',
-          );
         }}
       />
 

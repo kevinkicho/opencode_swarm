@@ -41,8 +41,8 @@ export default defineConfig({
       ? ['tests/integration/**/*.test.ts']
       : [
           'lib/**/__tests__/**/*.test.ts',
-          'components/**/__tests__/**/*.test.tsx',
-          'app/**/__tests__/**/*.test.tsx',
+          'components/**/__tests__/**/*.test.{ts,tsx}',
+          'app/**/__tests__/**/*.test.{ts,tsx}',
         ],
     setupFiles: process.env.VITEST_INTEGRATION
       ? []

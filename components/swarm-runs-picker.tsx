@@ -24,6 +24,7 @@ import { Popover } from './ui/popover';
 import { useSwarmRuns } from '@/lib/opencode/live';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
+import { sortRunsForPicker } from '@/lib/picker-sort';
 import { STATUS_VISUAL } from './swarm-run-visual';
 import { IconSearch } from './icons';
 
@@ -123,19 +124,9 @@ function PickerPanel({
           return haystack.includes(q);
         })
       : rows;
-    // #7.Q29 — sort actively-alive runs to the top, then strict newest-
-    // first by createdAt for everything else. Three-bucket: live (0) →
-    // idle (1) → everything else (2). The "alive" cluster (live + idle)
-    // are the ones still consuming compute or about to; the user wants
-    // to see them ahead of stopped/done runs. Within bucket we tiebreak
-    // on createdAt desc so today's runs always sit above yesterday's
-    // residue regardless of whose status is "louder."
-    return [...base].sort((a, b) => {
-      const aBucket = a.status === 'live' ? 0 : a.status === 'idle' ? 1 : 2;
-      const bBucket = b.status === 'live' ? 0 : b.status === 'idle' ? 1 : 2;
-      if (aBucket !== bBucket) return aBucket - bBucket;
-      return b.meta.createdAt - a.meta.createdAt;
-    });
+    // #7.Q29 — alive-bucket first, newest createdAt within. Logic
+    // lives in lib/picker-sort.ts so the ordering is unit-testable.
+    return sortRunsForPicker(base);
   }, [rows, query]);
 
   // "Alive" = live + idle (both have a running ticker). "Live" is
