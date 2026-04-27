@@ -115,10 +115,14 @@ export const modelCatalog: ModelRef[] = [
     limitTag: 'ollama max',
   },
   {
-    // Default planner/orchestrator-seat model as of 2026-04-27
-    // (replaces ollama/glm-5.1:cloud per user). glm-5.1 stays in
-    // the catalog above and is still selectable manually; new runs
-    // that don't override teamModels[0] now get deepseek instead.
+    // Available in opencode's model picker but does NOT dispatch
+    // through ollama-cloud as of 2026-04-27: prewarm endpoint
+    // succeeds (warm in 0.8s) but chat-completion silently stalls
+    // (F1 watchdog fires after 91s of session silence). Tried as
+    // PLANNER default and reverted. Kept here so the model is
+    // selectable in the new-run modal for debugging / future fix
+    // attempts. Don't use as a default until a sweep verdict
+    // confirms first-tokens fire.
     id: 'ollama/deepseek-v4-pro:cloud',
     label: 'deepseek-v4-pro',
     provider: 'ollama',

@@ -124,14 +124,9 @@ export function teamSizeWarningMessage(
 // for unset fields. See route.ts::applyPatternDefaults.
 //
 // Three ollama-tier models power the defaults:
-//   deepseek-v4-pro:cloud  — planner seat only (blackboard session[0],
+//   glm-5.1:cloud          — planner seat only (blackboard session[0],
 //                            orchestrator-worker session[0]); fast
 //                            structured-JSON for the planning sweep.
-//                            Replaced glm-5.1:cloud as the default
-//                            planner 2026-04-27 per user. glm-5.1 is
-//                            still in the catalog and selectable
-//                            manually; this swap only changes the
-//                            unset-teamModels[0] default.
 //   gemma4:31b-cloud       — every team / critic / verifier / drafter /
 //                            judge seat across every pattern (per
 //                            2026-04-25 evening directive)
@@ -140,12 +135,25 @@ export function teamSizeWarningMessage(
 //                            pattern). Strongest reasoning tier for the
 //                            "is this criterion met?" gate.
 //
+// 2026-04-27 deepseek-v4-pro:cloud attempt + revert: tried swapping
+// PLANNER → ollama/deepseek-v4-pro:cloud (commit d64483e). 6-pattern
+// validation sweep showed both deepseek-using patterns (blackboard +
+// orchestrator-worker) FAIL with no-first-tokens at 180s, while
+// gemma-only patterns (council, map-reduce, debate-judge, critic-loop)
+// all PASS within 16-20s. F1 watchdog log: "session ... silent 91s —
+// provider may be unreachable". Prewarm endpoint succeeded; chat-
+// completion dispatch silently stalled. Model is selectable in
+// opencode but not actually wired through ollama-cloud's completion
+// path. deepseek-v4-pro:cloud KEPT in lib/model-catalog.ts and
+// lib/zen-catalog.ts so the user can still pick it manually for
+// debugging; only the default reverted.
+//
 // `teamModels(n)` returns a length-`n` array; session[0] is planner-
 // shaped for blackboard-family patterns, synthesizer for map-reduce,
 // orchestrator for orchestrator-worker, judge for debate-judge,
 // worker for critic-loop. Convention defined in each pattern's
 // orchestrator module; this table matches them.
-const PLANNER = 'ollama/deepseek-v4-pro:cloud';
+const PLANNER = 'ollama/glm-5.1:cloud';
 const GEMMA = 'ollama/gemma4:31b-cloud';
 const NEMOTRON = 'ollama/nemotron-3-super:cloud';
 
@@ -183,10 +191,10 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // session[0] = planner (display-only role); sessions[1..N-1] = workers.
     // Auditor lives in its own session (enableAuditorGate default-on per
     // 2026-04-25 evening directive). Model assignment per directive:
-    //   planner  → PLANNER (deepseek-v4-pro:cloud — fast structured-JSON
-    //                       for the planner sweep, swapped from glm-5.1
-    //                       2026-04-27 per user; glm-5.1 still selectable
-    //                       manually in the catalog)
+    //   planner  → PLANNER (glm-5.1:cloud — fast structured-JSON for
+    //                       the planner sweep; deepseek-v4-pro attempt
+    //                       2026-04-27 reverted, see PLANNER constant
+    //                       comment above)
     //   workers  → GEMMA
     //   critic   → GEMMA
     //   verifier → GEMMA
@@ -228,8 +236,8 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // sessions[1..N-1] = workers.
     //
     // Model rationale (2026-04-26 update — Q34 root-cause fix):
-    //   orchestrator → PLANNER (same as blackboard's planner seat;
-    //                            deepseek-v4-pro:cloud as of 2026-04-27)
+    //   orchestrator → PLANNER (same as blackboard's planner seat —
+    //                            glm-5.1:cloud per the revert above)
     //   workers      → GEMMA
     //
     // History: was NEMOTRON pre-2026-04-25 (step-loop cost issue), then

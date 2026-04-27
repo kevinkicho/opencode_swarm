@@ -94,6 +94,18 @@ Not urgent.
 - map-reduce I1: synthesis-critic gate.
 - stigmergy: heat-picked-timeline-chip.
 
+**UI bugs queued (deferred):**
+- **Inspector pane doesn't open when clicking timeline blocks** (reported
+  2026-04-27). Repro: click a message card on the timeline. Expected:
+  inspector drawer slides in showing the part detail. Actual: nothing.
+  Suspect chain: timeline card `onClick → onFocus(msgId)` →
+  `setFocusedMsgId` → Drawer renders when `drawerOpen && focusedMsgId`.
+  One of those three steps is broken — likely either drawerOpen isn't
+  being set on focus, or onClick isn't propagating from the card. Files
+  to check: `app/page.tsx` (Drawer wiring), `components/timeline-flow/
+  sub-components.tsx` (EventCard onClick), `app/page-internals/use-
+  page-state.ts` or similar (focus state handler).
+
 **UI/UX test surface gaps the sweep can't reach** (560 assertions
 live; only items below pass the right-size gate per
 `feedback_right_size_prototype.md` — the items I previously listed
