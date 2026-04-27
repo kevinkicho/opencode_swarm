@@ -19,6 +19,7 @@ import type { SwarmPattern } from '@/lib/swarm-types';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { Popover } from './ui/popover';
 import { Tooltip } from './ui/tooltip';
+import { STATUS_BURN_VISUAL, STATUS_PRIORITY } from './swarm-run-visual';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_WINDOW_DAYS = 30;
@@ -29,33 +30,14 @@ const DAY_WIDTH = 16;
 const ROW_HEIGHT = 20;
 const REPO_COL_WIDTH = 200;
 
-// Status color priority when a day has multiple runs. Reads top-to-bottom:
-// a single failure in the group escalates the cell tone — status is a
-// signal, not a vote. Re-ordered 2026-04-26 (#176): stale (cleanly stopped)
-// no longer outranks live/idle — under the new schema stale means "done,
-// no concern" rather than "zombie hang".
-const STATUS_PRIORITY: SwarmRunStatus[] = ['error', 'live', 'idle', 'stale', 'unknown'];
-
-// Tone palette for the day-cell. Distinct from the picker's mint-pulse
-// scheme: this view emphasizes "is anyone burning compute right now" so
-// live = amber (actively-spending), idle = mint (alive but calm), stale
-// = fog (done, neutral). The picker's mental model is "what's still
-// attached to compute"; this view's is "who burned compute today."
-const STATUS_TONE: Record<SwarmRunStatus, string> = {
-  live: 'bg-amber',
-  idle: 'bg-mint',
-  error: 'bg-rust',
-  stale: 'bg-fog-500',
-  unknown: 'bg-fog-700',
-};
-
-const STATUS_DOT_TONE: Record<SwarmRunStatus, string> = {
-  live: 'text-amber',
-  idle: 'text-mint',
-  error: 'text-rust',
-  stale: 'text-fog-500',
-  unknown: 'text-fog-700',
-};
+// Day cells use the burn-rate palette (live=amber, idle=mint, stale=fog)
+// because this view's mental model is "who burned compute today."
+const STATUS_TONE = Object.fromEntries(
+  Object.entries(STATUS_BURN_VISUAL).map(([k, v]) => [k, v.bg]),
+) as Record<SwarmRunStatus, string>;
+const STATUS_DOT_TONE = Object.fromEntries(
+  Object.entries(STATUS_BURN_VISUAL).map(([k, v]) => [k, v.tone]),
+) as Record<SwarmRunStatus, string>;
 
 function repoNameOf(workspace: string): string {
   // Workspace is always an absolute path; the repo is the leaf dir. Both

@@ -227,12 +227,14 @@ an agent's context window.
 | Layer | Storage | Purpose | Size per run |
 |---|---|---|---|
 | **L0 — Event log** | Append-only NDJSON (verbatim SSE stream) | Human playback, replay, debug | Unbounded |
-| **L1 — Part index** | SQLite, one row per message-part | Cross-run analytics, recall queries | ~10–50 KB |
+| **L1 — Part index** | SQLite, one row per message-part | Reducer input for L2 rollup generation | ~10–50 KB |
 | **L2 — Rollups** | Per-agent summary + per-run retro at session close | Agent consumption in next run | ~2–10 KB |
 
 **Budget target.** For multi-reasoning LLMs (~234k ctx), spend no more than
-~50% on recalled history. **L2 only by default**, with selective L1 slices
-fetched on demand via `recall(sessionID, filter)`. L0 never enters context.
+~50% on recalled history. **L2 only by default** — agents in the next run
+consume the prior run's `RunRetro` + per-agent `AgentRollup` blobs. L0/L1
+never enter context; they exist for human playback (L0) and as the reducer
+input for L2 generation (L1).
 
 **Content-addressing.** Diffs, file snapshots, and tool outputs >N bytes are
 stored once by `sha256(content)` and referenced by hash everywhere.
@@ -248,30 +250,6 @@ agent *wants*. Tagged, terse, evidence-linked. v1 reducer emits
 `tool-failure` lessons (3+ same-tool errors per run); richer tags
 (`routing-miss`, `good-pattern`, `user-correction`) reserved for a future
 librarian agent.
-
-### `recall` tool
-
-`POST /api/swarm/recall` (backend in `lib/server/memory/query.ts`):
-
-```ts
-recall({
-  swarmRunID?: string;                    // at least one of these three required
-  sessionID?: string;
-  workspace?: string;                     // opt-in cross-run recall (same repo)
-  filter?: {
-    agents?, partTypes?, toolNames?,
-    filePath?,                            // shell-style glob
-    outcome?, timeRange?, query?,         // FTS5
-  };
-  shape?: 'summary' | 'parts' | 'diffs';  // token cost rises L→R; default 'summary'
-  limit?: number;                         // server caps at 50
-}) => { items, tokenEstimate, truncated, shape };
-```
-
-Default `shape: 'summary'` forces agents to explicitly request heavier
-payloads. `tokenEstimate` lands in the response, not the request — agents
-shouldn't guess sizes. Endpoint 400s if none of `swarmRunID / sessionID /
-workspace` is set.
 
 ### Retention
 
@@ -402,4 +380,4 @@ kill switch cannot.
 | `lib/playback-context.tsx` | Run clock + per-part phase machine |
 | `lib/server/swarm-registry/{fs,derive}.ts` | Persistence + liveness derivation |
 | `lib/server/blackboard/coordinator/*.ts` | Tick coordinator + watchdogs |
-| `lib/server/memory/*.ts` | L0 → L1 → L2 ingest, rollup, recall |
+| `lib/server/memory/*.ts` | L0 → L1 → L2 ingest + rollup |

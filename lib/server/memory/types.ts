@@ -100,67 +100,8 @@ export interface RunRetro {
   }>;
 }
 
-// recall() tool shape — the HTTP boundary between the UI / agents and the
-// memory layer. Matches DESIGN.md §7.5 with minor pragmatic changes:
-//   - `workspace` is always required on an unrestricted query (prevent
-//     accidentally scanning the entire ledger)
-//   - timeRange is in epoch ms, not "[number, number]" tuples, to avoid
-//     ambiguity across consumers
-export interface RecallRequest {
-  swarmRunID?: string;
-  sessionID?: string;
-  workspace?: string;
-  filter?: {
-    agents?: string[];
-    partTypes?: string[];
-    toolNames?: string[];
-    // Shell-style glob anchored to the full path. `**` crosses `/`, `*` does
-    // not, `?` matches one non-`/` char, `[abc]` is a character class.
-    // Applies to shape='parts' and shape='diffs'; ignored for 'summary'
-    // (rollup payloads aren't indexed for paths — see DESIGN.md §7.5).
-    filePath?: string;
-    outcome?: 'merged' | 'discarded';
-    timeRange?: { startMs: number; endMs: number };
-    query?: string;              // FTS MATCH expression
-  };
-  shape?: 'summary' | 'parts' | 'diffs';
-  limit?: number;
-}
-
-export interface RecallSummaryItem {
-  kind: 'summary';
-  swarmRunID: string;
-  sessionID: string;
-  agent?: string;
-  closedAt: number;
-  headline: string;              // first artifact / decision, or fallback
-  counters?: AgentRollup['counters'];
-}
-
-export interface RecallPartItem {
-  kind: 'part';
-  partID: string;
-  swarmRunID: string;
-  sessionID: string;
-  agent: string | null;
-  partType: string;
-  toolName: string | null;
-  createdMs: number;
-  snippet: string;               // FTS highlight when query was set, else text[0:N]
-  // Session-aggregate unified diff for each file this part touched. Populated
-  // only when shape='diffs' and the part_type is 'patch' or 'file' — other
-  // parts don't carry file attribution. Opencode's /diff endpoint is
-  // session-scoped (not per-patch), so every patch-part in the same session
-  // surfaces the *same* hunk text for a given file. Truncated at
-  // DIFF_PATCH_CAP (16 KB) per file at capture time.
-  hunks?: Array<{ filePath: string; patch: string }>;
-}
-
-export type RecallItem = RecallSummaryItem | RecallPartItem;
-
-export interface RecallResponse {
-  items: RecallItem[];
-  tokenEstimate: number;
-  truncated: boolean;
-  shape: 'summary' | 'parts' | 'diffs';
-}
+// Recall tool types historically lived here. The recall() function in
+// lib/server/memory/query.ts had no consumers and was deleted 2026-04-26
+// alongside its types — agents read L2 rollups directly via the retro
+// page, not via a generic recall API. If a librarian-style agent ever
+// needs to query L1 part-level data, the types can be reintroduced.

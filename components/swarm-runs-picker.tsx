@@ -24,31 +24,12 @@ import { Popover } from './ui/popover';
 import { useSwarmRuns } from '@/lib/opencode/live';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
+import { STATUS_VISUAL } from './swarm-run-visual';
 import { IconSearch } from './icons';
 
-// Color + dot styling per status bucket. Lives alongside the picker so the
-// topbar status dot can import the same table — one source of truth for
-// what "live" looks like visually.
-//
-// 2026-04-26 (#176) — visual realigned to the renamed schema:
-//   live  = mint pulse        — actively producing tokens
-//   idle  = mint solid (calm) — alive but quiet (between dispatches)
-//   error = rust              — has issue (live or stopped, both red)
-//   stale = fog-500           — stopped (was amber; the muted gray reads
-//                                "done, no concern" rather than warning)
-//   unknown = fog-700         — couldn't tell
-// Pre-attentive rule: pulsing = actively burning compute; solid mint =
-// alive but calm; gray = stopped; red = attention.
-export const STATUS_VISUAL: Record<
-  SwarmRunStatus,
-  { dot: string; label: string; rank: number; tone: string }
-> = {
-  live:    { dot: 'bg-mint animate-pulse', label: 'live',    rank: 0, tone: 'text-mint' },
-  idle:    { dot: 'bg-mint',               label: 'idle',    rank: 1, tone: 'text-mint' },
-  error:   { dot: 'bg-rust',               label: 'error',   rank: 2, tone: 'text-rust' },
-  stale:   { dot: 'bg-fog-500',            label: 'stale',   rank: 3, tone: 'text-fog-400' },
-  unknown: { dot: 'bg-fog-700',            label: '—',       rank: 4, tone: 'text-fog-700' },
-};
+// Re-export for back-compat — older imports come through the picker. New
+// callers should import from `./swarm-run-visual` directly.
+export { STATUS_VISUAL };
 
 // Date + time formatter for the runs-picker row. The previous relative-
 // age ("3h", "9h") lost the specific moment once runs piled up — user

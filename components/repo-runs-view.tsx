@@ -19,19 +19,15 @@ import { useMemo } from 'react';
 import type { SwarmRunListRow, SwarmRunStatus } from '@/lib/swarm-run-types';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { Tooltip } from './ui/tooltip';
+import { STATUS_BURN_VISUAL } from './swarm-run-visual';
 
-// Tone palette for the repo runs list. Mirrors projects-matrix: this
-// view emphasizes "is anyone burning compute right now" so live = amber
-// (actively-spending), idle = mint (alive but quiet), stale = fog
-// (stopped, neutral). The picker uses a different palette (live = mint
-// pulse) because its mental model is "what's still attached to compute."
-const STATUS_TONE: Record<SwarmRunStatus, string> = {
-  live: 'text-amber',
-  idle: 'text-mint',
-  error: 'text-rust',
-  stale: 'text-fog-500',
-  unknown: 'text-fog-700',
-};
+// Repo-run rows use the burn-rate palette (live=amber, idle=mint,
+// stale=fog) — same mental model as projects-matrix, "who burned compute
+// today." Picker uses a different palette (live=mint pulse) for "what's
+// still attached to compute."
+const STATUS_TONE = Object.fromEntries(
+  Object.entries(STATUS_BURN_VISUAL).map(([k, v]) => [k, v.tone]),
+) as Record<SwarmRunStatus, string>;
 
 function fmtCost(n: number): string {
   if (n === 0) return '—';
