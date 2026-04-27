@@ -7,15 +7,17 @@ not a roadmap.
 Maintenance: prune + rewrite every couple months. Remove items when shipped
 or abandoned.
 
-**Last updated:** 2026-04-26.
+**Last updated:** 2026-04-27.
 
 ---
 
 ## Current state
 
 **Functioning prototype.** UI complete, backend wired to real opencode
-sessions, 9 orchestration patterns shipped end-to-end. Personal-use only,
-never SaaS.
+sessions, 7 orchestration patterns shipped end-to-end (blackboard,
+council, stigmergy, orchestrator-worker, debate-judge, critic-loop,
+map-reduce — `deliberate-execute` and `role-differentiated` were cut as
+non-load-bearing). Personal-use only, never SaaS.
 
 Recent (last 7 days):
 - Phase 8 reliability hardening complete (~53 items: atomic writes,
@@ -76,21 +78,14 @@ Not urgent.
 
 **High-leverage, < 1 day each:**
 
-- **30-minute project review checklist** (`docs/REVIEW_CHECKLIST.md`) —
-  structured walkthrough of every major surface in 7 phases. Not yet drafted.
 - **Heat tab file-tree toggle (VSCode-style).** Button in heat-rail header
   flips between heat-list and tree view of the workspace. Files in the tree
   show heat chips. Click → file-heat inspector. Needs a workspace-tree
   endpoint, gitignore-aware, short cache.
 
-**Validation debt** (shipped but not exercised live — see `docs/VALIDATION.md`
-for invocation):
+**Validation debt** (shipped but not yet exercised live — see
+`docs/VALIDATION.md` for invocation):
 
-- **Playwright grounding** (`enableVerifierGate: true`) — schema + code
-  wired, never run live. Blocked on user spinning up the target repo's dev
-  server + passing `workspaceDevUrl`.
-- **Pattern benchmark script** (`scripts/_pattern_benchmark.mjs`) — works,
-  never invoked. ~$12 / ~1h wall-clock for the default 3-pattern run.
 - **Overnight 8h run** — closest we have is 89% completion across 6 sessions
   before a Zen quota cliff at ~35min. A real 8h run that doesn't hit the
   quota wall would be the first real signal.
