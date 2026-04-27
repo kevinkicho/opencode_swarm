@@ -9,13 +9,27 @@
 // see SWARM_PATTERNS.md §"Backend gap" for the roadmap.
 //
 // Lifecycle on success:
-//   1. resolve effective teamSize (N) from pattern + request body
-//   2. mint N opencode sessions in parallel (Promise.allSettled) — partial
+//   1. parseRequest (lib/server/run/validate.ts) — pull a typed
+//      SwarmRunRequest out of the JSON body
+//   2. resolveContinuation (lib/server/run/continuation.ts) — fill in
+//      workspace/source from a prior run when continuationOf is set
+//   3. resolve effective teamSize (N) from pattern + request body
+//   4. mint N opencode sessions in parallel (Promise.allSettled) — partial
 //      success is accepted; zero survivors is a hard 502
-//   3. if directive is set, post it to every survivor in parallel
+//   5. if directive is set, post it to every survivor in parallel
 //      (Promise.allSettled) — per-session failures log and continue
-//   4. persist meta.json via registry.createRun() with every survivor's id
-//   5. return { swarmRunID, sessionIDs, meta } to the browser
+//   6. spawn opt-in critic / verifier / auditor sessions (best-effort;
+//      failures surface in `gateFailures` on the 201)
+//   7. persist meta.json via registry.createRun() with every survivor's id
+//   8. invoke the per-pattern kickoff via the dispatcher table
+//      (lib/server/run/kickoff/dispatcher.ts) — sync-throw-guarded so a
+//      kickoff that rejects in the first 150ms returns 5xx instead of 201
+//   9. return { swarmRunID, sessionIDs, meta, gateFailures? } to the browser
+//
+// HARDENING_PLAN.md#C2 — split 2026-04-26. Validation tables, parser,
+// continuation resolver, and per-pattern kickoff dispatch all moved to
+// lib/server/run/. The route file is now the orchestration shell that
+// wires those modules together.
 //
 // Error shape matches the opencode proxy: { error, ...detail } with an
 // HTTP status that reflects who failed (400 = client, 501 = unsupported,
@@ -23,34 +37,23 @@
 
 import type { NextRequest } from 'next/server';
 
-import { createSessionServer, postSessionMessageServer } from '@/lib/server/opencode-server';
-import { createRun, deriveRunRowCached, getRun, listRuns } from '@/lib/server/swarm-registry';
+import { createSessionServer } from '@/lib/server/opencode-server';
+import { createRun, deriveRunRowCached, listRuns } from '@/lib/server/swarm-registry';
 import { listBoardItems } from '@/lib/server/blackboard/store';
 import { detectStuckDeliberation } from '@/lib/server/stuck-detector';
-import { runPlannerSweep } from '@/lib/server/blackboard/planner';
-import { startAutoTicker } from '@/lib/server/blackboard/auto-ticker';
-import { runCouncilRounds } from '@/lib/server/council';
-import {
-  buildScopedDirective,
-  deriveSlices,
-  detectScopeImbalance,
-  runMapReduceSynthesis,
-} from '@/lib/server/map-reduce';
-import { runOrchestratorWorkerKickoff } from '@/lib/server/orchestrator-worker';
-import { runRoleDifferentiatedKickoff } from '@/lib/server/role-differentiated';
-import { runCriticLoopKickoff } from '@/lib/server/critic-loop';
-import { runDebateJudgeKickoff } from '@/lib/server/debate-judge';
-import { runDeliberateExecuteKickoff } from '@/lib/server/deliberate-execute';
 import {
   attachLateFailureLog,
   raceKickoffSync,
 } from '@/lib/server/run/kickoff-guard';
+import { parseRequest, PATTERN_TEAM_SIZE, SUPPORTED_PATTERNS } from '@/lib/server/run/validate';
+import { resolveContinuation } from '@/lib/server/run/continuation';
+import { invokeKickoff } from '@/lib/server/run/kickoff/dispatcher';
+import { dispatchInitialDirective } from '@/lib/server/run/dispatch-intro';
+import { spawnGateSessions } from '@/lib/server/run/spawn-gates';
 import type {
   SwarmRunListRow,
-  SwarmRunRequest,
   SwarmRunResponse,
 } from '@/lib/swarm-run-types';
-import type { SwarmPattern } from '@/lib/swarm-types';
 import { patternDefaults, teamSizeWarningMessage } from '@/lib/swarm-patterns';
 import {
   collectOllamaModels,
@@ -59,436 +62,6 @@ import {
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set([
-  'none',
-  'council',
-  'blackboard',
-  'map-reduce',
-  'orchestrator-worker',
-  'role-differentiated',
-  'debate-judge',
-  'critic-loop',
-  'deliberate-execute',
-]);
-
-// Hard cap on multi-session fan-out. Picked to stay well inside opencode's
-// parallel-prompt tolerance on the hosted Zen tier (probe margins, not a
-// hard SDK limit). If a pattern legitimately needs more, raise this after
-// measuring burst behavior — don't bypass it silently.
-const TEAM_SIZE_MAX = 8;
-
-// Pattern-specific defaults + floors. Encoded as a table so new patterns
-// opt in by adding a row, not by branching the validator:
-//   - `defaultSize`  is applied when the request omits teamSize
-//   - `minSize` / `maxSize` clamp what the body is allowed to carry
-// Patterns not in this table fall back to single-session (pattern='none'
-// shape) so unsupported presets still get sensible defaults if they ever
-// slip past SUPPORTED_PATTERNS.
-const PATTERN_TEAM_SIZE: Record<
-  SwarmPattern,
-  { defaultSize: number; minSize: number; maxSize: number }
-> = {
-  none: { defaultSize: 1, minSize: 1, maxSize: 1 },
-  council: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
-  blackboard: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
-  // Map-reduce: minSize 3 enforces meaningful parallelism. With
-  // teamSize=2, deriveSlices would hand each session a single dir
-  // (or one dir + whole-workspace fallback) and the synth would
-  // merge two near-identical analyses — basically running solo
-  // twice. ollama-swarm sibling app (#109) found the same: bumped
-  // their min mapper count to 3 mappers + 1 synth = 4 sessions.
-  // Our model is more efficient since any session can claim the
-  // synth (no dedicated synth slot), so 3 sessions = 3 mappers
-  // with one of them taking the synth claim — minimum useful.
-  'map-reduce': { defaultSize: 3, minSize: 3, maxSize: TEAM_SIZE_MAX },
-  // Orchestrator-worker: 1 orchestrator + at least 1 worker = minSize 2.
-  // Default 4 = 1 orchestrator + 3 workers. Maxes match the other
-  // multi-session patterns.
-  'orchestrator-worker': {
-    defaultSize: 4,
-    minSize: 2,
-    maxSize: TEAM_SIZE_MAX,
-  },
-  // Role-differentiated: N workers with pinned roles. Default 4 gives
-  // the planner room to distribute todos across architect/impl/test/review
-  // archetypes without overspending sessions on a 2-3 person shop.
-  'role-differentiated': {
-    defaultSize: 4,
-    minSize: 2,
-    maxSize: TEAM_SIZE_MAX,
-  },
-  // Debate+judge: 1 judge + at least 2 generators = minSize 3.
-  // Default 4 = 1 judge + 3 generators (same shape as council but with
-  // an automated decision surface instead of human reconcile).
-  'debate-judge': {
-    defaultSize: 4,
-    minSize: 3,
-    maxSize: TEAM_SIZE_MAX,
-  },
-  // Critic loop: exactly 2 parties (1 worker + 1 critic). Larger teams
-  // don't map cleanly onto this shape — critic specialization assumes a
-  // stable single reviewer.
-  'critic-loop': {
-    defaultSize: 2,
-    minSize: 2,
-    maxSize: 2,
-  },
-  // Deliberate→Execute: council deliberation + blackboard execution in
-  // sequence on the SAME session pool. N members all deliberate then all
-  // execute. Default 3 mirrors council's default.
-  'deliberate-execute': {
-    defaultSize: 3,
-    minSize: 2,
-    maxSize: TEAM_SIZE_MAX,
-  },
-};
-
-function isSwarmPattern(value: unknown): value is SwarmPattern {
-  return (
-    value === 'none' ||
-    value === 'blackboard' ||
-    value === 'map-reduce' ||
-    value === 'council' ||
-    value === 'orchestrator-worker' ||
-    value === 'role-differentiated' ||
-    value === 'debate-judge' ||
-    value === 'critic-loop' ||
-    value === 'deliberate-execute'
-  );
-}
-
-// Pulls a validated SwarmRunRequest out of the raw JSON body. Returns a
-// string describing the first problem rather than throwing — the route
-// translates that into a 400 with a human-readable detail.
-function parseRequest(raw: unknown): SwarmRunRequest | string {
-  if (!raw || typeof raw !== 'object') return 'body must be a JSON object';
-  const obj = raw as Record<string, unknown>;
-
-  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker, role-differentiated, debate-judge, critic-loop, deliberate-execute';
-
-  // continuationOf: validate type explicitly so a bogus value (number,
-  // array, etc.) rejects rather than silently degrading to a fresh run.
-  if (obj.continuationOf !== undefined) {
-    if (typeof obj.continuationOf !== 'string' || !obj.continuationOf.trim()) {
-      return 'continuationOf, when provided, must be a non-empty swarmRunID string';
-    }
-  }
-  // workspace is normally required, but when continuationOf is set we
-  // allow it to be absent — resolveContinuation() fills it from the
-  // prior run's meta. Still validated as a non-empty string when present.
-  const hasContinuation =
-    typeof obj.continuationOf === 'string' && obj.continuationOf.trim().length > 0;
-  if (!hasContinuation) {
-    if (typeof obj.workspace !== 'string' || !obj.workspace.trim()) {
-      return 'workspace (absolute path) is required';
-    }
-  } else if (
-    obj.workspace !== undefined &&
-    (typeof obj.workspace !== 'string' || !obj.workspace.trim())
-  ) {
-    return 'workspace, when provided, must be a non-empty string';
-  }
-
-  const req: SwarmRunRequest = {
-    pattern: obj.pattern,
-    // Placeholder when continuation inheritance will fill workspace.
-    // resolveContinuation() below will replace this before createRun.
-    workspace: typeof obj.workspace === 'string' ? obj.workspace : '',
-  };
-
-  if (hasContinuation) {
-    req.continuationOf = (obj.continuationOf as string).trim();
-  }
-
-  if (obj.source !== undefined) {
-    if (typeof obj.source !== 'string') return 'source must be a string';
-    req.source = obj.source;
-  }
-  if (obj.directive !== undefined) {
-    if (typeof obj.directive !== 'string') return 'directive must be a string';
-    req.directive = obj.directive;
-  }
-  if (obj.title !== undefined) {
-    if (typeof obj.title !== 'string') return 'title must be a string';
-    req.title = obj.title;
-  }
-  if (obj.teamSize !== undefined) {
-    if (
-      typeof obj.teamSize !== 'number' ||
-      !Number.isFinite(obj.teamSize) ||
-      !Number.isInteger(obj.teamSize)
-    ) {
-      return 'teamSize must be an integer';
-    }
-    const limits = PATTERN_TEAM_SIZE[req.pattern];
-    if (obj.teamSize < limits.minSize || obj.teamSize > limits.maxSize) {
-      return `teamSize for pattern '${req.pattern}' must be between ${limits.minSize} and ${limits.maxSize} (inclusive)`;
-    }
-    req.teamSize = obj.teamSize;
-  }
-  if (obj.bounds !== undefined) {
-    if (!obj.bounds || typeof obj.bounds !== 'object') return 'bounds must be an object';
-    const b = obj.bounds as Record<string, unknown>;
-    const bounds: {
-      costCap?: number;
-      minutesCap?: number;
-      commitsCap?: number;
-      todosCap?: number;
-    } = {};
-    if (b.costCap !== undefined) {
-      if (typeof b.costCap !== 'number' || !Number.isFinite(b.costCap)) {
-        return 'bounds.costCap must be a finite number';
-      }
-      bounds.costCap = b.costCap;
-    }
-    if (b.minutesCap !== undefined) {
-      if (typeof b.minutesCap !== 'number' || !Number.isFinite(b.minutesCap)) {
-        return 'bounds.minutesCap must be a finite number';
-      }
-      bounds.minutesCap = b.minutesCap;
-    }
-    if (b.commitsCap !== undefined) {
-      if (
-        typeof b.commitsCap !== 'number' ||
-        !Number.isFinite(b.commitsCap) ||
-        !Number.isInteger(b.commitsCap) ||
-        b.commitsCap < 1
-      ) {
-        return 'bounds.commitsCap must be a positive integer';
-      }
-      bounds.commitsCap = b.commitsCap;
-    }
-    if (b.todosCap !== undefined) {
-      if (
-        typeof b.todosCap !== 'number' ||
-        !Number.isFinite(b.todosCap) ||
-        !Number.isInteger(b.todosCap) ||
-        b.todosCap < 1
-      ) {
-        return 'bounds.todosCap must be a positive integer';
-      }
-      bounds.todosCap = b.todosCap;
-    }
-    req.bounds = bounds;
-  }
-
-  if (obj.persistentSweepMinutes !== undefined) {
-    if (
-      typeof obj.persistentSweepMinutes !== 'number' ||
-      !Number.isFinite(obj.persistentSweepMinutes) ||
-      obj.persistentSweepMinutes < 0
-    ) {
-      return 'persistentSweepMinutes must be a non-negative finite number';
-    }
-    if (
-      req.pattern !== 'blackboard' &&
-      req.pattern !== 'orchestrator-worker' &&
-      req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute' &&
-      obj.persistentSweepMinutes > 0
-    ) {
-      return `persistentSweepMinutes only applies to patterns with blackboard-style execution (got '${req.pattern}')`;
-    }
-    req.persistentSweepMinutes = obj.persistentSweepMinutes;
-  }
-
-  if (obj.teamRoles !== undefined) {
-    if (
-      !Array.isArray(obj.teamRoles) ||
-      obj.teamRoles.some((r) => typeof r !== 'string' || !r.trim())
-    ) {
-      return 'teamRoles must be an array of non-empty strings';
-    }
-    if (req.pattern !== 'role-differentiated') {
-      return `teamRoles only applies to pattern='role-differentiated' (got '${req.pattern}')`;
-    }
-    req.teamRoles = (obj.teamRoles as string[]).map((r) => r.trim());
-  }
-
-  if (obj.teamModels !== undefined) {
-    if (
-      !Array.isArray(obj.teamModels) ||
-      obj.teamModels.some((m) => typeof m !== 'string' || !m.trim())
-    ) {
-      return 'teamModels must be an array of non-empty model-ID strings';
-    }
-    // Length check happens after teamSize is resolved below — we push
-    // it to a post-parse check there because teamSize defaults depend
-    // on the pattern. Any-pattern-allowed: the `agent` override path
-    // (role-differentiated) still wins at dispatch time if set, so
-    // teamModels is additive.
-    req.teamModels = (obj.teamModels as string[]).map((m) => m.trim());
-  }
-
-  if (obj.criticMaxIterations !== undefined) {
-    if (
-      typeof obj.criticMaxIterations !== 'number' ||
-      !Number.isInteger(obj.criticMaxIterations) ||
-      obj.criticMaxIterations < 1 ||
-      obj.criticMaxIterations > 10
-    ) {
-      return 'criticMaxIterations must be an integer between 1 and 10';
-    }
-    if (req.pattern !== 'critic-loop') {
-      return `criticMaxIterations only applies to pattern='critic-loop' (got '${req.pattern}')`;
-    }
-    req.criticMaxIterations = obj.criticMaxIterations;
-  }
-
-  if (obj.debateMaxRounds !== undefined) {
-    if (
-      typeof obj.debateMaxRounds !== 'number' ||
-      !Number.isInteger(obj.debateMaxRounds) ||
-      obj.debateMaxRounds < 1 ||
-      obj.debateMaxRounds > 5
-    ) {
-      return 'debateMaxRounds must be an integer between 1 and 5';
-    }
-    if (req.pattern !== 'debate-judge') {
-      return `debateMaxRounds only applies to pattern='debate-judge' (got '${req.pattern}')`;
-    }
-    req.debateMaxRounds = obj.debateMaxRounds;
-  }
-
-  if (obj.enableCriticGate !== undefined) {
-    if (typeof obj.enableCriticGate !== 'boolean') {
-      return 'enableCriticGate must be boolean';
-    }
-    // Only patterns that route commits through the blackboard coordinator
-    // can use this gate — other patterns (council, map-reduce, debate-
-    // judge, critic-loop) have their own orchestrators that bypass the
-    // coordinator's done-transition path. Silent-ignore for those would
-    // mislead the user; reject at the API instead.
-    if (
-      obj.enableCriticGate === true &&
-      req.pattern !== 'blackboard' &&
-      req.pattern !== 'orchestrator-worker' &&
-      req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute'
-    ) {
-      return `enableCriticGate only applies to blackboard-family patterns (got '${req.pattern}')`;
-    }
-    req.enableCriticGate = obj.enableCriticGate;
-  }
-
-  if (obj.enableVerifierGate !== undefined) {
-    if (typeof obj.enableVerifierGate !== 'boolean') {
-      return 'enableVerifierGate must be boolean';
-    }
-    // Same pattern constraint as the critic gate.
-    if (
-      obj.enableVerifierGate === true &&
-      req.pattern !== 'blackboard' &&
-      req.pattern !== 'orchestrator-worker' &&
-      req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute'
-    ) {
-      return `enableVerifierGate only applies to blackboard-family patterns (got '${req.pattern}')`;
-    }
-    req.enableVerifierGate = obj.enableVerifierGate;
-  }
-
-  if (obj.enableAuditorGate !== undefined) {
-    if (typeof obj.enableAuditorGate !== 'boolean') {
-      return 'enableAuditorGate must be boolean';
-    }
-    if (
-      obj.enableAuditorGate === true &&
-      req.pattern !== 'blackboard' &&
-      req.pattern !== 'orchestrator-worker' &&
-      req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute'
-    ) {
-      return `enableAuditorGate only applies to blackboard-family patterns (got '${req.pattern}')`;
-    }
-    req.enableAuditorGate = obj.enableAuditorGate;
-  }
-
-  if (obj.auditEveryNCommits !== undefined) {
-    if (
-      typeof obj.auditEveryNCommits !== 'number' ||
-      !Number.isInteger(obj.auditEveryNCommits) ||
-      obj.auditEveryNCommits < 1 ||
-      obj.auditEveryNCommits > 100
-    ) {
-      return 'auditEveryNCommits must be an integer between 1 and 100';
-    }
-    req.auditEveryNCommits = obj.auditEveryNCommits;
-  }
-
-  // Per-gate model pins (2026-04-24). Generic validation: non-empty
-  // string; opencode authoritative on whether the model ID resolves.
-  const pinFields: Array<keyof Pick<
-    SwarmRunRequest,
-    'criticModel' | 'verifierModel' | 'auditorModel'
-  >> = ['criticModel', 'verifierModel', 'auditorModel'];
-  for (const field of pinFields) {
-    const val = (obj as Record<string, unknown>)[field];
-    if (val === undefined) continue;
-    if (typeof val !== 'string' || !val.trim()) {
-      return `${field}, when provided, must be a non-empty model-ID string`;
-    }
-    req[field] = val.trim();
-  }
-
-  if (obj.workspaceDevUrl !== undefined) {
-    if (typeof obj.workspaceDevUrl !== 'string' || !obj.workspaceDevUrl.trim()) {
-      return 'workspaceDevUrl must be a non-empty string';
-    }
-    try {
-      // eslint-disable-next-line no-new -- validation only
-      new URL(obj.workspaceDevUrl);
-    } catch {
-      return 'workspaceDevUrl must be a valid URL (e.g. http://localhost:3000)';
-    }
-    req.workspaceDevUrl = obj.workspaceDevUrl;
-  }
-
-  // enableVerifierGate + workspaceDevUrl must come as a pair — the
-  // verifier needs a target URL to navigate. Silent-ignoring a truthy
-  // flag without a URL would mislead; better to reject up front.
-  if (req.enableVerifierGate === true && !req.workspaceDevUrl) {
-    return 'enableVerifierGate=true requires workspaceDevUrl (the target app URL to verify against)';
-  }
-
-  return req;
-}
-
-// Continuation inheritance: when req.continuationOf is set, look up the
-// prior run and fill in fields the new run should inherit (workspace,
-// source). Also returns the ambition-ratchet tier to start at — the new
-// run's first planner sweep picks up where the prior run left off, so a
-// pattern switch mid-project doesn't reset ambition to tier 1.
-//
-// Rejections return a 400-ready error string. Success mutates `req` in
-// place (fills workspace + source when they were blank) and returns the
-// starting tier (≥ 1).
-async function resolveContinuation(
-  req: SwarmRunRequest,
-): Promise<number | string> {
-  if (!req.continuationOf) return 1;
-  const prior = await getRun(req.continuationOf);
-  if (!prior) {
-    return `continuationOf: run '${req.continuationOf}' not found`;
-  }
-  if (!req.workspace) {
-    req.workspace = prior.workspace;
-  } else if (req.workspace !== prior.workspace) {
-    return `continuationOf: workspace '${req.workspace}' does not match prior run's workspace '${prior.workspace}' — refusing silent fork`;
-  }
-  if (!req.source && prior.source) {
-    req.source = prior.source;
-  }
-  // Tier clamp: prior.currentTier may have been set by a future
-  // version with a different max. Clamp into [1, MAX_TIER_FLOOR=5]
-  // here rather than letting a bogus value propagate into the planner
-  // prompt. If the prior run exhausted tier 5 (tierExhausted), the new
-  // run resumes at tier 5 — the planner will decide if there's still
-  // tier-5 work to do.
-  const priorTier = prior.currentTier ?? 1;
-  return Math.max(1, Math.min(5, priorTier));
-}
 
 export async function POST(req: NextRequest): Promise<Response> {
   let body: unknown;
@@ -531,16 +104,12 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Per-pattern empirical sanity warning (#101). teamSize > recommendedMax
   // is allowed (route still accepts up to TEAM_SIZE_MAX), but we surface a
   // dev-log line so the operator knows the run is in territory the
-  // 2026-04-26 stress test caught failure modes in. The picker (#103)
-  // surfaces this same threshold visually; the WARN is the kickoff-time
-  // belt for cases where the run was created via API or scripted.
+  // 2026-04-26 stress test caught failure modes in.
   const sanityWarn = teamSizeWarningMessage(parsed.pattern, teamSize);
   if (sanityWarn) console.warn(sanityWarn);
 
   // Post-resolve length check for teamModels — teamSize defaults are
-  // pattern-specific, so the validator couldn't enforce length until
-  // now. Empty-or-unset means "no pinning"; a mismatched non-empty
-  // array is a caller bug.
+  // pattern-specific, so the validator couldn't enforce length until now.
   if (parsed.teamModels && parsed.teamModels.length !== teamSize) {
     return Response.json(
       {
@@ -594,16 +163,9 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Step 0 (2026-04-24): pre-warm every ollama model this run will use.
   // Cloud-hosted ollama models can take 60 s+ for first-token on a cold
-  // endpoint; opencode's /prompt client times out before that lands,
-  // which hung every nemotron-pinned session in the previous multi-
-  // pattern test. Firing a trivial /api/generate per unique model
-  // collapses follow-up latency to ~1 s. Runs in parallel with session
-  // creation so we don't pay for warmup time serially. See
-  // lib/server/blackboard/model-prewarm.ts.
-  //
-  // Fire-and-forget from the HTTP response's POV (we don't block the
-  // response on it), but we DO await the warmPromise before posting
-  // directive/intro prompts below so nemotron is ready when we need it.
+  // endpoint; opencode's /prompt client times out before that lands.
+  // Firing a trivial /api/generate per unique model collapses follow-up
+  // latency to ~1 s. Runs in parallel with session creation.
   const warmPromise = prewarmModels(collectOllamaModels(parsed));
 
   // Step 1: mint N opencode sessions in parallel. Promise.allSettled rather
@@ -660,9 +222,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 
   // Wait for the pre-warm to settle before any prompt dispatch. By now
   // session creation (~1-2 s) has run in parallel with warmup, so the
-  // remaining wait is usually seconds. On the first cold run for a
-  // nemotron-heavy pattern, this can be up to 60 s — still faster than
-  // a hung session that never responds.
+  // remaining wait is usually seconds.
   await warmPromise.catch((err) => {
     console.warn(
       '[swarm/run] model pre-warm threw (continuing without warm):',
@@ -670,156 +230,19 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   });
 
-  // Step 2: post the directive to every surviving session in parallel.
-  // Per-session failures log and continue — the session exists, the
-  // composer can re-fire the prompt, and one slow member shouldn't stall
-  // the fast ones. opencode's /prompt_async returns before the model turn
-  // completes, so the await here is just the HTTP ack, not the reply.
-  //
-  // Shape varies by pattern:
-  //   - blackboard  → skip this broadcast entirely. The directive is the
-  //                   planner sweep's input, not a worker prompt. Workers
-  //                   stay idle until the coordinator assigns them a todo.
-  //   - map-reduce  → each session gets the base directive plus its own
-  //                   scope annotation ("your slice: src/api/"). Slices are
-  //                   auto-derived from the workspace's top-level dirs.
-  //   - others      → every session gets the same uniform directive.
-  // Skip patterns that post their own pattern-specific intros:
-  //   - blackboard:           no directive post; planner sweep seeds work
-  //   - orchestrator-worker:  orchestrator intro to session 0, workers quiet
-  //   - role-differentiated:  role intros to each session, planner on arch
-  //   - debate-judge:         generators + judge get different intros
-  //   - critic-loop:          worker + critic get different intros
-  //   - deliberate-execute:   starts like council, directive to all — DOES
-  //                           go through this branch
-  const patternsWithCustomIntro: ReadonlySet<SwarmPattern> = new Set([
-    'blackboard',
-    'orchestrator-worker',
-    'role-differentiated',
-    'debate-judge',
-    'critic-loop',
-  ]);
-  if (
-    !patternsWithCustomIntro.has(parsed.pattern) &&
-    parsed.directive &&
-    parsed.directive.trim()
-  ) {
-    const directive = parsed.directive;
-    let directives: string[];
-    if (parsed.pattern === 'map-reduce') {
-      const slices = await deriveSlices(parsed.workspace, sessions.length);
-      directives = sessions.map((_, i) =>
-        buildScopedDirective(directive, slices[i], i, sessions.length),
-      );
-      // Fire-and-forget: walks the slice dirs to detect >5x imbalance.
-      // Non-blocking — kickoff doesn't wait, the WARN just lands in logs
-      // a few hundred ms later for the operator to notice.
-      detectScopeImbalance(parsed.workspace, slices).catch((err) => {
-        console.warn(
-          `[swarm/run] scope imbalance check failed:`,
-          err instanceof Error ? err.message : String(err),
-        );
-      });
-    } else {
-      directives = sessions.map(() => directive);
-    }
-    // Team-model pinning for the first directive. The `sessions[i].idx`
-    // indexes into the ORIGINAL teamModels array (pre-survivor-filter)
-    // — reindex here so session `s` gets its originally-picked model
-    // even after partial spawn failures. Undefined → opencode default.
-    const postResults = await Promise.allSettled(
-      sessions.map((s, i) =>
-        postSessionMessageServer(s.id, parsed.workspace, directives[i], {
-          model: parsed.teamModels?.[s.idx],
-        })
-      )
-    );
-    postResults.forEach((r, i) => {
-      if (r.status === 'rejected') {
-        console.warn(
-          `[swarm/run] directive post failed for session ${sessions[i].id}:`,
-          r.reason instanceof Error ? r.reason.message : String(r.reason)
-        );
-      }
-    });
-  }
+  // Step 2: post the initial directive (skipped for patterns with custom
+  // intros). See lib/server/run/dispatch-intro.ts.
+  await dispatchInitialDirective(parsed, sessions);
 
-  // Step 2.5 (opt-in): spawn a dedicated critic session for the anti-
-  // busywork gate. Lives outside the worker pool — NOT in sessionIDs —
-  // so the coordinator doesn't tick it. If the spawn fails we accumulate
-  // the reason into `gateFailures` and continue without a gate rather
-  // than fail the whole run; the behavior degrades to "same as if the
-  // flag was off," which is a safer failure mode than blocking run
-  // creation on an opt-in feature.
-  //
-  // HARDENING_PLAN.md#R1 — gateFailures used to fall through to
-  // undefined silently; now they're surfaced in the 201 response body
-  // so the user has a signal that an enabled gate didn't actually come
-  // up. See lib/server/blackboard/critic.ts for the review path.
-  const gateFailures: { critic?: string; verifier?: string; auditor?: string } = {};
-  let criticSessionID: string | undefined;
-  if (parsed.enableCriticGate) {
-    try {
-      const critic = await createSessionServer(
-        parsed.workspace,
-        seedTitle ? `${seedTitle} · critic` : undefined,
-      );
-      criticSessionID = critic.id;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        '[swarm/run] critic session spawn failed — run continues without critic gate:',
-        message,
-      );
-      gateFailures.critic = message;
-    }
-  }
-
-  // Step 2.6 (opt-in): same treatment for the verifier session (Playwright
-  // grounding). Spawned only when enableVerifierGate is true AND the
-  // user supplied workspaceDevUrl (validator already enforced this
-  // pairing). See lib/server/blackboard/verifier.ts for the review path.
-  let verifierSessionID: string | undefined;
-  if (parsed.enableVerifierGate && parsed.workspaceDevUrl) {
-    try {
-      const verifier = await createSessionServer(
-        parsed.workspace,
-        seedTitle ? `${seedTitle} · verifier` : undefined,
-      );
-      verifierSessionID = verifier.id;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        '[swarm/run] verifier session spawn failed — run continues without verifier gate:',
-        message,
-      );
-      gateFailures.verifier = message;
-    }
-  }
-
-  // Step 2.7 (opt-in): auditor session for Stage 2 declared-roles
-  // contract gate. Same fail-open spawn semantics as critic/verifier.
-  // Auditor session is invoked every auditEveryNCommits commits + on
-  // tier escalation + at run-end to verdict pending criteria — see
-  // lib/server/blackboard/auditor.ts + the cadence logic in
-  // lib/server/blackboard/auto-ticker.ts.
-  let auditorSessionID: string | undefined;
-  if (parsed.enableAuditorGate) {
-    try {
-      const auditor = await createSessionServer(
-        parsed.workspace,
-        seedTitle ? `${seedTitle} · auditor` : undefined,
-      );
-      auditorSessionID = auditor.id;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(
-        '[swarm/run] auditor session spawn failed — run continues without auditor gate:',
-        message,
-      );
-      gateFailures.auditor = message;
-    }
-  }
+  // Step 2.5–2.7: spawn opt-in critic / verifier / auditor sessions
+  // (best-effort; failures surface in `gateFailures` on the 201).
+  // See lib/server/run/spawn-gates.ts.
+  const {
+    criticSessionID,
+    verifierSessionID,
+    auditorSessionID,
+    failures: gateFailures,
+  } = await spawnGateSessions(parsed, seedTitle);
 
   // Step 3: persist meta.json with every survivor. If this fails we've
   // already created opencode sessions — accept the orphans rather than
@@ -831,9 +254,7 @@ export async function POST(req: NextRequest): Promise<Response> {
   // Survivor remap: teamModels[i] is index-aligned to the original
   // spawn slot i, but partial spawn failures mean sessions[] may have
   // fewer entries than the original array. Reindex to the surviving
-  // slots so meta.teamModels[j] corresponds to meta.sessionIDs[j]. If
-  // every session survived, `sessions[j].idx === j` and this is a
-  // no-op copy.
+  // slots so meta.teamModels[j] corresponds to meta.sessionIDs[j].
   const teamModelsSurvivors = parsed.teamModels
     ? sessions.map((s) => parsed.teamModels![s.idx])
     : undefined;
@@ -858,127 +279,26 @@ export async function POST(req: NextRequest): Promise<Response> {
     );
   }
 
-  // Step 4 (blackboard only): kick off the initial planner sweep, then
-  // start the auto-ticker once items land on the board. Both run in the
-  // background — the HTTP response is allowed to return before the sweep
-  // completes (90s upper bound) so the browser isn't stuck waiting.
+  // Step 4: per-pattern kickoff via the dispatcher table.
   //
-  // Ordering matters: we start the ticker *after* the sweep produces
-  // items. Starting it before would have it tick repeatedly on an empty
-  // board, and since auto-ticker auto-stops after 60s of idle, a slow
-  // sweep (up to 90s) could strand the ticker right when todos finally
-  // land. Starting post-sweep sidesteps the race.
+  // HARDENING_PLAN.md#R1 — every kickoff goes through the sync-throw
+  // guard. If the kickoff settles (rejects) within the 150ms window, the
+  // route returns 5xx with `{ error: 'kickoff-failed', detail }` instead
+  // of 201 with a phantom run. If it's still pending after the window,
+  // the orchestrator owns its own outcome from there — we attach a tail
+  // console.warn so late failures still leave a forensic trace.
   //
-  // HARDENING_PLAN.md#R1 — every per-pattern kickoff goes through the
-  // sync-throw guard. If the kickoff settles (rejects) within the 150ms
-  // window, the route returns 5xx with `{ error: 'kickoff-failed', detail }`
-  // instead of 201 with a phantom run. If it's still pending after the
-  // window, the orchestrator owns its own outcome from there — we attach
-  // a tail console.warn so late failures still leave a forensic trace.
-  //
-  // Pre-fix: every block was `kickoff().catch((err) => console.warn(...))`,
+  // Pre-fix: every kickoff was inline `kickoff().catch((err) => warn(...))`,
   // returning 201 even when the orchestrator threw on its first await.
   // That created "alive zombie" runs (MAXTEAM-2026-04-26 incident class).
   const runID = meta.swarmRunID;
-  let kickoffPromise: Promise<unknown> | null = null;
-  let kickoffLabel = '';
+  const kickoff = invokeKickoff(parsed.pattern, runID, parsed);
 
-  // Sweep failure (zero todos / timeout / opencode error) logs and exits
-  // without starting the ticker. Callers can retry via
-  // POST /api/_debug/swarm-run/:id/sweep { "overwrite": true }.
-  if (parsed.pattern === 'blackboard') {
-    kickoffLabel = 'blackboard';
-    kickoffPromise = runPlannerSweep(runID).then((result) => {
-      if (result.items.length === 0) {
-        console.warn(
-          `[swarm/run] blackboard sweep for ${runID} produced 0 todos — auto-ticker not started`,
-        );
-        return;
-      }
-      console.log(
-        `[swarm/run] blackboard sweep for ${runID} produced ${result.items.length} todos — starting auto-ticker`,
-      );
-      const periodicSweepMs =
-        parsed.persistentSweepMinutes && parsed.persistentSweepMinutes > 0
-          ? Math.round(parsed.persistentSweepMinutes * 60_000)
-          : 0;
-      startAutoTicker(runID, { periodicSweepMs });
-    });
-  }
-
-  // Step 5 (map-reduce only): kick off the synthesis orchestrator. Waits for
-  // every map session to idle, then posts a synthesis prompt to
-  // sessionIDs[0] with each sibling's final draft embedded. The per-member
-  // drafts still sit in their session transcripts so a human can reconcile
-  // manually even if synthesis never lands.
-  if (parsed.pattern === 'map-reduce') {
-    kickoffLabel = 'map-reduce';
-    kickoffPromise = runMapReduceSynthesis(runID);
-  }
-
-  // Step 6 (council only): kick off auto-rounds. Waits for every session
-  // to idle at end of Round 1, harvests each member's latest draft, fans
-  // out a Round-2 prompt. The ReconcileStrip manual "↻ round 2" button
-  // still works on top.
-  if (parsed.pattern === 'council') {
-    kickoffLabel = 'council';
-    kickoffPromise = runCouncilRounds(runID);
-  }
-
-  // Step 7 (orchestrator-worker only): post the orchestrator intro to
-  // session 0, fire planner sweep against it, then start auto-ticker with
-  // the orchestrator excluded from worker dispatch.
-  if (parsed.pattern === 'orchestrator-worker') {
-    kickoffLabel = 'orchestrator-worker';
-    kickoffPromise = runOrchestratorWorkerKickoff(runID, {
-      persistentSweepMinutes: parsed.persistentSweepMinutes,
-    });
-  }
-
-  // Step 8 (role-differentiated only): post role-framed intros, fire
-  // planner sweep on session 0, start auto-ticker for standard
-  // board-claim dispatch.
-  if (parsed.pattern === 'role-differentiated') {
-    kickoffLabel = 'role-differentiated';
-    kickoffPromise = runRoleDifferentiatedKickoff(runID, {
-      persistentSweepMinutes: parsed.persistentSweepMinutes,
-    });
-  }
-
-  // Step 9 (critic-loop only): prime the critic, kick the worker, loop
-  // review-revise until critic approves or max-iterations fires.
-  if (parsed.pattern === 'critic-loop') {
-    kickoffLabel = 'critic-loop';
-    kickoffPromise = runCriticLoopKickoff(runID, {
-      maxIterations: parsed.criticMaxIterations,
-    });
-  }
-
-  // Step 10 (debate-judge only): prime judge + generators, run rounds.
-  if (parsed.pattern === 'debate-judge') {
-    kickoffLabel = 'debate-judge';
-    kickoffPromise = runDebateJudgeKickoff(runID, {
-      maxRounds: parsed.debateMaxRounds,
-    });
-  }
-
-  // Step 11 (deliberate-execute only): compositional pattern.
-  if (parsed.pattern === 'deliberate-execute') {
-    kickoffLabel = 'deliberate-execute';
-    kickoffPromise = runDeliberateExecuteKickoff(runID, {
-      persistentSweepMinutes: parsed.persistentSweepMinutes,
-    });
-  }
-
-  // Apply the sync-throw guard. R1's contract: if the kickoff threw
-  // synchronously (or rejected within 150ms), return 5xx so the user
-  // doesn't get a "run created" 201 for a run whose orchestrator is
-  // already dead.
-  if (kickoffPromise) {
-    const sync = await raceKickoffSync(kickoffPromise);
+  if (kickoff) {
+    const sync = await raceKickoffSync(kickoff.promise);
     if (sync.kind === 'rejected') {
       console.warn(
-        `[swarm/run] ${kickoffLabel} kickoff for ${runID} rejected synchronously:`,
+        `[swarm/run] ${kickoff.label} kickoff for ${runID} rejected synchronously:`,
         sync.error.message,
       );
       return Response.json(
@@ -992,7 +312,7 @@ export async function POST(req: NextRequest): Promise<Response> {
       );
     }
     if (sync.kind === 'pending') {
-      attachLateFailureLog(kickoffPromise, kickoffLabel, runID);
+      attachLateFailureLog(kickoff.promise, kickoff.label, runID);
     }
   }
 
@@ -1014,7 +334,7 @@ export async function POST(req: NextRequest): Promise<Response> {
 // run, in parallel. A 2s in-memory TTL cache (deriveRunRowCached) collapses
 // the hot path when polls come in faster than the TTL; appendEvent purges
 // the entry for the affected run so new activity always shows up on the
-// next poll. See swarm-registry.ts "derived-row cache" block for details.
+// next poll.
 //
 // No server-side filtering at v1. Sort order is inherited from listRuns()
 // (newest-first by createdAt); status-based sorting lives client-side in
@@ -1032,9 +352,7 @@ export async function GET(): Promise<Response> {
           await deriveRunRowCached(meta);
         // #104 — stuck-deliberation flag. listBoardItems is local SQLite
         // (sub-ms per call) so adding it to every list row is cheap;
-        // detectStuckDeliberation is a pure helper. Skipped entirely
-        // for runs with no createdAt (would mean a corrupt meta — let
-        // the row render without the stuck flag rather than crash).
+        // detectStuckDeliberation is a pure helper.
         let stuck: { reason: string } | undefined;
         try {
           if (typeof meta.createdAt === 'number') {
