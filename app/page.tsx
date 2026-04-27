@@ -1024,12 +1024,27 @@ function PageBody({
           // path silently 204'd every per-agent send. The sessionID-
           // routing approach is correct anyway: each team agent has its
           // own opencode session, so posting there sends to that worker
-          // directly. Broadcast (non-agent target) goes to the primary
-          // session; opencode routes to its lead.
-          const targetAgent =
-            target.kind === 'agent'
-              ? agents.find((a) => a.id === target.id)
-              : undefined;
+          // directly.
+          //
+          // #174 (2026-04-26) — broadcast was previously falling through
+          // to the primary session only ("opencode routes to its lead"),
+          // which on multi-session patterns silently dropped the message
+          // for every worker except the lead. Fix: collect every distinct
+          // sessionID across the roster and fan-post in parallel. Set
+          // dedupes the (rare) case where two agents share a session
+          // (e.g. one session running planner + synthesizer roles).
+          // Agents without a sessionID (anything pre-bind) are skipped.
+          if (target.kind === 'broadcast') {
+            const sessionIDs = new Set<string>();
+            for (const a of agents) {
+              if (a.sessionID) sessionIDs.add(a.sessionID);
+            }
+            for (const sid of sessionIDs) {
+              void safePost(sid, liveDirectory, body, undefined, 'composer-broadcast');
+            }
+            return;
+          }
+          const targetAgent = agents.find((a) => a.id === target.id);
           const targetSessionID = targetAgent?.sessionID ?? liveSessionId;
           void safePost(
             targetSessionID,

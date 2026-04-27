@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useMemo, useRef, useState } from 'react';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import type { Agent, AgentMessage, PartType, TodoItem, ToolName } from '@/lib/swarm-types';
-import { IconSearch, IconFilter } from './icons';
+import { IconSearch } from './icons';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
 import { Popover } from './ui/popover';
@@ -50,29 +50,6 @@ const accentText: Record<Agent['accent'], string> = {
   fog: 'text-fog-400',
 };
 
-type Filter = 'all' | 'delegate' | 'subtask' | 'tool' | 'reasoning' | 'patch' | 'errors';
-
-const filters: { key: Filter; label: string; hint: string }[] = [
-  { key: 'all', label: 'all', hint: 'all parts' },
-  { key: 'delegate', label: 'delegate', hint: 'task tool - A2A spawns' },
-  { key: 'subtask', label: 'subtask', hint: 'sub-agent returns' },
-  { key: 'tool', label: 'tools', hint: 'any tool call' },
-  { key: 'reasoning', label: 'reasoning', hint: 'internal model thought' },
-  { key: 'patch', label: 'patch', hint: 'code diffs' },
-  { key: 'errors', label: 'errors', hint: 'error status' },
-];
-
-function matches(m: AgentMessage, f: Filter) {
-  if (f === 'all') return true;
-  if (f === 'errors') return m.status === 'error';
-  if (f === 'delegate') return m.part === 'tool' && m.toolName === 'task';
-  if (f === 'tool') return m.part === 'tool';
-  if (f === 'subtask') return m.part === 'subtask';
-  if (f === 'reasoning') return m.part === 'reasoning';
-  if (f === 'patch') return m.part === 'patch';
-  return true;
-}
-
 export function SwarmTimeline({
   agents,
   messages,
@@ -104,13 +81,20 @@ export function SwarmTimeline({
   // roleNamesFromMeta for the per-pattern derivation.
   roleNames?: ReadonlyMap<string, string>;
 }) {
-  const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   // Multi-select part filter (2026-04-24): empty Set means "all parts
   // visible", otherwise only the selected parts pass the filter.
   // Migrated from `PartType | 'all'` so users can isolate (e.g.)
   // text + reasoning + tool simultaneously without round-tripping
   // through the dropdown.
+  //
+  // The single-choice quick-filter preset that lived alongside this
+  // (with its own popover trigger labeled "filter") was removed
+  // 2026-04-26 (#175) — it duplicated the parts toggle for every
+  // category that mattered (tool / reasoning / patch / subtask) and
+  // the unique outliers (delegate, errors) were rarely used. Search
+  // covers tool-name lookup; errored parts already render with a
+  // visible accent in the timeline.
   const [partFilter, setPartFilter] = useState<Set<PartType>>(() => new Set());
   const { clockSec } = usePlayback();
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -166,14 +150,13 @@ export function SwarmTimeline({
   const filtered = useMemo(
     () =>
       messages.filter((m) => {
-        if (!matches(m, filter)) return false;
         if (partFilter.size > 0 && !partFilter.has(m.part)) return false;
         if (phaseFor(m, clockSec) === 'hidden') return false;
         if (!query) return true;
         const hay = `${m.title} ${m.body ?? ''} ${m.toolSubtitle ?? ''}`.toLowerCase();
         return hay.includes(query.toLowerCase());
       }),
-    [messages, filter, partFilter, query, clockSec],
+    [messages, partFilter, query, clockSec],
   );
 
   const partCounts = useMemo(() => {
@@ -254,60 +237,6 @@ export function SwarmTimeline({
               onChange={setPartFilter}
               counts={partCounts}
             />
-
-            <Popover
-              side="bottom"
-              align="end"
-              wide
-              content={(close) => (
-                <div className="space-y-1.5 min-w-[220px]">
-                  <div className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
-                    quick filter
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {filters.map((f) => (
-                      <Tooltip key={f.key} content={f.hint} side="top">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setFilter(f.key);
-                            close();
-                          }}
-                          className={clsx(
-                            'h-6 px-2 rounded flex items-center transition cursor-pointer',
-                            filter === f.key
-                              ? 'bg-molten/15 text-molten border border-molten/30'
-                              : 'bg-ink-800 text-fog-400 hairline hover:border-ink-500',
-                          )}
-                        >
-                          <span className="font-mono text-micro uppercase tracking-wider">
-                            {f.label}
-                          </span>
-                        </button>
-                      </Tooltip>
-                    ))}
-                  </div>
-                </div>
-              )}
-            >
-              <Tooltip
-                content="quick filter · single-choice preset to show only one category (errors, tools, reasoning, patches, …)"
-                side="bottom"
-              >
-                <button
-                  type="button"
-                  className={clsx(
-                    'flex items-center gap-1.5 h-6 px-2 rounded bg-ink-900 hairline hover:border-ink-500 transition cursor-pointer',
-                    filter !== 'all' && 'border-molten/30 bg-molten/5 text-molten',
-                  )}
-                >
-                  <IconFilter size={10} />
-                  <span className="font-mono text-micro uppercase tracking-wider">
-                    {filter === 'all' ? 'filter' : filter}
-                  </span>
-                </button>
-              </Tooltip>
-            </Popover>
           </div>
         </div>
       </div>
