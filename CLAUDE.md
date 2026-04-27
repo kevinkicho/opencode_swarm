@@ -51,8 +51,19 @@ SaaS, never multi-tenant. Prototype-grade — clarity beats optionality.
 
 ## When in doubt
 
-Ask before adding a feature flag, a backwards-compat shim, or a "for future
-use" abstraction. This is a prototype.
+Ask before adding a feature flag, a backwards-compat shim, a "for future
+use" abstraction, **or another layer of test infrastructure**. This is a
+prototype.
+
+The bar for adding a test, package, probe, or validation phase: would the
+**absence** of it hurt the user? If the regression class hasn't actually
+happened here and wouldn't be noticed if it broke silently for a week,
+skip. Coverage % and "comprehensive" are not goals — fencing things that
+have actually broken is.
+
+If the user asks "are we done?" or "is this enough?", default to a brief
+honest **"yes, here's what's covered"** rather than reflexively listing
+"6 more things we could add." They can ask for more if they want it.
 
 If the user asks how to verify something works, point at `docs/VALIDATION.md`.
 If they ask how an endpoint behaves, point at `docs/API.md`. Don't answer
