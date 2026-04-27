@@ -30,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" style={SYSTEM_FONT_VARS}>
       <body className="font-sans">
+        <h1 className="sr-only">opencode swarm</h1>
         <ChunkErrorReload />
         <ReactScanProbe />
         <WebVitalsReporter />

@@ -38,6 +38,7 @@
     "zustand": "^5.0.12"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.2",
     "@next/bundle-analyzer": "^16.2.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.9.0",

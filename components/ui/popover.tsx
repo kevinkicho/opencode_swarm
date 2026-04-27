@@ -1,7 +1,14 @@
 'use client';
 
 import clsx from 'clsx';
-import { useCallback, useState, type ReactElement, type ReactNode } from 'react';
+import {
+  cloneElement,
+  isValidElement,
+  useCallback,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import {
   useFloating,
   useClick,
@@ -60,14 +67,25 @@ export function Popover({
 
   const close = useCallback(() => setOpen(false), []);
 
+  // Attach the ARIA-bearing reference props directly to the trigger
+  // child (typically a <button>) instead of wrapping it in a span that
+  // carries those attributes. Wrapping was triggering axe's
+  // `aria-allowed-attr` (aria-expanded/aria-haspopup not valid on a
+  // bare span) and adding role="button" made the violation worse —
+  // nested-interactive between the role-button span and the inner
+  // <button>. cloneElement merges the props onto the real trigger,
+  // and the wrapper becomes presentation-only positioning.
+  const childRefMerge = isValidElement(children)
+    ? cloneElement(children as ReactElement<Record<string, unknown>>, {
+        ref: refs.setReference,
+        ...getReferenceProps(),
+      } as Record<string, unknown>)
+    : children;
+
   return (
     <>
-      <span
-        ref={refs.setReference}
-        {...getReferenceProps()}
-        className={clsx('relative inline-flex', className)}
-      >
-        {children}
+      <span className={clsx('relative inline-flex', className)} role="presentation">
+        {childRefMerge}
       </span>
       {isMounted && (
         <FloatingPortal>
