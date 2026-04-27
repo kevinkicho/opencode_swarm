@@ -43,6 +43,10 @@ export default defineConfig({
           'lib/**/__tests__/**/*.test.ts',
           'components/**/__tests__/**/*.test.{ts,tsx}',
           'app/**/__tests__/**/*.test.{ts,tsx}',
+          // API route handler smoke tests — direct GET/POST invocation
+          // against mocked I/O. Closes the structural gap surfaced
+          // 2026-04-27 (zero-of-510 tests hit a real route handler).
+          'app/api/**/__tests__/**/*.test.ts',
         ],
     setupFiles: process.env.VITEST_INTEGRATION
       ? []

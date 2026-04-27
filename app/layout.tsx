@@ -31,7 +31,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" style={SYSTEM_FONT_VARS}>
       <body className="font-sans">
-        <h1 className="sr-only">opencode swarm</h1>
+        {/* Site-level header carries the visible-only-to-screen-readers
+            h1. Wrapped in <header role="banner"> so axe's `region` rule
+            counts the heading as inside a landmark — bare body-level
+            h1 was triggering "content not contained by landmarks". */}
+        <header className="sr-only">
+          <h1>opencode swarm</h1>
+        </header>
         <ChunkErrorReload />
         <AxeReactProbe />
         <ReactScanProbe />

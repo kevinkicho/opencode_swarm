@@ -50,6 +50,11 @@ type Finding = {
   consoleWarnings: string[];
   pageErrors: string[];
   failedRequests: Array<{ url: string; reason: string }>;
+  // 5xx responses on /api/* — Playwright's `requestfailed` event
+  // doesn't fire on completed-with-error responses, so a 500 from
+  // a route handler is invisible without this separate channel.
+  // Added 2026-04-27 after a real /api/swarm/run 500 went uncaught.
+  apiServerErrors: Array<{ url: string; status: number }>;
   // Heuristic: warn if rendered text is very short on a route that
   // should have content. Surfaces hard-render failures that aren't
   // necessarily console errors.
@@ -88,6 +93,19 @@ for (const route of ROUTES) {
     const consoleWarnings: string[] = [];
     const pageErrors: string[] = [];
     const failedRequests: Array<{ url: string; reason: string }> = [];
+    const apiServerErrors: Array<{ url: string; status: number }> = [];
+
+    page.on('response', (resp) => {
+      const url = resp.url();
+      if (!url.includes('/api/')) return;
+      const status = resp.status();
+      if (status >= 500) {
+        apiServerErrors.push({
+          url: url.replace(/https?:\/\/localhost:\d+/, ''),
+          status,
+        });
+      }
+    });
 
     page.on('console', (m) => {
       const type = m.type();
@@ -122,9 +140,10 @@ for (const route of ROUTES) {
     const domNodes = await page.evaluate(() => document.querySelectorAll('*').length);
     const textLength = await page.evaluate(() => (document.body?.innerText ?? '').length);
 
-    // axe — skip rules that conflict with deliberate design choices:
-    //   - 'region': dense-factory UI doesn't carry traditional
-    //     <main>/<nav> structure. Aesthetic, not an a11y bug.
+    // axe — skip rules that conflict with deliberate design choices.
+    // `region` was previously disabled but it surfaced a real bug
+    // (sr-only h1 + composer textarea outside any landmark on home),
+    // so it's now ENABLED. Remaining opt-outs:
     //   - 'color-contrast': the muted text-fog-600/700 palette is
     //     intentional for the dense secondary-information layer.
     //     Bumping to WCAG AA (#6c7480+) breaks the visual language.
@@ -134,7 +153,7 @@ for (const route of ROUTES) {
     //     axe can't statically infer it. Keeping the rule disabled
     //     until we ship mobile UX as a primary surface.
     const axeResults = await new AxeBuilder({ page })
-      .disableRules(['region', 'color-contrast', 'scrollable-region-focusable'])
+      .disableRules(['color-contrast', 'scrollable-region-focusable'])
       .analyze();
 
     const axeViolations = axeResults.violations.map((v) => ({
@@ -170,6 +189,7 @@ for (const route of ROUTES) {
       consoleWarnings,
       pageErrors,
       failedRequests,
+      apiServerErrors,
       textLength,
       domNodes,
     });
@@ -188,6 +208,14 @@ for (const route of ROUTES) {
     expect(
       realConsoleErrors,
       `Real console errors:\n${realConsoleErrors.join('\n')}`,
+    ).toEqual([]);
+
+    // Hard fail on any /api/* 5xx. The route handlers ARE the data
+    // source for the picker / timeline / inspector — a 500 here is
+    // never "expected" the way a /debug/opencode 4xx might be.
+    expect(
+      apiServerErrors,
+      `5xx responses from /api/*:\n${JSON.stringify(apiServerErrors, null, 2)}`,
     ).toEqual([]);
 
     const seriousOrCritical = axeViolations.filter(

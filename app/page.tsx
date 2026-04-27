@@ -955,6 +955,12 @@ function PageBody({
         />
       )}
 
+      {/* Composer + status rail are app-level controls; semantically
+          the page's footer. Wrapping in <footer> brings them into a
+          landmark so axe's `region` rule counts them as contained
+          content (was: floating textareas + buttons outside any
+          landmark, flagged 2026-04-27). */}
+      <footer className="contents">
       <SwarmComposer
         agents={agents}
         disabled={!liveSessionId || !liveDirectory}
@@ -996,6 +1002,7 @@ function PageBody({
         onOpenCost={modals.openers.cost}
         swarmRunID={swarmRunID}
       />
+      </footer>
 
       <Drawer
         open={drawerOpen && (!!focusedMsgId || !!selectedAgentId || !!selectedFileHeat)}
