@@ -1,10 +1,10 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
-import { defaultBounds, useRoutingBounds } from '@/lib/routing-bounds-context';
+import { defaultBounds, useRoutingBounds, type RoutingBounds } from '@/lib/routing-bounds-context';
 
 interface DispatchSlice {
   provider: 'zen' | 'go' | 'ollama';
@@ -43,28 +43,31 @@ const providerFill: Record<'zen' | 'go' | 'ollama', string> = {
 export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { bounds, save, reset } = useRoutingBounds();
 
-  // Draft state — hydrated from committed bounds on each open-transition so
-  // edits don't leak across cancels. Save writes draft back to the context;
-  // reset writes defaults to the context directly (committed, not draft).
-  const [costCap, setCostCap] = useState(bounds.costCap);
-  const [tokenCap, setTokenCap] = useState(bounds.tokenCap);
-  const [minutesCap, setMinutesCap] = useState(bounds.minutesCap);
-  const [zenCeiling, setZenCeiling] = useState(bounds.zenCeiling);
-  const [goCeiling, setGoCeiling] = useState(bounds.goCeiling);
-  const [ollamaCeiling, setOllamaCeiling] = useState(bounds.ollamaCeiling);
-
-  const wasOpenRef = useRef(open);
+  // Draft state — single object hydrated from committed bounds on each
+  // open-transition so edits don't leak across cancels. Replaces the
+  // pre-W5.16 wasOpenRef + 6-pair setter dance with a single useState +
+  // a one-shot useEffect on `open`. Save writes draft back to the
+  // context; reset writes defaults directly to the context.
+  // HARDENING_PLAN.md#C8 (2026-04-26).
+  const [draft, setDraft] = useState<RoutingBounds>(bounds);
   useEffect(() => {
-    if (open && !wasOpenRef.current) {
-      setCostCap(bounds.costCap);
-      setTokenCap(bounds.tokenCap);
-      setMinutesCap(bounds.minutesCap);
-      setZenCeiling(bounds.zenCeiling);
-      setGoCeiling(bounds.goCeiling);
-      setOllamaCeiling(bounds.ollamaCeiling);
-    }
-    wasOpenRef.current = open;
+    // Re-hydrate on every open-transition (closed → open). The effect
+    // doesn't fire on close-transitions because nothing reads draft
+    // when the modal is closed; React garbage-collects whichever
+    // value was sitting there.
+    if (open) setDraft(bounds);
   }, [open, bounds]);
+  const setField = <K extends keyof RoutingBounds>(key: K, value: RoutingBounds[K]) => {
+    setDraft((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const { costCap, tokenCap, minutesCap, zenCeiling, goCeiling, ollamaCeiling } = draft;
+  const setCostCap = (v: number) => setField('costCap', v);
+  const setTokenCap = (v: number) => setField('tokenCap', v);
+  const setMinutesCap = (v: number) => setField('minutesCap', v);
+  const setZenCeiling = (v: number) => setField('zenCeiling', v);
+  const setGoCeiling = (v: number) => setField('goCeiling', v);
+  const setOllamaCeiling = (v: number) => setField('ollamaCeiling', v);
 
   const dirty =
     costCap !== bounds.costCap ||
@@ -75,18 +78,13 @@ export function RoutingModal({ open, onClose }: { open: boolean; onClose: () => 
     ollamaCeiling !== bounds.ollamaCeiling;
 
   const handleSave = () => {
-    save({ costCap, tokenCap, minutesCap, zenCeiling, goCeiling, ollamaCeiling });
+    save(draft);
     onClose();
   };
 
   const handleReset = () => {
     reset();
-    setCostCap(defaultBounds.costCap);
-    setTokenCap(defaultBounds.tokenCap);
-    setMinutesCap(defaultBounds.minutesCap);
-    setZenCeiling(defaultBounds.zenCeiling);
-    setGoCeiling(defaultBounds.goCeiling);
-    setOllamaCeiling(defaultBounds.ollamaCeiling);
+    setDraft(defaultBounds);
   };
 
   const dispatch = initialDispatch;
