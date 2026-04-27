@@ -1,12 +1,12 @@
-// Singleton SQLite connection for the L1 part index + L2 rollups store.
+// Singleton SQLite connection for the L2 rollups store.
 //
 // Location: `.opencode_swarm/memory.sqlite` by default; overridable via
 // OPENCODE_SWARM_ROOT. Schema is applied idempotently on first open so a
 // fresh clone or a wiped ledger works out of the box — no separate migrate
 // step to forget.
 //
-// Server-only. Import from API routes, scripts, and rollup/ingest modules;
-// never from a 'use client' file.
+// Server-only. Import from API routes and rollup modules; never from a
+// 'use client' file.
 
 import 'server-only';
 
@@ -47,49 +47,12 @@ export function memoryDb(): DB {
   db.pragma('temp_store = MEMORY');
   db.pragma('foreign_keys = ON');
 
-  // Order matters: migrate BEFORE exec(schema). The schema file declares a
-  // partial index `ON parts(file_paths) WHERE file_paths IS NOT NULL`, and
-  // on a stale DB `CREATE TABLE IF NOT EXISTS parts` skips (table exists,
-  // old shape, no file_paths) — the partial index then throws "no such
-  // column: file_paths", aborting the whole schema exec before later tables
-  // (diffs, …) get created. Running migrate() first ALTERs the column in,
-  // so the subsequent schema exec validates cleanly on both fresh + stale
-  // installs.
-  migrate(db);
   const schema = readFileSync(resolveSchema(), 'utf8');
   db.exec(schema);
 
   conn = db;
   g.__opencode_memory_db = db;
   return db;
-}
-
-// Lightweight column-level migrations. SQLite rejects `ADD COLUMN IF NOT
-// EXISTS`, so we inspect table_info first and only ALTER when absent. Each
-// block here should stay idempotent + cheap — this runs on every memoryDb()
-// open, BEFORE schema.sql is exec'd. Existing rows are left with NULL on
-// the new column; a reindex will backfill patch/file rows with their paths.
-// Dropping the sqlite file is also a supported "migration" at the prototype
-// stage. Index creation is left to schema.sql (single source of truth) —
-// we only need ALTER TABLE here.
-function migrate(db: DB): void {
-  const cols = db
-    .prepare("PRAGMA table_info('parts')")
-    .all() as Array<{ name: string }>;
-  if (cols.length === 0) return; // fresh install — schema.sql will create parts with file_paths
-  const has = (name: string) => cols.some((c) => c.name === name);
-  if (!has('file_paths')) {
-    db.exec('ALTER TABLE parts ADD COLUMN file_paths TEXT');
-  }
-  // §8.3 option (a): bind each task call to its originating todo ID and to
-  // the child session it spawned. Both nullable — older rows stay NULL and
-  // reduceSession falls through to temporal attribution.
-  if (!has('origin_todo_id')) {
-    db.exec('ALTER TABLE parts ADD COLUMN origin_todo_id TEXT');
-  }
-  if (!has('child_session_id')) {
-    db.exec('ALTER TABLE parts ADD COLUMN child_session_id TEXT');
-  }
 }
 
 // Schema path resolves differently under next's bundled server vs. a

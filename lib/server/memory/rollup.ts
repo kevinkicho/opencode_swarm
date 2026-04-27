@@ -1,16 +1,17 @@
-// L2 rollup generation. Takes a swarm run's L0 events + L1 parts + live
-// session messages and produces:
+// L2 rollup generation. Takes a swarm run's per-session opencode messages
+// and produces:
 //   - one AgentRollup per sessionID  (what this agent did)
 //   - one RunRetro  per swarmRunID  (aggregate outcome + lessons)
 //
-// Deterministic reducer, no LLM. The design point (§7.3) is that
-// STRUCTURED summaries survive iteration better than prose — count tool
-// calls, capture file paths, surface error signatures verbatim. If a future
+// Deterministic reducer, no LLM. The design point is that STRUCTURED
+// summaries survive iteration better than prose — count tool calls,
+// capture file paths, surface error signatures verbatim. If a future
 // version wants nicer prose headlines, wrap this output; don't replace it.
 //
-// Write path: both shapes land in the `rollups` table keyed on
+// Persistence: rollups land in a single SQLite table keyed on
 // (swarm_run_id, session_id). The RunRetro row uses session_id='' so a
-// single `WHERE swarm_run_id = ?` returns everything.
+// single `WHERE swarm_run_id = ?` returns everything. Per-file unified
+// diffs land in the `diffs` table for the retro view.
 //
 // Idempotent: reruns REPLACE the existing rollup rows. That's intentional —
 // rolling up the same run twice with more events should give a strictly
@@ -21,20 +22,69 @@ import 'server-only';
 import { memoryDb } from './db';
 import { getRun, listRuns } from '../swarm-registry';
 import { getSessionMessagesServer, getSessionDiffServer } from '../opencode-server';
-import type { OpencodeMessage } from '../../opencode/types';
+import type { OpencodeMessage, OpencodePart } from '../../opencode/types';
 import type { SwarmRunMeta } from '../../swarm-run-types';
 import type { AgentRollup, RunRetro } from './types';
-// rollup-compute.ts. This module owns orchestration + I/O only:
-// captureSessionDiffs (opencode + DB write) and generateRollup (the
-// fan-out + persist orchestrator).
 import { aggregateRetro, reduceSession } from './rollup-compute';
 
 // Per-file cap on stored unified diffs. Opencode's diff endpoint can return
-// large blobs for long-running sessions; capping keeps the memory DB small
-// and bounds the token cost of shape='diffs' recall. Agents that need the
-// full hunk can follow up via /session/{id}/diff directly — the memory
-// layer is a searchable projection, not authoritative storage.
+// large blobs for long-running sessions; capping keeps the memory DB small.
+// Agents that need the full hunk can follow up via /session/{id}/diff
+// directly — the memory layer is a searchable projection, not authoritative
+// storage.
 const DIFF_PATCH_CAP = 16 * 1024;
+
+// §8.3 option (a) anchor: parse `[todo:<16-hex>]` from a task tool call's
+// description / prompt. Mirrors the ingest-side extractor — kept here so
+// rollup-compute is pure (no opencode-types-heavy regex code) and the
+// extraction stays in one place.
+const TODO_PREFIX_RE = /^\s*\[todo:([0-9a-f]{16})\]/;
+
+function extractOriginTodoID(part: OpencodePart): string | null {
+  if (part.type !== 'tool' || (part as { tool?: string }).tool !== 'task') return null;
+  const input = (part as { input?: { description?: unknown; prompt?: unknown } }).input;
+  if (!input || typeof input !== 'object') return null;
+  for (const c of [input.description, input.prompt]) {
+    if (typeof c !== 'string') continue;
+    const m = TODO_PREFIX_RE.exec(c);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+function extractChildSessionID(part: OpencodePart): string | null {
+  if (part.type !== 'tool' || (part as { tool?: string }).tool !== 'task') return null;
+  const s = (part as { state?: { sessionID?: unknown; childSessionID?: unknown } }).state;
+  if (!s || typeof s !== 'object') return null;
+  const id =
+    (typeof s.sessionID === 'string' && s.sessionID) ||
+    (typeof s.childSessionID === 'string' && s.childSessionID) ||
+    null;
+  return id || null;
+}
+
+// Walks every parent session's task-tool parts to build a
+// `childSessionID → originTodoID` map for the rollup pass. Replaces the
+// old ingest+SQL path (parts table + child_session_id partial index) —
+// since the rollup orchestrator already has every session's messages in
+// hand, this single in-memory pass is faster than the SQL lookup ever was.
+function buildOriginMap(
+  messagesBySession: Map<string, OpencodeMessage[]>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const messages of messagesBySession.values()) {
+    for (const msg of messages) {
+      for (const part of msg.parts) {
+        const originID = extractOriginTodoID(part);
+        const childID = extractChildSessionID(part);
+        if (originID && childID && !out.has(childID)) {
+          out.set(childID, originID);
+        }
+      }
+    }
+  }
+  return out;
+}
 
 // Writes one diffs row per changed file in the session. Best-effort — if
 // opencode's diff endpoint fails (network, session gone) we log and return 0
@@ -90,8 +140,8 @@ async function captureSessionDiffs(
 
 
 // Generate + persist rollups for one run. Fetches opencode messages per
-// session (one request each — at v1 N=1 so it's a single call). Returns
-// the generated shapes so the caller can show them without a second read.
+// session in parallel, builds the origin-ID map across all of them, then
+// reduces each into an AgentRollup + writes the L2 rows.
 export async function generateRollup(meta: SwarmRunMeta): Promise<{
   agentRollups: AgentRollup[];
   retro: RunRetro;
@@ -99,21 +149,36 @@ export async function generateRollup(meta: SwarmRunMeta): Promise<{
   const db = memoryDb();
   const agentRollups: AgentRollup[] = [];
 
+  // Fetch every session's messages first so we can build the origin map
+  // before reducing any one of them.
+  const messagesBySession = new Map<string, OpencodeMessage[]>();
   for (const sessionID of meta.sessionIDs) {
-    let messages: OpencodeMessage[] = [];
     try {
-      messages = await getSessionMessagesServer(sessionID, meta.workspace);
+      const messages = await getSessionMessagesServer(sessionID, meta.workspace);
+      if (messages.length > 0) messagesBySession.set(sessionID, messages);
     } catch (err) {
       console.warn(
         `[rollup] skipping ${sessionID} — opencode fetch failed: ${(err as Error).message}`
       );
-      continue;
     }
-    if (messages.length === 0) continue;
-    agentRollups.push(reduceSession(meta.swarmRunID, meta.workspace, sessionID, messages));
-    // Capture unified diffs for this session so shape='diffs' recall can
-    // return real hunks alongside patch-part metadata. Best-effort — the
-    // helper logs and returns 0 on failure rather than aborting the rollup.
+  }
+  const originMap = buildOriginMap(messagesBySession);
+
+  for (const sessionID of meta.sessionIDs) {
+    const messages = messagesBySession.get(sessionID);
+    if (!messages || messages.length === 0) continue;
+    agentRollups.push(
+      reduceSession(
+        meta.swarmRunID,
+        meta.workspace,
+        sessionID,
+        messages,
+        originMap.get(sessionID) ?? null,
+      ),
+    );
+    // Capture unified diffs for this session for the retro view's hunk
+    // display. Best-effort — the helper logs and returns 0 on failure
+    // rather than aborting the rollup.
     await captureSessionDiffs(meta.swarmRunID, sessionID, meta.workspace);
   }
 

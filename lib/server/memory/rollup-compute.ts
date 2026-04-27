@@ -1,25 +1,15 @@
 //
-// Pre-fix: lib/server/memory/rollup.ts was 593 lines mixing capture
-// (opencode HTTP fetch + diff upsert), pure compute (reducers + hash
-// helpers + plan-state tracker), and persist (rollups upsert).
-//
-// This module owns the pure-compute side: deterministic functions
+// Pure-compute side of the rollup pipeline: deterministic functions
 // that take messages and produce AgentRollup / RunRetro shapes. No
-// HTTP, no opencode, no transactional writes — except for one tightly-
-// scoped DB *read* (`lookupSessionOrigin`) that's intrinsic to the
-// attribution algorithm.
-//
-// Orchestration (generateRollup + cousins) and side-effecting capture
-// (captureSessionDiffs) stay in rollup.ts so callers see one entry
-// point. The split makes the reducer logic testable in isolation
-// (no opencode mocks needed) and shrinks rollup.ts to a readable
-// orchestrator.
+// HTTP, no opencode, no DB. Orchestration (generateRollup + cousins)
+// and side-effecting capture (captureSessionDiffs) stay in rollup.ts
+// so callers see one entry point. The split makes the reducer logic
+// testable in isolation (no opencode mocks needed).
 
 import 'server-only';
 
 import crypto from 'node:crypto';
 
-import { memoryDb } from './db';
 import { priceFor } from '../../opencode/pricing';
 import type {
   OpencodeMessage,
@@ -53,28 +43,6 @@ const LESSON_ERROR_THRESHOLD = 3;
 
 export function sha256(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
-}
-
-// §8.3 option (a) fallback: when a child session patches files but never
-// calls todowrite itself, inherit the origin_todo_id from the parent task
-// call that spawned it. Ingest stashes that pairing on the parent's parts
-// row at observation time (ingest.ts extractOriginTodoID + child_session_id),
-// so this is a cheap point-lookup on the parts_child_session partial index.
-// Returns null when no parent task row exists or the dispatcher didn't
-// inject a prefix — reduceSession falls back to option (b) temporal
-// attribution via planState.inProgressHash in that case.
-export function lookupSessionOrigin(sessionID: string): string | null {
-  const db = memoryDb();
-  const row = db
-    .prepare(
-      `SELECT origin_todo_id FROM parts
-       WHERE child_session_id = ?
-         AND origin_todo_id IS NOT NULL
-       ORDER BY created_ms ASC
-       LIMIT 1`
-    )
-    .get(sessionID) as { origin_todo_id: string } | undefined;
-  return row?.origin_todo_id ?? null;
 }
 
 // Plan-state tracker: walks todowrite snapshots across a session so we can
@@ -129,7 +97,14 @@ export function reduceSession(
   swarmRunID: string,
   workspace: string,
   sessionID: string,
-  messages: OpencodeMessage[]
+  messages: OpencodeMessage[],
+  // §8.3 option (a) anchor: if this session was spawned by a task call
+  // with an injected `[todo:<id>]` prefix, the caller passes that ID
+  // here. Used as the default origin for any patch the agent makes
+  // without first calling todowrite itself. Null when no parent task
+  // call carried a prefix — reduceSession falls back to option (b)
+  // temporal attribution via planState.inProgressHash.
+  sessionOriginTodoID: string | null = null,
 ): AgentRollup {
   let tokensIn = 0;
   let tokensOut = 0;
@@ -157,10 +132,6 @@ export function reduceSession(
   );
 
   const planState: PlanState = { inProgressHash: null, lastTodos: null };
-  // §8.3 option (a) anchor: if this session was spawned by a task call with
-  // an injected `[todo:<id>]` prefix, inherit that as the default origin for
-  // any patch the agent makes without first calling todowrite itself.
-  const sessionOriginTodoID = lookupSessionOrigin(sessionID);
 
   for (const m of ordered) {
     const info = m.info;
