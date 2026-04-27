@@ -1,12 +1,29 @@
--- L2 rollup store for swarm-run memory.
+-- Swarm-run persistence: registry + L2 rollups.
 --
--- Two tables: `rollups` (per-session AgentRollup + per-run RunRetro)
--- and `diffs` (per-session per-file unified diff text). Both are
--- regenerable from L0 (events.ndjson) via generateRollup; deleting
--- memory.sqlite is a supported "wipe" — schema applies idempotently.
+-- Three tables:
+--   `runs`    — one row per swarm run (replaces .opencode_swarm/runs/<id>/meta.json)
+--   `rollups` — per-session AgentRollup + per-run RunRetro
+--   `diffs`   — per-session per-file unified diff text
 --
--- Read by: lib/server/memory/reader.ts (retro page).
--- Written by: lib/server/memory/rollup.ts (auto-fired on run end).
+-- Run events still live on disk as per-run events.ndjson files (the L0
+-- replay record); only run METADATA moved into SQLite. Rollups/diffs
+-- are regenerable from L0 via generateRollup.
+
+-- Run registry. The meta payload lives in `payload` as a JSON blob;
+-- workspace/source/pattern/created_at are promoted to columns so
+-- listRuns + WHERE-by-workspace queries don't have to parse JSON.
+CREATE TABLE IF NOT EXISTS runs (
+  swarm_run_id TEXT PRIMARY KEY,
+  workspace    TEXT NOT NULL,
+  source       TEXT,
+  pattern      TEXT NOT NULL,
+  created_at   INTEGER NOT NULL,    -- epoch ms
+  payload      TEXT NOT NULL        -- JSON: SwarmRunMeta (lib/swarm-run-types.ts)
+);
+
+CREATE INDEX IF NOT EXISTS runs_workspace  ON runs(workspace);
+CREATE INDEX IF NOT EXISTS runs_created_at ON runs(created_at);
+CREATE INDEX IF NOT EXISTS runs_pattern    ON runs(pattern);
 
 -- L2 rollups. Persisted as JSON for portability; queryable via the
 -- top-level columns for pagination without parsing the blob.

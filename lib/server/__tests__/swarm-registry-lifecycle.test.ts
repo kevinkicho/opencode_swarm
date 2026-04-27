@@ -24,38 +24,36 @@ let originalRoot: string | undefined;
 // Re-import the module after env mutation to pick up the new ROOT. We
 // can't statically import at top-level because the env-derived ROOT is
 // captured at module-load time.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let registry: typeof import('../swarm-registry');
+let memoryDbModule: typeof import('../memory/db');
 
 beforeAll(async () => {
   TMP_ROOT = await mkdtemp(join(tmpdir(), 'swarm-registry-lifecycle-'));
   originalRoot = process.env.OPENCODE_SWARM_ROOT;
   process.env.OPENCODE_SWARM_ROOT = TMP_ROOT;
-  // Dynamic import AFTER env mutation so the module's ROOT constant
-  // resolves to TMP_ROOT, not whatever the test runner inherited.
   registry = await import('../swarm-registry');
+  memoryDbModule = await import('../memory/db');
 });
 
 afterAll(async () => {
+  memoryDbModule.closeMemoryDb();
   if (originalRoot === undefined) delete process.env.OPENCODE_SWARM_ROOT;
   else process.env.OPENCODE_SWARM_ROOT = originalRoot;
   await rm(TMP_ROOT, { recursive: true, force: true });
 });
 
 beforeEach(() => {
-  // Reset the module-level caches between tests. The caches are pinned
-  // on globalThis via Symbol.for(...), so tests share state — clear them
-  // explicitly so cache hits don't leak between tests.
+  // Reset the process-local caches that fs.ts pins on globalThis.
   const g = globalThis as Record<symbol, unknown>;
-  delete g[Symbol.for('opencode_swarm.swarmRegistry.metaCache')];
-  delete g[Symbol.for('opencode_swarm.swarmRegistry.listCache')];
   delete g[Symbol.for('opencode_swarm.swarmRegistry.deriveRowCache')];
   delete g[Symbol.for('opencode_swarm.sessionIndex')];
 });
 
 afterEach(async () => {
-  // Wipe the runs directory between tests so each test starts with a
-  // clean slate. The TMP_ROOT itself stays for afterAll's rm().
+  // Wipe the runs table + the runs directory between tests so each
+  // test starts with a clean slate. memoryDb singleton stays open;
+  // we just clear the table.
+  memoryDbModule.memoryDb().exec('DELETE FROM runs');
   await rm(join(TMP_ROOT, 'runs'), { recursive: true, force: true });
 });
 
@@ -70,20 +68,16 @@ function makeRequest(over: Partial<SwarmRunRequest> = {}): SwarmRunRequest {
 }
 
 describe('swarm-registry · createRun', () => {
-  it('writes meta.json + touches events.ndjson + returns the meta', async () => {
+  it('writes the meta to SQLite + touches events.ndjson + returns the meta', async () => {
     const meta = await registry.createRun(makeRequest(), ['s1', 's2']);
     expect(meta.swarmRunID).toMatch(/^run_[a-z0-9]+_[a-z0-9]+$/);
     expect(meta.pattern).toBe('critic-loop');
     expect(meta.sessionIDs).toEqual(['s1', 's2']);
 
-    // meta.json on disk parses back to the same shape
-    const metaJson = await readFile(
-      join(TMP_ROOT, 'runs', meta.swarmRunID, 'meta.json'),
-      'utf8',
-    );
-    const parsed = JSON.parse(metaJson);
-    expect(parsed.swarmRunID).toBe(meta.swarmRunID);
-    expect(parsed.pattern).toBe('critic-loop');
+    // SQLite row exists with matching payload
+    const reloaded = await registry.getRun(meta.swarmRunID);
+    expect(reloaded?.swarmRunID).toBe(meta.swarmRunID);
+    expect(reloaded?.pattern).toBe('critic-loop');
 
     // events.ndjson exists (zero-byte is OK — empty NDJSON is valid)
     const eventsJson = await readFile(
