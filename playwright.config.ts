@@ -25,6 +25,10 @@ try {
 
 export default defineConfig({
   testDir: './tests/visual',
+  // Skip perf.spec.ts here — that one needs the production server
+  // (built + `next start`), not the dev server. Has its own config
+  // (`playwright.perf.config.ts`) and is run via `npm run test:perf`.
+  testIgnore: /perf\.spec\.ts/,
   // Visual diffs need pixel-stable rendering — single worker prevents
   // timing variance from parallel paint cycles.
   workers: 1,
