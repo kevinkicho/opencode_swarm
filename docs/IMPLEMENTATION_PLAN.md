@@ -321,7 +321,7 @@ cycles tighten.
 | 8.W4.4 | Parallelize 3 `sha7` await loops in `dispatch.ts` | #E5 | 30m | (covered by W3.1 dispatch test) | **SHIPPED** |
 | 8.W4.5 | `board/ticker` Q46-style import-graph fix | #E6 | 30m | (manual: cold-compile probe ≤200 modules) | **SHIPPED** |
 | 8.W4.6 | Audit other multi-method routes for same pattern | #E7 | 1-2h | (audit notes only) | **SHIPPED** |
-| 8.W4.7 | Fold ticker + strategy frames into `/board/events` SSE; drop 2 polls | #E4 | 2-3h | (manual: Network panel shows 1 SSE not 3 polls) | PENDING |
+| 8.W4.7 | Fold ticker + strategy frames into `/board/events` SSE; drop 2 polls | #E4 | 2-3h | (manual: Network panel shows 1 SSE not 3 polls) | **SHIPPED** (commit e60ff3c — bus extended, multiplexer added, useLiveTicker + useStrategy migrated to SSE; validation pending) |
 | 8.W4.8 | `useMutation` migration for 4 POST raw-fetch sites | #E9 | 2-3h | (manual: each mutation has uniform pending/error/disabled state) | **SHIPPED** |
 
 **Commits this wave produces:** ~6 (E5 piggybacks on W3.1; E6+E7 group; E4 standalone; E9 standalone).
@@ -334,8 +334,8 @@ Do incrementally — each item is independently mergeable.
 | # | Item | HARDENING_PLAN | Effort | Verification gate | Status |
 |---|---|---|---|---|---|
 | 8.W5.1 | Split `swarm-registry.ts` along fs/derive seam (closes Q47) | #C3 | 2-3h | `swarm-registry-lifecycle.test.ts` stays green | DEFERRED — FU.3 lazy-load addressed the Q47 compile-graph concern; full split optional |
-| 8.W5.2 | Decompose `tickCoordinator` into 5 helpers | #C4 | 4-5h | dispatch tests (W3.1) pass per-helper | PENDING (now unblocked by W3.1) |
-| 8.W5.3 | Split `app/api/swarm/run/route.ts` (1076 → ≤250 LOC + per-pattern kickoff table) | #C2 | 3-4h | (no test regression; manual: route file ≤250) | PENDING |
+| 8.W5.2 | Decompose `tickCoordinator` into 5 helpers | #C4 | 4-5h | dispatch tests (W3.1) pass per-helper | **SHIPPED** (commit 054aca4 — pickClaim / dispatchPrompt / awaitTurn / runGateChecks / commitDone) |
+| 8.W5.3 | Split `app/api/swarm/run/route.ts` (1076 → ≤250 LOC + per-pattern kickoff table) | #C2 | 3-4h | (no test regression; manual: route file ≤250) | **SHIPPED** (commit 4ccd5b1 — 1073 → 391 LOC, 6 sibling modules under lib/server/run/; 250 target slightly missed but 63% LOC reduction) |
 | 8.W5.4 | Delete/namespace 8 orphan endpoints | #C9 | 1-2h | (manual: route count 20 → ≤14) | **SHIPPED** (FU.5 finalised 3 ops endpoints under /api/_debug/) |
 | 8.W5.5 | `lib/api-types.ts` lift 6 inline route interfaces | #C5 | 1-2h | (manual: client + server share types) | **SHIPPED** |
 | 8.W5.6 | `lib/config.ts` typed env-var module | #C5 | 1-2h | (manual: `grep process.env` in lib/app drops to 1 file) | **SHIPPED** |
@@ -349,7 +349,7 @@ Do incrementally — each item is independently mergeable.
 | 8.W5.13 | Split `lib/opencode/transform.ts` into per-transformer files | #C11 | 3-4h | each new file ≤300 LOC | **SHIPPED** (10 files, all ≤300 · commit f85fab6) |
 | 8.W5.14 | Split `lib/server/blackboard/planner.ts` into 4 files | #C12 | 3-5h | each new file ≤400 LOC | **SHIPPED** (4 sibling files + 76-LOC barrel · commit 535630e; sweep.ts 492 LOC slightly over but justified — 8-phase orchestrator concentrates naturally) |
 | 8.W5.15 | Split `lib/server/memory/rollup.ts` (capture/compute/persist) | #C13 | 2-3h | each new file ≤250 LOC | **SHIPPED** |
-| 8.W5.16 | Decompose `new-run-modal` + `spawn-agent-modal` + `routing-modal` | #C8 | 4-5h | each ≤500 LOC; modal opens cleanly | PENDING |
+| 8.W5.16 | Decompose `new-run-modal` + `spawn-agent-modal` + `routing-modal` | #C8 | 4-5h | each ≤500 LOC; modal opens cleanly | PARTIAL — routing-modal draft-leak fix shipped (commit 1e53ad8, 6 useState → 1, wasOpenRef gone). new-run-modal (918 LOC, useNewRunForm reducer + 4 sections) + spawn-agent-modal (626 LOC, same shape) deferred — high regression risk without live-render verification |
 | 8.W5.17 | Close 2 import cycles | #C17 | 30m | `import-cycles.test.ts` flips | **SHIPPED** |
 | 8.W5.18 | Remaining UI decomp (retro-view + turn-cards + agent-roster + etc.) | #C14 | 6-10h | each ≤500 LOC | PENDING |
 
