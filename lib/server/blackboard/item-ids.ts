@@ -14,8 +14,8 @@ import { randomBytes } from 'node:crypto';
 // Collision probability is ~10^-10 per run — adequate for prototype
 // scale, matched against a (run_id, id) UNIQUE constraint in SQL so
 // conflicts surface. Used by planner.ts when seeding from sweep + by
-// other pattern orchestrators (deliberate-execute) when seeding the
+// other pattern orchestrators when seeding the
 // board from their own synthesis paths.
 export function mintItemId(): string {
-  return 't_' + randomBytes(4).toString('hex');
+ return 't_' + randomBytes(4).toString('hex');
 }

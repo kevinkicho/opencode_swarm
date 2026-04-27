@@ -29,7 +29,6 @@ export const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set([
   'role-differentiated',
   'debate-judge',
   'critic-loop',
-  'deliberate-execute',
 ]);
 
 // Pattern-specific defaults + floors. Encoded as a table so new patterns
@@ -83,13 +82,6 @@ export const PATTERN_TEAM_SIZE: Record<
     minSize: 2,
     maxSize: 2,
   },
-  // Deliberate→Execute: council deliberation + blackboard execution in
-  // sequence on the SAME session pool.
-  'deliberate-execute': {
-    defaultSize: 3,
-    minSize: 2,
-    maxSize: TEAM_SIZE_MAX,
-  },
 };
 
 function isSwarmPattern(value: unknown): value is SwarmPattern {
@@ -101,8 +93,7 @@ function isSwarmPattern(value: unknown): value is SwarmPattern {
     value === 'orchestrator-worker' ||
     value === 'role-differentiated' ||
     value === 'debate-judge' ||
-    value === 'critic-loop' ||
-    value === 'deliberate-execute'
+    value === 'critic-loop'
   );
 }
 
@@ -113,7 +104,7 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
   if (!raw || typeof raw !== 'object') return 'body must be a JSON object';
   const obj = raw as Record<string, unknown>;
 
-  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker, role-differentiated, debate-judge, critic-loop, deliberate-execute';
+  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker, role-differentiated, debate-judge, critic-loop';
 
   // continuationOf: validate type explicitly so a bogus value (number,
   // array, etc.) rejects rather than silently degrading to a fresh run.
@@ -233,7 +224,6 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
       req.pattern !== 'blackboard' &&
       req.pattern !== 'orchestrator-worker' &&
       req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute' &&
       obj.persistentSweepMinutes > 0
     ) {
       return `persistentSweepMinutes only applies to patterns with blackboard-style execution (got '${req.pattern}')`;
@@ -311,8 +301,7 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
       obj.enableCriticGate === true &&
       req.pattern !== 'blackboard' &&
       req.pattern !== 'orchestrator-worker' &&
-      req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute'
+      req.pattern !== 'role-differentiated'
     ) {
       return `enableCriticGate only applies to blackboard-family patterns (got '${req.pattern}')`;
     }
@@ -327,8 +316,7 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
       obj.enableVerifierGate === true &&
       req.pattern !== 'blackboard' &&
       req.pattern !== 'orchestrator-worker' &&
-      req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute'
+      req.pattern !== 'role-differentiated'
     ) {
       return `enableVerifierGate only applies to blackboard-family patterns (got '${req.pattern}')`;
     }
@@ -343,8 +331,7 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
       obj.enableAuditorGate === true &&
       req.pattern !== 'blackboard' &&
       req.pattern !== 'orchestrator-worker' &&
-      req.pattern !== 'role-differentiated' &&
-      req.pattern !== 'deliberate-execute'
+      req.pattern !== 'role-differentiated'
     ) {
       return `enableAuditorGate only applies to blackboard-family patterns (got '${req.pattern}')`;
     }

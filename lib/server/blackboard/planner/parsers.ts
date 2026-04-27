@@ -18,39 +18,39 @@ import 'server-only';
 import type { OpencodeMessage } from '../../../opencode/types';
 
 export interface RawTodo {
-  content: string;
-  status?: string;
-  priority?: string;
-  // Computed by latestTodosFrom — not on the wire. True when the
-  // planner tagged this todo's content with a leading `[verify]`
-  // prefix, indicating the todo claims a user-observable outcome
-  // that merits Playwright verification after commit. See
-  // buildPlannerPrompt + the insert path in runPlannerSweep.
-  requiresVerification?: boolean;
-  // Computed by latestTodosFrom from a leading `[role:<name>]`
-  // prefix. Normalized role name (kebab, lowercase, ≤ 24 chars).
-  // Undefined when no prefix or on self-organizing runs.
-  preferredRole?: string;
-  // Computed by latestTodosFrom from a leading `[files:a,b]`
-  // prefix. Capped at 2 paths. Undefined when no prefix.
-  expectedFiles?: string[];
-  // Computed by latestTodosFrom from a leading `[criterion]`
-  // prefix. Routes the entry to insertBoardItem with kind='criterion'
-  // instead of kind='todo'. Other flags (verify/role/files) are
-  // dropped when this is true — criteria are auditor-verdict targets,
-  // not worker-dispatch targets.
-  isCriterion?: boolean;
-  // Computed by latestTodosFrom from a `[from:1,3]` content prefix the
-  // synthesizer emits during phase 2. 1-based, deduped, max 8 entries.
-  // Undefined for non-deliberate-execute paths and for synthesis runs
-  // where the model didn't tag.
-  sourceDrafts?: number[];
-  // append. When the planner emits `[rolenote:<role>] <text>`, the
-  // entry is NOT a todo — it's a side-channel clarification message
-  // that runPlannerSweep routes to the matching role's session and
-  // does not insert on the board. Other tags (verify/role/files/from)
-  // become irrelevant for these entries.
-  roleNote?: string;
+ content: string;
+ status?: string;
+ priority?: string;
+ // Computed by latestTodosFrom — not on the wire. True when the
+ // planner tagged this todo's content with a leading `[verify]`
+ // prefix, indicating the todo claims a user-observable outcome
+ // that merits Playwright verification after commit. See
+ // buildPlannerPrompt + the insert path in runPlannerSweep.
+ requiresVerification?: boolean;
+ // Computed by latestTodosFrom from a leading `[role:<name>]`
+ // prefix. Normalized role name (kebab, lowercase, ≤ 24 chars).
+ // Undefined when no prefix or on self-organizing runs.
+ preferredRole?: string;
+ // Computed by latestTodosFrom from a leading `[files:a,b]`
+ // prefix. Capped at 2 paths. Undefined when no prefix.
+ expectedFiles?: string[];
+ // Computed by latestTodosFrom from a leading `[criterion]`
+ // prefix. Routes the entry to insertBoardItem with kind='criterion'
+ // instead of kind='todo'. Other flags (verify/role/files) are
+ // dropped when this is true — criteria are auditor-verdict targets,
+ // not worker-dispatch targets.
+ isCriterion?: boolean;
+ // Computed by latestTodosFrom from a `[from:1,3]` content prefix the
+ // synthesizer emits during phase 2. 1-based, deduped, max 8 entries.
+ // Undefined for non- paths and for synthesis runs
+ // where the model didn't tag.
+ sourceDrafts?: number[];
+ // append. When the planner emits `[rolenote:<role>] <text>`, the
+ // entry is NOT a todo — it's a side-channel clarification message
+ // that runPlannerSweep routes to the matching role's session and
+ // does not insert on the board. Other tags (verify/role/files/from)
+ // become irrelevant for these entries.
+ roleNote?: string;
 }
 
 // Strips the `[verify]` opt-in prefix from a todo's content and
@@ -65,15 +65,15 @@ const VERIFY_TAG_RE = /^\s*\[verify\]\s*/i;
 // import from a smoke script that doesn't want to pull in the rest of
 // the planner's server-only dependency graph.
 export function stripVerifyTag(content: string): {
-  content: string;
-  requiresVerification: boolean;
+ content: string;
+ requiresVerification: boolean;
 } {
-  const m = VERIFY_TAG_RE.exec(content);
-  if (!m) return { content, requiresVerification: false };
-  return {
-    content: content.slice(m[0].length).trim(),
-    requiresVerification: true,
-  };
+ const m = VERIFY_TAG_RE.exec(content);
+ if (!m) return { content, requiresVerification: false };
+ return {
+ content: content.slice(m[0].length).trim(),
+ requiresVerification: true,
+ };
 }
 
 // Strips the `[role:<name>]` opt-in prefix from a todo's content and
@@ -89,21 +89,21 @@ const ROLE_TAG_RE = /^\s*\[role:\s*([a-z0-9][a-z0-9\s\-_]{0,31})\s*\]\s*/i;
 // Exported for `scripts/_parser_smoke.mjs` — same rationale as
 // stripVerifyTag.
 export function stripRoleTag(content: string): {
-  content: string;
-  preferredRole: string | undefined;
+ content: string;
+ preferredRole: string | undefined;
 } {
-  const m = ROLE_TAG_RE.exec(content);
-  if (!m) return { content, preferredRole: undefined };
-  const raw = m[1].toLowerCase();
-  const normalized = raw
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 24);
-  if (!normalized) return { content: content.slice(m[0].length).trim(), preferredRole: undefined };
-  return {
-    content: content.slice(m[0].length).trim(),
-    preferredRole: normalized,
-  };
+ const m = ROLE_TAG_RE.exec(content);
+ if (!m) return { content, preferredRole: undefined };
+ const raw = m[1].toLowerCase();
+ const normalized = raw
+ .replace(/[^a-z0-9]+/g, '-')
+ .replace(/^-+|-+$/g, '')
+ .slice(0, 24);
+ if (!normalized) return { content: content.slice(m[0].length).trim(), preferredRole: undefined };
+ return {
+ content: content.slice(m[0].length).trim(),
+ preferredRole: normalized,
+ };
 }
 
 // Strips the `[files:<path>,<path>]` prefix and returns the expected
@@ -117,21 +117,21 @@ export function stripRoleTag(content: string): {
 const FILES_TAG_RE = /^\s*\[files:\s*([^\]]*)\s*\]\s*/i;
 const EXPECTED_FILES_MAX = 2;
 export function stripFilesTag(content: string): {
-  content: string;
-  expectedFiles: string[] | undefined;
+ content: string;
+ expectedFiles: string[] | undefined;
 } {
-  const m = FILES_TAG_RE.exec(content);
-  if (!m) return { content, expectedFiles: undefined };
-  const paths = m[1]
-    .split(',')
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-    .slice(0, EXPECTED_FILES_MAX);
-  const stripped = content.slice(m[0].length).trim();
-  if (paths.length === 0) {
-    return { content: stripped, expectedFiles: undefined };
-  }
-  return { content: stripped, expectedFiles: paths };
+ const m = FILES_TAG_RE.exec(content);
+ if (!m) return { content, expectedFiles: undefined };
+ const paths = m[1]
+ .split(',')
+ .map((p) => p.trim())
+ .filter((p) => p.length > 0)
+ .slice(0, EXPECTED_FILES_MAX);
+ const stripped = content.slice(m[0].length).trim();
+ if (paths.length === 0) {
+ return { content: stripped, expectedFiles: undefined };
+ }
+ return { content: stripped, expectedFiles: paths };
 }
 
 // Strips the `[rolenote:<name>]` prefix — per-sweep role-intro append
@@ -142,54 +142,53 @@ export function stripFilesTag(content: string): {
 // `tester`. Empty/unknown role → caller treats as a normal todo.
 const ROLE_NOTE_TAG_RE = /^\s*\[rolenote:\s*([a-z0-9][a-z0-9\s\-_]{0,31})\s*\]\s*/i;
 export function stripRoleNoteTag(content: string): {
-  content: string;
-  roleNote: string | undefined;
+ content: string;
+ roleNote: string | undefined;
 } {
-  const m = ROLE_NOTE_TAG_RE.exec(content);
-  if (!m) return { content, roleNote: undefined };
-  const raw = m[1].toLowerCase();
-  const normalized = raw
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 24);
-  if (!normalized) {
-    return { content: content.slice(m[0].length).trim(), roleNote: undefined };
-  }
-  return {
-    content: content.slice(m[0].length).trim(),
-    roleNote: normalized,
-  };
+ const m = ROLE_NOTE_TAG_RE.exec(content);
+ if (!m) return { content, roleNote: undefined };
+ const raw = m[1].toLowerCase();
+ const normalized = raw
+ .replace(/[^a-z0-9]+/g, '-')
+ .replace(/^-+|-+$/g, '')
+ .slice(0, 24);
+ if (!normalized) {
+ return { content: content.slice(m[0].length).trim(), roleNote: undefined };
+ }
+ return {
+ content: content.slice(m[0].length).trim(),
+ roleNote: normalized,
+ };
 }
 
-// Strips the `[from:1,3]` prefix — synthesis traceability for
-// deliberate-execute. Source
-// indices are 1-based (matches "Draft from member 1" labels in the
+// Strips the `[from:1,3]` prefix — synthesis traceability for map-reduce.
+// Source indices are 1-based (matches "Draft from member 1" labels in the
 // synthesizer's prompt input). Caps at 8 entries to bound storage and
 // rejects non-positive integers, so a malformed `[from:0,abc,3]` parses
 // as `[3]` rather than failing the whole todo.
 const FROM_TAG_RE = /^\s*\[from:\s*([^\]]*)\s*\]\s*/i;
 const SOURCE_DRAFTS_MAX = 8;
 export function stripFromTag(content: string): {
-  content: string;
-  sourceDrafts: number[] | undefined;
+ content: string;
+ sourceDrafts: number[] | undefined;
 } {
-  const m = FROM_TAG_RE.exec(content);
-  if (!m) return { content, sourceDrafts: undefined };
-  const seen = new Set<number>();
-  for (const tok of m[1].split(',')) {
-    const n = parseInt(tok.trim(), 10);
-    if (!Number.isFinite(n) || n <= 0) continue;
-    seen.add(n);
-    if (seen.size >= SOURCE_DRAFTS_MAX) break;
-  }
-  const stripped = content.slice(m[0].length).trim();
-  if (seen.size === 0) {
-    return { content: stripped, sourceDrafts: undefined };
-  }
-  return {
-    content: stripped,
-    sourceDrafts: [...seen].sort((a, b) => a - b),
-  };
+ const m = FROM_TAG_RE.exec(content);
+ if (!m) return { content, sourceDrafts: undefined };
+ const seen = new Set<number>();
+ for (const tok of m[1].split(',')) {
+ const n = parseInt(tok.trim(), 10);
+ if (!Number.isFinite(n) || n <= 0) continue;
+ seen.add(n);
+ if (seen.size >= SOURCE_DRAFTS_MAX) break;
+ }
+ const stripped = content.slice(m[0].length).trim();
+ if (seen.size === 0) {
+ return { content: stripped, sourceDrafts: undefined };
+ }
+ return {
+ content: stripped,
+ sourceDrafts: [...seen].sort((a, b) => a - b),
+ };
 }
 
 // Strips the `[criterion]` prefix — marks the todowrite entry as a
@@ -202,15 +201,15 @@ export function stripFromTag(content: string): {
 // author ambitious criteria the ambition ratchet can work toward.
 const CRITERION_TAG_RE = /^\s*\[criterion\]\s*/i;
 export function stripCriterionTag(content: string): {
-  content: string;
-  isCriterion: boolean;
+ content: string;
+ isCriterion: boolean;
 } {
-  const m = CRITERION_TAG_RE.exec(content);
-  if (!m) return { content, isCriterion: false };
-  return {
-    content: content.slice(m[0].length).trim(),
-    isCriterion: true,
-  };
+ const m = CRITERION_TAG_RE.exec(content);
+ if (!m) return { content, isCriterion: false };
+ return {
+ content: content.slice(m[0].length).trim(),
+ isCriterion: true,
+ };
 }
 
 // Last todowrite among the given message IDs wins. Mirrors
@@ -218,67 +217,67 @@ export function stripCriterionTag(content: string): {
 // scoped to just the sweep's new messages so a pre-existing todowrite from
 // an earlier turn doesn't leak into the board. Exported for reuse by
 // other pattern orchestrators that need to extract todowrite-seeded
-// work from an arbitrary session turn (e.g. deliberate-execute synthesis).
+// work from an arbitrary session turn.
 export function latestTodosFrom(
-  messages: OpencodeMessage[],
-  scopeMessageIDs: Set<string>,
+ messages: OpencodeMessage[],
+ scopeMessageIDs: Set<string>,
 ): { todos: RawTodo[]; messageId: string } | null {
-  let latest: { todos: RawTodo[]; messageId: string } | null = null;
-  for (const m of messages) {
-    if (!scopeMessageIDs.has(m.info.id)) continue;
-    for (const part of m.parts) {
-      if (part.type !== 'tool' || part.tool !== 'todowrite') continue;
-      const state = part.state as { input?: { todos?: unknown } } | undefined;
-      const raw = state?.input?.todos;
-      if (!Array.isArray(raw)) continue;
-      const todos = raw
-        .filter(
-          (t): t is RawTodo =>
-            !!t &&
-            typeof t === 'object' &&
-            typeof (t as RawTodo).content === 'string' &&
-            (t as RawTodo).content.trim().length > 0,
-        )
-        .map((t) => {
-          // Strip in composition order: rolenote → criterion → verify
-          // → role → files → from. Rolenote goes first because when
-          // present, the entry is a side-channel clarification — every
-          // other flag becomes irrelevant (no board insert, no claim,
-          // no verifier gate). Criterion is next for the same reason
-          // (auditor target, not a worker dispatch). Each stripper
-          // re-trims leading whitespace so mixed-order tags are
-          // tolerated.
-          const afterRoleNote = stripRoleNoteTag(t.content);
-          if (afterRoleNote.roleNote) {
-            return {
-              ...t,
-              content: afterRoleNote.content,
-              roleNote: afterRoleNote.roleNote,
-            };
-          }
-          const afterCriterion = stripCriterionTag(afterRoleNote.content);
-          if (afterCriterion.isCriterion) {
-            return {
-              ...t,
-              content: afterCriterion.content,
-              isCriterion: true,
-            };
-          }
-          const afterVerify = stripVerifyTag(afterCriterion.content);
-          const afterRole = stripRoleTag(afterVerify.content);
-          const afterFiles = stripFilesTag(afterRole.content);
-          const afterFrom = stripFromTag(afterFiles.content);
-          return {
-            ...t,
-            content: afterFrom.content,
-            requiresVerification: afterVerify.requiresVerification,
-            preferredRole: afterRole.preferredRole,
-            expectedFiles: afterFiles.expectedFiles,
-            sourceDrafts: afterFrom.sourceDrafts,
-          };
-        });
-      if (todos.length > 0) latest = { todos, messageId: m.info.id };
-    }
-  }
-  return latest;
+ let latest: { todos: RawTodo[]; messageId: string } | null = null;
+ for (const m of messages) {
+ if (!scopeMessageIDs.has(m.info.id)) continue;
+ for (const part of m.parts) {
+ if (part.type !== 'tool' || part.tool !== 'todowrite') continue;
+ const state = part.state as { input?: { todos?: unknown } } | undefined;
+ const raw = state?.input?.todos;
+ if (!Array.isArray(raw)) continue;
+ const todos = raw
+ .filter(
+ (t): t is RawTodo =>
+ !!t &&
+ typeof t === 'object' &&
+ typeof (t as RawTodo).content === 'string' &&
+ (t as RawTodo).content.trim().length > 0,
+ )
+ .map((t) => {
+ // Strip in composition order: rolenote → criterion → verify
+ // → role → files → from. Rolenote goes first because when
+ // present, the entry is a side-channel clarification — every
+ // other flag becomes irrelevant (no board insert, no claim,
+ // no verifier gate). Criterion is next for the same reason
+ // (auditor target, not a worker dispatch). Each stripper
+ // re-trims leading whitespace so mixed-order tags are
+ // tolerated.
+ const afterRoleNote = stripRoleNoteTag(t.content);
+ if (afterRoleNote.roleNote) {
+ return {
+ ...t,
+ content: afterRoleNote.content,
+ roleNote: afterRoleNote.roleNote,
+ };
+ }
+ const afterCriterion = stripCriterionTag(afterRoleNote.content);
+ if (afterCriterion.isCriterion) {
+ return {
+ ...t,
+ content: afterCriterion.content,
+ isCriterion: true,
+ };
+ }
+ const afterVerify = stripVerifyTag(afterCriterion.content);
+ const afterRole = stripRoleTag(afterVerify.content);
+ const afterFiles = stripFilesTag(afterRole.content);
+ const afterFrom = stripFromTag(afterFiles.content);
+ return {
+ ...t,
+ content: afterFrom.content,
+ requiresVerification: afterVerify.requiresVerification,
+ preferredRole: afterRole.preferredRole,
+ expectedFiles: afterFiles.expectedFiles,
+ sourceDrafts: afterFrom.sourceDrafts,
+ };
+ });
+ if (todos.length > 0) latest = { todos, messageId: m.info.id };
+ }
+ }
+ return latest;
 }

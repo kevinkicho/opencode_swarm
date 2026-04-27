@@ -103,15 +103,6 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     accent: 'mint',
     recommendedMax: 2,
   },
-  'deliberate-execute': {
-    label: 'deliberate→execute',
-    tagline: 'council deliberation → synthesis → blackboard execution',
-    shape: 'council rounds → synthesis → blackboard drain · 15 min turn ceil',
-    fit: 'think deeply, then build — framing matters more than execution speed',
-    available: true,
-    accent: 'fog',
-    recommendedMax: 4,
-  },
 };
 
 // Pure helper. Returns the WARN message to log at kickoff when teamSize
@@ -179,8 +170,8 @@ export interface PatternDefaults {
   // When true and the request didn't explicitly set enableAuditorGate,
   // the route handler spawns a dedicated auditor opencode session at
   // run creation. Only meaningful for blackboard-family patterns
-  // (blackboard / orchestrator-worker / role-differentiated /
-  // deliberate-execute) — the route validator rejects it elsewhere.
+  // (blackboard / orchestrator-worker / role-differentiated) — the
+  // route validator rejects it elsewhere.
   enableAuditorGate?: boolean;
 }
 
@@ -281,15 +272,6 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // on the critic seat is accepted under the new rule. Pattern
     // requires exactly teamSize=2.
     teamModels: () => [GEMMA, GEMMA],
-  },
-  'deliberate-execute': {
-    // Council-style deliberation then blackboard-style execution on
-    // the same session pool. All sessions on GEMMA after 2026-04-25
-    // swap — was NEMOTRON. Same step-loop cost issue applies (see
-    // orchestrator-worker + council comments). Phase-switching
-    // model support is still a follow-up; running both phases on
-    // GEMMA is the safer cost default until that's built.
-    teamModels: (n) => Array(n).fill(GEMMA),
   },
 };
 

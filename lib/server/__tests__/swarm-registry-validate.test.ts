@@ -58,7 +58,6 @@ describe('validateSwarmRunMeta · happy path', () => {
       'critic-loop',
       'debate-judge',
       'map-reduce',
-      'deliberate-execute',
     ];
     for (const pattern of patterns) {
       const result = validateSwarmRunMeta({ ...validMetaCore, pattern });

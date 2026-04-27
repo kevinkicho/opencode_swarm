@@ -56,7 +56,6 @@ to run on PR but not on every commit.
 | `council.test.ts` *(todo)* | council | every member produces >=1 draft within 90s |
 | `debate-judge.test.ts` *(todo)* | debate-judge | judge produces >=1 verdict within 120s |
 | `critic-loop.test.ts` *(todo)* | critic-loop | >=1 iter cycle (worker -> critic -> verdict) within 120s |
-| `deliberate-execute.test.ts` *(todo)* | deliberate-execute | phase-2 synthesis produces >=1 todo within 180s |
 
 The `_harness.ts` module exposes `spawnRun`, `waitForCondition`,
 `sessionsWithActivity`, and `abortRun` — each new pattern test should

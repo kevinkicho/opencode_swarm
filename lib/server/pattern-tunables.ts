@@ -1,6 +1,6 @@
 //
 // Pre-fix: ~13 magic-number constants scattered across the 5 pattern
-// files (council, critic-loop, debate-judge, deliberate-execute,
+// files (council, critic-loop, debate-judge,
 // map-reduce). Each was `const FOO_MS = N * 60_000` with a justifying
 // comment. Tunable via patch — but a stress test that wanted to sweep
 // "all wait timeouts ÷ 2" had to grep + edit each file.
@@ -35,13 +35,6 @@ export const TIMINGS = {
     // generator's output before deciding.
     roundWaitMs: 20 * 60 * 1000,
   },
-  deliberateExecute: {
-    // Synthesis-phase wait — the orchestrator combining the
-    // deliberation drafts into a directive.
-    synthesisWaitMs: 15 * 60 * 1000,
-    // Verifier sub-phase (post-synthesis sanity check).
-    verifierWaitMs: 5 * 60 * 1000,
-  },
   mapReduce: {
     // Per-mapper session wait. Longer than council/debate because
     // mappers do heavy file work, not just text generation.
@@ -73,15 +66,6 @@ export const THRESHOLDS = {
     // verdict before it counts as substantive feedback. Used in
     // the verdict classifier; values >3 escalate the iteration.
     nitpickConfMax: 3,
-  },
-  deliberateExecute: {
-    // Char-length threshold for "directive is small enough to not
-    // need synthesis" — under this, skip synthesis and go straight
-    // to execution.
-    directiveSmallChars: 200,
-    // Synthesis retry cap — if the synthesis output fails
-    // verification, we'll retry this many times before giving up.
-    maxSynthesisRetries: 1,
   },
   mapReduce: {
     // Imbalance ratio above which we warn that one mapper has way

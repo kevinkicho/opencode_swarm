@@ -1,11 +1,9 @@
 //
-// Pattern → kickoff function dispatch table. Replaces the 9-branch
-// if-chain that was 142 LOC inline at app/api/swarm/run/route.ts:889-971.
-// Each pattern's kickoff already lives in its own module
-// (lib/server/{orchestrator-worker,role-differentiated,critic-loop,
-// debate-judge,deliberate-execute,council,map-reduce}.ts) — this file
-// is just the lookup that maps a pattern + parsed request to the right
-// invocation.
+// Pattern → kickoff function dispatch table. Each pattern's kickoff
+// lives in its own module (lib/server/{orchestrator-worker,role-
+// differentiated,critic-loop,debate-judge,council,map-reduce}.ts);
+// this file is just the lookup that maps a pattern + parsed request
+// to the right invocation.
 //
 // Why a function-returning table rather than a `Promise<unknown>`-
 // keyed map: each kickoff has a different opts shape (criticMaxIterations
@@ -22,7 +20,6 @@ import { runOrchestratorWorkerKickoff } from '../../orchestrator-worker';
 import { runRoleDifferentiatedKickoff } from '../../role-differentiated';
 import { runCriticLoopKickoff } from '../../critic-loop';
 import { runDebateJudgeKickoff } from '../../debate-judge';
-import { runDeliberateExecuteKickoff } from '../../deliberate-execute';
 import type { SwarmRunRequest } from '../../../swarm-run-types';
 import type { SwarmPattern } from '../../../swarm-types';
 
@@ -98,14 +95,6 @@ export function invokeKickoff(
         label: 'debate-judge',
         promise: runDebateJudgeKickoff(runID, {
           maxRounds: parsed.debateMaxRounds,
-        }),
-      };
-
-    case 'deliberate-execute':
-      return {
-        label: 'deliberate-execute',
-        promise: runDeliberateExecuteKickoff(runID, {
-          persistentSweepMinutes: parsed.persistentSweepMinutes,
         }),
       };
   }

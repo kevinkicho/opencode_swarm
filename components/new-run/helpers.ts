@@ -114,17 +114,6 @@ export const API_RECIPES: ReadonlyArray<{
   "teamSize": 3
 }'`,
   },
-  {
-    pattern: 'deliberate-execute',
-    hint: 'council rounds → synthesize → blackboard execution',
-    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
-  "pattern": "deliberate-execute",
-  "workspace": "C:/Users/kevin/Workspace/<repo>",
-  "directive": "Ship a major refactor of X",
-  "teamSize": 3,
-  "persistentSweepMinutes": 20
-}'`,
-  },
 ];
 
 export interface Inferred {

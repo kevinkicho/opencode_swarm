@@ -6,7 +6,6 @@ import type { Agent, AgentMessage, SwarmPattern, TodoItem } from '@/lib/swarm-ty
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
-import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
@@ -45,7 +44,6 @@ export function LeftTabs({
   ticker,
   boardRoleNames,
   boardPattern,
-  deliberationProgress,
   liveSlots,
   runSessionIDs,
 }: {
@@ -97,13 +95,8 @@ export function LeftTabs({
   // Pattern-aware ownerAgentId → role name map for BoardRail chip labels
   // on hierarchical patterns. Empty map → numeric fallback in chips.
   boardRoleNames?: ReadonlyMap<string, string>;
-  // Pattern of the current run, forwarded to BoardRail so the empty-
-  // state message can reflect the correct phase (deliberation vs.
-  // planner-sweep-pending).
+  // Pattern of the current run, forwarded to BoardRail.
   boardPattern?: SwarmPattern;
-  // Deliberation round inference for deliberate-execute runs. Shown as
-  // "round N of M" in the empty-state when present. Null otherwise.
-  deliberationProgress?: DeliberationProgress | null;
 }) {
   const [localTab, setLocalTab] = useState<Tab>('plan');
   const tab = tabProp ?? localTab;
@@ -271,7 +264,6 @@ export function LeftTabs({
             embedded
             roleNames={boardRoleNames}
             pattern={boardPattern}
-            deliberationProgress={deliberationProgress}
             heat={heat}
           />
         )}

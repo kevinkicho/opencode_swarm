@@ -68,11 +68,10 @@ export function roleNamesFromMeta(
       });
       break;
     }
-    // 2026-04-24: extend with display labels for council / map-reduce /
-    // deliberate-execute too. The role isn't enforced (no preferredRole
-    // gating, no per-session prompt diff), but the user wants the lane
-    // header to show what each session IS doing in the run, not just the
-    // provider. Labels are DISPLAY-ONLY here.
+    // Display labels for council / map-reduce. The role isn't enforced
+    // (no preferredRole gating, no per-session prompt diff), but the
+    // user wants the lane header to show what each session IS doing in
+    // the run, not just the provider. Labels are DISPLAY-ONLY here.
     case 'council': {
       meta.sessionIDs.forEach((sid, i) => {
         out.set(ownerIdForSession(sid), `member-${i + 1}`);
@@ -82,15 +81,6 @@ export function roleNamesFromMeta(
     case 'map-reduce': {
       meta.sessionIDs.forEach((sid, i) => {
         out.set(ownerIdForSession(sid), `mapper-${i + 1}`);
-      });
-      break;
-    }
-    case 'deliberate-execute': {
-      meta.sessionIDs.forEach((sid, i) => {
-        out.set(
-          ownerIdForSession(sid),
-          i === 0 ? 'synthesizer' : `member-${i + 1}`,
-        );
       });
       break;
     }
@@ -150,12 +140,6 @@ export function roleNamesBySessionID(
     case 'map-reduce': {
       meta.sessionIDs.forEach((sid, i) => {
         out.set(sid, `mapper-${i + 1}`);
-      });
-      break;
-    }
-    case 'deliberate-execute': {
-      meta.sessionIDs.forEach((sid, i) => {
-        out.set(sid, i === 0 ? 'synthesizer' : `member-${i + 1}`);
       });
       break;
     }

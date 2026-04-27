@@ -54,7 +54,6 @@ patterns survive.
 | **Robust** | blackboard, council, role-differentiated | Use for important runs |
 | **Serial-critical** | orchestrator-worker, critic-loop, debate-judge | F1 silent-turn aborts mid-flow; partial completion before failure |
 | **Asymmetric** | map-reduce | MAP robust, REDUCE brittle (synthesizer reads ~30K tokens of N drafts → silent turns under GEMMA) |
-| **Pattern-shaped fragility** | deliberate-execute | Reproducibly silent on initial deliberation directive — investigation queued |
 
 When picking a pattern for a real run, prefer the robust tier unless the
 work specifically benefits from a fragile shape (debate divergence, critic

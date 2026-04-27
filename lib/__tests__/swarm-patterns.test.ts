@@ -18,7 +18,6 @@ describe('patternMeta.recommendedMax', () => {
       'role-differentiated',
       'debate-judge',
       'critic-loop',
-      'deliberate-execute',
     ];
     for (const p of patterns) {
       expect(patternMeta[p].recommendedMax).toBeGreaterThanOrEqual(1);
@@ -33,7 +32,6 @@ describe('patternMeta.recommendedMax', () => {
     expect(patternMeta['role-differentiated'].recommendedMax).toBe(6);
     expect(patternMeta['debate-judge'].recommendedMax).toBe(4);
     expect(patternMeta['critic-loop'].recommendedMax).toBe(2);
-    expect(patternMeta['deliberate-execute'].recommendedMax).toBe(4);
     expect(patternMeta.none.recommendedMax).toBe(1);
   });
 });

@@ -31,7 +31,6 @@ const KNOWN_PATTERNS: ReadonlySet<SwarmPattern> = new Set<SwarmPattern>([
   'critic-loop',
   'debate-judge',
   'map-reduce',
-  'deliberate-execute',
 ]);
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {

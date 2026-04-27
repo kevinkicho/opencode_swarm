@@ -80,14 +80,14 @@ describe('withRunGuard', () => {
     expect(mockFinalizeRun).toHaveBeenCalledWith('run_x', 'critic-loop');
   });
 
-  it('runs body when pattern is in array (council-as-deliberate-execute case)', async () => {
-    mockGetRun.mockResolvedValue(fakeMeta({ pattern: 'deliberate-execute' }));
+  it('runs body when pattern is in the allowed array', async () => {
+    mockGetRun.mockResolvedValue(fakeMeta({ pattern: 'council' }));
     const body = vi.fn().mockResolvedValue(undefined);
 
     await withRunGuard(
       'run_x',
       {
-        expectedPattern: ['council', 'deliberate-execute'],
+        expectedPattern: ['council', 'orchestrator-worker'],
         context: 'council',
       },
       body,
@@ -104,7 +104,7 @@ describe('withRunGuard', () => {
     await withRunGuard(
       'run_x',
       {
-        expectedPattern: ['council', 'deliberate-execute'],
+        expectedPattern: ['council', 'orchestrator-worker'],
         context: 'council',
       },
       body,

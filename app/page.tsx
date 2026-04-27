@@ -11,7 +11,6 @@ import { LeftTabs } from '@/components/left-tabs';
 import { SwarmTimeline } from '@/components/swarm-timeline';
 import { roleNamesFromMeta, useLiveBoard, useLiveTicker } from '@/lib/blackboard/live';
 import { deriveSilentSessions } from '@/lib/silent-session';
-import { deliberationRoundInfo } from '@/lib/deliberate-progress';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 // Modals and drawers below are gated by `open={...}` state that defaults to
 // closed — they cost 0 visual rent until the user opens them. Lazy-loading
@@ -99,12 +98,6 @@ const MapRail = dynamic(
 const CouncilRail = dynamic(
   lazyWithRetry(() =>
     import('@/components/council-rail').then((m) => m.CouncilRail),
-  ),
-  { ssr: false },
-);
-const PhasesRail = dynamic(
-  lazyWithRetry(() =>
-    import('@/components/phases-rail').then((m) => m.PhasesRail),
   ),
   { ssr: false },
 );
@@ -212,10 +205,6 @@ const VIEW_PATTERN_GATES: Record<string, ViewConfig> = {
   council: {
     enabled: (ctx) => ctx.pattern === 'council',
     hint: 'council members\' drafts + reconciliation',
-  },
-  phases: {
-    enabled: (ctx) => ctx.pattern === 'deliberate-execute',
-    hint: 'deliberate-execute: deliberation → synthesis → execution',
   },
   strategy: {
     enabled: (ctx) => ctx.pattern === 'orchestrator-worker',
@@ -464,15 +453,14 @@ function PageBody({
   // EventSource. Null when the run's pattern doesn't drive the board —
   // hooks short-circuit to empty state without opening a connection.
   // Patterns that populate the board: blackboard (obviously), plus the
-  // hierarchical patterns that seed a board via a planner/synthesis
-  // phase — orchestrator-worker, role-differentiated, deliberate-execute.
+  // hierarchical patterns that seed a board via a planner phase —
+  // orchestrator-worker, role-differentiated.
   const boardPatterns: ReadonlySet<string> = useMemo(
     () =>
       new Set<string>([
         'blackboard',
         'orchestrator-worker',
         'role-differentiated',
-        'deliberate-execute',
       ]),
     [],
   );
@@ -582,16 +570,6 @@ function PageBody({
       return budget ? { ...a, tokensBudget: budget } : a;
     });
   }, [agentsIn, bounds.costCap]);
-
-  // Deliberation round inference for deliberate-execute runs. Null for
-  // other patterns — the board empty-state falls back to the
-  // blackboard-flavored "waiting for planner sweep" copy. Depends on
-  // `agents` (budget-overlaid) and `messages`, so it sits after the
-  // agents memo.
-  const deliberationProgress = useMemo(
-    () => deliberationRoundInfo(swarmRunMeta, agents, messages),
-    [swarmRunMeta, agents, messages],
-  );
 
   // Fetch the diff whenever a live session exists so per-file +/- stats
   // can render in the cards view's file list. The history drawer also
@@ -710,7 +688,6 @@ function PageBody({
           ticker={liveTicker}
           boardRoleNames={boardRoleNames}
           boardPattern={swarmRunMeta?.pattern}
-          deliberationProgress={deliberationProgress}
           liveSlots={liveSlots}
           runSessionIDs={swarmRunMeta?.sessionIDs ?? []}
         />
@@ -790,7 +767,6 @@ function PageBody({
                       ticker={liveTicker}
                       roleNames={boardRoleNames}
                       pattern={swarmRunMeta?.pattern}
-                      deliberationProgress={deliberationProgress}
                     />
                   </ProfileBoundary>
                 );
@@ -854,17 +830,6 @@ function PageBody({
                 return (
                   <ProfileBoundary id="council-rail">
                     <CouncilRail slots={liveSlots} embedded onInspectSession={selectSession} />
-                  </ProfileBoundary>
-                );
-              case 'phases':
-                return (
-                  <ProfileBoundary id="phases-rail">
-                    <PhasesRail
-                      slots={liveSlots}
-                      live={liveBoard}
-                      deliberationProgress={deliberationProgress}
-                      embedded
-                    />
                   </ProfileBoundary>
                 );
               case 'strategy':

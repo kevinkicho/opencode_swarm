@@ -62,8 +62,7 @@ Create a new multi-session run.
 ```ts
 {
   pattern: "blackboard" | "map-reduce" | "council" | "orchestrator-worker"
-         | "role-differentiated" | "debate-judge" | "critic-loop"
-         | "deliberate-execute";
+         | "role-differentiated" | "debate-judge" | "critic-loop";
   workspace: string;               // absolute path to the target repo
   source?: string;                 // repo URL (for display / memory scoping)
   directive?: string;              // optional seed; blank = swarm infers
@@ -332,8 +331,7 @@ debugging only.
 Bulk reopen — every `stale` item transitions to `open`, clearing
 `ownerAgentId` / `fileHashes` / `staleSinceSha` / retry-count note.
 Also auto-starts the ticker if it was stopped and the pattern is in
-`TICKER_PATTERNS` (blackboard, orchestrator-worker, role-differentiated,
-deliberate-execute).
+`TICKER_PATTERNS` (blackboard, orchestrator-worker, role-differentiated).
 
 **Body:** `{}`.
 

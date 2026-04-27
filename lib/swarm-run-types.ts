@@ -86,20 +86,12 @@ export interface SwarmRunRequest {
   // Also runs on tier escalation + run-end regardless of counter.
   // Ignored when enableAuditorGate is false.
   auditEveryNCommits?: number;
-  // Synthesis-verifier gate (deliberate-execute pattern only,
-  // synthesis phase seeds todos, a peer session (NOT the synthesizer)
-  // reviews them: "are these concrete, claimable, independent?"
-  // APPROVED → execution starts. REVISE → seeded items are cleared
-  // and synthesis runs once more with the verifier's feedback. Capped
-  // at 1 retry to avoid infinite loops. Default false.
-  enableSynthesisVerifier?: boolean;
   // Council convergence auto-stop.
   // When true AND mean-pairwise-token-jaccard convergence on any
   // round ≥ COUNCIL_CONVERGENCE_THRESHOLD (0.85), the council loop
   // skips remaining rounds and proceeds to synthesis/handoff.
   // Saves tokens on high-consensus missions. Default false — opt-in.
-  // Council pattern only; deliberate-execute also uses runCouncilRounds
-  // and inherits the flag's behavior when set.
+  // Council pattern only.
   autoStopOnConverge?: boolean;
   // When set, the coordinator forces this model for any board item
   // with `kind === 'synthesize'` regardless of which session claims
@@ -258,10 +250,6 @@ export interface SwarmRunMeta {
   // Audit cadence (commits between audits). Default 5 when unset and
   // auditor is enabled. See SwarmRunRequest for semantics.
   auditEveryNCommits?: number;
-  // Synthesis-verifier mirror — deliberate-execute pattern only.
-  // the verifier reuses sessionIDs[1] (peer member, not the
-  // synthesizer at sessionIDs[0]).
-  enableSynthesisVerifier?: boolean;
   // Council convergence auto-stop mirror
   autoStopOnConverge?: boolean;
   // Strict role routing mirror

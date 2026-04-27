@@ -172,9 +172,6 @@ export async function createRun(
     enableAuditorGate: req.enableAuditorGate ? true : undefined,
     auditorSessionID: extras.auditorSessionID,
     auditEveryNCommits: req.auditEveryNCommits,
-    // Synthesis-verifier gate — deliberate-execute pattern only.
-    // the verifier reuses sessionIDs[1].
-    enableSynthesisVerifier: req.enableSynthesisVerifier ? true : undefined,
     // Council convergence auto-stop
     autoStopOnConverge: req.autoStopOnConverge ? true : undefined,
     // Strict role routing

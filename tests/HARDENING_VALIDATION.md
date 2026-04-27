@@ -54,7 +54,6 @@ holding under future changes.
 | D4 #4d — debate-judge | HARDENING_PLAN.md#D4 | `tests/integration/debate-judge.test.ts` | integration-scaffold |
 | D4 #4e — council | HARDENING_PLAN.md#D4 | `tests/integration/council.test.ts` | integration-scaffold |
 | D4 #4f — map-reduce | HARDENING_PLAN.md#D4 | `tests/integration/map-reduce.test.ts` | integration-scaffold |
-| D4 #4g — deliberate-execute | HARDENING_PLAN.md#D4 | `tests/integration/deliberate-execute.test.ts` | integration-scaffold |
 | D4 #5 — planner sweep | HARDENING_PLAN.md#D4 | `lib/server/blackboard/__tests__/planner-sweep.test.ts` | scaffold |
 | D5 — postmortem ledger discipline | HARDENING_PLAN.md#D5 | `lib/__tests__/hardening/postmortem-ledger.test.ts` | passing (lint) |
 | D6 — server-only enforcement | HARDENING_PLAN.md#D6 | `lib/__tests__/hardening/server-only-imports.test.ts` | target (lint) |

@@ -109,20 +109,6 @@ session would commit and move on from.
 
 **Sizing.** Always 2 (1 worker + 1 critic). Pattern shape locks this.
 
-### deliberate-execute
-
-Phase 1: council-style deliberation across N sessions. Phase 2: synthesis
-into a directive. Phase 3: execution by one session. Optional verifier
-gate post-synthesis.
-
-**Files.** `lib/server/deliberate-execute.ts`.
-
-**Strengths.** Hard problems where the spec needs to be wrestled with
-before execution. The scale-aware round cap (`recommendedDeliberationRounds`)
-keeps phase 1 from running away.
-
-**Sizing.** ≤4. Phase 1 doesn't converge in cap with ≥5.
-
 ### map-reduce
 
 N mapper sessions work pieces of the input in parallel. One reducer

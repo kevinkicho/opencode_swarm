@@ -359,15 +359,15 @@ natural opportunity.**
 **Team-picker wiring status (2026-04-24).** As of this commit, the
 new-run-modal team picker flows `teamModels: string[]` through to
 every session's dispatch on the first turn (blackboard planner +
-workers, and the directive broadcast for council / map-reduce /
-deliberate-execute). Blackboard is FULLY WIRED — every worker
-dispatch from the coordinator reads `meta.teamModels[sessionIdx]`
-and passes it as `model` on `postSessionMessageServer`.
+workers, and the directive broadcast for council / map-reduce).
+Blackboard is FULLY WIRED — every worker dispatch from the
+coordinator reads `meta.teamModels[sessionIdx]` and passes it as
+`model` on `postSessionMessageServer`.
 
 **Known limitation (follow-up):** non-ticker pattern orchestrators
 (council.ts, map-reduce.ts, critic-loop.ts, debate-judge.ts,
-orchestrator-worker.ts, role-differentiated.ts, deliberate-execute.ts)
-do NOT yet read `meta.teamModels` on their follow-up rounds. A
+orchestrator-worker.ts, role-differentiated.ts) do NOT yet read
+`meta.teamModels` on their follow-up rounds. A
 council run with an ollama team picks ollama for Round 1 (via the
 route's directive broadcast) but Rounds 2 / 3 fall back to whatever
 opencode selects per `postSessionMessageServer` without an explicit

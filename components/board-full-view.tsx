@@ -15,7 +15,6 @@ import { useMemo } from 'react';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import { deriveBoardAgents } from '@/lib/blackboard/live';
 import type { SwarmPattern } from '@/lib/swarm-types';
-import type { DeliberationProgress } from '@/lib/deliberate-progress';
 import type {
   BoardAgent,
   BoardItem,
@@ -104,21 +103,15 @@ export function BoardFullView({
   ticker,
   roleNames,
   pattern,
-  deliberationProgress,
 }: {
   live: LiveBoard;
   ticker: LiveTicker;
   // Same optional role-map as BoardRail — populated from meta at the
   // page level for hierarchical patterns, omitted for self-organizing.
   roleNames?: ReadonlyMap<string, string>;
-  // Pattern context lets the empty-state message reflect the correct
-  // phase — especially for deliberate-execute, where "board empty"
-  // during deliberation isn't the same as "blackboard waiting for
-  // planner sweep." Omit for self-organizing board-pattern runs.
+  // Pattern context — currently unused but threaded through for future
+  // pattern-aware empty-state variations.
   pattern?: SwarmPattern;
-  // Deliberation round inference for deliberate-execute runs.
-  // Rendered as "round N of M" inside the empty-state message.
-  deliberationProgress?: DeliberationProgress | null;
 }) {
   const items = live.items ?? [];
   const loading = live.items === null && !live.error;
@@ -147,30 +140,12 @@ export function BoardFullView({
     );
   }
   if (items.length === 0) {
-    // Pattern-aware empty-state copy. deliberate-execute runs start with
-    // a deliberation phase where the board is INTENTIONALLY empty; the
-    // blackboard-style "waiting for planner sweep" read would confuse.
-    const isDeliberating = pattern === 'deliberate-execute';
-    const emptyMessage = isDeliberating
-      ? 'deliberating — council is exchanging drafts before execution'
-      : 'board empty — waiting for planner sweep';
     return (
       <section className="flex-1 min-w-0 min-h-0 grid place-items-center bg-ink-900">
         <div className="flex flex-col items-center gap-1.5 px-4 text-center">
           <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
-            {emptyMessage}
+            board empty — waiting for planner sweep
           </div>
-          {isDeliberating && deliberationProgress && (
-            <div className="font-mono text-[10px] tabular-nums text-fog-500">
-              round {Math.max(deliberationProgress.round, 1)} of{' '}
-              {deliberationProgress.maxRounds}
-              {deliberationProgress.round >= deliberationProgress.maxRounds && (
-                <span className="ml-2 text-mint/80">
-                  · synthesizing
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </section>
     );
