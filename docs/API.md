@@ -1,13 +1,11 @@
 # API Reference
 
 Greppable catalog of every HTTP endpoint the app exposes. Method · path
-· body · response. For *why* these shapes exist, see `DESIGN.md` §6; for
-implementation details see `docs/ARCHITECTURE.md`.
+· body · response. For *why* these shapes exist, see `DESIGN.md`.
 
 Everything here is **personal-use, unauthenticated**. There is no login
-flow, no tenant scoping, no rate limiting. See
-`WHAT_THIS_PROJECT_IS_NOT.md` ("Not authenticated / multi-tenant") before
-assuming otherwise.
+flow, no tenant scoping, no rate limiting. Personal-use only by design,
+not a deferred feature.
 
 **Base URL:** whatever Next.js prints on startup (`http://localhost:<port>`
 — sticky port via `scripts/dev.mjs`).

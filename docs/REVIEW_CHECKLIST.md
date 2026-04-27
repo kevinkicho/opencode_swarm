@@ -149,7 +149,7 @@ Goal: graceful behavior when things go wrong.
 - [ ] If a finding is severe enough (broke a flow, lost data, crashed),
   open a `docs/POSTMORTEMS/<date>-<slug>.md` entry
 - [ ] If a finding affects a specific pattern's expected mechanics,
-  cross-reference the relevant `docs/PATTERN_DESIGN/<pattern>.md`
+  cross-reference `docs/PATTERNS.md` for the pattern's intent
 - [ ] Total findings count + brief one-line summary at the bottom of
   this file's "run history" section
 

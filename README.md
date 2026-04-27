@@ -6,17 +6,9 @@ Built for keyboard-first developers who want to read a 5-agent run as easily as 
 
 ## Status
 
-**Functioning prototype.** The UI surface is complete and the backend is wired to real opencode sessions.
+**Functioning prototype.** The UI surface is complete and the backend is wired to real opencode sessions. Nine orchestration patterns ship end-to-end (blackboard, council, stigmergy, orchestrator-worker, role-differentiated, debate-judge, critic-loop, deliberate-execute, map-reduce) — see [`docs/PATTERNS.md`](./docs/PATTERNS.md) for one-paragraph descriptions and reliability profiles.
 
-Three orchestration patterns ship end-to-end:
-
-| Pattern | What it does |
-|---|---|
-| **blackboard** | Planner emits atomic todos onto a shared board; N sessions claim via CAS, execute, post file hashes back. |
-| **map-reduce** | N sessions work a directive in parallel, then one wins a blackboard claim to synthesize a unified output. |
-| **council** | Multiple sessions work the same directive; reconcile actions surface divergent outputs for human merge. |
-
-Non-goals: see [`WHAT_THIS_PROJECT_IS_NOT.md`](./WHAT_THIS_PROJECT_IS_NOT.md). This is personal-use tooling — no auth, no multi-tenancy, never SaaS.
+Personal-use tooling — no auth, no multi-tenancy, never SaaS. By design, not a deferred feature.
 
 ## Stack
 
@@ -56,11 +48,11 @@ Point the app at an already-cloned repo via the new-run modal (⌘N), pick a pat
 
 Read in order when extending:
 
-1. **[`DESIGN.md`](./DESIGN.md)** — vision, data contracts, surface-by-surface design decisions. The one document nothing else replaces.
-2. **[`WHAT_THIS_PROJECT_IS_NOT.md`](./WHAT_THIS_PROJECT_IS_NOT.md)** — rejected design choices, with rationale. Read before "fixing" something that looks missing.
-3. **[`SWARM_PATTERNS.md`](./SWARM_PATTERNS.md)** — orchestration pattern catalog + status (shipped, in progress, rejected).
-4. **[`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md)** — runtime data flow, component map, debugging playbook.
-5. **[`docs/opencode-vocabulary.md`](./docs/opencode-vocabulary.md)** — canonical opencode SDK names (use these, don't invent synonyms).
+1. **[`DESIGN.md`](./DESIGN.md)** — vision, mental model, UI surface map, state contracts, retention, planning model. The one document nothing else replaces.
+2. **[`docs/opencode-quirks.md`](./docs/opencode-quirks.md)** — opencode SDK vocabulary + HTTP API behaviors (silent-drop traps, model-format shape, workspace path encoding, zombie turns).
+3. **[`docs/PATTERNS.md`](./docs/PATTERNS.md)** — orchestration pattern cheatsheet (one paragraph each + reliability tiers).
+4. **[`docs/API.md`](./docs/API.md)** — greppable HTTP endpoint catalog for our routes.
+5. **[`docs/VALIDATION.md`](./docs/VALIDATION.md)** — runbook for features shipped but not yet exercised live.
 6. **[`CLAUDE.md`](./CLAUDE.md)** — briefing for AI agents opening the repo.
 
 In-app, the **glossary modal** (footer link) covers actor/transcript vocabulary at a glance.
@@ -68,14 +60,14 @@ In-app, the **glossary modal** (footer link) covers actor/transcript vocabulary 
 ## Design stance
 
 - **Timeline-centric, not chat-centric.** Tool calls and agent spawns are visual nodes on a 2-D plane, not log entries. 5 agents must be as legible as 1.
-- **Roles are pattern-scoped, not universal.** Self-organizing patterns (blackboard, council, stigmergy) have no pinned roles — agents self-select work within run bounds. Hierarchical patterns (orchestrator-worker, role differentiation, debate+judge, critic-loop, deliberate-execute) CAN pin roles when the pattern needs them, and those roles are visible in the UI. Routing stays bounds-driven either way; `if role=X → provider=Y` remains off-limits. See `DESIGN.md` §1 "On roles" for the 2026-04-23 stance reversal behind this.
+- **Roles are pattern-scoped, not universal.** Self-organizing patterns (blackboard, council, stigmergy) have no pinned roles — agents self-select work within run bounds. Hierarchical patterns (orchestrator-worker, role-differentiated, debate-judge, critic-loop, deliberate-execute) carry explicit roles when the work needs them. Routing stays bounds-driven either way; `if role=X → provider=Y` remains off-limits.
 - **Declarative and imperative separated.** The routing modal sets policy (saves apply to the next dispatch); the spawn modal and palette trigger actions. Never both in one panel.
 - **Dense-factory aesthetic.** Monospace, tabular-nums, hairline borders, h-5/h-6 rows, `text-micro` uppercase labels. Not a ChatGPT/Perplexity/Claude.ai clone.
-- **Three provider tiers: `zen` + `go` + `ollama`.** All three route through opencode (you configure `opencode.json` for the ollama provider). No BYOK UI, no local-model picker as a selection affordance — the tiers exist because each has a different billing/limit shape: zen is pay-per-token marketplace, go is opencode subscription bundle, ollama is ollama.com max subscription. The stance was "`zen` + `go` only" through 2026-04-23; reversed 2026-04-24 after the ollama-max cost shape proved strictly better for sustained runs.
+- **Three provider tiers: `zen` + `go` + `ollama`.** All three route through opencode (configure `opencode.json` for the ollama provider). No BYOK UI, no local-model picker as a selection affordance — each tier has a different billing/limit shape (zen pay-per-token, go subscription bundle, ollama max subscription).
 
 ## Contributing
 
-Opening a PR? Read `DESIGN.md` §12 (surface contracts) and `WHAT_THIS_PROJECT_IS_NOT.md` first — those catch most drift before review.
+Opening a PR? Read `DESIGN.md` first — the one rule (single contracts per surface) catches most drift before review.
 
 ## License
 

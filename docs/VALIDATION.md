@@ -232,12 +232,12 @@ with live data; the run ends with status `idle` via
 
 ## 5. Overnight-safety stack end-to-end
 
-**What it does.** Sum of everything in ARCHITECTURE.md §1.5.2:
-zombie auto-abort, per-pattern turn timeout, eager re-sweep, periodic
-planner sweep, opencode-frozen watchdog, Zen rate-limit probe,
-HMR-resilient exports, ChunkLoadError auto-reload, session cleanup on
-every stop path. Individual pieces are validated; the full stack
-working together over a long continuous run is not.
+**What it does.** Sum of every reliability layer: zombie auto-abort,
+per-pattern turn timeout, eager re-sweep, periodic planner sweep,
+opencode-frozen watchdog, Zen rate-limit probe, HMR-resilient exports,
+ChunkLoadError auto-reload, session cleanup on every stop path.
+Individual pieces are validated; the full stack working together over
+a long continuous run is not.
 
 **Setup.** Pick a substantial target repo (the app itself works —
 eat your own dog food). Set a broad directive so the run can't drain
