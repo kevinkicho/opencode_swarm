@@ -92,9 +92,17 @@ const projectsModalOpen = await page.evaluate(() => {
 });
 record('projects: modal eyebrow "project-time matrix" visible', projectsModalOpen);
 
-const projectsHasRepos = await page.evaluate(() =>
-  document.querySelectorAll('a[href^="/projects/"]').length > 0,
-);
+// 2026-04-28 — repo cells are now <button>s that drill into a
+// per-repo view inside the modal (instead of <Link>s to a full-page
+// /projects/[slug]). Match by typical repo-name shape instead.
+const projectsHasRepos = await page.evaluate(() => {
+  const repoButtons = Array.from(document.querySelectorAll('button')).filter(
+    (b) => /^[a-z0-9_-]+$/i.test((b.textContent || '').trim()) &&
+           (b.textContent || '').trim().length >= 3 &&
+           (b.textContent || '').trim().length <= 60,
+  );
+  return repoButtons.length > 0;
+});
 record('projects: matrix renders inside modal', projectsHasRepos);
 
 await page.keyboard.press('Escape');

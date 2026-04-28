@@ -38,6 +38,7 @@ export function ProjectsMatrix({
   onRefresh,
   refreshing,
   embedded = false,
+  onSelectRepo,
 }: {
   rows: SwarmRunListRow[];
   loading: boolean;
@@ -48,6 +49,11 @@ export function ProjectsMatrix({
   // and constrain to a modal-friendly height. Modal supplies its
   // own title + close.
   embedded?: boolean;
+  // When provided, repo-name cells become buttons that call this
+  // (instead of <Link>s to /projects/[slug]). Used by ProjectsModal
+  // to drill into a repo without leaving the modal — the link mode
+  // stays for the standalone /projects page.
+  onSelectRepo?: (repoName: string) => void;
 }) {
   const [windowDays, setWindowDays] = useState<number>(DEFAULT_WINDOW_DAYS);
 
@@ -163,7 +169,7 @@ export function ProjectsMatrix({
             <MatrixHeader days={days} />
             <ul className="flex flex-col">
               {visibleProjects.map((p) => (
-                <MatrixRow key={p.workspace} project={p} days={days} dayKeys={dayKeys} />
+                <MatrixRow key={p.workspace} project={p} days={days} dayKeys={dayKeys} onSelectRepo={onSelectRepo} />
               ))}
             </ul>
           </div>

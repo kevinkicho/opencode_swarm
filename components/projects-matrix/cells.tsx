@@ -74,10 +74,17 @@ export function MatrixRow({
   project,
   days,
   dayKeys,
+  onSelectRepo,
 }: {
   project: Project;
   days: number[];
   dayKeys: Set<string>;
+  // Optional: when set, the repo-name cell becomes a button that
+  // invokes this instead of navigating to /projects/[slug]. The
+  // ProjectsModal uses this to drill into a repo without leaving
+  // the modal. Without it (e.g. on the standalone /projects page)
+  // the cell falls back to a Link to the per-project page.
+  onSelectRepo?: (repoName: string) => void;
 }) {
   const byDay = useMemo(() => bucketByDay(project.runs, dayKeys), [project.runs, dayKeys]);
   const totalInWindow = Array.from(byDay.values()).reduce((a, xs) => a + xs.length, 0);
@@ -109,12 +116,22 @@ export function MatrixRow({
           }
           side="right"
         >
-          <Link
-            href={`/projects/${encodeURIComponent(project.repoName)}`}
-            className="font-mono text-[11px] text-fog-300 truncate hover:text-fog-100 transition-colors"
-          >
-            {project.repoName}
-          </Link>
+          {onSelectRepo ? (
+            <button
+              type="button"
+              onClick={() => onSelectRepo(project.repoName)}
+              className="font-mono text-[11px] text-fog-300 truncate hover:text-fog-100 transition-colors text-left cursor-pointer"
+            >
+              {project.repoName}
+            </button>
+          ) : (
+            <Link
+              href={`/projects/${encodeURIComponent(project.repoName)}`}
+              className="font-mono text-[11px] text-fog-300 truncate hover:text-fog-100 transition-colors"
+            >
+              {project.repoName}
+            </Link>
+          )}
         </Tooltip>
       </div>
 
