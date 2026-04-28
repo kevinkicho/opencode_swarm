@@ -45,6 +45,15 @@ function retryCountFromNote(note: string | null | undefined): number {
   return m ? Math.max(0, parseInt(m[1] ?? '0', 10)) : 0;
 }
 
+// Strip the leading `[audit:...]` / `[retry:N]` tag so the inline
+// subtitle on blocked rows reads naturally. The tooltip still shows
+// the full tagged note for forensics; the inline rendering wants the
+// human-readable reason without the bookkeeping prefix.
+const TAG_PREFIX_RE = /^\[[a-z][a-z0-9-]*(?::[^\]]*)?\]\s*/;
+function stripTagPrefix(note: string): string {
+  return note.replace(TAG_PREFIX_RE, '').trim();
+}
+
 // Tone steps from : 0 = fog-700 (cold,
 // picker-preferred), 1-20% of max = amber/30, 20-50% = amber/50,
 // 50-100% = molten/40 (hot, picker avoids on the exploratory bias).
@@ -179,6 +188,25 @@ export function BoardRailRow({
             title={`files moved · head ${item.staleSinceSha}`}
           >
             ↯{item.staleSinceSha.slice(0, 4)}
+          </span>
+        )}
+        {/* Audit chip — surfaces a verdict from the auditor session in
+            the row itself (the full reason is also in the tooltip
+            below, but the tooltip is hover-only and the chip makes
+            "this row was audited" discoverable at a glance). Color
+            tracks the row status: rust for blocked (audit failed), mint
+            for done (audit confirmed), fog for anything else. */}
+        {item.note?.startsWith('[audit:') && (
+          <span
+            className={clsx(
+              'shrink-0 font-mono text-[9px] uppercase tracking-wider',
+              item.status === 'blocked' && 'text-rust',
+              item.status === 'done' && 'text-mint',
+              item.status !== 'blocked' && item.status !== 'done' && 'text-fog-500',
+            )}
+            title={`auditor: ${stripTagPrefix(item.note)}`}
+          >
+            audit
           </span>
         )}
         {showHeat && (
