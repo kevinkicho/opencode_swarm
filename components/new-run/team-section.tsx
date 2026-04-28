@@ -8,14 +8,24 @@
 // teamSizeWarning tooltip when totalAgents exceeds the empirical
 // ceiling.
 //
-// Lifted from new-run-modal.tsx 2026-04-28 — driven by props rather
-// than reaching into useNewRunForm directly so the modal stays the
-// single source of form state.
+// 2026-04-28 — added a provider-tier filter chip strip above the
+// model table. opencode exposes three pipelines:
+//   - go      ← opencode-go/<model>:cloud — free daily quota; if
+//                user has "extra usage" turned on at opencode.ai's
+//                dashboard, auto-falls-through to zen billing on
+//                quota hit. Recommended default.
+//   - zen     ← opencode/<model>          — direct metered billing
+//   - ollama  ← ollama/<model>:cloud      — $100/mo subscription cap
+// (byok also exists but is rarely populated.) The model ID prefix
+// determines the routing — picking a model from the `go` group
+// implicitly routes through the Go pipeline. The filter chips just
+// narrow which rows are visible; selection still happens per-row.
 
 import clsx from 'clsx';
+import { useMemo, useState } from 'react';
 import { fmtZenPrice } from '@/lib/zen-catalog';
 import { patternMeta, patternAccentText, teamSizeWarningMessage } from '@/lib/swarm-patterns';
-import type { SwarmPattern } from '@/lib/swarm-types';
+import type { Provider, SwarmPattern } from '@/lib/swarm-types';
 import type { ProviderModel } from '@/app/api/swarm/providers/route';
 import { Tooltip } from '../ui/tooltip';
 import {
@@ -26,6 +36,37 @@ import {
   FamilyCell,
   PriceCell,
 } from './sub-components';
+
+// Provider-tier metadata for the filter chips. Order matches the
+// recommended preference: go (free quota first) → zen (metered) →
+// ollama (subscription) → byok.
+const PROVIDER_META: Record<Provider, {
+  label: string;
+  accent: string;
+  hint: string;
+}> = {
+  go: {
+    label: 'go',
+    accent: 'text-mint',
+    hint: 'opencode-go — free daily quota first; if "extra usage" is enabled in opencode.ai dashboard, falls through to zen billing on quota hit. preferred default.',
+  },
+  zen: {
+    label: 'zen',
+    accent: 'text-molten',
+    hint: 'opencode-zen — direct metered billing. picking these over go skips the free quota and bills per-token immediately.',
+  },
+  ollama: {
+    label: 'ollama',
+    accent: 'text-iris',
+    hint: 'ollama-max subscription bundle ($100/mo). per-token cost is imputed from quota; bundle covers all usage up to the weekly token cap.',
+  },
+  byok: {
+    label: 'byok',
+    accent: 'text-fog-400',
+    hint: 'bring-your-own-key — direct provider keys configured in opencode.json. only shows up when you have BYOK provider blocks.',
+  },
+};
+const PROVIDER_ORDER: readonly Provider[] = ['go', 'zen', 'ollama', 'byok'];
 
 export function TeamSection({
   pattern,
@@ -48,6 +89,43 @@ export function TeamSection({
   const teamSizeWarn = totalAgents > 0
     ? teamSizeWarningMessage(pattern, totalAgents)
     : undefined;
+
+  // Provider-tier filter — local UI state, doesn't bleed into form
+  // submission (the model IDs already encode the tier via prefix).
+  // Default: every tier with at least one model in the catalog is
+  // selected, so the user sees the same flat list as before until
+  // they actively filter.
+  const availableProviders = useMemo(() => {
+    const set = new Set<Provider>();
+    orderedModels.forEach((m) => set.add(m.provider));
+    return set;
+  }, [orderedModels]);
+  const [providerFilter, setProviderFilter] = useState<Set<Provider>>(
+    () => new Set(availableProviders),
+  );
+  // Re-sync defaults if the catalog repopulates (e.g. opencode
+  // reconnects after a backend blip): only ADD newly-available
+  // providers; never silently re-enable ones the user explicitly
+  // toggled off this session. Cheap with 3-4 providers.
+  const filteredModels = useMemo(
+    () => orderedModels.filter((m) => providerFilter.has(m.provider)),
+    [orderedModels, providerFilter],
+  );
+  const providerCounts = useMemo(() => {
+    const counts: Record<Provider, number> = { go: 0, zen: 0, ollama: 0, byok: 0 };
+    orderedModels.forEach((m) => {
+      counts[m.provider] += 1;
+    });
+    return counts;
+  }, [orderedModels]);
+  const toggleProvider = (p: Provider) => {
+    setProviderFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(p)) next.delete(p);
+      else next.add(p);
+      return next;
+    });
+  };
 
   return (
     <Section
@@ -85,6 +163,52 @@ export function TeamSection({
       }
     >
       <div className="rounded-md hairline bg-ink-900/40 overflow-hidden">
+        {/* Provider-tier filter strip. The catalog already groups
+            opencode-go vs opencode vs ollama via the model ID prefix
+            (which determines billing routing); the chips below just
+            narrow which rows are visible. Tooltip on each chip
+            explains the routing semantics for that tier. */}
+        <div className="px-3 h-7 hairline-b bg-ink-900/60 flex items-center gap-1.5">
+          <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600 mr-1">
+            provider
+          </span>
+          {PROVIDER_ORDER.filter((p) => providerCounts[p] > 0).map((p) => {
+            const active = providerFilter.has(p);
+            const meta = PROVIDER_META[p];
+            return (
+              <Tooltip
+                key={p}
+                side="top"
+                wide
+                content={
+                  <div className="font-mono text-[10.5px] text-fog-400 leading-snug max-w-[320px]">
+                    {meta.hint}
+                  </div>
+                }
+              >
+                <button
+                  type="button"
+                  onClick={() => toggleProvider(p)}
+                  className={clsx(
+                    'h-5 px-1.5 rounded font-mono text-[10px] uppercase tracking-widest2 transition cursor-pointer hairline flex items-center gap-1',
+                    active
+                      ? clsx('bg-ink-800', meta.accent)
+                      : 'text-fog-700 hover:text-fog-400 opacity-60',
+                  )}
+                  aria-pressed={active}
+                >
+                  {meta.label}
+                  <span className="font-mono text-[9px] tabular-nums opacity-70">
+                    {providerCounts[p]}
+                  </span>
+                </button>
+              </Tooltip>
+            );
+          })}
+          <span className="ml-auto font-mono text-[9.5px] tabular-nums text-fog-700">
+            {filteredModels.length}/{orderedModels.length} models
+          </span>
+        </div>
         <div className="px-3 h-6 hairline-b bg-ink-900/70 flex items-center gap-3">
           <HeaderCell cls="flex-1 min-w-0">model</HeaderCell>
           <HeaderCell cls="w-[82px]">family</HeaderCell>
@@ -92,8 +216,13 @@ export function TeamSection({
           <HeaderCell cls="w-12 text-right">out $</HeaderCell>
           <HeaderCell cls="w-[74px] text-right">count</HeaderCell>
         </div>
+        {filteredModels.length === 0 && (
+          <div className="px-3 py-3 font-mono text-[10.5px] text-fog-600 leading-snug">
+            no models — every provider tier is filtered out. click a provider chip above to bring its models back.
+          </div>
+        )}
         <ul className="max-h-[280px] overflow-y-auto">
-          {orderedModels.map((m) => {
+          {filteredModels.map((m) => {
             const count = teamCounts[m.id] ?? 0;
             const active = count > 0;
             // Pricing may be missing when opencode reports a model we
