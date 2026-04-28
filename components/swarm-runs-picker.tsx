@@ -241,11 +241,27 @@ function PickerPanel({
                   )}
                 >
                   <Link
+                    // Open in a new tab — by user request 2026-04-28.
+                    // Two reasons it's the right default for this surface:
+                    //   (1) the picker is for comparing runs; same-tab
+                    //       navigation forces a re-open per click, breaking
+                    //       the compare-multiple flow.
+                    //   (2) a same-tab click had been racing the popover-
+                    //       close handler — onClick=close unmounted the
+                    //       Link's portal on some browsers before the
+                    //       browser's default navigation fired, so the
+                    //       click "did nothing." new-tab opens BEFORE any
+                    //       onClick or close logic runs, so it can't race.
+                    // No onClick close: the user expects the picker to stay
+                    // open (they came here to browse). They can dismiss
+                    // with Escape or by clicking outside.
                     href={`/?swarmRun=${meta.swarmRunID}`}
-                    onClick={() => close()}
+                    target="_blank"
+                    rel="noopener noreferrer"
                     className="flex-1 min-w-0 px-3 h-full flex items-center gap-3"
                     title={[
                       `status: ${row.status}`,
+                      `(opens in new tab)`,
                       meta.swarmRunID,
                       meta.workspace,
                       meta.directive ? `\n${meta.directive}` : '',
@@ -324,9 +340,14 @@ function PickerPanel({
                   <div className="w-[56px] shrink-0 flex items-center justify-end pr-1">
                     {retroEligible && (
                       <Link
+                        // Same new-tab semantics as the row link — see the
+                        // long comment up there. Retro is a deeper view,
+                        // and users typically want to keep the picker open
+                        // to retro-browse multiple runs in sequence.
                         href={`/retro/${meta.swarmRunID}`}
-                        onClick={() => close()}
-                        title="open retro for this run"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="open retro for this run (new tab)"
                         className="h-5 px-2 rounded font-mono text-[9px] uppercase tracking-widest2 text-fog-400 bg-ink-800 border border-fog-700 hover:text-molten hover:bg-molten/10 hover:border-molten/30 transition-opacity opacity-0 group-hover:opacity-100 flex items-center"
                       >
                         retro
