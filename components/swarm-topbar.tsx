@@ -219,8 +219,19 @@ export function SwarmTopbar({
           </button>
         </Tooltip>
 
-        <Tooltip content="settings" side="bottom" align="end">
-          <button onClick={onOpenSettings} className="fluent-btn" aria-label="settings">
+        <Tooltip
+          content={
+            <div className="space-y-0.5">
+              <div className="font-mono text-[11px] text-fog-200">routing</div>
+              <div className="font-mono text-[10.5px] text-fog-600">
+                run dispatch — bounds + ceilings, not a theme toggle
+              </div>
+            </div>
+          }
+          side="bottom"
+          align="end"
+        >
+          <button onClick={onOpenSettings} className="fluent-btn" aria-label="open routing settings">
             <IconSettings size={14} />
           </button>
         </Tooltip>

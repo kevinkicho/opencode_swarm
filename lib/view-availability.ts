@@ -30,6 +30,24 @@ export interface ViewGateContext {
   boardSwarmRunID: string | null;
 }
 
+// Coarse "is there data to show in this view right now?" predicate.
+// The toolbar uses this to pick brightness — bright when content is
+// available for that view on the active run, dim otherwise. Pattern
+// applicability is a necessary precondition; per-view data signals
+// (messages / board items / slots) confirm there's actually something
+// to render.
+export interface ViewContentContext extends ViewGateContext {
+  messageCount: number;
+  turnCardCount: number;
+  boardItemCount: number;
+  // Per-session assistant-message count for the active run's slots.
+  // Used by the per-pattern rails (iterations/debate/map/council) to
+  // tell "session created but nothing produced yet" from "session
+  // produced ≥1 assistant turn." Order is the slot order — same order
+  // the rail components read.
+  slotAssistantCounts: readonly number[];
+}
+
 export interface ViewMeta {
   // One-line hint for the toolbar tooltip.
   hint: string;
@@ -129,3 +147,39 @@ export const ALL_PATTERNS: readonly SwarmPattern[] = [
   'debate-judge',
   'critic-loop',
 ];
+
+export function viewHasContent(view: RunView, ctx: ViewContentContext): boolean {
+  // Always-applicable views (timeline / chat / cards) — bound when
+  // any messages have arrived. messageCount being > 0 is the cleanest
+  // signal because it covers loading-from-snapshot + live-streaming.
+  if (view === 'timeline' || view === 'chat') return ctx.messageCount > 0;
+  if (view === 'cards') return ctx.turnCardCount > 0;
+
+  // Board-pattern views — board exists AND has items. `contracts`
+  // could narrow further to criterion items only, but the rail's own
+  // empty-state already handles "no contracts yet"; bright vs dim at
+  // the tab level is fine on the coarser "any items" signal.
+  if (view === 'board' || view === 'contracts') return ctx.boardItemCount > 0;
+
+  // Pattern-specific rails — first check pattern matches, then check
+  // there's actually slot content. `iterations` / `debate` / `council`
+  // need ≥1 assistant message somewhere. `map` reads scope text from
+  // user prompts so any non-empty slot count works. `strategy` needs
+  // both the board (for plan items) and the orchestrator-worker pattern.
+  if (view === 'iterations') {
+    return ctx.pattern === 'critic-loop' && ctx.slotAssistantCounts.some((n) => n > 0);
+  }
+  if (view === 'debate') {
+    return ctx.pattern === 'debate-judge' && ctx.slotAssistantCounts.some((n) => n > 0);
+  }
+  if (view === 'map') {
+    return ctx.pattern === 'map-reduce' && ctx.slotAssistantCounts.length > 0;
+  }
+  if (view === 'council') {
+    return ctx.pattern === 'council' && ctx.slotAssistantCounts.some((n) => n > 0);
+  }
+  if (view === 'strategy') {
+    return ctx.pattern === 'orchestrator-worker' && !!ctx.boardSwarmRunID;
+  }
+  return false;
+}

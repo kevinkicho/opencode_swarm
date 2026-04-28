@@ -157,7 +157,12 @@ import type { TimelineNode } from '@/lib/types';
 // reference matrix can read the same source of truth as this page's
 // toolbar render. Aliased here to keep the call-site shape that
 // existed before the lift.
-import { RUN_VIEW_KEYS, VIEW_META, type RunView } from '@/lib/view-availability';
+import {
+  RUN_VIEW_KEYS,
+  VIEW_META,
+  viewHasContent,
+  type RunView,
+} from '@/lib/view-availability';
 const VIEW_PATTERN_GATES = VIEW_META;
 
 export default function Page() {
@@ -677,25 +682,43 @@ function PageBody({
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">view</span>
             <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
               {/* All 10 view tabs render always, even when the gate
-                  fails for the current run's pattern. Disabled tabs
-                  are dimmed but stay clickable — clicking shows an
-                  EmptyViewState that explains what the view does and
-                  which patterns activate it, plus the full availability
-                  matrix. 2026-04-28 — user wanted to "familiarize
-                  myself of these views' existence as I work with various
-                  swarm modes" without having to switch runs. */}
+                  fails for the current run's pattern. The brightness
+                  ladder runs by content presence (not just gate):
+                    active           → molten (bg + text)
+                    has content      → text-fog-200 (bright)
+                    gate ok, no data → text-fog-600 (medium)
+                    gate fails       → text-fog-800 (dim)
+                  This way the user can see at a glance which views
+                  actually have data right now — the rest are visible
+                  for discoverability but recede. 2026-04-28 — user:
+                  "all of them right now dont have contents, so
+                  perhaps they all should be dim/opaque, and perhaps
+                  when we are running swarm mode with contents
+                  available for that view, then make it more brighter." */}
               {RUN_VIEW_KEYS.map((k) => {
-                const enabled = VIEW_PATTERN_GATES[k].enabled({
+                const gateCtx = {
                   pattern: swarmRunMeta?.pattern,
                   boardSwarmRunID,
+                };
+                const enabled = VIEW_PATTERN_GATES[k].enabled(gateCtx);
+                const hasContent = viewHasContent(k, {
+                  ...gateCtx,
+                  messageCount: messages.length,
+                  turnCardCount: turnCards.length,
+                  boardItemCount: liveBoard.items?.length ?? 0,
+                  slotAssistantCounts: liveSlots.map(
+                    (s) => s.messages.filter((m) => m.info.role === 'assistant').length,
+                  ),
                 });
                 return (
                   <Tooltip
                     key={k}
                     content={
-                      enabled
+                      hasContent
                         ? VIEW_PATTERN_GATES[k].hint
-                        : `${VIEW_PATTERN_GATES[k].hint} · click to see when this view applies`
+                        : enabled
+                          ? `${VIEW_PATTERN_GATES[k].hint} · no data yet for this run`
+                          : `${VIEW_PATTERN_GATES[k].hint} · click to see when this view applies`
                     }
                     side="bottom"
                   >
@@ -706,9 +729,11 @@ function PageBody({
                         'h-5 px-2 rounded-sm transition-colors cursor-pointer',
                         runView === k
                           ? 'bg-molten/15 text-molten'
-                          : enabled
-                            ? 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60'
-                            : 'text-fog-700 hover:text-fog-500 hover:bg-ink-800/60',
+                          : hasContent
+                            ? 'text-fog-200 hover:bg-ink-800/60'
+                            : enabled
+                              ? 'text-fog-600 hover:text-fog-400 hover:bg-ink-800/60'
+                              : 'text-fog-800 hover:text-fog-600 hover:bg-ink-800/60',
                       )}
                     >
                       {k}
