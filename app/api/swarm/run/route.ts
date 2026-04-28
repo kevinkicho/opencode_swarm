@@ -36,6 +36,7 @@
 import type { NextRequest } from 'next/server';
 
 import { createSessionServer } from '@/lib/server/opencode-server';
+import { opencodeFetch } from '@/lib/opencode/client';
 import { createRun, deriveRunRowCached, listRuns } from '@/lib/server/swarm-registry';
 import { listBoardItems } from '@/lib/server/blackboard/store';
 import { detectStuckDeliberation } from '@/lib/server/stuck-detector';
@@ -322,14 +323,50 @@ export async function POST(req: NextRequest): Promise<Response> {
 // the entry for the affected run so new activity always shows up on the
 // next poll.
 //
+// Probe opencode reachability with a single short fetch. When opencode is
+// down, every per-session derive call would hit the 8s opencodeFetch
+// timeout — fanning that out across 130 runs × N sessions used to add
+// 11s to the cold load (measured 2026-04-27). One quick probe up front
+// short-circuits the entire fan-out: if the probe fails, the picker
+// returns `unknown` + zeroed rows immediately, and the user sees the
+// outage banner via the health hook a moment later.
+async function isOpencodeReachable(): Promise<boolean> {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 1500);
+  try {
+    const res = await opencodeFetch('/project', { signal: ctl.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // No server-side filtering at v1. Sort order is inherited from listRuns()
 // (newest-first by createdAt); status-based sorting lives client-side in
 // the picker so the order follows live signals without a round-trip.
 export async function GET(): Promise<Response> {
   try {
-    const metas = await listRuns();
+    const [metas, opencodeUp] = await Promise.all([
+      listRuns(),
+      isOpencodeReachable(),
+    ]);
     const rows: SwarmRunListRow[] = await Promise.all(
       metas.map(async (meta) => {
+        // Short-circuit when opencode is unreachable: the per-session
+        // derive would just return `unknown` after waiting on a timeout,
+        // so skip it and return the same shape directly.
+        if (!opencodeUp) {
+          const row: SwarmRunListRow = {
+            meta,
+            status: 'unknown',
+            lastActivityTs: null,
+            costTotal: 0,
+            tokensTotal: 0,
+          };
+          return row;
+        }
         // deriveRunRow is itself non-throwing — it collapses probe
         // failures to `unknown` + zero metrics — so this Promise.all never
         // rejects for per-row reasons. A rejection here would be an

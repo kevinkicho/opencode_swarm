@@ -91,8 +91,18 @@ Not urgent.
   quota wall would be the first real signal.
 
 **Pattern-design improvements** (need a live run to validate):
-- map-reduce I1: synthesis-critic gate.
-- stigmergy: heat-picked-timeline-chip.
+- ~~map-reduce I1: synthesis-critic gate.~~ **SHIPPED 2026-04-27.**
+  Validator now accepts `enableSynthesisCritic`; new-run modal surfaces
+  the toggle when pattern==='map-reduce'; the gate code already existed
+  in `lib/server/map-reduce.ts::runSynthesisCriticGate`.
+- stigmergy: heat-picked-timeline-chip. **DEFERRED — needs schema work.**
+  BoardItem doesn't currently carry a `taskMessageID` link, so the
+  EventCard can't look up `pickedByHeat` for a given message. Two design
+  paths: (a) add `taskMessageID` on the BoardItem at claim time and join
+  in the transform, or (b) emit a stigmergy-decision event onto the
+  timeline at pick time. Path (a) is cheaper but couples the schemas;
+  path (b) is cleaner but adds a new event channel. Either way is more
+  than a half-day; punt until a live run shows the demand.
 
 **UI bugs queued (deferred):**
 - **Inspector pane doesn't open when clicking timeline blocks** (reported
@@ -119,17 +129,16 @@ Not urgent.
   popover already had a `onMouseDown stopPropagation` from the
   earlier ARIA-fix work; might be over-stopping clicks meant for
   the row).
-- **Run-detail URL takes 30+ seconds to load** (reported 2026-04-27).
-  Repro: open `/?swarmRun=<id>` for a run with 3-4 sessions in a
-  Windows browser pointed at the WSL dev. Cold-mount fans out N
-  parallel `/api/opencode/session/<sid>/message` and `/diff` fetches
-  + a snapshot poll + the runs list (89KB). Same class as STATUS.md
-  "Known limitations · Initial hydration on huge runs" — fix paths
-  there are: stagger initial hydrate, range-limit messages to last K
-  with full history on scroll up. Add this report as a concrete
-  reproducer for that line. Probably worth pairing with measurement:
-  capture timing of every fetch the page mounts and find the long
-  poles before guessing.
+- ~~**Run-detail URL takes 30+ seconds to load** (reported 2026-04-27).~~
+  **FIXED 2026-04-27.** Measurement showed two long poles when opencode
+  :4097 is unreachable: /api/swarm/run fanned out 130 runs × N session
+  fetches each waiting ~10s on TCP timeout (11s total), and the proxy's
+  /api/opencode/project did the same. Fix: opencodeFetch now defaults to
+  an 8s timeout with a circuit breaker (3 failures in 2s → trip for 5s)
+  that synthesizes a 503 instead of waiting; /api/swarm/run probes
+  reachability once up front and short-circuits the per-session derive
+  fan-out when opencode is down. Result: /api/swarm/run dropped from 11s
+  to 1.8s with circuit-breaker armed, and to ~130ms once tripped.
 
 **UI redesign queued (deferred):**
 - **Chat-bubble view as alternate main** (reported 2026-04-27). User

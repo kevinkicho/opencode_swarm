@@ -30,6 +30,11 @@ export interface NewRunForm {
   branchStrategy: BranchStrategy;
   branchName: string;
   startMode: StartMode;
+  // Pattern-specific gates. Currently only enableSynthesisCritic
+  // (map-reduce I1 — peer reviews the synthesizer's output and asks
+  // for revisions before declaring the run done). Hidden unless the
+  // selected pattern supports it.
+  enableSynthesisCritic: boolean;
 }
 
 const INITIAL_FORM = (): NewRunForm => ({
@@ -44,6 +49,7 @@ const INITIAL_FORM = (): NewRunForm => ({
   branchStrategy: 'push-new-branch',
   branchName: generateRunId(),
   startMode: 'dry-run',
+  enableSynthesisCritic: false,
 });
 
 export interface NewRunFormApi {

@@ -264,6 +264,24 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.debateMaxRounds = obj.debateMaxRounds;
   }
 
+  // map-reduce synthesis-critic gate (PATTERN_DESIGN/map-reduce I1).
+  // When true, a peer session reviews the synthesizer's output and the
+  // synthesizer revises up to MAX_SYNTHESIS_CRITIC_REVISIONS times. The
+  // gate code lives in lib/server/map-reduce.ts; the validator gate just
+  // enforces the type + pattern scope.
+  if (obj.enableSynthesisCritic !== undefined) {
+    if (typeof obj.enableSynthesisCritic !== 'boolean') {
+      return 'enableSynthesisCritic must be boolean';
+    }
+    if (
+      obj.enableSynthesisCritic === true &&
+      req.pattern !== 'map-reduce'
+    ) {
+      return `enableSynthesisCritic only applies to pattern='map-reduce' (got '${req.pattern}')`;
+    }
+    req.enableSynthesisCritic = obj.enableSynthesisCritic;
+  }
+
   if (obj.enableCriticGate !== undefined) {
     if (typeof obj.enableCriticGate !== 'boolean') {
       return 'enableCriticGate must be boolean';

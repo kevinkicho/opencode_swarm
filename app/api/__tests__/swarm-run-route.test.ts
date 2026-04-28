@@ -49,6 +49,14 @@ vi.mock('@/lib/server/blackboard/model-prewarm', () => ({
   collectOllamaModels: vi.fn(() => []),
   prewarmModels: vi.fn(async () => undefined),
 }));
+// Mock the opencode HTTP client so the GET handler's reachability probe
+// always reports "up" — without this, every test would short-circuit
+// to status='unknown' rows. The slow-load fix (2026-04-27) added the
+// probe to /api/swarm/run; tests that assert real status values need
+// the probe to pass for the derive path to run.
+vi.mock('@/lib/opencode/client', () => ({
+  opencodeFetch: vi.fn(async () => new Response('[]', { status: 200 })),
+}));
 
 const { listRuns, deriveRunRowCached } = await import('@/lib/server/swarm-registry');
 const { GET, POST } = await import('@/app/api/swarm/run/route');
@@ -122,6 +130,26 @@ describe('GET /api/swarm/run', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error).toBe('run list failed');
+  });
+
+  it('short-circuits to unknown rows when opencode probe fails', async () => {
+    // The slow-load fix probes /project once and skips the per-session
+    // derive fan-out when opencode is down. Verifies derive is NOT
+    // called and rows come back with zeroed metrics.
+    const opencodeMod = await import('@/lib/opencode/client');
+    const opencodeFetchMock = vi.mocked(opencodeMod.opencodeFetch);
+    opencodeFetchMock.mockRejectedValueOnce(new Error('connection refused'));
+    mockListRuns.mockResolvedValue([makeMeta('alpha'), makeMeta('beta')]);
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.runs).toHaveLength(2);
+    expect(body.runs[0].status).toBe('unknown');
+    expect(body.runs[0].lastActivityTs).toBeNull();
+    expect(body.runs[0].costTotal).toBe(0);
+    // The derive fan-out must NOT have been invoked — that's the whole
+    // point of the short-circuit.
+    expect(mockDerive).not.toHaveBeenCalled();
   });
 
   it('inherits row order from listRuns (no server-side resorting)', async () => {

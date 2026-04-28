@@ -63,7 +63,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   // useState count from 13 to 3 (form + recipesOpen + copiedPattern;
   // launching comes from launchMutation.isPending).
   const { form, setField, bumpTeamCount, clearTeam } = useNewRunForm();
-  const { sourceValue, workspacePath, pattern, teamCounts, directive, unbounded, costCap, minutesCap, branchStrategy, branchName, startMode } = form;
+  const { sourceValue, workspacePath, pattern, teamCounts, directive, unbounded, costCap, minutesCap, branchStrategy, branchName, startMode, enableSynthesisCritic } = form;
   const setSourceValue = (v: string) => setField('sourceValue', v);
   const setWorkspacePath = (v: string) => setField('workspacePath', v);
   const setPattern = (v: SwarmPattern) => setField('pattern', v);
@@ -74,6 +74,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const setBranchStrategy = (v: BranchStrategy) => setField('branchStrategy', v);
   const setBranchName = (v: string) => setField('branchName', v);
   const setStartMode = (v: StartMode) => setField('startMode', v);
+  const setEnableSynthesisCritic = (v: boolean) => setField('enableSynthesisCritic', v);
   const [recipesOpen, setRecipesOpen] = useState(false);
   const [copiedPattern, setCopiedPattern] = useState<SwarmPattern | null>(null);
   const router = useRouter();
@@ -223,6 +224,9 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
       body.teamModels = teamModels;
     }
     if (!unbounded) body.bounds = { costCap, minutesCap };
+    if (pattern === 'map-reduce' && enableSynthesisCritic) {
+      body.enableSynthesisCritic = true;
+    }
     launchMutation.mutate(body);
   };
 
@@ -343,6 +347,30 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                 />
               ))}
             </div>
+            {/* Pattern-specific toggle: synthesis-critic gate for
+                map-reduce. Hidden under other patterns to keep the
+                pattern section uncluttered when the option doesn't
+                apply. The body of the gate (peer-reviewed revisions of
+                the synthesizer's output) lives in lib/server/map-
+                reduce.ts::runSynthesisCriticGate. */}
+            {pattern === 'map-reduce' && (
+              <label className="mt-2 flex items-start gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={enableSynthesisCritic}
+                  onChange={(e) => setEnableSynthesisCritic(e.target.checked)}
+                  className="mt-0.5 w-3 h-3 accent-molten cursor-pointer"
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-[11px] text-fog-200 group-hover:text-fog-100 transition">
+                    synthesis-critic gate
+                  </div>
+                  <div className="font-mono text-[10px] text-fog-700 leading-snug">
+                    after the reducer finishes, a peer session reviews the synthesis against the original drafts. up to 2 revisions before shipping as final.
+                  </div>
+                </div>
+              </label>
+            )}
           </Section>
 
           <Section

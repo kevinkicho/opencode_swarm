@@ -73,4 +73,30 @@ describe('Popover a11y', () => {
     expect(dialog.getAttribute('aria-labelledby')).toBe(btn.id);
     expect(btn.id).toBeTruthy();
   });
+
+  // Regression test for the timeline-card-click bug fixed 2026-04-27.
+  // cloneElement was spreading getReferenceProps() over the trigger
+  // child's existing onClick, silently overwriting it. Symptom: timeline
+  // event cards (`<Popover><button onClick={() => onFocus(msg.id)}>...`)
+  // opened the popover panel but never delivered the focus signal — the
+  // inspector drawer stayed empty. The fix merges both onClicks; this
+  // test guards that merge.
+  it('child onClick fires alongside the popover toggle', async () => {
+    const childClicks: string[] = [];
+    const Harness2 = () => (
+      <Popover content={() => <div>popover body</div>}>
+        <button type="button" onClick={() => childClicks.push('child')}>
+          trigger
+        </button>
+      </Popover>
+    );
+    render(<Harness2 />);
+    const user = userEvent.setup();
+    const btn = screen.getByRole('button', { name: 'trigger' });
+    await user.click(btn);
+    // Both must fire on a single click: the popover opened (aria-expanded
+    // flipped) AND the child's handler ran.
+    expect(btn.getAttribute('aria-expanded')).toBe('true');
+    expect(childClicks).toEqual(['child']);
+  });
 });
