@@ -1061,6 +1061,8 @@ function PageBody({
         onOpenNewRun={modals.openers.newRun}
         onOpenProvenance={swarmRunID ? modals.openers.provenance : null}
         onOpenCost={modals.openers.cost}
+        onOpenMetrics={modals.openers.metrics}
+        onOpenProjects={modals.openers.projects}
         swarmRunID={swarmRunID}
       />
       </footer>

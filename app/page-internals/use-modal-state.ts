@@ -28,6 +28,8 @@ export interface PageModalState {
     provenance: boolean;
     cost: boolean;
     diagnostics: boolean;
+    metrics: boolean;
+    projects: boolean;
   };
   // Imperative openers — call to mount the corresponding modal. Stable
   // identity (useCallback with no deps) so passing them down won't
@@ -43,6 +45,8 @@ export interface PageModalState {
     provenance: () => void;
     cost: () => void;
     diagnostics: () => void;
+    metrics: () => void;
+    projects: () => void;
   };
   // Imperative closers — call to dismiss. Stable identity.
   closers: {
@@ -55,6 +59,8 @@ export interface PageModalState {
     provenance: () => void;
     cost: () => void;
     diagnostics: () => void;
+    metrics: () => void;
+    projects: () => void;
   };
 }
 
@@ -68,6 +74,8 @@ export function useModalState(): PageModalState {
   const [provenance, setProvenance] = useState(false);
   const [cost, setCost] = useState(false);
   const [diagnostics, setDiagnostics] = useState(false);
+  const [metrics, setMetrics] = useState(false);
+  const [projects, setProjects] = useState(false);
 
   const flags = useMemo(
     () => ({
@@ -80,6 +88,8 @@ export function useModalState(): PageModalState {
       provenance,
       cost,
       diagnostics,
+      metrics,
+      projects,
     }),
     [
       palette,
@@ -91,6 +101,8 @@ export function useModalState(): PageModalState {
       provenance,
       cost,
       diagnostics,
+      metrics,
+      projects,
     ],
   );
 
@@ -109,6 +121,8 @@ export function useModalState(): PageModalState {
       provenance: () => setProvenance(true),
       cost: () => setCost(true),
       diagnostics: () => setDiagnostics(true),
+      metrics: () => setMetrics(true),
+      projects: () => setProjects(true),
     }),
     [],
   );
@@ -124,6 +138,8 @@ export function useModalState(): PageModalState {
       provenance: () => setProvenance(false),
       cost: () => setCost(false),
       diagnostics: () => setDiagnostics(false),
+      metrics: () => setMetrics(false),
+      projects: () => setProjects(false),
     }),
     [],
   );

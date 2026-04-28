@@ -20,19 +20,19 @@ function makeModals(): PageModalState {
     flags: {
       palette: false, routing: false, history: false, spawn: false,
       glossary: false, newRun: false, provenance: false, cost: false,
-      diagnostics: false,
+      diagnostics: false, metrics: false, projects: false,
     },
     openers: {
       palette: vi.fn(), togglePalette: vi.fn(), routing: vi.fn(),
       history: vi.fn(), spawn: vi.fn(), glossary: vi.fn(),
       newRun: vi.fn(), provenance: vi.fn(), cost: vi.fn(),
-      diagnostics: vi.fn(),
+      diagnostics: vi.fn(), metrics: vi.fn(), projects: vi.fn(),
     },
     closers: {
       palette: vi.fn(), routing: vi.fn(), history: vi.fn(),
       spawn: vi.fn(), glossary: vi.fn(), newRun: vi.fn(),
       provenance: vi.fn(), cost: vi.fn(),
-      diagnostics: vi.fn(),
+      diagnostics: vi.fn(), metrics: vi.fn(), projects: vi.fn(),
     },
   };
 }

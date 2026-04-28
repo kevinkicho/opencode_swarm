@@ -37,12 +37,17 @@ export function ProjectsMatrix({
   error,
   onRefresh,
   refreshing,
+  embedded = false,
 }: {
   rows: SwarmRunListRow[];
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
   refreshing: boolean;
+  // When true, drop the page-level chrome (back-link, big title)
+  // and constrain to a modal-friendly height. Modal supplies its
+  // own title + close.
+  embedded?: boolean;
 }) {
   const [windowDays, setWindowDays] = useState<number>(DEFAULT_WINDOW_DAYS);
 
@@ -68,49 +73,70 @@ export function ProjectsMatrix({
 
   const matrixWidth = REPO_COL_WIDTH + days.length * DAY_WIDTH;
 
+  // Window picker + refresh — small enough to render in both modes;
+  // the back-link / page title fall away when embedded.
+  const controls = (
+    <>
+      <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
+        <span className="text-fog-600 mr-1">window</span>
+        {[7, 30, 90].map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => setWindowDays(d)}
+            className={clsx(
+              'h-5 px-1.5 rounded-sm transition-colors cursor-pointer tabular-nums',
+              windowDays === d
+                ? 'bg-molten/15 text-molten'
+                : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
+            )}
+          >
+            {d}d
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onRefresh}
+        disabled={refreshing}
+        className="h-5 px-2 rounded-sm font-mono text-micro uppercase tracking-widest2 text-fog-500 hover:text-fog-200 hover:bg-ink-800/60 disabled:opacity-50 cursor-pointer"
+      >
+        {refreshing ? 'refreshing…' : 'refresh'}
+      </button>
+    </>
+  );
+
   return (
-    <div className="flex flex-col min-h-screen bg-ink-900 text-fog-200">
-      {/* Chrome — mirrors the /metrics page header pattern */}
-      <header className="h-10 hairline-b px-4 flex items-center gap-3 bg-ink-850/80 backdrop-blur sticky top-0 z-10">
-        <Link
-          href="/"
-          className="font-mono text-micro uppercase tracking-widest2 text-fog-600 hover:text-fog-200 transition"
-        >
-          ← opencode
-        </Link>
-        <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700">/</span>
-        <span className="font-mono text-[12px] text-fog-200">projects</span>
-        <span className="font-mono text-micro text-fog-700 tabular-nums">
-          {visibleProjects.length} repos · {totalRuns} runs · last {windowDays}d
-        </span>
-        <div className="flex-1" />
-        <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
-          <span className="text-fog-600 mr-1">window</span>
-          {[7, 30, 90].map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => setWindowDays(d)}
-              className={clsx(
-                'h-5 px-1.5 rounded-sm transition-colors cursor-pointer tabular-nums',
-                windowDays === d
-                  ? 'bg-molten/15 text-molten'
-                  : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
-              )}
-            >
-              {d}d
-            </button>
-          ))}
+    <div className={clsx(
+      'flex flex-col text-fog-200',
+      embedded ? 'min-h-0 max-h-[80vh] bg-transparent' : 'min-h-screen bg-ink-900',
+    )}>
+      {!embedded && (
+        <header className="h-10 hairline-b px-4 flex items-center gap-3 bg-ink-850/80 backdrop-blur sticky top-0 z-10">
+          <Link
+            href="/"
+            className="font-mono text-micro uppercase tracking-widest2 text-fog-600 hover:text-fog-200 transition"
+          >
+            ← opencode
+          </Link>
+          <span className="font-mono text-micro uppercase tracking-widest2 text-fog-700">/</span>
+          <span className="font-mono text-[12px] text-fog-200">projects</span>
+          <span className="font-mono text-micro text-fog-700 tabular-nums">
+            {visibleProjects.length} repos · {totalRuns} runs · last {windowDays}d
+          </span>
+          <div className="flex-1" />
+          {controls}
+        </header>
+      )}
+      {embedded && (
+        <div className="hairline-b px-4 h-7 flex items-center gap-3 bg-ink-900/40 shrink-0">
+          <span className="font-mono text-micro text-fog-700 tabular-nums">
+            {visibleProjects.length} repos · {totalRuns} runs · last {windowDays}d
+          </span>
+          <div className="flex-1" />
+          {controls}
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={refreshing}
-          className="h-5 px-2 rounded-sm font-mono text-micro uppercase tracking-widest2 text-fog-500 hover:text-fog-200 hover:bg-ink-800/60 disabled:opacity-50 cursor-pointer"
-        >
-          {refreshing ? 'refreshing…' : 'refresh'}
-        </button>
-      </header>
+      )}
 
       {error && (
         <div className="px-4 py-2 font-mono text-[11px] text-rust hairline-b bg-rust/5">

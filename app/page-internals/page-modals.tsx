@@ -78,6 +78,18 @@ const DiagnosticsModal = dynamic(
   ),
   { ssr: false },
 );
+const MetricsModal = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/metrics-modal').then((m) => m.MetricsModal),
+  ),
+  { ssr: false },
+);
+const ProjectsModal = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/projects-modal').then((m) => m.ProjectsModal),
+  ),
+  { ssr: false },
+);
 
 export interface PageModalsProps {
   state: PageModalState;
@@ -172,6 +184,12 @@ export function PageModals({
           onClose={closers.diagnostics}
           directory={liveDirectory ?? runWorkspace}
         />
+      </ErrorBoundary>
+      <ErrorBoundary scope="metrics">
+        <MetricsModal open={flags.metrics} onClose={closers.metrics} />
+      </ErrorBoundary>
+      <ErrorBoundary scope="projects">
+        <ProjectsModal open={flags.projects} onClose={closers.projects} />
       </ErrorBoundary>
     </>
   );

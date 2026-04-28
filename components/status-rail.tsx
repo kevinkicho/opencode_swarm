@@ -11,7 +11,6 @@
 // re-used by future pages (e.g. /metrics, /projects) that want the
 // same chrome without the swarm-run wiring.
 
-import Link from 'next/link';
 import { useOpencodeHealth } from '@/lib/opencode/live';
 import { SwarmRunsPicker } from '@/components/swarm-runs-picker';
 import { Tooltip } from '@/components/ui/tooltip';
@@ -26,6 +25,8 @@ export function StatusRail({
   onOpenNewRun,
   onOpenProvenance,
   onOpenCost,
+  onOpenMetrics,
+  onOpenProjects,
   swarmRunID,
 }: {
   onOpenPalette: () => void;
@@ -36,6 +37,8 @@ export function StatusRail({
   onOpenNewRun: () => void;
   onOpenProvenance: (() => void) | null;
   onOpenCost: () => void;
+  onOpenMetrics: () => void;
+  onOpenProjects: () => void;
   swarmRunID: string | null;
 }) {
   const health = useOpencodeHealth(5000);
@@ -131,13 +134,13 @@ export function StatusRail({
             </div>
           }
         >
-          <Link
-            href="/metrics"
+          <button
+            onClick={onOpenMetrics}
             className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
             aria-label="open cross-preset metrics"
           >
             <span className="font-mono text-[10px] uppercase tracking-widest2">metrics</span>
-          </Link>
+          </button>
         </Tooltip>
         <Tooltip
           side="top"
@@ -151,13 +154,13 @@ export function StatusRail({
             </div>
           }
         >
-          <Link
-            href="/projects"
+          <button
+            onClick={onOpenProjects}
             className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
             aria-label="open project-time matrix"
           >
             <span className="font-mono text-[10px] uppercase tracking-widest2">projects</span>
-          </Link>
+          </button>
         </Tooltip>
       </div>
 

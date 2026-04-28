@@ -139,12 +139,18 @@ export function CrossPresetMetrics({
   error,
   onRefresh,
   refreshing,
+  embedded = false,
 }: {
   rows: SwarmRunListRow[];
   loading: boolean;
   error: string | null;
   onRefresh: () => void;
   refreshing: boolean;
+  // When true, drop the page-level chrome (back-link, top header,
+  // outer min-h-screen wrapper). Use this when rendering inside a
+  // Modal — the Modal already provides title + close, and a fixed
+  // height comes from the modal's overflow-aware shell.
+  embedded?: boolean;
 }) {
   const stats = useMemo(() => computePatternStats(rows), [rows]);
 
@@ -201,35 +207,64 @@ export function CrossPresetMetrics({
     [stats],
   );
 
-  return (
-    <div className="min-h-screen bg-ink-950 text-fog-200 flex flex-col">
-      <header className="h-10 hairline-b px-4 flex items-center gap-3 bg-ink-900/80 backdrop-blur sticky top-0 z-10 shrink-0">
-        <Link
-          href="/"
-          className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600 hover:text-fog-200 transition"
-        >
-          ← run view
-        </Link>
-        <span className="w-px h-3 bg-ink-700" />
-        <span className="font-mono text-micro uppercase tracking-widest2 text-fog-300">
-          metrics · cross-preset
-        </span>
-        {windowLabel && (
-          <span className="font-mono text-[10px] text-fog-600 tabular-nums">
-            {windowLabel}
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={refreshing}
-          className="ml-auto h-6 px-2 rounded hairline bg-ink-800 hover:bg-ink-700 text-fog-400 hover:text-fog-200 disabled:opacity-50 disabled:cursor-not-allowed font-mono text-[10px] uppercase tracking-widest2 transition"
-        >
-          {refreshing ? 'refreshing…' : 'refresh'}
-        </button>
-      </header>
+  // Embedded mode: skip the full-page wrapper + back-link header
+  // (Modal supplies its own). Top bar shrinks to just window-label
+  // + refresh; main content is unchanged.
+  const outerCls = embedded
+    ? 'flex flex-col min-h-0 max-h-[80vh]'
+    : 'min-h-screen bg-ink-950 text-fog-200 flex flex-col';
+  const mainCls = embedded
+    ? 'flex-1 overflow-y-auto p-4 min-h-0'
+    : 'flex-1 overflow-y-auto p-6';
 
-      <main className="flex-1 overflow-y-auto p-6">
+  return (
+    <div className={outerCls}>
+      {!embedded && (
+        <header className="h-10 hairline-b px-4 flex items-center gap-3 bg-ink-900/80 backdrop-blur sticky top-0 z-10 shrink-0">
+          <Link
+            href="/"
+            className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600 hover:text-fog-200 transition"
+          >
+            ← run view
+          </Link>
+          <span className="w-px h-3 bg-ink-700" />
+          <span className="font-mono text-micro uppercase tracking-widest2 text-fog-300">
+            metrics · cross-preset
+          </span>
+          {windowLabel && (
+            <span className="font-mono text-[10px] text-fog-600 tabular-nums">
+              {windowLabel}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="ml-auto h-6 px-2 rounded hairline bg-ink-800 hover:bg-ink-700 text-fog-400 hover:text-fog-200 disabled:opacity-50 disabled:cursor-not-allowed font-mono text-[10px] uppercase tracking-widest2 transition"
+          >
+            {refreshing ? 'refreshing…' : 'refresh'}
+          </button>
+        </header>
+      )}
+      {embedded && (
+        <div className="hairline-b px-4 h-7 flex items-center gap-3 bg-ink-900/40 shrink-0">
+          {windowLabel && (
+            <span className="font-mono text-[10px] text-fog-600 tabular-nums">
+              {windowLabel}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="ml-auto h-5 px-2 rounded hairline bg-ink-800 hover:bg-ink-700 text-fog-400 hover:text-fog-200 disabled:opacity-50 disabled:cursor-not-allowed font-mono text-[10px] uppercase tracking-widest2 transition"
+          >
+            {refreshing ? 'refreshing…' : 'refresh'}
+          </button>
+        </div>
+      )}
+
+      <main className={mainCls}>
         {error && (
           <div className="mb-4 border border-molten/50 bg-molten/10 text-molten p-3 font-mono text-[11px]">
             error · {error}
