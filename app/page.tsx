@@ -294,12 +294,30 @@ function PageInner() {
     : swarmRunID
       ? swarmRunPrimarySessionID
       : directSessionId;
-  const { data: liveData } = useLiveSession(sessionId);
+  const { data: liveData, loading: liveLoading } = useLiveSession(sessionId);
   // Multi-session fan-out for council / future N-member patterns. The hook
   // collapses to a one-slot no-op when meta is null or carries a single
   // sessionID, so we can call it unconditionally and let the view decide
   // which channel to consume.
   const liveSwarmRun = useLiveSwarmRunMessages(swarmRunMeta_);
+  // True while the messages query is in flight AND we have no data yet.
+  // Surfaced through PageBody so each viewport (chat / cards / board /
+  // contracts) can show a "loading…" empty state instead of "no messages
+  // yet" when a user clicks a tab during the initial cold load. Without
+  // this, a 5-8s data fetch reads as a broken view ("700 in the header
+  // but no chats" was the user-reported version).
+  //
+  // Three loading windows compose:
+  //   1. snapshot in flight — swarmRunSnap.snapshot is null and not
+  //      notFound. During this window sessionId is also null because it
+  //      derives from swarmRunMeta.sessionIDs[0], so useLiveSession's
+  //      own `loading` reads false. Without this term the early-click
+  //      bug returns: header reads "0 messages" while the snapshot
+  //      hasn't even landed yet.
+  //   2. liveLoading — sessionId set, messages query in flight.
+  //   3. liveSwarmRun.loading — multi-session fan-out still seeding.
+  const snapshotLoading = Boolean(swarmRunID) && !swarmRunSnap.snapshot && !swarmRunNotFound;
+  const messagesLoading = Boolean(swarmRunID) && (snapshotLoading || liveLoading || liveSwarmRun.loading);
   const isMultiSession = (swarmRunMeta_?.sessionIDs.length ?? 0) > 1;
   const liveDirectory = liveData?.session?.directory ?? null;
   const permissions = useLivePermissions(sessionId, liveDirectory);
@@ -370,6 +388,7 @@ function PageInner() {
         agents={agents}
         agentOrder={agentOrder}
         messages={messages}
+        messagesLoading={messagesLoading}
         runMeta={runMeta}
         providerSummary={providerSummary}
         runPlan={runPlan}
@@ -396,6 +415,7 @@ function PageBody({
   agents: agentsIn,
   agentOrder,
   messages,
+  messagesLoading,
   runMeta,
   providerSummary,
   runPlan,
@@ -417,6 +437,10 @@ function PageBody({
   agents: Agent[];
   agentOrder: string[];
   messages: AgentMessage[];
+  // True while the messages query is in flight AND we have no data
+  // yet. Lets each viewport view (chat/cards/board/contracts) show a
+  // "loading" empty state instead of a misleading "empty" one.
+  messagesLoading: boolean;
   runMeta: RunMeta;
   providerSummary: ProviderSummary[];
   runPlan: TodoItem[];
@@ -726,16 +750,18 @@ function PageBody({
               ))}
             </div>
             <div className="flex-1" />
-            <span className="font-mono text-micro tabular-nums text-fog-700">
-              {runView === 'timeline'
-                ? `${messages.length} events`
-                : runView === 'chat'
-                  ? `${messages.length} messages`
-                  : runView === 'cards'
-                    ? `${turnCards.length} turns`
-                    : runView === 'board' || runView === 'contracts'
-                      ? `${liveBoard.items?.length ?? 0} items`
-                      : `${liveSlots.length} sessions`}
+            <span className={clsx('font-mono text-micro tabular-nums', messagesLoading ? 'text-fog-600 animate-pulse' : 'text-fog-700')}>
+              {messagesLoading && messages.length === 0
+                ? 'loading…'
+                : runView === 'timeline'
+                  ? `${messages.length} events`
+                  : runView === 'chat'
+                    ? `${messages.length} messages`
+                    : runView === 'cards'
+                      ? `${turnCards.length} turns`
+                      : runView === 'board' || runView === 'contracts'
+                        ? `${liveBoard.items?.length ?? 0} items`
+                        : `${liveSlots.length} sessions`}
             </span>
           </div>
           {(() => {
@@ -785,6 +811,7 @@ function PageBody({
                       diffStatsByPath={diffStatsByPath}
                       focusedId={focusedMsgId}
                       onFocus={focusMessage}
+                      loading={messagesLoading}
                     />
                   </ProfileBoundary>
                 );
@@ -796,13 +823,14 @@ function PageBody({
                       agents={agents}
                       focusedId={focusedMsgId}
                       onFocus={focusMessage}
+                      loading={messagesLoading}
                     />
                   </ProfileBoundary>
                 );
               case 'contracts':
                 return (
                   <ProfileBoundary id="contracts-rail">
-                    <ContractsRail live={liveBoard} embedded />
+                    <ContractsRail live={liveBoard} embedded loading={messagesLoading} />
                   </ProfileBoundary>
                 );
               case 'iterations':

@@ -48,11 +48,18 @@ export function ChatView({
   agents,
   focusedId,
   onFocus,
+  loading = false,
 }: {
   messages: AgentMessage[];
   agents: Agent[];
   focusedId: string | null;
   onFocus: (id: string) => void;
+  // True while the page is fetching the first batch of messages. Lets
+  // the empty-state distinguish "still loading" from "actually empty"
+  // — without this, a user clicking chat right after refresh sees
+  // "no messages yet" for 5-8 seconds while data lands. Pass false
+  // (default) when the call site doesn't have loading info.
+  loading?: boolean;
 }) {
   const agentMap = useMemo(() => {
     const m = new Map<string, Agent>();
@@ -86,8 +93,8 @@ export function ChatView({
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center px-4">
-        <div className="font-mono text-[11px] uppercase tracking-widest2 text-fog-700">
-          no messages yet
+        <div className="font-mono text-[11px] uppercase tracking-widest2 text-fog-700 animate-pulse">
+          {loading ? 'loading messages…' : 'no messages yet'}
         </div>
       </div>
     );

@@ -91,6 +91,7 @@ export function TurnCardsView({
   diffStatsByPath,
   focusedId,
   onFocus,
+  loading = false,
 }: {
   cards: TurnCard[];
   agents: Agent[];
@@ -102,6 +103,10 @@ export function TurnCardsView({
   diffStatsByPath: DiffStatsByPath;
   focusedId: string | null;
   onFocus: (id: string) => void;
+  // True while messages are still being fetched. Lets the per-column
+  // empty state show "loading…" instead of "idle" — the latter is
+  // misleading on a cold load.
+  loading?: boolean;
 }) {
   const agentById = useMemo(
     () => new Map(agents.map((a) => [a.id, a])),
@@ -162,8 +167,11 @@ export function TurnCardsView({
     >
       {!hasAny ? (
         <div className="h-full grid place-items-center">
-          <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700">
-            no turns yet
+          <div className={clsx(
+            'font-mono text-micro uppercase tracking-widest2 text-fog-700',
+            loading && 'animate-pulse',
+          )}>
+            {loading ? 'loading turns…' : 'no turns yet'}
           </div>
         </div>
       ) : (

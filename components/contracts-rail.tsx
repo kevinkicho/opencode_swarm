@@ -163,12 +163,18 @@ function deriveCounts(items: BoardItem[]): HeaderCounts {
 export function ContractsRail({
   live,
   embedded = false,
+  loading = false,
 }: {
   live: LiveBoard;
   embedded?: boolean;
+  // True while the board snapshot is still in flight. Distinguishes
+  // "board hasn't started yet" from "still loading the board" — the
+  // user-visible difference between these on a cold load is huge.
+  loading?: boolean;
 }) {
   const items = live.items ?? [];
   const counts = useMemo(() => deriveCounts(items), [items]);
+  const boardLoading = loading || (live.items === null && !live.error);
 
   // Sort items per spec. Don't mutate the source array.
   const sorted = useMemo(() => {
@@ -196,15 +202,21 @@ export function ContractsRail({
     return copy;
   }, [items]);
 
-  // Empty-state copy depends on whether ANY criteria exist. Two cases:
-  // (a) board has items but no criteria → "no contracts yet — planner
+  // Empty-state copy depends on whether ANY criteria exist. Three cases:
+  // (a) loading — show pulse so cold-load doesn't read as broken
+  // (b) board has items but no criteria → "no contracts yet — planner
   //     hasn't seeded criteria"
-  // (b) board is entirely empty → "board hasn't started yet"
+  // (c) board is entirely empty → "board hasn't started yet"
   if (items.length === 0) {
     return wrap(
       embedded,
-      <div className="px-3 py-4 font-mono text-micro uppercase tracking-widest2 text-fog-700">
-        board hasn't started yet
+      <div
+        className={clsx(
+          'px-3 py-4 font-mono text-micro uppercase tracking-widest2 text-fog-700',
+          boardLoading && 'animate-pulse',
+        )}
+      >
+        {boardLoading ? 'loading contracts…' : "board hasn't started yet"}
       </div>,
       counts,
     );
