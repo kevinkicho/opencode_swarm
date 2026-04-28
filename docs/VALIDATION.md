@@ -319,8 +319,8 @@ coordinator reads `meta.teamModels[sessionIdx]` and passes it as
 
 **Known limitation (follow-up):** non-ticker pattern orchestrators
 (council.ts, map-reduce.ts, critic-loop.ts, debate-judge.ts,
-orchestrator-worker.ts, role-differentiated.ts) do NOT yet read
-`meta.teamModels` on their follow-up rounds. A
+orchestrator-worker.ts) do NOT yet read `meta.teamModels` on their
+follow-up rounds. A
 council run with an ollama team picks ollama for Round 1 (via the
 route's directive broadcast) but Rounds 2 / 3 fall back to whatever
 opencode selects per `postSessionMessageServer` without an explicit

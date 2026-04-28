@@ -47,10 +47,13 @@ export const runtime = 'nodejs';
 // auto-restart to a pattern without a blackboard-style loop would silently
 // no-op — better to be explicit so a future `foo-execute` pattern adder knows
 // to add itself here. See DESIGN.md §1.5.1.
+//
+// 2026-04-28 cleanup: dropped `role-differentiated` (cut from the project
+// as of 1b7a48d — subsumed by orchestrator-worker; the planner ratchet
+// path the role-diff variant added was dead code).
 const TICKER_PATTERNS: ReadonlySet<string> = new Set([
  'blackboard',
  'orchestrator-worker',
- 'role-differentiated',
 ]);
 
 export async function POST(
