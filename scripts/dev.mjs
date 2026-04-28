@@ -1,11 +1,15 @@
-// Sticky random port: pick once, reuse forever.
-// First run rolls a random port in the ephemeral range and writes it to
-// `.dev-port`; subsequent runs read that file. This stays off well-known
-// ports (so nothing else on the box collides by convention) while keeping
-// the URL identical across restarts, so a bookmarked tab keeps working.
-// Delete `.dev-port` to reroll. Override with DEV_PORT=xxxx for one-shots.
+// Permanent dev port: 8044 (frontend + API routes — Next.js is one server).
+// Opencode backend stays at 4097 (per .env / OPENCODE_URL); only the
+// Next.js dev port is managed here.
+//
+// 2026-04-28: switched from rolled-once-then-pinned ephemeral ports to
+// a fixed 8044 because the rolling URL was making it hard to keep one
+// bookmark and one mental model across sessions. If 8044 is taken on
+// startup, the script kills whatever's holding it and claims the port
+// — same intent as before (always reach the same URL) but with a
+// memorable address. Override one-shot via DEV_PORT=xxxx.
 import net from 'node:net';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
@@ -13,14 +17,15 @@ const args = process.argv.slice(2);
 const SKIP_TSC = args.includes('--skip-tsc') || process.env.DEV_SKIP_TSC === '1';
 // Opt into turbopack's beta dev compiler. Measured 2026-04-27: ~13%
 // faster cold compile on this codebase (25s vs 29s for / on a fresh
-// .next). Modest because we have 2415 modules + WSL2 filesystem caps
-// the gain; some setups see 2×+. Off by default until turbopack is
-// GA stable, since it's still flagged beta in Next.js 14.2.
+// .next). Off by default until turbopack is GA stable.
 const TURBO = args.includes('--turbo') || process.env.DEV_TURBO === '1';
 
+// Permanent port. 8044 is outside well-known ranges and outside our
+// previous ephemeral roll range (49152-65535) so old bookmarks can't
+// silently land on a stale random port. .dev-port is still written
+// for back-compat with scripts/_verify-*.mjs that read it.
+const DEFAULT_PORT = 8044;
 const PORT_FILE = '.dev-port';
-const MIN = 49152;
-const MAX = 65535;
 
 const isFree = (port) =>
   new Promise((resolve) => {
@@ -30,25 +35,56 @@ const isFree = (port) =>
     srv.listen(port, '127.0.0.1');
   });
 
-async function rollPort() {
-  for (let i = 0; i < 20; i++) {
-    const candidate = Math.floor(Math.random() * (MAX - MIN + 1)) + MIN;
-    if (await isFree(candidate)) return candidate;
+// Kill whatever is holding `port`. Uses lsof to find PIDs (works on
+// Linux + WSL); falls back silently if lsof is missing. Sends SIGKILL
+// because we want the port unconditionally — graceful shutdown is the
+// holder's problem, not ours.
+function killHolders(port) {
+  const r = spawnSync('lsof', ['-tiTCP:' + port, '-sTCP:LISTEN'], {
+    encoding: 'utf8',
+  });
+  if (r.status !== 0 || !r.stdout) return [];
+  const pids = r.stdout
+    .split(/\s+/)
+    .map((s) => Number(s))
+    .filter((n) => Number.isInteger(n) && n > 0);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGTERM');
+    } catch {
+      /* race: died already */
+    }
   }
-  throw new Error('could not find a free port after 20 tries');
+  // 500ms grace then SIGKILL holdouts.
+  spawnSync('sleep', ['0.5']);
+  for (const pid of pids) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* gone */
+    }
+  }
+  return pids;
 }
 
 async function resolvePort() {
-  if (process.env.DEV_PORT) return Number(process.env.DEV_PORT);
-  if (existsSync(PORT_FILE)) {
-    const saved = Number(readFileSync(PORT_FILE, 'utf8').trim());
-    if (Number.isInteger(saved) && saved >= MIN && saved <= MAX && (await isFree(saved))) {
-      return saved;
-    }
+  const requested = process.env.DEV_PORT
+    ? Number(process.env.DEV_PORT)
+    : DEFAULT_PORT;
+  if (await isFree(requested)) return requested;
+  // Port held by another process — tell the user what we're killing,
+  // do it, wait for the port to free up, then claim. If it's still
+  // busy after 2s give up.
+  console.log(`[dev] port ${requested} is busy — killing holders`);
+  const killed = killHolders(requested);
+  if (killed.length) console.log(`[dev]   killed pids: ${killed.join(', ')}`);
+  for (let i = 0; i < 10; i += 1) {
+    spawnSync('sleep', ['0.2']);
+    if (await isFree(requested)) return requested;
   }
-  const picked = await rollPort();
-  writeFileSync(PORT_FILE, String(picked));
-  return picked;
+  throw new Error(
+    `[dev] port ${requested} still busy after kill — see lsof -i:${requested}`,
+  );
 }
 
 // Pre-flight: better-sqlite3's native binding is platform-specific. If the
@@ -56,8 +92,7 @@ async function resolvePort() {
 // one (e.g. installed on Windows, now starting dev from WSL), the require
 // throws ERR_DLOPEN_FAILED *inside* the blackboard DB path — which is only
 // hit once a swarm run spawns, so the failure surfaces minutes later as a
-// silently-dead planner sweep. Check up front and tell the user exactly
-// what to run. Cost: one require on startup.
+// silently-dead planner sweep. Check up front.
 function preflightNativeModules() {
   const require = createRequire(import.meta.url);
   try {
@@ -85,17 +120,8 @@ function preflightNativeModules() {
 preflightNativeModules();
 
 // 2026-04-26 #102 — typecheck gate. Catches parallel-session breakages
-// (a half-finished refactor in another file leaving a JSX-or-await
-// syntax error) BEFORE we bind the port. Without this, the dev server
-// starts cleanly but every snapshot endpoint returns HTTP 500 from a
-// transitively-imported broken module. Mid-stress-test discovery is
-// expensive — see docs/STRESS_TESTS/2026-04-26-max-team-size-8.md
-// "Mid-run incidents" for why this matters.
-//
-// Cost: ~10-15s on cold cache, ~3-5s when tsc's incremental cache is
-// warm. Skip via `npm run dev -- --skip-tsc` or DEV_SKIP_TSC=1 when
-// you genuinely need to start dev with broken code (e.g. you're
-// about to fix it and want HMR to land the fix).
+// BEFORE we bind the port. Skip via `npm run dev -- --skip-tsc` or
+// DEV_SKIP_TSC=1 when you genuinely need to start dev with broken code.
 function preflightTypecheck() {
   if (SKIP_TSC) {
     console.log('[dev] tsc gate skipped (--skip-tsc / DEV_SKIP_TSC=1)');
@@ -114,10 +140,7 @@ function preflightTypecheck() {
     return;
   }
   console.error(`\n[dev] tsc gate FAILED in ${elapsed}s — refusing to start.`);
-  console.error(
-    '      Fix the errors below, or pass --skip-tsc to start anyway:\n',
-  );
-  // tsc writes errors to stdout, not stderr. Pipe both for safety.
+  console.error('      Fix the errors below, or pass --skip-tsc to start anyway:\n');
   if (result.stdout) console.error(result.stdout);
   if (result.stderr) console.error(result.stderr);
   process.exit(1);
@@ -125,32 +148,19 @@ function preflightTypecheck() {
 preflightTypecheck();
 
 const port = await resolvePort();
-console.log(`\n[dev] using port ${port} (from ${PORT_FILE} — delete to reroll)\n`);
+writeFileSync(PORT_FILE, String(port));
+console.log(`\n[dev] using port ${port} (permanent — DEV_PORT=xxxx for one-shots)\n`);
+
 // WSL mounts (/mnt/c/...) don't deliver inotify events reliably, so
 // Next's default native file-watcher misses edits made by WSL-side
-// tools. WATCHPACK_POLLING + CHOKIDAR_USEPOLLING force polling, which
-// adds a small CPU cost but guarantees HMR picks up every change.
-// Interval tuned at 300ms — fast enough to feel like HMR, slow enough
-// not to thrash the CPU on a repo with thousands of node_modules files.
+// tools. WATCHPACK_POLLING + CHOKIDAR_USEPOLLING force polling.
 const devEnv = {
   ...process.env,
   WATCHPACK_POLLING: 'true',
   CHOKIDAR_USEPOLLING: 'true',
   CHOKIDAR_INTERVAL: '300',
 };
-// detached:true puts the child in a NEW process group, which lets us
-// kill the entire group via `process.kill(-pid, signal)` — that
-// reaches the shell child AND the next-server grandchild AND any
-// further descendants. Without this (and especially with shell:true),
-// killing only the shell can leave next-server orphaned, holding the
-// dev port and blocking the next launch with EADDRINUSE. Observed
-// repeatedly during 2026-04-24 multi-pattern testing where every
-// teardown left a stale next-server (`pid 129224`, `pid 136965`) on
-// the previously-used port until pkill cleaned up.
-//
-// stdio:'inherit' is preserved so the child's output still streams
-// to our terminal — detached normally implies no parent stdio
-// linkage, but explicit inherit keeps the dev server logs visible.
+
 const nextArgs = ['dev', '-p', String(port)];
 if (TURBO) nextArgs.push('--turbo');
 const child = spawn('next', nextArgs, {
@@ -160,45 +170,25 @@ const child = spawn('next', nextArgs, {
   detached: true,
 });
 
-// Group-kill via process.kill(-pid, signal). The negative pid is the
-// POSIX convention for "send to every process in this group" — only
-// works because we set detached:true above. Wrapped in try/catch
-// because the group may already be empty by the time we get here
-// (e.g. natural exit before the signal arrived).
 function killGroup(signal) {
   if (!child.pid) return;
   try {
     process.kill(-child.pid, signal);
   } catch {
-    // Group already dead, or no permission — try the direct child kill
-    // as a fallback so we still cover the normal-mode shutdown path.
     try {
       if (!child.killed) child.kill(signal);
     } catch {
-      // Both paths failed — nothing more we can do.
+      /* both paths failed — nothing more we can do */
     }
   }
 }
 
-// Forced-exit safety net for orphan diagnoses. Without this, if
-// killGroup throws AND the child is already dead AND child.on('exit')
-// never fires (because it already fired before we got here, or the
-// child went into a zombie state), dev.mjs hangs forever holding the
-// `node scripts/dev.mjs` pid in our task tracker. Observed multiple
-// times during 2026-04-24 + 2026-04-25 sessions: next-server died
-// but the wrapper persisted indefinitely.
-//
-// 5s grace gives killGroup time to land + child to exit naturally;
-// after that we force-exit so the wrapper task always cleans up.
 let shutdownInFlight = false;
 function shutdown(signal) {
-  if (shutdownInFlight) return; // double-signal — already in progress
+  if (shutdownInFlight) return;
   shutdownInFlight = true;
   killGroup(signal);
   setTimeout(() => {
-    // child.on('exit') will have called process.exit by now if the
-    // group-kill worked. If we're still here, the child is wedged —
-    // force-exit so the wrapper-task tracker frees up.
     console.log(`\n[dev] shutdown timeout — forcing exit after ${signal}`);
     process.exit(128 + (signalNumber(signal) ?? 15));
   }, 5000).unref();
@@ -207,15 +197,6 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('SIGHUP', () => shutdown('SIGHUP'));
 
-// Stdin-EOF watchdog — gated on TTY. We previously listened for
-// 'end' unconditionally to catch the parent-dies-without-forwarding-
-// a-signal case, but in non-interactive contexts (npm script via
-// pipe, background task via run_in_background, CI runners) stdin is
-// already EOF on startup so the listener fired immediately and tore
-// down a healthy server. Limiting the watch to TTY contexts
-// (interactive terminals) keeps the orphan-detection where it
-// matters (Ctrl+D / hangup cases) without breaking non-interactive
-// invocations.
 if (
   process.stdin &&
   typeof process.stdin.on === 'function' &&
@@ -232,13 +213,10 @@ if (
   try {
     process.stdin.resume();
   } catch {
-    // Some terminals don't allow resume — non-fatal.
+    /* some terminals don't allow resume */
   }
 }
 
-// Exit with the child's exit code so monitors (npm scripts, systemd,
-// etc.) see the real outcome. If the child is killed by a signal we
-// relay that as a non-zero exit.
 child.on('exit', (code, signal) => {
   if (signal) {
     console.log(`\n[dev] child exited via ${signal}`);
@@ -248,7 +226,6 @@ child.on('exit', (code, signal) => {
 });
 
 function signalNumber(signal) {
-  // Minimal POSIX lookup — enough for the signals we forward.
   switch (signal) {
     case 'SIGINT':
       return 2;

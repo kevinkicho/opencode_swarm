@@ -66,9 +66,15 @@ try {
   // 1. Blackboard run loads timeline + lanes (LaneHeaderCell extraction)
   console.log(`\nblackboard run: ${RUNS.blackboard}`);
   await page.goto(`${BASE}/?swarmRun=${RUNS.blackboard}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-  // Wait for the data to populate, not just DOM-ready.
+  // Wait for swarm data to hydrate — `session timeline` header lands
+  // before the lane data, so we wait on the lane buttons too.
   await page.waitForSelector('text=/session timeline/i', { timeout: 15_000 });
-  await page.waitForTimeout(3500);
+  await page.waitForFunction(
+    () => document.querySelectorAll('button[style*="width: 168"]').length >= 1,
+    null,
+    { timeout: 15_000 },
+  ).catch(() => {});
+  await page.waitForTimeout(1500);
 
   const timelineSection = await page.$('section:has-text("session timeline")');
   record('timeline section renders', !!timelineSection);
