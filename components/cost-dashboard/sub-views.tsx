@@ -154,10 +154,8 @@ export function WorkspaceBreakdown({
 
 export function TopExpensive({
   rows,
-  onNavigate,
 }: {
   rows: SwarmRunListRow[];
-  onNavigate: () => void;
 }) {
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -175,10 +173,17 @@ export function TopExpensive({
             return (
               <li key={row.meta.swarmRunID}>
                 <Link
+                  // Open in a new tab — peer of the runs-picker pattern
+                  // (2026-04-28). The cost dashboard is a browse surface;
+                  // staying-tab-open lets the user click multiple top-
+                  // expensive runs to compare without re-opening the
+                  // drawer per click. Same close-vs-navigate race
+                  // protection as the picker fix.
                   href={`/?swarmRun=${row.meta.swarmRunID}`}
-                  onClick={() => onNavigate()}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="px-4 py-2 flex items-center gap-2 hover:bg-ink-800/60 transition"
-                  title={row.meta.directive ?? row.meta.swarmRunID}
+                  title={(row.meta.directive ?? row.meta.swarmRunID) + ' (opens in new tab)'}
                 >
                   <span className="font-mono text-[10px] text-fog-700 tabular-nums w-4 text-right shrink-0">
                     #{i + 1}

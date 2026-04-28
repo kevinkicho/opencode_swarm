@@ -108,7 +108,7 @@ export function CostDashboard({
 
         <WorkspaceBreakdown rows={derived.byWorkspace} />
 
-        <TopExpensive rows={derived.topExpensive} onNavigate={onClose} />
+        <TopExpensive rows={derived.topExpensive} />
 
         {!loading && rows.length === 0 && !error && (
           <div className="px-4 py-6 text-[11px] text-fog-600 flex items-center gap-2">

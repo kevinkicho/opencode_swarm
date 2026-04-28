@@ -204,8 +204,12 @@ function RunRow({
         </span>
       )}
       <Link
+        // New tab — peer of the runs-picker pattern (2026-04-28).
         href={`/?swarmRun=${meta.swarmRunID}`}
+        target="_blank"
+        rel="noopener noreferrer"
         className="flex-1 flex items-center gap-3 min-w-0"
+        title={`open ${meta.swarmRunID} in new tab`}
       >
         <span className={clsx('font-mono text-[10.5px] uppercase tracking-widest2 w-24 shrink-0', accentText)}>
           {pMeta?.label ?? meta.pattern}

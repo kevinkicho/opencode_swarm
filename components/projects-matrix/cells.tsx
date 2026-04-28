@@ -198,8 +198,14 @@ function DayCellRun({ row }: { row: SwarmRunListRow }) {
   return (
     <li>
       <Link
+        // New tab — peer of the runs-picker pattern (2026-04-28).
+        // Project matrix is a browse-multiple-runs surface, opening
+        // in-place would force re-navigation back per click.
         href={`/?swarmRun=${encodeURIComponent(row.meta.swarmRunID)}`}
+        target="_blank"
+        rel="noopener noreferrer"
         className="block rounded-sm hover:bg-ink-700/60 transition px-2 py-1"
+        title={`open in new tab — ${row.meta.swarmRunID}`}
       >
         <div className="flex items-center gap-2 font-mono text-[11px]">
           <span className={clsx('text-[10px] leading-none', STATUS_DOT_TONE[row.status])}>●</span>

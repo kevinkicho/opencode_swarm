@@ -64,7 +64,12 @@ function formatTokens(n: number): string {
 }
 
 function formatPct(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return '—';
+  // Zero is a real value, not missing data. Render "0%" so the
+  // user can tell "we have data and it's 0" from "we have no data."
+  // Pre-2026-04-28 this returned "—" for 0, which read as a
+  // placeholder/loading-state and confused readers of the totals row.
+  if (!Number.isFinite(n) || n < 0) return '—';
+  if (n === 0) return '0%';
   if (n < 1) return '<1%';
   return `${n.toFixed(0)}%`;
 }
@@ -149,13 +154,27 @@ export function CrossPresetMetrics({
     const durations = rows
       .map((r) => (r.lastActivityTs ?? nowMs) - r.meta.createdAt)
       .filter((d) => d >= 0);
+    const liveCount = rows.filter((r) => r.status === 'live').length;
+    const staleCount = rows.filter((r) => r.status === 'stale').length;
+    const errorCount = rows.filter((r) => r.status === 'error').length;
+    const n = rows.length;
     return {
-      count: rows.length,
+      count: n,
       avgDurMs: durations.length > 0 ? sum(durations) / durations.length : 0,
+      // medDurMs across all runs — analogous to per-preset medDurMs.
+      // Was unwired ("—") through 2026-04-28; cheap to compute, useful
+      // because the avg is skewed by long-tail multi-day stale runs.
+      medDurMs: median(durations),
       totalCost: sum(rows.map((r) => r.costTotal)),
-      avgCost: sum(rows.map((r) => r.costTotal)) / rows.length,
+      avgCost: sum(rows.map((r) => r.costTotal)) / n,
       totalTokens: sum(rows.map((r) => r.tokensTotal)),
-      avgTokens: sum(rows.map((r) => r.tokensTotal)) / rows.length,
+      avgTokens: sum(rows.map((r) => r.tokensTotal)) / n,
+      // live/stale/error percentages across ALL runs — were rendered as
+      // a colSpan=3 "—" placeholder before; now show the same shape as
+      // per-preset rows.
+      livePct: (liveCount / n) * 100,
+      stalePct: (staleCount / n) * 100,
+      errorPct: (errorCount / n) * 100,
     };
   }, [rows]);
 
@@ -327,15 +346,23 @@ export function CrossPresetMetrics({
                         <td className="py-2 px-3 text-right tabular-nums text-fog-400">
                           {formatDur(totals.avgDurMs)}
                         </td>
-                        <td className="py-2 px-3 text-right tabular-nums text-fog-600">—</td>
+                        <td className="py-2 px-3 text-right tabular-nums text-fog-400">
+                          {formatDur(totals.medDurMs)}
+                        </td>
                         <td className="py-2 px-3 text-right tabular-nums text-fog-400">
                           {formatUsd(totals.avgCost)}
                         </td>
                         <td className="py-2 px-3 text-right tabular-nums text-fog-400">
                           {formatTokens(totals.avgTokens)}
                         </td>
-                        <td className="py-2 px-3 text-right tabular-nums text-fog-600" colSpan={3}>
-                          —
+                        <td className="py-2 px-3 text-right tabular-nums text-mint">
+                          {formatPct(totals.livePct)}
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums text-amber">
+                          {formatPct(totals.stalePct)}
+                        </td>
+                        <td className="py-2 px-3 text-right tabular-nums text-rust">
+                          {formatPct(totals.errorPct)}
                         </td>
                       </tr>
                     )}
