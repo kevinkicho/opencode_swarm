@@ -157,12 +157,7 @@ import type { TimelineNode } from '@/lib/types';
 // reference matrix can read the same source of truth as this page's
 // toolbar render. Aliased here to keep the call-site shape that
 // existed before the lift.
-import {
-  RUN_VIEW_KEYS,
-  VIEW_META,
-  viewHasContent,
-  type RunView,
-} from '@/lib/view-availability';
+import { RUN_VIEW_KEYS, VIEW_META, type RunView } from '@/lib/view-availability';
 const VIEW_PATTERN_GATES = VIEW_META;
 
 export default function Page() {
@@ -680,68 +675,66 @@ function PageBody({
         <section className="relative flex-1 flex flex-col min-w-0 min-h-0 pl-3">
           <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">view</span>
-            <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
-              {/* All 10 view tabs render always, even when the gate
-                  fails for the current run's pattern. The brightness
-                  ladder runs by content presence (not just gate):
-                    active           → molten (bg + text)
-                    has content      → text-fog-200 (bright)
-                    gate ok, no data → text-fog-600 (medium)
-                    gate fails       → text-fog-800 (dim)
-                  This way the user can see at a glance which views
-                  actually have data right now — the rest are visible
-                  for discoverability but recede. 2026-04-28 — user:
-                  "all of them right now dont have contents, so
-                  perhaps they all should be dim/opaque, and perhaps
-                  when we are running swarm mode with contents
-                  available for that view, then make it more brighter." */}
-              {RUN_VIEW_KEYS.map((k) => {
+            {/* Two-state styling matches every other tab strip in the
+                app (left-tabs, status-rail, picker rows): inactive
+                tabs share a single legible color; active = molten.
+                The 10 views split into two sub-categories that render
+                with the same treatment but a visible spacer between
+                them — universal lenses (timeline/chat/cards) on the
+                left, pattern-specific rails on the right. Tabs whose
+                gate fails for the active run get opacity-50 — clear
+                "this doesn't apply" without competing with the
+                active state. Tooltip carries the why. */}
+              {(() => {
                 const gateCtx = {
                   pattern: swarmRunMeta?.pattern,
                   boardSwarmRunID,
                 };
-                const enabled = VIEW_PATTERN_GATES[k].enabled(gateCtx);
-                const hasContent = viewHasContent(k, {
-                  ...gateCtx,
-                  messageCount: messages.length,
-                  turnCardCount: turnCards.length,
-                  boardItemCount: liveBoard.items?.length ?? 0,
-                  slotAssistantCounts: liveSlots.map(
-                    (s) => s.messages.filter((m) => m.info.role === 'assistant').length,
-                  ),
-                });
-                return (
-                  <Tooltip
-                    key={k}
-                    content={
-                      hasContent
-                        ? VIEW_PATTERN_GATES[k].hint
-                        : enabled
-                          ? `${VIEW_PATTERN_GATES[k].hint} · no data yet for this run`
+                const universal = ['timeline', 'chat', 'cards'] as RunView[];
+                const renderTab = (k: RunView) => {
+                  const enabled = VIEW_PATTERN_GATES[k].enabled(gateCtx);
+                  return (
+                    <Tooltip
+                      key={k}
+                      content={
+                        enabled
+                          ? VIEW_PATTERN_GATES[k].hint
                           : `${VIEW_PATTERN_GATES[k].hint} · click to see when this view applies`
-                    }
-                    side="bottom"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => setRunView(k)}
-                      className={clsx(
-                        'h-5 px-2 rounded-sm transition-colors cursor-pointer',
-                        runView === k
-                          ? 'bg-molten/15 text-molten'
-                          : hasContent
-                            ? 'text-fog-200 hover:bg-ink-800/60'
-                            : enabled
-                              ? 'text-fog-600 hover:text-fog-400 hover:bg-ink-800/60'
-                              : 'text-fog-800 hover:text-fog-600 hover:bg-ink-800/60',
-                      )}
+                      }
+                      side="bottom"
                     >
-                      {k}
-                    </button>
-                  </Tooltip>
+                      <button
+                        type="button"
+                        onClick={() => setRunView(k)}
+                        className={clsx(
+                          'h-5 px-2 rounded-sm transition-colors cursor-pointer',
+                          runView === k
+                            ? 'bg-molten/15 text-molten'
+                            : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
+                          !enabled && runView !== k && 'opacity-50',
+                        )}
+                      >
+                        {k}
+                      </button>
+                    </Tooltip>
+                  );
+                };
+                return (
+                  <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
+                    {universal.map(renderTab)}
+                    {/* Group divider — universal lenses on the left,
+                        pattern-specific rails on the right. Same
+                        selector role, different sub-category. */}
+                    <span
+                      className="mx-2 text-fog-700 select-none"
+                      aria-hidden
+                    >
+                      ·
+                    </span>
+                    {RUN_VIEW_KEYS.filter((k) => !universal.includes(k)).map(renderTab)}
+                  </div>
                 );
-              })}
-            </div>
+              })()}
             <div className="flex-1" />
             <span className={clsx('font-mono text-micro tabular-nums', messagesLoading ? 'text-fog-600 animate-pulse' : 'text-fog-700')}>
               {messagesLoading && messages.length === 0
