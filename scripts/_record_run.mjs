@@ -68,16 +68,31 @@ if (NO_SPAWN) {
     : PATTERN === 'critic-loop'
       ? 2
       : 3;
+  // Default directive is a quick README-survey that finishes in ~5min.
+  // Extended runs (--directive=extended) get a deeper directive that
+  // has more substantive work, intended to exercise multiple planner
+  // sweeps in long-running mode.
+  const directive = args.directive === 'extended'
+    ? 'Survey the README and the src/ tree. For each major market dashboard mentioned in the README (Bonds, Equities, Insurance, Credit, Sentiment, Calendar, Watchlist, Analytics), confirm whether the implementation matches the README claims. Post a [finding] for each market with PASS or GAP verdict. After all 8 are surveyed, post a [synthesize] that summarizes the gap pattern. Don\'t edit code yet — survey only.'
+    : 'Briefly survey the README. Each agent claims one specific README improvement and posts a finding to the board. Stop after 3 findings.';
   const body = {
     pattern: PATTERN,
     workspace: 'C:\\Users\\kevin\\Workspace\\kyahoofinance032926',
-    directive:
-      'Briefly survey the README. Each agent claims one specific README improvement and posts a finding to the board. Stop after 3 findings.',
+    directive,
     title: `recorded ${PATTERN} test · ${new Date().toISOString().slice(0, 10)}`,
     teamSize,
     teamModels: Array.from({ length: teamSize }, () => 'ollama/glm-5.1:cloud'),
-    bounds: { costCap: 1, minutesCap: WATCH_MINUTES + 2 },
+    bounds: {
+      costCap: parseFloat(args['cost-cap'] ?? '2'),
+      minutesCap: WATCH_MINUTES + 5,
+    },
   };
+  // persistentSweepMinutes triggers periodic re-sweeps for blackboard
+  // and orchestrator-worker patterns. 0 (default) means single-sweep
+  // mode — auto-idle stops the run when work drains.
+  if (args['persistent-sweep-min']) {
+    body.persistentSweepMinutes = parseInt(args['persistent-sweep-min'], 10);
+  }
   if (PATTERN === 'map-reduce' && args['synthesis-critic'] !== 'false') {
     body.enableSynthesisCritic = true;
   }
