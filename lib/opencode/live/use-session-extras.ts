@@ -25,6 +25,13 @@ export const SESSION_TODO_QUERY_KEY = ['opencode', 'session-todo'] as const;
 
 // Direct child sessions of a session. Returned as a flat list; callers
 // recurse if they want the full subtree.
+//
+// 20s polling cadence (was 5s). The aggressive cadence pressure-tested
+// fine in synthetic load but combined with the existing SSE streams +
+// useSwarmRuns 30s poll + provider/snapshot refreshes, it pushed
+// long-lived browser tabs into perceived freeze on slower machines.
+// 20s is still fast enough to surface a new sub-session within a turn
+// (most tool calls take longer) without contending for connections.
 export function useLiveSessionChildren(
   sessionId: string | null,
   directory: string | null,
@@ -38,9 +45,7 @@ export function useLiveSessionChildren(
     queryFn: ({ signal }) =>
       getSessionChildrenBrowser(sessionId!, directory!, { signal }),
     enabled: Boolean(sessionId && directory),
-    // 5s polling — children are spawned by the `task` tool mid-turn, so
-    // a tight cadence keeps the lineage tree current during active runs.
-    refetchInterval: 5_000,
+    refetchInterval: 20_000,
     retry: false,
   });
   return {
@@ -53,7 +58,7 @@ export function useLiveSessionChildren(
 // Session-scoped todo list — the agent's own `todowrite` snapshot. We
 // surface it alongside the blackboard plan as a cross-check (when our
 // plan differs from what the agent committed last, that's a bug
-// indicator).
+// indicator). Same 20s cadence as children for the same reason.
 export function useLiveSessionTodos(
   sessionId: string | null,
   directory: string | null,
@@ -67,7 +72,7 @@ export function useLiveSessionTodos(
     queryFn: ({ signal }) =>
       getSessionTodoBrowser(sessionId!, directory!, { signal }),
     enabled: Boolean(sessionId && directory),
-    refetchInterval: 5_000,
+    refetchInterval: 20_000,
     retry: false,
   });
   return {

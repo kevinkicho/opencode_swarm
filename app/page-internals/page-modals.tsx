@@ -17,6 +17,7 @@
 import dynamic from 'next/dynamic';
 import { lazyWithRetry } from '@/lib/lazy-with-retry';
 import type { PaletteAction } from '@/components/command-palette';
+import { ErrorBoundary } from '@/components/ui/error-boundary';
 import type { TimelineNode, DiffData } from '@/lib/types';
 import type { LiveTurn } from '@/lib/opencode/transform';
 import type { PageModalState } from './use-modal-state';
@@ -109,42 +110,65 @@ export function PageModals({
   swarmRunID,
 }: PageModalsProps) {
   const { flags, closers } = state;
+  // Each modal gets its own ErrorBoundary so a render error in one can't
+  // take down the others (or the surrounding page chrome). Without this,
+  // a throw inside e.g. DiagnosticsModal would unmount the whole tree —
+  // visible to the user as "footer buttons stop responding" because the
+  // whole app re-renders as nothing.
   return (
     <>
-      <CommandPalette
-        open={flags.palette}
-        onClose={closers.palette}
-        nodes={paletteNodes}
-        onJump={onJumpToMessage}
-        actions={paletteActions}
-      />
-      <RoutingModal open={flags.routing} onClose={closers.routing} />
-      <LiveCommitHistory
-        open={flags.history}
-        onClose={closers.history}
-        turns={liveTurns}
-        diffs={liveDiffs}
-        loading={diffLoading}
-        error={diffError}
-      />
-      <SpawnAgentModal
-        open={flags.spawn}
-        onClose={closers.spawn}
-        directory={liveDirectory}
-      />
-      <GlossaryModal open={flags.glossary} onClose={closers.glossary} />
-      <NewRunModal open={flags.newRun} onClose={closers.newRun} />
-      <RunProvenanceDrawer
-        swarmRunID={swarmRunID}
-        open={flags.provenance}
-        onClose={closers.provenance}
-      />
-      <CostDashboard open={flags.cost} onClose={closers.cost} />
-      <DiagnosticsModal
-        open={flags.diagnostics}
-        onClose={closers.diagnostics}
-        directory={liveDirectory ?? runWorkspace}
-      />
+      <ErrorBoundary scope="palette">
+        <CommandPalette
+          open={flags.palette}
+          onClose={closers.palette}
+          nodes={paletteNodes}
+          onJump={onJumpToMessage}
+          actions={paletteActions}
+        />
+      </ErrorBoundary>
+      <ErrorBoundary scope="routing">
+        <RoutingModal open={flags.routing} onClose={closers.routing} />
+      </ErrorBoundary>
+      <ErrorBoundary scope="history">
+        <LiveCommitHistory
+          open={flags.history}
+          onClose={closers.history}
+          turns={liveTurns}
+          diffs={liveDiffs}
+          loading={diffLoading}
+          error={diffError}
+        />
+      </ErrorBoundary>
+      <ErrorBoundary scope="spawn">
+        <SpawnAgentModal
+          open={flags.spawn}
+          onClose={closers.spawn}
+          directory={liveDirectory}
+        />
+      </ErrorBoundary>
+      <ErrorBoundary scope="glossary">
+        <GlossaryModal open={flags.glossary} onClose={closers.glossary} />
+      </ErrorBoundary>
+      <ErrorBoundary scope="new-run">
+        <NewRunModal open={flags.newRun} onClose={closers.newRun} />
+      </ErrorBoundary>
+      <ErrorBoundary scope="provenance">
+        <RunProvenanceDrawer
+          swarmRunID={swarmRunID}
+          open={flags.provenance}
+          onClose={closers.provenance}
+        />
+      </ErrorBoundary>
+      <ErrorBoundary scope="cost">
+        <CostDashboard open={flags.cost} onClose={closers.cost} />
+      </ErrorBoundary>
+      <ErrorBoundary scope="diagnostics">
+        <DiagnosticsModal
+          open={flags.diagnostics}
+          onClose={closers.diagnostics}
+          directory={liveDirectory ?? runWorkspace}
+        />
+      </ErrorBoundary>
     </>
   );
 }

@@ -48,6 +48,14 @@ export function DiagnosticsModal({
   onClose: () => void;
   directory: string | null;
 }) {
+  // Hard-bail when closed so the section components — and their
+  // polling hooks — never mount. AnimatePresence in <Modal> already
+  // skips children when open=false, but returning null at the top
+  // also skips React's per-render JSX evaluation overhead and
+  // eliminates any chance of useQuery instances being created and
+  // immediately disabled. Belt + suspenders against tab-perf
+  // regressions in long-lived sessions.
+  if (!open) return null;
   return (
     <Modal
       open={open}

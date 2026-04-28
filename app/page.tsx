@@ -5,6 +5,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { ProfileBoundary } from '@/components/perf/profile-boundary';
+import { ErrorBoundary } from '@/components/ui/error-boundary';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { SwarmTopbar } from '@/components/swarm-topbar';
 import { LeftTabs } from '@/components/left-tabs';
@@ -1036,16 +1037,18 @@ function PageBody({
         width={380}
         dismissOnClickOutside
       >
-        <Inspector
-          agents={agents}
-          messages={messages}
-          focusedMessageId={focusedMsgId}
-          selectedAgentId={selectedAgentId}
-          selectedFileHeat={selectedFileHeat}
-          workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
-          onFocus={focusMessage}
-          embedded
-        />
+        <ErrorBoundary scope="inspector">
+          <Inspector
+            agents={agents}
+            messages={messages}
+            focusedMessageId={focusedMsgId}
+            selectedAgentId={selectedAgentId}
+            selectedFileHeat={selectedFileHeat}
+            workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
+            onFocus={focusMessage}
+            embedded
+          />
+        </ErrorBoundary>
       </Drawer>
 
       <PageModals
