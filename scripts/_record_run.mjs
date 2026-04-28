@@ -56,23 +56,36 @@ if (NO_SPAWN) {
   console.log(`recording existing run ${RUN_ID}`);
 } else {
   console.log(`spawning ${PATTERN} run via ${BASE}/api/swarm/run`);
+  // Pattern-specific options. Most patterns share the same shape; a few
+  // (map-reduce, critic-loop, debate-judge) accept extra knobs that the
+  // validator scopes to that pattern.
+  const body = {
+    pattern: PATTERN,
+    workspace: 'C:\\Users\\kevin\\Workspace\\kyahoofinance032926',
+    directive:
+      'Briefly survey the README. Each agent claims one specific README improvement and posts a finding to the board. Stop after 3 findings.',
+    title: `recorded ${PATTERN} test · ${new Date().toISOString().slice(0, 10)}`,
+    teamSize: 3,
+    teamModels: [
+      'ollama/glm-5.1:cloud',
+      'ollama/glm-5.1:cloud',
+      'ollama/glm-5.1:cloud',
+    ],
+    bounds: { costCap: 1, minutesCap: WATCH_MINUTES + 2 },
+  };
+  if (PATTERN === 'map-reduce' && args['synthesis-critic'] !== 'false') {
+    body.enableSynthesisCritic = true;
+  }
+  if (PATTERN === 'critic-loop' && args['critic-iters']) {
+    body.criticMaxIterations = parseInt(args['critic-iters'], 10);
+  }
+  if (PATTERN === 'debate-judge' && args['debate-rounds']) {
+    body.debateMaxRounds = parseInt(args['debate-rounds'], 10);
+  }
   const spawnRes = await fetch(`${BASE}/api/swarm/run`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      pattern: PATTERN,
-      workspace: 'C:\\Users\\kevin\\Workspace\\kyahoofinance032926',
-      directive:
-        'Briefly survey the README. Each agent claims one specific README improvement and posts a finding to the board. Stop after 3 findings.',
-      title: `recorded ${PATTERN} test · ${new Date().toISOString().slice(0, 10)}`,
-      teamSize: 3,
-      teamModels: [
-        'ollama/glm-5.1:cloud',
-        'ollama/glm-5.1:cloud',
-        'ollama/glm-5.1:cloud',
-      ],
-      bounds: { costCap: 1, minutesCap: WATCH_MINUTES + 2 },
-    }),
+    body: JSON.stringify(body),
   });
   const spawn = await spawnRes.json();
   if (!spawnRes.ok) {

@@ -487,6 +487,32 @@ describe('tickCoordinator · stale exits', () => {
     expect(result.status).toBe('picked'); // research turn → done
   });
 
+  // Live-validation regression caught 2026-04-27 (run_mohzmgie_vfdmxw):
+  // map-reduce inserts a `synthesize` board item, the reducer claims it,
+  // produces a 2660-char synthesis paragraph (no tools needed — it's a
+  // summary, not a code task), and the phantom-no-tools guard rejected
+  // the work as fake. The exemption: kind='synthesize' bypasses the
+  // guard since text IS the canonical output for that kind.
+  it('does NOT bounce phantom on synthesize items (text IS the output)', async () => {
+    mocks.listBoardItems.mockReturnValue([
+      makeItem({ id: 'synth_test', kind: 'synthesize', content: 'synthesize the drafts' }),
+    ]);
+    mocks.waitForSessionIdle.mockImplementation(async (sessionID: string) => {
+      const turn = makeAssistantTurn(sessionID, [], {
+        hasText: true,
+        text: 'Here is the synthesis: drafts converged on three improvements...',
+        hasTool: false,
+      });
+      return {
+        ok: true,
+        messages: [turn],
+        newIDs: new Set([turn.info.id]),
+      };
+    });
+    const result = await tickCoordinator('run_test');
+    expect(result.status).toBe('picked'); // synthesize text-only → done
+  });
+
   it('stale on critic-rejected when critic returns busywork', async () => {
     mocks.getRun.mockResolvedValue(
       makeMeta({ enableCriticGate: true, criticSessionID: 'ses_critic' }),

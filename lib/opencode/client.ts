@@ -62,9 +62,22 @@ export function opencodeBaseUrl(): string {
 // succeeds. Effect: first failure pays the timeout, the next ~5s of
 // calls return immediately with a synthesized 503 — the caller's
 // existing error path handles that the same as a real outage.
-const CIRCUIT_FAIL_THRESHOLD = 3; // # of failures within window to trip
-const CIRCUIT_WINDOW_MS = 2_000; // window for counting failures
-const CIRCUIT_COOLDOWN_MS = 5_000; // how long the breaker stays tripped
+//
+// Threshold tuning history:
+//   2026-04-27a (initial): 3 failures in 2s — too aggressive; tripped
+//     during legitimate map-reduce parallel fan-out (3 sessions ×
+//     /message fetches at ~10s each on large sessions hit the
+//     8s timeout simultaneously, registered as 3 failures).
+//   2026-04-27b (current): 6 failures in 5s — gives 3-session
+//     parallel patterns headroom while still catching the 130-run
+//     fan-out outage case (390 simultaneous failures = trips
+//     instantly). Also: timeouts no longer count as failures
+//     (we control the timer, so a timeout is a CHOICE, not a
+//     network signal). Only TypeError-shaped fetch rejections
+//     (connection-refused, DNS-failure, ECONNRESET) count.
+const CIRCUIT_FAIL_THRESHOLD = 6;
+const CIRCUIT_WINDOW_MS = 5_000;
+const CIRCUIT_COOLDOWN_MS = 5_000;
 const CIRCUIT_KEY = Symbol.for('opencode_swarm.circuitBreaker.v1');
 interface CircuitState {
   recentFailures: number[];
@@ -102,7 +115,22 @@ function isCircuitTripped(): boolean {
 // that a hard outage doesn't block the entire request fan-out for 30s+.
 // Callers that need a longer ceiling (SSE streams, big POSTs) pass their
 // own AbortSignal — `init.signal` is honored as-is.
-const DEFAULT_TIMEOUT_MS = 8_000;
+//
+// Bumped 8s → 20s after live map-reduce run (run_mohzsz7c_dtzd4l)
+// timed out parallel /message fetches at 8s, tripping the breaker on
+// what was actually a slow-but-valid pattern.
+const DEFAULT_TIMEOUT_MS = 20_000;
+
+// Detect a "hard" network failure (worth tripping the breaker for) vs
+// a timeout (caller's own AbortController choice; opencode might be
+// slow but alive). Node's `fetch` throws TypeError for connection-
+// refused / DNS / ECONNRESET; AbortError comes from our timer or a
+// caller-passed signal. Only the former indicates "opencode is down".
+function isHardNetworkFailure(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err.name === 'AbortError') return false;
+  return err instanceof TypeError;
+}
 
 export async function opencodeFetch(path: string, init: RequestInit = {}): Promise<Response> {
   if (isCircuitTripped()) {
@@ -125,10 +153,13 @@ export async function opencodeFetch(path: string, init: RequestInit = {}): Promi
     try {
       const res = await fetch(url, { ...init, headers, cache: 'no-store' });
       if (res.ok) recordSuccess();
-      else if (res.status >= 500) recordFailure();
+      // Don't count 5xx as breaker failures — opencode rejecting a
+      // request (e.g., 401/500 from a malformed call) is a different
+      // class of problem from "opencode is down". Only count hard
+      // network failures.
       return res;
     } catch (err) {
-      recordFailure();
+      if (isHardNetworkFailure(err)) recordFailure();
       throw err;
     }
   }
@@ -138,10 +169,9 @@ export async function opencodeFetch(path: string, init: RequestInit = {}): Promi
   try {
     const res = await fetch(url, { ...init, headers, cache: 'no-store', signal: ctl.signal });
     if (res.ok) recordSuccess();
-    else if (res.status >= 500) recordFailure();
     return res;
   } catch (err) {
-    recordFailure();
+    if (isHardNetworkFailure(err)) recordFailure();
     throw err;
   } finally {
     clearTimeout(timer);

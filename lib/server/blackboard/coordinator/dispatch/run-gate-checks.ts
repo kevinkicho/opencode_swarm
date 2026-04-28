@@ -129,7 +129,17 @@ export async function runGateChecks(
   // 2. #7.Q42 — phantom-completion guard. Reject text-only responses
   // that contain zero real tool/patch parts AND don't begin with
   // "skip:". The legitimate no-edit cases (skip + research-only) pass.
-  if (editedPaths.length === 0) {
+  //
+  // **Synthesize items are exempt.** A `synthesize` todo is by
+  // definition a "write a summary" task — the canonical output is
+  // pure text (the synthesis itself). Map-reduce relies on this:
+  // the reducer reads N drafts and emits a synthesis paragraph, no
+  // tools needed. Without this exemption the phantom-no-tools guard
+  // tripped on every map-reduce synthesis claim, marking it stale and
+  // aborting the run before the synthesizer's text could be harvested.
+  // Diagnosed live 2026-04-27 (run_mohzmgie_vfdmxw): synthesizer
+  // produced 2660 chars of valid synthesis but was rejected.
+  if (todo.kind !== 'synthesize' && editedPaths.length === 0) {
     let realToolPartCount = 0;
     let realPatchPartCount = 0;
     for (const m of messages) {
