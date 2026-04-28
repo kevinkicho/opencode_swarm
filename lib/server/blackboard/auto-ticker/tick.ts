@@ -180,9 +180,16 @@ async function tickSession(
     //     before the wall-clock cap fires. The drained check requires
     //     the same idle-threshold so a transient gap between two
     //     workers' commits doesn't trigger a premature stop.
+    // The orchestrator slot in OW runs never ticks (excluded from
+    // worker dispatch via state.orchestratorSessionID), so its
+    // consecutiveIdle stays at 0 forever. Including it in the
+    // every() check means auto-idle never fires for OW. Exclude.
+    const tickingSlots = state.orchestratorSessionID
+      ? slots.filter((s) => s.sessionID !== state.orchestratorSessionID)
+      : slots;
     const allSessionsIdle =
-      slots.length > 0 &&
-      slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP);
+      tickingSlots.length > 0 &&
+      tickingSlots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP);
 
     if (state.periodicSweepMs === 0 && allSessionsIdle) {
       stopAutoTicker(state.swarmRunID, 'auto-idle');
