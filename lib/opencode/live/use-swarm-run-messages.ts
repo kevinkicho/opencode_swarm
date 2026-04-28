@@ -21,6 +21,7 @@ import type {
 } from '../types';
 import type { SwarmRunMeta } from '../../swarm-run-types';
 import { validatePart } from '../validate-part';
+import { classifySseFrame, type SseEventDecision } from './sse-filter';
 import {
   getSessionMessagesBrowser,
   getSessionsByDirectoryBrowser,
@@ -355,35 +356,24 @@ export function useLiveSwarmRunMessages(
     // page-hydration slowness on long runs. Falls back to refetch
     // when the event doesn't carry enough, or when the message isn't
     // yet in our buffer (rare race on brand-new turns).
-    function applyLocally(ev: MessageEvent, sid: string): boolean {
-      let parsed: {
-        type?: string;
-        properties?: {
-          sessionID?: string;
-          messageID?: string;
-          part?: OpencodePart;
-          info?: OpencodeMessage['info'];
-        };
-      };
-      try {
-        parsed = JSON.parse(ev.data);
-      } catch {
-        return false;
-      }
-      const props = parsed.properties ?? {};
-      if (parsed.type === 'message.part.updated') {
-        const messageID = props.messageID;
-        if (!messageID) return false;
+    //
+    // Frame parsing + session filtering moved into the pure
+    // `classifySseFrame` helper (lib/opencode/live/sse-filter.ts) so
+    // the routing logic is unit-testable without spinning up React.
+    function applyDecision(decision: SseEventDecision): boolean {
+      if (decision.kind === 'part') {
         // Pre-fix the cast `props.part as OpencodePart` trusted whatever
         // opencode emitted; a new part type or missing required field
         // (Q34/Q42 class) silently corrupted the slot. Validator returns
         // ok=false + warns once on schema drift; we then fall through to
         // refetch (return false) so the slot reloads from the canonical
         // /message endpoint.
-        const checked = validatePart(props.part);
+        const checked = validatePart(decision.part);
         if (!checked.ok) return false;
         const part = checked.part;
         if (!part.id) return false;
+        const sid = decision.sessionID;
+        const messageID = decision.messageID;
         let applied = false;
         setSlots((prev) => {
           const idx = prev.findIndex((s) => s.sessionID === sid);
@@ -411,8 +401,9 @@ export function useLiveSwarmRunMessages(
         });
         return applied;
       }
-      if (parsed.type === 'message.updated') {
-        const info = props.info;
+      if (decision.kind === 'info') {
+        const info = decision.info;
+        const sid = decision.sessionID;
         if (!info?.id) return false;
         let applied = false;
         setSlots((prev) => {
@@ -444,21 +435,16 @@ export function useLiveSwarmRunMessages(
     const qs = new URLSearchParams({ directory: workspace! }).toString();
     es = new EventSource(`/api/opencode/event?${qs}`);
     es.onmessage = (ev) => {
-      try {
-        const parsed = JSON.parse(ev.data) as {
-          type?: string;
-          properties?: { sessionID?: string };
-        };
-        const sid = parsed.properties?.sessionID;
-        if (!sid || !sessionSet.has(sid)) return;
-        // Try to merge the event locally; only refetch if we can't.
-        // Local merges are O(1); refetch is O(full history × N bytes)
-        // and over parallel worker activity dominates hydration cost.
-        if (applyLocally(ev, sid)) return;
-        refetchOne(sid);
-      } catch {
-        // heartbeat / connected frames — ignore
+      const decision = classifySseFrame(ev.data, sessionSet);
+      if (decision.kind === 'ignore') return;
+      // Local merges are O(1); refetch is O(full history × N bytes)
+      // and dominates hydration cost over parallel worker activity.
+      if (decision.kind === 'part' || decision.kind === 'info') {
+        if (applyDecision(decision)) return;
+        // applyDecision returned false (message not hydrated yet, etc.)
+        // — fall through to refetch.
       }
+      refetchOne(decision.sessionID);
     };
 
     const pollId = setInterval(() => {

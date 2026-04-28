@@ -78,10 +78,11 @@ Not urgent.
 
 **High-leverage, < 1 day each:**
 
-- **Heat tab file-tree toggle (VSCode-style).** Button in heat-rail header
-  flips between heat-list and tree view of the workspace. Files in the tree
-  show heat chips. Click → file-heat inspector. Needs a workspace-tree
-  endpoint, gitignore-aware, short cache.
+- ~~**Heat tab file-tree toggle (VSCode-style).**~~ **ALREADY SHIPPED.**
+  HeatRail header has three view modes — `list` (hot-first flat),
+  `tree` (grouped by dir, hot only), `all` (full workspace tree, cold
+  files muted, gitignore-aware via `/api/swarm/run/<id>/tree` with 5min
+  staleTime via TanStack Query). Click any row → file-heat inspector.
 
 **Validation debt** (shipped but not yet exercised live — see
 `docs/VALIDATION.md` for invocation):
@@ -141,22 +142,17 @@ Not urgent.
   to 1.8s with circuit-breaker armed, and to ~130ms once tripped.
 
 **UI redesign queued (deferred):**
-- **Chat-bubble view as alternate main** (reported 2026-04-27). User
-  feedback: timeline is hard to follow what's actually happening.
-  Existing surface (`components/turn-cards-view.tsx` + 'turn cards' tab
-  in left rail) is a card-based alternative; promotion to MAIN view
-  would invert the default. Recommended approach: add a top-level view
-  toggle between "timeline" and "chat" rather than replacing — keep the
-  timeline accessible for users who want the diagram of inter-agent
-  coordination, but default new runs to a chronological per-agent
-  message stream that reads like Slack/ChatGPT (lane → channel,
-  message-part → bubble, tool-call → folded bubble preview, A2A wire →
-  reply-arrow). Files likely involved: `app/page.tsx` (view router),
-  `components/turn-cards-view.tsx` (existing seed), `app/page-internals/
-  use-modal-state.ts` (or wherever active-view lives). Real scope: ~1-2
-  days; the existing turn-cards-view already has the per-message render
-  surface, the wiring change is making it the default + adding lane
-  grouping + tool-call folding.
+- ~~**Chat-bubble view as alternate main**~~ **MVP SHIPPED 2026-04-27.**
+  Added `chat` view alongside `timeline` and `cards` in the main-view
+  toolbar (`app/page.tsx` VIEW_PATTERN_GATES). Renders messages as a
+  chronological bubble stream — author + part-type + body, A2A
+  recipients shown as a "→ <agent>" header line, consecutive tool
+  calls collapse into a chip row instead of N bubbles. Lives at
+  `components/chat-view.tsx`. Default view is still `timeline` —
+  promoting `chat` to default is a UX call that should land with a
+  user-facing announcement, not silently. Empty state ("no messages
+  yet") renders correctly when opencode is reachable but the run hasn't
+  produced any output.
 
 **Validation tooling** (queued 2026-04-27 — improves the live-run
 diagnostic loop, not the app itself):
@@ -181,20 +177,24 @@ live; only items below pass the right-size gate per
 that don't pass the gate, like cross-browser and WCAG AA, are
 intentionally omitted):
 
-- **End-to-end run lifecycle.** spawn → land on home → see lanes →
-  broadcast → see responses → close. Each piece is unit-tested but the
-  flow itself isn't. The actual answer to "is this app working as
-  intended?" lives here. Best done as a mocked Playwright e2e
-  (stubs `/api/opencode/**`) for CI + a gated live spec for real-
-  signal verification.
-- **Streaming / SSE realtime updates.** No test exercises "agent
-  emits token → lane row updates / part chip animates." Worth fencing
-  because silent breakage means the user sees frozen runs and
-  doesn't know why. Needs a fake SSE server or controlled live run.
-- **Form validation on new-run modal.** Source URL parsing + cap
-  edge values are the most likely regression vectors; the rest is
-  trivial. Worth a small vitest + userEvent test on the new-run
-  form alone, not the other modals.
+- ~~**End-to-end run lifecycle.**~~ **SHIPPED 2026-04-27.** Mocked
+  Playwright e2e at `tests/visual/run-lifecycle.spec.ts` — stubs
+  `/api/opencode/**` + intercepts `POST /api/swarm/run`, opens the
+  modal, fills source/workspace/pattern, adds 2 agents on glm-4.6,
+  clicks launch, asserts the captured request body matches the form
+  fields. Catches form↔body decoupling silently breaking the only
+  spawn path.
+- ~~**Streaming / SSE realtime updates.**~~ **SHIPPED 2026-04-27.** SSE
+  event routing extracted from `useLiveSwarmRunMessages` into a pure
+  helper at `lib/opencode/live/sse-filter.ts::classifySseFrame` and
+  unit-tested (9 cases) — covers parse-error, no-session, unknown
+  session, message.part.updated → part decision, message.updated →
+  info decision, malformed payloads → refetch fallback, other typed
+  events → refetch.
+- ~~**Form validation on new-run modal.**~~ **SHIPPED 2026-04-27.** 14
+  tests at `components/new-run/__tests__/helpers.test.ts` covering
+  extractRepoName (URL→folder parsing) + useNewRunForm (clamping,
+  zero-removal, reset, clearTeam preserving other fields).
 
 ---
 

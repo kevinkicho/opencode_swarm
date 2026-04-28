@@ -63,6 +63,12 @@ const TurnCardsView = dynamic(
   ),
   { ssr: false },
 );
+const ChatView = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/chat-view').then((m) => m.ChatView),
+  ),
+  { ssr: false },
+);
 const BoardFullView = dynamic(
   lazyWithRetry(() =>
     import('@/components/board-full-view').then((m) => m.BoardFullView),
@@ -170,6 +176,10 @@ const VIEW_PATTERN_GATES: Record<string, ViewConfig> = {
   timeline: {
     enabled: () => true,
     hint: 'cross-lane event flow with A2A wires',
+  },
+  chat: {
+    enabled: () => true,
+    hint: 'chronological per-agent bubble stream · tool calls fold as chips',
   },
   cards: {
     enabled: () => true,
@@ -718,11 +728,13 @@ function PageBody({
             <span className="font-mono text-micro tabular-nums text-fog-700">
               {runView === 'timeline'
                 ? `${messages.length} events`
-                : runView === 'cards'
-                  ? `${turnCards.length} turns`
-                  : runView === 'board' || runView === 'contracts'
-                    ? `${liveBoard.items?.length ?? 0} items`
-                    : `${liveSlots.length} sessions`}
+                : runView === 'chat'
+                  ? `${messages.length} messages`
+                  : runView === 'cards'
+                    ? `${turnCards.length} turns`
+                    : runView === 'board' || runView === 'contracts'
+                      ? `${liveBoard.items?.length ?? 0} items`
+                      : `${liveSlots.length} sessions`}
             </span>
           </div>
           {(() => {
@@ -770,6 +782,17 @@ function PageBody({
                       agentOrder={agentOrder}
                       workspace={swarmRunMeta?.workspace ?? liveDirectory ?? ''}
                       diffStatsByPath={diffStatsByPath}
+                      focusedId={focusedMsgId}
+                      onFocus={focusMessage}
+                    />
+                  </ProfileBoundary>
+                );
+              case 'chat':
+                return (
+                  <ProfileBoundary id="chat-view">
+                    <ChatView
+                      messages={messages}
+                      agents={agents}
                       focusedId={focusedMsgId}
                       onFocus={focusMessage}
                     />
