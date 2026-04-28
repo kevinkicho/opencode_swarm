@@ -8,157 +8,33 @@
 // per kind so the user can answer "what's actually contractually
 // settled vs still in flight?" without reading every row's tooltip.
 //
-//
 // Aesthetic: dense h-5 rows, monospace, tabular-nums, ink/fog/molten/
 // mint/iris/amber palette only, micro-labels (10px uppercase
 // tracking-widest2) on chips. Rust used sparingly — only on terminal
 // failures (CRITIC busywork, VERIFIER fail, AUDIT unmet, RETRY 2).
+//
+// 2026-04-28 decomposition: NoteSignals + parseNote + ranks +
+// deriveCounts → contracts-rail/note-parser.ts; ContractRow →
+// contracts-rail/row.tsx. This file now reads as the rail
+// composition + sticky header chips.
 
 import clsx from 'clsx';
 import { useMemo, useRef } from 'react';
 
 import type { LiveBoard } from '@/lib/blackboard/live';
-import type { BoardItem, BoardItemStatus } from '@/lib/blackboard/types';
+import type { BoardItem } from '@/lib/blackboard/types';
 import { Tooltip } from './ui/tooltip';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
-
-// Per-row chip tone palette. Mint = good, rust = bad, amber = warning,
-// fog = neutral / not applicable. Reused across columns so the eye
-// learns "rust = action needed."
-const TONE = {
-  mint: 'text-mint',
-  rust: 'text-rust',
-  amber: 'text-amber',
-  iris: 'text-iris',
-  fog: 'text-fog-700',
-  fogActive: 'text-fog-300',
-} as const;
-
-// Note-tag parsers. The coordinator stamps these on item.note when it
-// transitions a row through a verdict gate. Format conventions (live as
-// of 2026-04-24, see lib/server/blackboard/{coordinator,auto-ticker}.ts):
-//
-//   [retry:N] reason          retryOrStale (coordinator.ts:199)
-//   [final after N retries]   final-stale stamp (coordinator.ts:212)
-//   [cas-drift:<file>]        commit-time CAS rejection (coordinator.ts:778)
-//   [critic-rejected] reason  anti-busywork critic verdict (coordinator.ts:847)
-//   [verifier-rejected] reason Playwright verifier failure (coordinator.ts:903)
-//   [audit:<verdict>] reason  auditor stamp on criterion (auto-ticker.ts:906)
-//
-// Pass-verdicts don't write a note (silent good news), so absence of a
-// rejection tag is itself a signal. Display rule: explicit pass for
-// 'done' status; explicit verdict text only for the rejection paths.
-
-interface NoteSignals {
-  retryCount: number;
-  drift: string | null; // file path that drifted, when CAS triggered
-  criticRejected: boolean;
-  verifierRejected: boolean;
-  auditVerdict: 'met' | 'unmet' | 'wont-do' | 'unclear' | null;
-  finalAfterRetries: number | null; // stamp when the retry budget hit MAX
-}
-
-const RETRY_RE = /\[retry:(\d+)\]/;
-const DRIFT_RE = /\[cas-drift:([^\]]+?)\]/;
-const AUDIT_RE = /\[audit:([a-z-]+)\]/;
-const FINAL_RE = /\[final after (\d+) retries?\]/;
-
-function parseNote(note: string | null | undefined): NoteSignals {
-  if (!note) {
-    return {
-      retryCount: 0,
-      drift: null,
-      criticRejected: false,
-      verifierRejected: false,
-      auditVerdict: null,
-      finalAfterRetries: null,
-    };
-  }
-  const retryM = RETRY_RE.exec(note);
-  const driftM = DRIFT_RE.exec(note);
-  const auditM = AUDIT_RE.exec(note);
-  const finalM = FINAL_RE.exec(note);
-  const auditRaw = auditM ? auditM[1] : null;
-  const auditVerdict =
-    auditRaw === 'met' ||
-    auditRaw === 'unmet' ||
-    auditRaw === 'wont-do' ||
-    auditRaw === 'unclear'
-      ? auditRaw
-      : null;
-  return {
-    retryCount: retryM ? parseInt(retryM[1] ?? '0', 10) : 0,
-    drift: driftM ? driftM[1] : null,
-    criticRejected: /\[critic-rejected\]/.test(note),
-    verifierRejected: /\[verifier-rejected\]/.test(note),
-    auditVerdict,
-    finalAfterRetries: finalM ? parseInt(finalM[1] ?? '0', 10) : null,
-  };
-}
-
-// Per-status sort priority. In-progress first (active work the user is
-// most likely tracking), then open (with retry-desc tiebreak so stuck
-// items rise), then stale, then done, then claimed/blocked at the
-// bottom. Criterion items sort by verdict severity as a secondary key.
-const STATUS_RANK: Record<BoardItemStatus, number> = {
-  'in-progress': 0,
-  open: 1,
-  stale: 2,
-  blocked: 3,
-  claimed: 4,
-  done: 5,
-};
-
-const VERDICT_RANK: Record<NonNullable<NoteSignals['auditVerdict']>, number> = {
-  unmet: 0,
-  unclear: 1,
-  'wont-do': 2,
-  met: 3,
-};
-
-// Aggregate counts for the sticky header chips. Walk the items once and
-// derive every chip in a single pass — cheap because items are typically
-// dozens, and explicit aggregation is easier to read than 5 separate
-// filter().length calls.
-interface HeaderCounts {
-  total: number;
-  criteria: number;
-  met: number;
-  unmet: number;
-  stale: number;
-  busywork: number; // critic-rejected
-  drift: number; // cas-drift
-}
-
-function deriveCounts(items: BoardItem[]): HeaderCounts {
-  let criteria = 0,
-    met = 0,
-    unmet = 0,
-    stale = 0,
-    busywork = 0,
-    drift = 0;
-  for (const it of items) {
-    const s = parseNote(it.note);
-    if (it.kind === 'criterion') {
-      criteria += 1;
-      if (s.auditVerdict === 'met') met += 1;
-      else if (s.auditVerdict === 'unmet') unmet += 1;
-    }
-    if (it.status === 'stale') stale += 1;
-    if (s.criticRejected) busywork += 1;
-    if (s.drift) drift += 1;
-  }
-  return {
-    total: items.length,
-    criteria,
-    met,
-    unmet,
-    stale,
-    busywork,
-    drift,
-  };
-}
+import {
+  TONE,
+  STATUS_RANK,
+  VERDICT_RANK,
+  parseNote,
+  deriveCounts,
+  type HeaderCounts,
+} from './contracts-rail/note-parser';
+import { ContractRow } from './contracts-rail/row';
 
 export function ContractsRail({
   live,
@@ -355,168 +231,5 @@ function Chip({
         <span className="text-fog-700 uppercase tracking-widest2">{label}</span>
       </span>
     </Tooltip>
-  );
-}
-
-// One contract row — dense h-5, all columns aligned via grid so eyes
-// can scan vertically by column. Spec column widths frozen in
-function ContractRow({ item }: { item: BoardItem }) {
-  const sig = parseNote(item.note);
-
-  // Glyph: ◆ for criterion (auditor-tracked contract), ● for todo with
-  // requiresVerification, blank otherwise. Keeps the column scannable
-  // without overloading every row with a marker.
-  const glyph =
-    item.kind === 'criterion'
-      ? '◆'
-      : item.requiresVerification
-        ? '●'
-        : '';
-  const glyphTone =
-    item.kind === 'criterion'
-      ? sig.auditVerdict === 'met'
-        ? TONE.mint
-        : sig.auditVerdict === 'unmet'
-          ? TONE.rust
-          : sig.auditVerdict === 'wont-do'
-            ? TONE.fogActive
-            : TONE.amber
-      : TONE.iris;
-
-  const filesCount = item.expectedFiles?.length ?? 0;
-
-  // Verdict chips — all reuse the same compact pattern: 3-letter code
-  // colored by outcome, "—" placeholder when not gated / not yet
-  // verdicted. Click would land in inspector for full text in a future
-  // pass; for now the title attribute carries the full note.
-  const driftChip = sig.drift ? (
-    <span
-      className={clsx('font-mono text-[9px]', TONE.amber)}
-      title={`CAS drift on ${sig.drift}`}
-    >
-      drift
-    </span>
-  ) : (
-    <span className={clsx('font-mono text-[9px]', TONE.fog)}>—</span>
-  );
-
-  const criticChip = sig.criticRejected ? (
-    <span
-      className={clsx('font-mono text-[9px]', TONE.rust)}
-      title="anti-busywork critic rejected — see note"
-    >
-      BUSY
-    </span>
-  ) : item.status === 'done' ? (
-    <span className={clsx('font-mono text-[9px]', TONE.mint)} title="critic passed (or not gated)">
-      SUB
-    </span>
-  ) : (
-    <span className={clsx('font-mono text-[9px]', TONE.fog)}>—</span>
-  );
-
-  const verifChip = sig.verifierRejected ? (
-    <span
-      className={clsx('font-mono text-[9px]', TONE.rust)}
-      title="Playwright verifier rejected — see note"
-    >
-      FAIL
-    </span>
-  ) : item.requiresVerification && item.status === 'done' ? (
-    <span className={clsx('font-mono text-[9px]', TONE.mint)} title="Playwright verifier passed">
-      PASS
-    </span>
-  ) : (
-    <span className={clsx('font-mono text-[9px]', TONE.fog)}>—</span>
-  );
-
-  const auditChip = sig.auditVerdict ? (
-    <span
-      className={clsx(
-        'font-mono text-[9px]',
-        sig.auditVerdict === 'met'
-          ? TONE.mint
-          : sig.auditVerdict === 'unmet'
-            ? TONE.rust
-            : sig.auditVerdict === 'wont-do'
-              ? TONE.fogActive
-              : TONE.amber,
-      )}
-      title={`auditor verdict: ${sig.auditVerdict}`}
-    >
-      {sig.auditVerdict === 'met'
-        ? 'MET'
-        : sig.auditVerdict === 'unmet'
-          ? 'UNMET'
-          : sig.auditVerdict === 'wont-do'
-            ? 'WONT'
-            : '?'}
-    </span>
-  ) : (
-    <span className={clsx('font-mono text-[9px]', TONE.fog)}>—</span>
-  );
-
-  // Retry budget. retryOrStale caps at MAX_STALE_RETRIES=2; show as
-  // N/2 so the user immediately knows where in the budget the item
-  // sits. Tone: 0 muted, 1 amber, 2 rust (exhausted).
-  const retryDisplay = sig.finalAfterRetries ?? sig.retryCount;
-  const retryChip = (
-    <span
-      className={clsx(
-        'font-mono text-[9px] tabular-nums',
-        retryDisplay >= 2 ? TONE.rust : retryDisplay >= 1 ? TONE.amber : TONE.fog,
-      )}
-      title={
-        sig.finalAfterRetries !== null
-          ? `retry budget exhausted at ${sig.finalAfterRetries}/2`
-          : `retry counter: ${retryDisplay}/2`
-      }
-    >
-      {retryDisplay}/2
-    </span>
-  );
-
-  // Status row tint: stale rows get a subtle amber background so the
-  // eye finds them without scanning per-cell chips. Done rows are
-  // dimmed to push attention toward in-progress / open work. Critic-
-  // and verifier-rejected items get rust tint to flag they're failing
-  // a contract, not just stale.
-  const rowTint =
-    item.status === 'stale'
-      ? 'bg-amber/[0.04]'
-      : item.status === 'done'
-        ? 'opacity-65'
-        : sig.criticRejected || sig.verifierRejected
-          ? 'bg-rust/[0.06]'
-          : '';
-
-  return (
-    <li
-      className={clsx(
-        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono cursor-default hover:bg-ink-800/40 transition',
-        rowTint,
-      )}
-      style={{
-        // glyph 16 · label flex · files 32 · drift 56 · critic 32 ·
-        // verif 36 · audit 44 · retry 28
-        gridTemplateColumns: '16px minmax(0, 1fr) 32px 56px 32px 36px 44px 28px',
-      }}
-      title={item.note ?? undefined}
-    >
-      <span className={clsx('text-center leading-none', glyphTone)} aria-label={item.kind}>
-        {glyph}
-      </span>
-      <span className="text-fog-200 truncate min-w-0" title={item.content}>
-        {item.content}
-      </span>
-      <span className={clsx('tabular-nums text-right', filesCount > 0 ? TONE.fogActive : TONE.fog)}>
-        {filesCount > 0 ? filesCount : '—'}
-      </span>
-      {driftChip}
-      {criticChip}
-      {verifChip}
-      {auditChip}
-      {retryChip}
-    </li>
   );
 }

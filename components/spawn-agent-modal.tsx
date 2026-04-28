@@ -5,26 +5,28 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { Modal } from './ui/modal';
-import { ProviderBadge } from './provider-badge';
-import { Tooltip } from './ui/tooltip';
 import {
-  familyMeta,
   fmtZenPrice as fmtPrice,
-  type ZenFamily as Family,
 } from '@/lib/zen-catalog';
 import {
   createSessionBrowser,
   postSessionMessageBrowser,
   useOpencodeProviders,
 } from '@/lib/opencode/live';
+import {
+  Section,
+  HeaderCell,
+  ModelNameCell,
+  FamilyCell,
+  PriceCell,
+  SpawnModeToggle,
+  SpawnButton,
+  type SpawnState,
+  type SpawnMode,
+} from './spawn-agent/sub-components';
+import { PreviewPanel, type SpawnSkill } from './spawn-agent/preview-panel';
 
-interface Skill {
-  id: string;
-  name: string;
-  auth: string;
-}
-
-const skills: Skill[] = [
+const skills: SpawnSkill[] = [
   { id: 'github',   name: 'github',   auth: 'pat classic' },
   { id: 'stripe',   name: 'stripe',   auth: 'secret key' },
   { id: 'slack',    name: 'slack',    auth: 'bot token' },
@@ -32,9 +34,6 @@ const skills: Skill[] = [
   { id: 'postgres', name: 'postgres', auth: 'conn string' },
   { id: 'sentry',   name: 'sentry',   auth: 'dsn + token' },
 ];
-
-type SpawnState = 'idle' | 'verifying' | 'failed' | 'verified';
-type SpawnMode = 'idle' | 'active';
 
 export function SpawnAgentModal({
   open,
@@ -324,101 +323,15 @@ export function SpawnAgentModal({
             </Section>
           </div>
 
-          <aside className="min-w-0 flex flex-col gap-3">
-            <div>
-              <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 mb-2">
-                preview
-              </div>
-              <div className="relative rounded-md hairline bg-ink-900/60 overflow-hidden border border-molten/40">
-                <div className="h-[3px] w-full bg-molten" />
-                <div className="p-3 space-y-2.5">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={clsx(
-                        'w-1.5 h-1.5 rounded-full',
-                        spawnMode === 'active' ? 'bg-mint animate-pulse' : 'bg-molten'
-                      )}
-                    />
-                    <span
-                      className={clsx(
-                        'text-[13px] truncate flex-1 min-w-0',
-                        trimmedName ? 'text-fog-100' : 'text-fog-500 italic'
-                      )}
-                    >
-                      {previewName}
-                    </span>
-                    <span
-                      className={clsx(
-                        'font-mono text-micro uppercase tracking-widest2',
-                        spawnMode === 'active' ? 'text-mint' : 'text-fog-700'
-                      )}
-                    >
-                      {spawnMode}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {currentModel && (
-                      <ProviderBadge provider={currentModel.provider} label={currentModel.label} size="sm" />
-                    )}
-                  </div>
-
-                  <div className="pt-1 hairline-t">
-                    <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 mb-1.5 mt-1.5">
-                      skills
-                    </div>
-                    {selectedSkills.size === 0 ? (
-                      <div className="text-[11.5px] text-fog-700 italic font-mono">
-                        none built-ins only
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap gap-1">
-                        {skills
-                          .filter((s) => selectedSkills.has(s.id))
-                          .map((s) => (
-                            <span
-                              key={s.id}
-                              className="inline-flex items-center h-4 px-1.5 text-[9px] border rounded-[3px] font-mono tracking-wider uppercase border-ink-500 bg-ink-800 text-fog-300"
-                            >
-                              {s.name}
-                            </span>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-1 hairline-t">
-                    <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600 mb-1.5 mt-1.5">
-                      directive
-                    </div>
-                    <div className="text-[11.5px] text-fog-500 leading-relaxed font-mono">
-                      {directive.trim() ? (
-                        <>
-                          {directive.slice(0, 160)}
-                          {directive.length > 160 ? '...' : ''}
-                        </>
-                      ) : (
-                        <span className="text-fog-700 italic">
-                          no brief agent will roam and self-negotiate scope
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-md hairline bg-ink-900/40 p-3 space-y-1.5">
-              <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
-                next step
-              </div>
-              <div className="text-[11px] text-fog-400 leading-snug">
-                Agent enters the roster in {spawnMode} mode. Every model inherits
-                opencode's built-in tools (read, edit, bash, grep, task ...) for
-                free. Skills add credentialed integrations on top.
-              </div>
-            </div>
-          </aside>
+          <PreviewPanel
+            previewName={previewName}
+            trimmedName={trimmedName}
+            spawnMode={spawnMode}
+            currentModel={currentModel}
+            selectedSkills={selectedSkills}
+            skills={skills}
+            directive={directive}
+          />
         </div>
       </div>
 
@@ -453,242 +366,5 @@ export function SpawnAgentModal({
         </div>
       </div>
     </Modal>
-  );
-}
-
-function Section({
-  step,
-  label,
-  hint,
-  optional,
-  trailing,
-  children,
-}: {
-  step: string;
-  label: string;
-  hint?: string;
-  optional?: boolean;
-  trailing?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const labelEl = (
-    <span
-      className={clsx(
-        'font-mono text-micro uppercase tracking-widest2 text-fog-300 transition',
-        hint &&
-          'cursor-help border-b border-dotted border-fog-700 hover:text-fog-100 hover:border-fog-500'
-      )}
-    >
-      {label}
-    </span>
-  );
-  return (
-    <section>
-      <header className="flex items-center gap-2 mb-2">
-        <span className="font-mono text-micro text-fog-700 tabular-nums">{step}</span>
-        {hint ? (
-          <Tooltip side="top" align="start" wide content={hint}>
-            {labelEl}
-          </Tooltip>
-        ) : (
-          labelEl
-        )}
-        {optional && (
-          <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 border border-ink-600 rounded-[3px] px-1 h-3.5 inline-flex items-center">
-            optional
-          </span>
-        )}
-        {trailing && <span className="ml-auto">{trailing}</span>}
-      </header>
-      {children}
-    </section>
-  );
-}
-
-function HeaderCell({ cls, children }: { cls: string; children: React.ReactNode }) {
-  return (
-    <span
-      className={clsx(
-        'font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600 truncate',
-        cls
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
-function ModelNameCell({ label, active }: { label: string; active: boolean }) {
-  return (
-    <span className="flex-1 min-w-0 flex items-center">
-      <span
-        className={clsx(
-          'font-mono text-[11.5px] truncate',
-          active ? 'text-fog-100' : 'text-fog-300'
-        )}
-      >
-        {label}
-      </span>
-    </span>
-  );
-}
-
-function FamilyCell({ family }: { family: Family }) {
-  const meta = familyMeta[family];
-  return (
-    <span
-      className={clsx(
-        'font-mono text-[10px] uppercase tracking-wider w-[92px] truncate',
-        meta.color
-      )}
-    >
-      {meta.label}
-    </span>
-  );
-}
-
-function PriceCell({
-  value,
-  cls,
-  muted,
-}: {
-  value: string;
-  cls: string;
-  muted?: boolean;
-}) {
-  return (
-    <span
-      className={clsx(
-        'font-mono text-[11px] tabular-nums truncate',
-        cls,
-        muted ? 'text-fog-500' : 'text-fog-200'
-      )}
-    >
-      {value}
-    </span>
-  );
-}
-
-function SpawnModeToggle({
-  mode,
-  onChange,
-}: {
-  mode: SpawnMode;
-  onChange: (m: SpawnMode) => void;
-}) {
-  return (
-    <Tooltip
-      side="top"
-      align="end"
-      wide
-      content={
-        <div className="space-y-1">
-          <div className="font-mono text-[11px] text-fog-200">spawn mode</div>
-          <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
-            <span className="text-fog-200">idle</span> sits in the roster until
-            another agent dispatches it via the task tool good for on-demand peers.
-          </div>
-          <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
-            <span className="text-mint">active</span> boots warm and immediately
-            advertises availability good for long-running watchers and monitors.
-          </div>
-        </div>
-      }
-    >
-      <span className="inline-flex items-center h-8 hairline rounded p-0.5 bg-ink-900 cursor-help">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onChange('idle');
-          }}
-          className={clsx(
-            'h-7 px-2.5 rounded font-mono text-micro uppercase tracking-wider transition',
-            mode === 'idle'
-              ? 'bg-ink-800 text-fog-200 hairline'
-              : 'text-fog-600 hover:text-fog-300'
-          )}
-        >
-          idle
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onChange('active');
-          }}
-          className={clsx(
-            'h-7 px-2.5 rounded font-mono text-micro uppercase tracking-wider transition',
-            mode === 'active'
-              ? 'bg-ink-800 text-mint hairline'
-              : 'text-fog-600 hover:text-fog-300'
-          )}
-        >
-          active
-        </button>
-      </span>
-    </Tooltip>
-  );
-}
-
-function SpawnButton({
-  state,
-  mode,
-  onClick,
-  disabled,
-}: {
-  state: SpawnState;
-  mode: SpawnMode;
-  onClick: () => void;
-  disabled?: boolean;
-}) {
-  if (state === 'verifying') {
-    return (
-      <button
-        disabled
-        className="h-8 px-4 rounded font-mono text-micro uppercase tracking-wider bg-amber/10 text-amber border border-amber/30 transition flex items-center gap-2 cursor-wait"
-      >
-        <span className="w-1.5 h-1.5 rounded-full bg-amber animate-pulse" />
-        spawning…
-      </button>
-    );
-  }
-  if (state === 'verified') {
-    return (
-      <button
-        disabled
-        className="h-8 px-4 rounded font-mono text-micro uppercase tracking-wider bg-mint/10 text-mint border border-mint/30 transition flex items-center gap-2"
-      >
-        spawned {mode}
-      </button>
-    );
-  }
-  if (state === 'failed') {
-    return (
-      <button
-        onClick={onClick}
-        disabled={disabled}
-        className={clsx(
-          'h-8 px-4 rounded font-mono text-micro uppercase tracking-wider transition flex items-center gap-2',
-          disabled
-            ? 'bg-ink-800 text-fog-600 border border-ink-700 cursor-not-allowed'
-            : 'bg-rust/15 hover:bg-rust/25 text-rust border border-rust/30'
-        )}
-      >
-        retry spawn
-      </button>
-    );
-  }
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={clsx(
-        'h-8 px-4 rounded font-mono text-micro uppercase tracking-wider transition',
-        disabled
-          ? 'bg-ink-800 text-fog-600 border border-ink-700 cursor-not-allowed'
-          : 'bg-molten/15 hover:bg-molten/25 text-molten border border-molten/30'
-      )}
-    >
-      spawn {mode === 'active' ? 'active' : 'agent'}
-    </button>
   );
 }
