@@ -9,15 +9,7 @@ import type { ProviderModel } from '@/app/api/swarm/providers/route';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
 import { IconBranch, IconMilestone, IconSettings } from './icons';
-import {
-  familyMeta,
-  fmtZenPrice,
-} from '@/lib/zen-catalog';
-import {
-  patternMeta,
-  patternAccentText,
-  teamSizeWarningMessage,
-} from '@/lib/swarm-patterns';
+import { patternMeta } from '@/lib/swarm-patterns';
 import type { SwarmPattern } from '@/lib/swarm-types';
 import type {
   SwarmRunRequest,
@@ -26,28 +18,22 @@ import type {
 import {
   type BranchStrategy,
   type StartMode,
-  type Inferred,
   generateRunId,
   extractRepoName,
-  API_RECIPES,
-  inferred,
 } from './new-run/helpers';
 import {
   Section,
-  CountStepper,
   BoundRow,
   PatternCard,
   StrategyCard,
   ModeButton,
   ModeHint,
-  HeaderCell,
-  ModelNameCell,
-  FamilyCell,
-  PriceCell,
   InitiateTooltip,
 } from './new-run/sub-components';
 import { useNewRunForm } from './new-run/use-new-run-form';
 import { PreviewPanel } from './new-run/preview-panel';
+import { TeamSection } from './new-run/team-section';
+import { ApiRecipesSection } from './new-run/api-recipes-section';
 
 // Helper types + constants moved to ./new-run/helpers.ts
 // Visual subcomponents moved to ./new-run/sub-components.tsx
@@ -75,7 +61,6 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const setStartMode = (v: StartMode) => setField('startMode', v);
   const setEnableSynthesisCritic = (v: boolean) => setField('enableSynthesisCritic', v);
   const [recipesOpen, setRecipesOpen] = useState(false);
-  const [copiedPattern, setCopiedPattern] = useState<SwarmPattern | null>(null);
   const router = useRouter();
   const queryClient = useQueryClient();
 
@@ -99,33 +84,11 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     [liveModels],
   );
 
-  const copyRecipe = async (p: SwarmPattern, body: string) => {
-    try {
-      await navigator.clipboard.writeText(body);
-      setCopiedPattern(p);
-      // Revert "copied ✓" chip after a beat.
-      setTimeout(() => setCopiedPattern((cur) => (cur === p ? null : cur)), 1200);
-    } catch {
-      // Clipboard blocked (e.g. non-secure context) — no-op; user can still
-      // drag-select. Prototype doesn't warrant a fallback prompt.
-    }
-  };
-
   const totalAgents = useMemo(
     () => Object.values(teamCounts).reduce((a, n) => a + n, 0),
     [teamCounts]
   );
   const hasDirective = directive.trim().length > 0;
-
-  // Per-pattern recommended-max readout (#103). Reads patternMeta.recommendedMax
-  // — the same value the kickoff WARN (#101) and the MAXTEAM-2026-04-26 stress
-  // test ledger emit. Empty totalAgents means "auto-default at server"; we
-  // still surface the recommendation so the user can tune their stack
-  // intentionally.
-  const recommendedMax = patternMeta[pattern].recommendedMax;
-  const teamSizeWarn = totalAgents > 0
-    ? teamSizeWarningMessage(pattern, totalAgents)
-    : undefined;
 
   const cloneTarget = useMemo(() => {
     const ws = workspacePath.trim().replace(/\/+$/, '');
@@ -372,138 +335,15 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
             )}
           </Section>
 
-          <Section
-            step="04"
-            label="team"
-            optional
-            hint="pick agents from the live opencode catalog (driven by /config/providers). stack multiples of the same model with the +/− stepper. leave empty and agents will spawn as work demands."
-            trailing={
-              <div className="flex items-center gap-2">
-                {catalogSource === 'fallback' && (
-                  <Tooltip
-                    side="left"
-                    wide
-                    content={
-                      <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
-                        opencode is unreachable — showing the bundled static catalog. once the
-                        backend reconnects, the team picker repopulates from /config/providers.
-                      </div>
-                    }
-                  >
-                    <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-amber/70 cursor-help">
-                      static
-                    </span>
-                  </Tooltip>
-                )}
-                {catalogSource === 'live' && (
-                  <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-mint/70">
-                    live
-                  </span>
-                )}
-                <span className="font-mono text-[10.5px] text-fog-700 tabular-nums">
-                  {totalAgents} on deck
-                </span>
-              </div>
-            }
-          >
-            <div className="rounded-md hairline bg-ink-900/40 overflow-hidden">
-              <div className="px-3 h-6 hairline-b bg-ink-900/70 flex items-center gap-3">
-                <HeaderCell cls="flex-1 min-w-0">model</HeaderCell>
-                <HeaderCell cls="w-[82px]">family</HeaderCell>
-                <HeaderCell cls="w-12 text-right">in $</HeaderCell>
-                <HeaderCell cls="w-12 text-right">out $</HeaderCell>
-                <HeaderCell cls="w-[74px] text-right">count</HeaderCell>
-              </div>
-              <ul className="max-h-[280px] overflow-y-auto">
-                {orderedModels.map((m) => {
-                  const count = teamCounts[m.id] ?? 0;
-                  const active = count > 0;
-                  // Pricing may be missing when opencode reports a model we
-                  // have no override for and the upstream cost is undefined.
-                  // Render an em-dash so the column doesn't collapse.
-                  const inPrice = m.pricing ? fmtZenPrice(m.pricing.input) : '—';
-                  const outPrice = m.pricing ? fmtZenPrice(m.pricing.output) : '—';
-                  return (
-                    <li key={m.id}>
-                      <div
-                        className={clsx(
-                          'px-3 h-5 flex items-center gap-3 hairline-b last:border-b-0 transition',
-                          active ? 'bg-ink-800' : 'hover:bg-ink-800/40'
-                        )}
-                      >
-                        <ModelNameCell label={m.label} active={active} />
-                        <FamilyCell family={m.vendor} />
-                        <PriceCell value={inPrice} cls="w-12 text-right" />
-                        <PriceCell value={outPrice} cls="w-12 text-right" />
-                        <CountStepper
-                          count={count}
-                          onMinus={() => bumpCount(m.id, -1)}
-                          onPlus={() => bumpCount(m.id, +1)}
-                        />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-              <div className="hairline-t px-3 h-8 flex items-center gap-2 bg-ink-900/60">
-                <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600">
-                  {totalAgents === 0 ? 'no agents selected' : `${totalAgents} selected`}
-                </span>
-                <button
-                  onClick={clearTeam}
-                  disabled={totalAgents === 0}
-                  className={clsx(
-                    'ml-auto h-6 px-2 rounded font-mono text-micro uppercase tracking-widest2 transition border',
-                    totalAgents === 0
-                      ? 'bg-ink-900 border-ink-700 text-fog-700 cursor-not-allowed'
-                      : 'bg-ink-900 border-ink-600 text-fog-400 hover:text-fog-100 hover:border-ink-500'
-                  )}
-                >
-                  clear
-                </button>
-              </div>
-            </div>
-            <div className="mt-1 font-mono text-[10.5px] text-fog-700 leading-snug">
-              agents self-select within the run's bounds. stacking N of the same model spawns N
-              peer agents on that model.
-            </div>
-            {/*
-              recommended-max readout (#103). Empirical ceiling per pattern
-              from the MAXTEAM-2026-04-26 stress test. Stays muted by default
-              so it doesn't compete with the team picker; turns amber when
-              totalAgents > recommendedMax to flag that the run is in
-              degradation territory. Tooltip carries the full server-warn
-              message so the user can read the exact failure-mode reference
-              without leaving the modal.
-            */}
-            <div
-              className={clsx(
-                'mt-1 font-mono text-[10.5px] leading-snug flex items-center gap-2',
-                teamSizeWarn ? 'text-amber/85' : 'text-fog-700',
-              )}
-            >
-              <span>
-                recommended max for{' '}
-                <span className={patternAccentText[patternMeta[pattern].accent]}>
-                  {patternMeta[pattern].label}
-                </span>
-                : <span className="tabular-nums">{recommendedMax}</span>
-                {totalAgents > 0 && (
-                  <>
-                    {' · current '}
-                    <span className="tabular-nums">{totalAgents}</span>
-                  </>
-                )}
-              </span>
-              {teamSizeWarn && (
-                <Tooltip content={teamSizeWarn}>
-                  <span className="cursor-help underline decoration-dotted underline-offset-2">
-                    above ceiling — hover for failure modes
-                  </span>
-                </Tooltip>
-              )}
-            </div>
-          </Section>
+          <TeamSection
+            pattern={pattern}
+            totalAgents={totalAgents}
+            catalogSource={catalogSource}
+            orderedModels={orderedModels}
+            teamCounts={teamCounts}
+            bumpCount={bumpCount}
+            clearTeam={clearTeam}
+          />
 
           <Section
             step="05"
@@ -719,75 +559,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
         />
       </div>
 
-      {/* Collapsible curl-recipe reference for API users. Default closed
-          so it doesn't compete with the form; one-click expand shows
-          every pattern's POST body with copy affordances. */}
-      <div className="mt-4 rounded-md hairline bg-ink-900/30 overflow-hidden">
-        <button
-          type="button"
-          onClick={() => setRecipesOpen((v) => !v)}
-          className="w-full h-7 px-3 flex items-center gap-2 text-left hover:bg-ink-900/60 transition"
-          aria-expanded={recipesOpen}
-        >
-          <span
-            className={clsx(
-              'font-mono text-[10px] leading-none text-fog-500 transition-transform',
-              recipesOpen && 'rotate-90',
-            )}
-            aria-hidden
-          >
-            ▸
-          </span>
-          <span className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
-            api recipes
-          </span>
-          <span className="font-mono text-[10px] text-fog-700 ml-auto">
-            {recipesOpen
-              ? 'click any pattern to copy its curl body'
-              : `${API_RECIPES.length} patterns · click to expand`}
-          </span>
-        </button>
-        {recipesOpen && (
-          <div className="hairline-t divide-y divide-ink-800">
-            {API_RECIPES.map((recipe) => {
-              const meta = patternMeta[recipe.pattern];
-              const isCopied = copiedPattern === recipe.pattern;
-              return (
-                <div key={recipe.pattern} className="px-3 py-2">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <span
-                      className={clsx(
-                        'font-mono text-[10px] uppercase tracking-widest2 shrink-0',
-                        patternAccentText[meta.accent],
-                      )}
-                    >
-                      {recipe.pattern}
-                    </span>
-                    <span className="font-mono text-[10px] text-fog-600 truncate">
-                      — {recipe.hint}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => copyRecipe(recipe.pattern, recipe.body)}
-                      className={clsx(
-                        'ml-auto h-5 px-1.5 rounded font-mono text-[9px] uppercase tracking-widest2 border transition shrink-0',
-                        isCopied
-                          ? 'bg-mint/15 text-mint border-mint/30'
-                          : 'bg-ink-900 text-fog-500 border-ink-700 hover:text-fog-200 hover:border-ink-500',
-                      )}
-                    >
-                      {isCopied ? 'copied ✓' : 'copy'}
-                    </button>
-                  </div>
-                  <pre className="font-mono text-[10.5px] text-fog-300 leading-snug whitespace-pre-wrap break-all bg-ink-900/60 rounded px-2 py-1.5 border border-ink-800">
-                    {recipe.body}
-                  </pre>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      <ApiRecipesSection open={recipesOpen} onToggle={() => setRecipesOpen((v) => !v)} />
 
       <div className="mt-4 pt-3 hairline-t flex items-center gap-2">
         <button
