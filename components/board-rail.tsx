@@ -182,15 +182,16 @@ export function BoardRail({
       )}
       {/* All 6 sections always rendered (in-progress / claimed / open /
           stale / blocked / done) so the user has a stable set of
-          collapsible containers regardless of which statuses the run
-          currently has items in. Empty sections show "(none)" when
-          expanded so the header carries all the signal when collapsed. */}
+          collapsible containers. Sections with 0 items render header-only
+          (no "(none)" placeholder — the count next to the chevron is
+          enough). Click any header to collapse / expand. */}
       {SECTIONS.map((section) => {
         const secItems = items
           .filter((it) => section.matches.includes(it.status))
           // newest first for active sections; done can stay created-desc too
           .sort((a, b) => (b.completedAtMs ?? b.createdAtMs) - (a.completedAtMs ?? a.createdAtMs));
         const isOpen = expanded[section.key];
+        const hasItems = secItems.length > 0;
         return (
           <div key={section.key}>
             <button
@@ -198,8 +199,26 @@ export function BoardRail({
               onClick={() =>
                 setExpanded((prev) => ({ ...prev, [section.key]: !prev[section.key] }))
               }
-              className="w-full h-6 px-3 flex items-center gap-2 text-left hover:bg-ink-800/60 transition cursor-pointer"
+              disabled={!hasItems}
+              className={clsx(
+                'w-full h-6 px-3 flex items-center gap-2 text-left transition',
+                hasItems
+                  ? 'hover:bg-ink-800/60 cursor-pointer'
+                  : 'cursor-default opacity-60',
+              )}
             >
+              {/* Disclosure chevron — only rendered for sections with
+                  items so the affordance isn't misleading on empty
+                  sections. */}
+              <span
+                className={clsx(
+                  'font-mono text-[9px] tabular-nums w-2 shrink-0 transition-transform',
+                  hasItems ? section.tone : 'text-fog-700',
+                  isOpen && hasItems && 'rotate-90',
+                )}
+              >
+                {hasItems ? '▸' : '·'}
+              </span>
               <span className={clsx('font-mono text-micro uppercase tracking-widest2', section.tone)}>
                 {section.label}
               </span>
@@ -207,22 +226,16 @@ export function BoardRail({
                 {secItems.length}
               </span>
             </button>
-            {isOpen && (
-              secItems.length === 0 ? (
-                <div className="pl-5 pr-2 h-5 flex items-center font-mono text-[10px] text-fog-700">
-                  (none)
-                </div>
-              ) : (
-                secItems.map((item) => (
-                  <BoardRailRow
-                    key={item.id}
-                    item={item}
-                    owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) ?? null : null}
-                    heatScore={heatScoreById.get(item.id) ?? 0}
-                    maxHeatScore={maxHeatScore}
-                  />
-                ))
-              )
+            {isOpen && hasItems && (
+              secItems.map((item) => (
+                <BoardRailRow
+                  key={item.id}
+                  item={item}
+                  owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) ?? null : null}
+                  heatScore={heatScoreById.get(item.id) ?? 0}
+                  maxHeatScore={maxHeatScore}
+                />
+              ))
             )}
           </div>
         );

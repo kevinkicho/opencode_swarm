@@ -135,15 +135,15 @@ export function HeatRail({
       </ul>
     );
 
+  // Two-row header: row 1 = sort + view toggles (h-6), row 2 = filter
+  // input full-width (h-6). Earlier shape stuffed a "heat / N files"
+  // eyebrow + sort + filter + 3 view toggles into one 320px row, leaving
+  // the filter input only 24 chars wide. The eyebrow + count duplicated
+  // what the tab strip already shows ("HEAT 9"), so it's gone; the
+  // reclaimed width goes to the filter.
   const header = (
-    <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
-      <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600 shrink-0">
-        heat
-      </span>
-      <span className="font-mono text-micro text-fog-700 tabular-nums">
-        {heat.length} files
-      </span>
-      <div className="ml-auto flex items-center gap-2">
+    <div className="hairline-b bg-ink-850/80 backdrop-blur shrink-0">
+      <div className="h-6 px-3 flex items-center gap-2">
         <button
           type="button"
           onClick={() => setSortOrder(sortOrder === 'hot' ? 'alpha' : 'hot')}
@@ -151,25 +151,7 @@ export function HeatRail({
         >
           sort: {sortOrder === 'hot' ? 'hot' : 'α'}
         </button>
-        <div className="relative flex items-center">
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="filter paths..."
-            className="h-4 w-24 px-1.5 font-mono text-micro text-fog-300 bg-ink-900 border border-ink-700 outline-none focus:border-fog-500 transition-colors placeholder:text-fog-700"
-          />
-          {filter && (
-            <button
-              type="button"
-              onClick={() => setFilter('')}
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-3 w-3 flex items-center justify-center rounded-full font-mono text-[8px] text-fog-500 hover:text-fog-200 hover:bg-ink-800 transition-colors"
-            >
-              ×
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-0.5">
+        <div className="ml-auto flex items-center gap-0.5">
           <ViewToggleButton
             active={view === 'list'}
             onClick={() => setView('list')}
@@ -189,6 +171,26 @@ export function HeatRail({
               label="all"
               tooltip="full workspace tree · cold files muted (gitignore-aware)"
             />
+          )}
+        </div>
+      </div>
+      <div className="h-6 px-3 pb-1 flex items-center">
+        <div className="relative flex items-center w-full">
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="filter paths..."
+            className="h-4 w-full px-1.5 font-mono text-micro text-fog-300 bg-ink-900 border border-ink-700 outline-none focus:border-fog-500 transition-colors placeholder:text-fog-700"
+          />
+          {filter && (
+            <button
+              type="button"
+              onClick={() => setFilter('')}
+              className="absolute right-1 top-1/2 -translate-y-1/2 h-3 w-3 flex items-center justify-center rounded-full font-mono text-[8px] text-fog-500 hover:text-fog-200 hover:bg-ink-800 transition-colors"
+            >
+              ×
+            </button>
           )}
         </div>
       </div>

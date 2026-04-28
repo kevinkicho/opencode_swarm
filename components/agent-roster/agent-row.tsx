@@ -66,7 +66,7 @@ export function AgentRow({
           onToggleExpand();
           onSelect();
         }}
-        className="w-full text-left pl-3 pr-3 py-2 flex items-center gap-2.5 hover:bg-ink-800/60 transition relative"
+        className="w-full text-left pl-3 pr-3 py-2 flex flex-col gap-1.5 hover:bg-ink-800/60 transition relative"
       >
         <span
           className={clsx(
@@ -76,66 +76,102 @@ export function AgentRow({
           )}
         />
 
-        <Tooltip
-          side="right"
-          wide
-          content={
-            <div className="space-y-1">
-              <div className="font-mono text-[11px] text-fog-200">
-                <span className={st.color}>{st.label}</span>
-                {agent.focus && <span className="text-fog-500"> - {agent.focus}</span>}
+        {/* Line 1: identity row — dot + name + status + (todo chip) + (attention) */}
+        <div className="flex items-center gap-2.5 w-full">
+          <Tooltip
+            side="right"
+            wide
+            content={
+              <div className="space-y-1">
+                <div className="font-mono text-[11px] text-fog-200">
+                  <span className={st.color}>{st.label}</span>
+                  {agent.focus && <span className="text-fog-500"> - {agent.focus}</span>}
+                </div>
+                <div className="font-mono text-[10.5px] text-fog-600">
+                  {compact(agent.tokensUsed)} tokens ${agent.costUsed.toFixed(2)} sent {agent.messagesSent} recv {agent.messagesRecv}
+                </div>
               </div>
-              <div className="font-mono text-[10.5px] text-fog-600">
-                {compact(agent.tokensUsed)} tokens ${agent.costUsed.toFixed(2)} sent {agent.messagesSent} recv {agent.messagesRecv}
-              </div>
-            </div>
-          }
-        >
-          <span className="flex items-center gap-1.5 cursor-default shrink-0">
-            <span
-              className={clsx(
-                'w-1.5 h-1.5 rounded-full',
-                circle.dot,
-                circle.animation,
-              )}
-            />
+            }
+          >
+            <span className="flex items-center gap-1.5 cursor-default shrink-0">
+              <span
+                className={clsx(
+                  'w-1.5 h-1.5 rounded-full',
+                  circle.dot,
+                  circle.animation,
+                )}
+              />
+            </span>
+          </Tooltip>
+
+          <span className="text-[13px] text-fog-100 truncate min-w-0 cursor-default">
+            {agent.name}
           </span>
-        </Tooltip>
 
-        <span className="text-[13px] text-fog-100 truncate min-w-0 cursor-default">
-          {agent.name}
-        </span>
+          {/* Status text chip — 2026-04-24, complements the colored dot
+              with a readable label. The dot already conveys severity via
+              color (mint=idle, molten=working, amber=waiting, rust=error,
+              etc.); the chip lets a glancer answer "what is this agent
+              DOING right now?" without parsing color → state. */}
+          <span
+            className={clsx(
+              'shrink-0 inline-flex items-center h-4 px-1.5 rounded-sm',
+              'font-mono text-[9.5px] uppercase tracking-widest2 hairline',
+              st.color,
+              'bg-ink-900/70',
+            )}
+            title={`agent status: ${st.label}${agent.focus ? ` — ${agent.focus}` : ''}`}
+          >
+            {st.label}
+          </span>
 
-        {/* Status text chip — 2026-04-24, complements the colored dot
-            with a readable label. The dot already conveys severity via
-            color (mint=idle, molten=working, amber=waiting, rust=error,
-            etc.); the chip lets a glancer answer "what is this agent
-            DOING right now?" without parsing color → state. Sits in
-            the same flex row so the layout collapses gracefully on
-            narrow widths via truncate on the name. */}
-        <span
-          className={clsx(
-            'shrink-0 inline-flex items-center h-4 px-1.5 rounded-sm',
-            'font-mono text-[9.5px] uppercase tracking-widest2 hairline',
-            st.color,
-            'bg-ink-900/70',
+          <span className="flex-1 min-w-0" />
+
+          {activeTodos.length > 0 && (
+            <ActiveTodoChip
+              todos={activeTodos}
+              accent={agent.accent}
+              onFocus={onFocus}
+            />
           )}
-          title={`agent status: ${st.label}${agent.focus ? ` — ${agent.focus}` : ''}`}
-        >
-          {st.label}
-        </span>
 
-        <span className="flex-1 min-w-0" />
+          <AttentionBadge attention={attention} onFocus={onFocus} />
+        </div>
 
-        {activeTodos.length > 0 && (
-          <ActiveTodoChip
-            todos={activeTodos}
-            accent={agent.accent}
-            onFocus={onFocus}
-          />
-        )}
-
-        <AttentionBadge attention={attention} onFocus={onFocus} />
+        {/* Line 2: throughput strip — tokens compact + sent/recv + cost,
+            and a thin budget bar below. Surfaces "is this agent doing
+            work" at a glance without expanding the row. The earlier
+            collapsed state showed only IDLE/WORKING which was the same
+            information as the colored dot — this fills the unused
+            horizontal space with metrics that actually matter. */}
+        <div className="flex items-center gap-2 w-full pl-3 pr-1">
+          <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-700 tabular-nums">
+            {compact(agent.tokensUsed)}
+            <span className="text-fog-700/70 mx-1">tok</span>
+          </span>
+          <span className="font-mono text-[9.5px] text-fog-600 tabular-nums">
+            ${agent.costUsed.toFixed(2)}
+          </span>
+          <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 tabular-nums">
+            ↑{agent.messagesSent} ↓{agent.messagesRecv}
+          </span>
+          {/* Budget bar pushed right; thin (1px) so it doesn't add
+              visual weight, fills remaining space for max precision. */}
+          <Tooltip
+            content={`${compact(agent.tokensUsed)} of ${compact(agent.tokensBudget)} budget · ${tokenPct}%`}
+            side="top"
+          >
+            <span className="flex-1 min-w-[24px] h-[2px] rounded-full bg-ink-900 overflow-hidden cursor-help">
+              <span
+                className={clsx(
+                  'block h-full rounded-full',
+                  tokenPct > 80 ? 'bg-rust' : tokenPct > 60 ? 'bg-amber' : 'bg-fog-500/70',
+                )}
+                style={{ width: `${tokenPct}%` }}
+              />
+            </span>
+          </Tooltip>
+        </div>
       </button>
 
       {expanded && (
@@ -353,6 +389,13 @@ function AttentionBadge({
     ...attention.retries.map((m) => ({ msg: m, kind: 'retry' as const })),
   ];
 
+  // Severity glyph clarifies what the badge means at a glance — earlier
+  // shape showed just a digit (e.g. lone "1") which read as a generic
+  // counter. Now: ⚠ for errors, ⏳ for pending, ↻ for retry — paired with
+  // the tone color and the count.
+  const glyph =
+    severity === 'error' ? '!' : severity === 'pending' ? '?' : '↻';
+
   return (
     <span onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
       <Popover
@@ -369,22 +412,30 @@ function AttentionBadge({
           />
         )}
       >
-        <span
-          className={clsx(
-            'shrink-0 inline-flex items-center justify-center min-w-[14px] h-4 px-1 rounded-sm cursor-pointer',
-            'hover:ring-1 transition',
-            tone.ring,
-          )}
+        <Tooltip
+          content={
+            severity === 'error'
+              ? `${total} item${total === 1 ? '' : 's'} need attention (errors)`
+              : severity === 'pending'
+                ? `${total} permission ${total === 1 ? 'request' : 'requests'} pending`
+                : `${total} retry${total === 1 ? '' : ' attempts'} in progress`
+          }
+          side="top"
         >
           <span
             className={clsx(
-              'font-mono text-[9.5px] tabular-nums leading-none',
+              'shrink-0 inline-flex items-center gap-0.5 h-4 px-1 rounded-sm cursor-pointer',
+              'hairline hover:ring-1 transition',
+              tone.ring,
               tone.text,
             )}
           >
-            {total}
+            <span className="font-mono text-[10px] leading-none">{glyph}</span>
+            <span className="font-mono text-[9.5px] tabular-nums leading-none">
+              {total}
+            </span>
           </span>
-        </span>
+        </Tooltip>
       </Popover>
     </span>
   );

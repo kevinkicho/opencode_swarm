@@ -206,11 +206,33 @@ export function HeatTreeView({
   );
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     const next = new Set<string>();
-    const top = [...root.children.values()]
-      .filter((c) => c.type === 'dir')
-      .sort((a, b) => b.editCount - a.editCount)
-      .slice(0, 3);
-    for (const t of top) next.add(t.fullPath);
+    // Recursively auto-expand any dir whose subtree is small (≤3 child
+    // dirs at each level). For shallow trees with one or two top-level
+    // dirs (e.g. src/server), this fully expands so files are visible
+    // without clicking. Earlier shape only expanded the top 3 by edit
+    // count, leaving nested dirs (markets/, routes/) collapsed — every
+    // run started with a tree that needed 2-4 clicks to see anything.
+    function walk(node: typeof root): void {
+      const childDirs = [...node.children.values()].filter((c) => c.type === 'dir');
+      if (childDirs.length === 0) return;
+      // Always expand the root level. Then auto-expand nested dirs if
+      // siblings are few (≤3) — preserves fully-expanded for shallow
+      // trees but avoids over-expanding wide ones.
+      if (childDirs.length <= 3) {
+        for (const c of childDirs) {
+          next.add(c.fullPath);
+          walk(c);
+        }
+      } else {
+        // Wide tree — expand only the top-3 hottest, leave the rest
+        // collapsed so the panel doesn't flood.
+        const top = childDirs
+          .sort((a, b) => b.editCount - a.editCount)
+          .slice(0, 3);
+        for (const c of top) next.add(c.fullPath);
+      }
+    }
+    walk(root);
     return next;
   });
 

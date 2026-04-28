@@ -149,7 +149,12 @@ export function LeftTabs({
           active={tab === 'plan'}
           onClick={() => setTab('plan')}
           label="plan"
-          count={`${planCompleted}/${plan.length}`}
+          // Singleton count — total todos. Earlier `${completed}/${total}`
+          // mixed badge formats with roster (also fraction) and heat
+          // (singleton); standardizing on a single count keeps the tab
+          // strip readable. Completion progress lives in the rail's
+          // own header.
+          count={plan.length > 0 ? String(plan.length) : ''}
           tooltip={
             <div className="space-y-0.5 max-w-[260px]">
               <div className="font-mono text-[11px] text-fog-200">plan</div>
@@ -164,7 +169,7 @@ export function LeftTabs({
           active={tab === 'roster'}
           onClick={() => setTab('roster')}
           label="roster"
-          count={`${agentsActive}/${agents.length}`}
+          count={agents.length > 0 ? String(agents.length) : ''}
           tooltip={
             <div className="space-y-0.5 max-w-[260px]">
               <div className="font-mono text-[11px] text-fog-200">roster</div>
@@ -332,8 +337,11 @@ function TabButton({
     </span>
   );
   if (!tooltip) return btn;
+  // Tooltip side flipped to "top" so the description floats above the tab
+  // strip instead of dropping over the panel content below — was causing
+  // the first 2-3 rows of plan/roster/board to be obscured on hover.
   return (
-    <Tooltip side="bottom" wide content={tooltip}>
+    <Tooltip side="top" wide content={tooltip}>
       {btn}
     </Tooltip>
   );
