@@ -84,8 +84,12 @@ export function classifySseFrame(
   }
 
   // Any other typed event scoped to a known session triggers a refetch.
-  // permission.asked / message.removed / file.edited / todo.updated all
-  // land here. Refetch is the safe default — local merge logic only
-  // covers part + info updates.
+  // permission.updated / permission.replied / message.removed / file.edited /
+  // todo.updated / command.executed / session.* (lifecycle) all land here.
+  // Refetch is the safe default — local merge logic only covers part + info
+  // updates. Server-level events that lack `sessionID` (server.connected,
+  // server.instance.disposed, file.watcher.updated, vcs.branch.updated) are
+  // intentionally dropped by the no-session filter above; they don't change
+  // per-run state.
   return { kind: 'refetch', sessionID: sid, type };
 }

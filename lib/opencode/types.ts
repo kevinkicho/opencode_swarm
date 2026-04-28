@@ -138,16 +138,85 @@ export interface OpencodeMessage {
   parts: OpencodePart[];
 }
 
-// Permission request emitted by opencode when a tool call requires user approval.
-// Matches Permission.Request in opencode's packages/opencode/src/permission/index.ts.
+// Permission request emitted by opencode when a tool call requires user
+// approval. Matches the `Permission` type in opencode's v1.14 SDK
+// (packages/sdk/js/src/gen/types.gen.ts):
+//
+//   { id, type, pattern?, sessionID, messageID, callID?, title, metadata, time }
+//
+// `type` is the permission kind (e.g. 'bash', 'edit', 'write'); `pattern`
+// is the matched glob/path/cmd; `title` is a human-readable summary
+// suitable for the strip header. `messageID` and `callID` are top-level
+// (pre-v1.14 they nested under `tool`).
 export interface OpencodePermissionRequest {
   id: string;
+  type: string;
+  pattern?: string | readonly string[];
   sessionID: string;
-  permission: string;
-  patterns: readonly string[];
+  messageID: string;
+  callID?: string;
+  title: string;
   metadata: Record<string, unknown>;
-  always: readonly string[];
-  tool?: { messageID: string; callID: string };
+  time: { created: number };
 }
 
 export type OpencodePermissionReply = 'once' | 'always' | 'reject';
+
+// ---------------------------------------------------------------------------
+// v1.14 supplementary surfaces. These were added when we aligned with v1.14
+// (2026-04-27). Slim mirror types — only the fields we surface in the UI;
+// the SDK's full types.gen.ts has more keys we ignore.
+
+// `GET /experimental/tool/ids` — live tool catalog (returns string[]; we
+// keep it raw to compare against the static ToolName union at startup).
+export type OpencodeToolIds = readonly string[];
+
+// `GET /command` — user-defined commands from opencode.json.
+export interface OpencodeCommand {
+  name: string;
+  description?: string;
+  agent?: string;
+  model?: string;
+  template: string;
+  subtask?: boolean;
+}
+
+// `GET /mcp` — status map keyed by server name. The SDK's full McpStatus
+// is a discriminated union (connected | disabled | failed | needs-auth |
+// needs-client-registration); we only surface the discriminator + name
+// in the UI, so this opaque shape is sufficient.
+export interface OpencodeMcpStatusEntry {
+  type: string;
+  [key: string]: unknown;
+}
+export type OpencodeMcpStatusMap = Record<string, OpencodeMcpStatusEntry>;
+
+// `GET /session/{id}/todo` — session-scoped todo list. Distinct from our
+// blackboard plan items; useful as a cross-check.
+export interface OpencodeTodo {
+  id: string;
+  content: string;
+  status: string;   // 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  priority: string; // 'high' | 'medium' | 'low'
+}
+
+// `GET /config` — full opencode.json effective config. We type only the
+// fields we display; everything else passes through untyped.
+export interface OpencodeConfig {
+  $schema?: string;
+  theme?: string;
+  logLevel?: 'DEBUG' | 'INFO' | 'WARN' | 'ERROR';
+  share?: 'manual' | 'auto' | 'disabled';
+  autoupdate?: boolean | 'notify';
+  snapshot?: boolean;
+  watcher?: { ignore?: string[] };
+  plugin?: string[];
+  command?: Record<string, {
+    template: string;
+    description?: string;
+    agent?: string;
+    model?: string;
+    subtask?: boolean;
+  }>;
+  [key: string]: unknown;
+}

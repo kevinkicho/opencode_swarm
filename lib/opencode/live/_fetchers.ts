@@ -12,11 +12,16 @@
 
 import type {
   OpencodeBuiltinAgent,
+  OpencodeCommand,
+  OpencodeConfig,
+  OpencodeMcpStatusMap,
   OpencodeMessage,
   OpencodePermissionReply,
   OpencodePermissionRequest,
   OpencodeProject,
   OpencodeSession,
+  OpencodeTodo,
+  OpencodeToolIds,
 } from '../types';
 import { OpencodeHttpError } from '../errors';
 
@@ -256,10 +261,15 @@ export async function postSessionMessageBrowser(
   }
 }
 
-// Permissions endpoints. opencode emits `permission.asked` when a tool
-// call needs approval and blocks the tool until `permission.replied`
-// resolves it. Instance-scoped like every other instance route — GET/POST
-// both require ?directory=.
+// Permissions endpoints. opencode emits `permission.updated` when a tool
+// call needs approval (and again when scope/metadata changes), and
+// `permission.replied` when the user resolves it. Instance-scoped like
+// every other route — GET/POST both require ?directory=.
+//
+// Endpoint shape changed in v1.14: the canonical reply path is
+// `POST /session/{id}/permissions/{permissionID}` with body
+// `{ response: 'once' | 'always' | 'reject' }`. The legacy
+// `POST /permission/{id}/reply` (body `{ reply }`) was removed.
 export function getPendingPermissionsBrowser(
   directory: string,
   init: RequestInit = {}
@@ -269,18 +279,18 @@ export function getPendingPermissionsBrowser(
 }
 
 export async function replyPermissionBrowser(
-  requestID: string,
+  sessionID: string,
+  permissionID: string,
   directory: string,
-  reply: OpencodePermissionReply,
-  message?: string
+  response: OpencodePermissionReply,
 ): Promise<void> {
   const qs = new URLSearchParams({ directory }).toString();
   const res = await fetch(
-    `/api/opencode/permission/${encodeURIComponent(requestID)}/reply?${qs}`,
+    `/api/opencode/session/${encodeURIComponent(sessionID)}/permissions/${encodeURIComponent(permissionID)}?${qs}`,
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(message ? { reply, message } : { reply }),
+      body: JSON.stringify({ response }),
     }
   );
   if (!res.ok) {
@@ -300,4 +310,107 @@ export function sessionDiffQueryKey(
   lastUpdated: number,
 ): readonly unknown[] {
   return ['opencode', 'session', sessionId, 'diff', lastUpdated];
+}
+
+// ---------------------------------------------------------------------------
+// v1.14 supplementary surfaces. Each is directory-scoped (?directory=) like
+// every other instance route. None of these fire on the streaming path —
+// they're typically polled on demand from inspector/diagnostic surfaces.
+
+// Live tool-name catalog from the running daemon. Includes built-ins +
+// user-installed skills + the `invalid` sentinel. Use to cross-check that
+// our static `ToolName` union still matches what the daemon advertises.
+export function getToolIdsBrowser(
+  directory: string,
+  init: RequestInit = {}
+): Promise<OpencodeToolIds> {
+  const qs = new URLSearchParams({ directory }).toString();
+  return getJsonBrowser<OpencodeToolIds>(`/experimental/tool/ids?${qs}`, init);
+}
+
+// Effective opencode.json — theme, watcher ignores, share policy,
+// user-defined commands, plugin list, etc. Useful for diagnostics modals.
+export function getConfigBrowser(
+  directory: string,
+  init: RequestInit = {}
+): Promise<OpencodeConfig> {
+  const qs = new URLSearchParams({ directory }).toString();
+  return getJsonBrowser<OpencodeConfig>(`/config?${qs}`, init);
+}
+
+// MCP server status map (keyed by server name). Each entry is a tagged
+// union — `type: 'connected' | 'disabled' | 'failed' | 'needs-auth' |
+// 'needs-client-registration'`.
+export function getMcpStatusBrowser(
+  directory: string,
+  init: RequestInit = {}
+): Promise<OpencodeMcpStatusMap> {
+  const qs = new URLSearchParams({ directory }).toString();
+  return getJsonBrowser<OpencodeMcpStatusMap>(`/mcp?${qs}`, init);
+}
+
+// User-defined commands from opencode.json (init, review, …). Useful for
+// a one-shot operations picker.
+export function getCommandsBrowser(
+  directory: string,
+  init: RequestInit = {}
+): Promise<OpencodeCommand[]> {
+  const qs = new URLSearchParams({ directory }).toString();
+  return getJsonBrowser<OpencodeCommand[]>(`/command?${qs}`, init);
+}
+
+// Direct child sessions of a session (sub-agent forks). Returned shape is
+// `Session[]`. Callers can recurse to build a lineage tree.
+export function getSessionChildrenBrowser(
+  sessionId: string,
+  directory: string,
+  init: RequestInit = {}
+): Promise<OpencodeSession[]> {
+  const qs = new URLSearchParams({ directory }).toString();
+  return getJsonBrowser<OpencodeSession[]>(
+    `/session/${encodeURIComponent(sessionId)}/children?${qs}`,
+    init
+  );
+}
+
+// Session-scoped todo list — what the agent's `todowrite` tool last
+// committed. Independent of our blackboard plan; useful as a cross-check.
+export function getSessionTodoBrowser(
+  sessionId: string,
+  directory: string,
+  init: RequestInit = {}
+): Promise<OpencodeTodo[]> {
+  const qs = new URLSearchParams({ directory }).toString();
+  return getJsonBrowser<OpencodeTodo[]>(
+    `/session/${encodeURIComponent(sessionId)}/todo?${qs}`,
+    init
+  );
+}
+
+// Manually trigger summarization for a session — cheaper than waiting for
+// opencode's automatic compaction at context-cap. Body is the model to use
+// for the summarization turn.
+export async function postSessionSummarizeBrowser(
+  sessionId: string,
+  directory: string,
+  providerID: string,
+  modelID: string,
+  init: RequestInit = {}
+): Promise<void> {
+  const qs = new URLSearchParams({ directory }).toString();
+  const res = await fetch(
+    `/api/opencode/session/${encodeURIComponent(sessionId)}/summarize?${qs}`,
+    {
+      ...init,
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(init.headers ?? {}) },
+      body: JSON.stringify({ providerID, modelID }),
+    }
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(
+      `opencode session summarize -> HTTP ${res.status}${detail ? `: ${detail}` : ''}`
+    );
+  }
 }

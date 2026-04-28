@@ -51,24 +51,34 @@ export type PartType =
   | 'retry'
   | 'compaction';
 
-// opencode built-in tool names — exact
+// opencode built-in tool names — exact match to v1.14.28
+// /experimental/tool/ids returns: invalid, question, bash, read, glob, grep,
+// edit, write, task, webfetch, todowrite, websearch, codesearch, skill,
+// apply_patch. We omit `invalid` (sentinel for unknown tool names — never
+// rendered as a user-facing chip).
 export type ToolName =
   | 'bash'
   | 'read'
   | 'write'
   | 'edit'
-  | 'list'
   | 'grep'
   | 'glob'
   | 'webfetch'
+  | 'websearch'
+  | 'codesearch'
   | 'todowrite'
-  | 'todoread'
-  | 'task'; // delegate-to-subagent; opencode's native A2A primitive
+  | 'task'         // delegate-to-subagent; opencode's native A2A primitive
+  | 'question'     // agent prompts user for clarification (interactive)
+  | 'skill'        // user-installed skill / plugin invocation
+  | 'apply_patch'; // explicit patch-apply path (vs string-replace edit)
 
 // opencode ToolPart state — exact
 export type ToolState = 'pending' | 'running' | 'completed' | 'error';
 
-// opencode event types we surface in the UI — exact subset of SDK event names
+// opencode event types we surface in the UI — exact subset of SDK v1.14.28
+// event names. `permission.asked` was removed — the asked state arrives via
+// `permission.updated` (the SDK collapsed ask + state-change into one
+// channel). See docs/opencode-quirks.md §1 for the full v1.14 catalog.
 export type EventType =
   | 'session.created'
   | 'session.updated'
@@ -79,14 +89,18 @@ export type EventType =
   | 'session.diff'
   | 'session.error'
   | 'message.updated'
+  | 'message.removed'
   | 'message.part.updated'
   | 'message.part.removed'
-  | 'permission.asked'
-  | 'permission.replied'
   | 'permission.updated'
+  | 'permission.replied'
   | 'file.edited'
+  | 'file.watcher.updated'
+  | 'vcs.branch.updated'
   | 'todo.updated'
-  | 'command.executed';
+  | 'command.executed'
+  | 'server.connected'
+  | 'server.instance.disposed';
 
 export interface ModelRef {
   id: string;

@@ -15,8 +15,8 @@ export function PermissionStrip({
   error,
 }: {
   pending: OpencodePermissionRequest[];
-  onApprove: (requestID: string, scope: 'once' | 'always') => void;
-  onReject: (requestID: string) => void;
+  onApprove: (permissionID: string, scope: 'once' | 'always') => void;
+  onReject: (permissionID: string) => void;
   error: string | null;
 }) {
   const [busy, setBusy] = useState<string | null>(null);
@@ -34,7 +34,11 @@ export function PermissionStrip({
   }
 
   const req = pending[0];
-  const pattern = req.patterns[0] ?? '';
+  // v1.14 Permission.pattern is `string | readonly string[] | undefined`;
+  // collapse to the first display string regardless of shape.
+  const pattern = Array.isArray(req.pattern)
+    ? (req.pattern[0] ?? '')
+    : (req.pattern ?? '');
   const act = async (fn: () => void) => {
     if (busy) return;
     setBusy(req.id);
@@ -57,15 +61,15 @@ export function PermissionStrip({
       <span className="w-px h-3 bg-molten/20" />
 
       <span className="font-mono text-[11px] uppercase tracking-widest2 text-fog-200 shrink-0">
-        {req.permission}
+        {req.type}
       </span>
 
-      {pattern && (
+      {(pattern || req.title) && (
         <>
           <span className="w-px h-3 bg-ink-700" />
-          <Tooltip content={pattern} side="top">
+          <Tooltip content={req.title || pattern} side="top">
             <span className="font-mono text-[11px] text-fog-400 truncate min-w-0 flex-1">
-              {pattern}
+              {pattern || req.title}
             </span>
           </Tooltip>
         </>

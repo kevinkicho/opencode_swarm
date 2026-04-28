@@ -37,16 +37,19 @@ export const glossaryPartOrder: PartType[] = [
 
 export const glossaryToolOrder: ToolName[] = [
   'read',
-  'list',
   'grep',
   'glob',
+  'codesearch',
   'webfetch',
+  'websearch',
   'bash',
   'edit',
   'write',
-  'todoread',
+  'apply_patch',
   'todowrite',
   'task',
+  'question',
+  'skill',
 ];
 
 // -------- Part details ---------------------------------------------------
@@ -147,10 +150,10 @@ export const toolDetails: Record<ToolName, ToolDetail> = {
       'Surgical string-replace edit against an existing file. Safer than write because the old_string must match exactly; still prompts for permission by default.',
     permission: 'usually',
   },
-  list: {
+  apply_patch: {
     detail:
-      'Lists a directory (like `ls`). Used to orient in the project or discover file paths.',
-    permission: 'never',
+      'Applies a unified diff against the working tree. Distinct from edit — accepts patch hunks instead of string-replace pairs. Prompts for permission like edit/write.',
+    permission: 'usually',
   },
   grep: {
     detail:
@@ -162,24 +165,40 @@ export const toolDetails: Record<ToolName, ToolDetail> = {
       'Filename pattern match (e.g. `src/**/*.ts`). Read-only discovery tool that returns matching paths.',
     permission: 'never',
   },
+  codesearch: {
+    detail:
+      'Symbol- and code-aware search backed by the language server. Returns semantic hits (definitions, references) where grep/glob would only return text matches.',
+    permission: 'never',
+  },
   webfetch: {
     detail:
       'Fetches a URL and converts it to agent-friendly markdown. Good for pulling docs or reference material into context.',
     permission: 'sometimes',
   },
+  websearch: {
+    detail:
+      'General web search for queries the agent has no URL for. Complements webfetch — websearch finds, webfetch retrieves.',
+    permission: 'sometimes',
+  },
   todowrite: {
     detail:
-      "Writes or updates the session's todo list. Agents use this to plan multi-step work and track progress.",
-    permission: 'never',
-  },
-  todoread: {
-    detail: "Reads the session's todo list back to the model so it can re-plan.",
+      "Writes or updates the session's todo list. Round-trips state — there is no separate read tool. Agents use this to plan multi-step work and track progress.",
     permission: 'never',
   },
   task: {
     detail:
       "Spawns (or resumes) a sub-agent session and returns its result. This is opencode's native agent-to-agent primitive — there is no separate typed-pin schema.",
     permission: 'never',
+  },
+  question: {
+    detail:
+      'The agent asks the user for clarification. Blocks the turn until the user answers — first-class interactive prompt, not free-form text.',
+    permission: 'never',
+  },
+  skill: {
+    detail:
+      'Invokes a user-installed skill (plugin). Behavior is skill-specific; permission depends on what the skill itself does.',
+    permission: 'sometimes',
   },
 };
 
@@ -227,21 +246,29 @@ export const eventDetails: Record<EventType, EventDetail> = {
   'message.part.removed': {
     detail: 'A part was removed — rare, but happens on revert or on failed streaming chunks.',
   },
-  'permission.asked': {
+  'message.removed': {
     detail:
-      'A tool call is blocked waiting on human approval. Surface this prominently — the agent is idle until you decide.',
+      'A whole message was removed (rare — fires on revert or session restructuring). Counterpart to message.part.removed which is per-part.',
+  },
+  'permission.updated': {
+    detail:
+      'A permission request was created or its metadata changed. The asked state arrives via this event in v1.14 — surface it prominently because the agent is idle until you decide.',
   },
   'permission.replied': {
     detail:
       'Human replied to a permission request (approved or denied). The tool call proceeds or aborts accordingly.',
   },
-  'permission.updated': {
-    detail:
-      'Permission metadata changed — for example, the scope of an approval was adjusted.',
-  },
   'file.edited': {
     detail:
       'A file was written or edited by a tool call. Useful for keeping an in-memory view of the working tree fresh.',
+  },
+  'file.watcher.updated': {
+    detail:
+      'External filesystem change detected by the watcher (e.g., user saved a file in their editor). Use to invalidate file-cached state.',
+  },
+  'vcs.branch.updated': {
+    detail:
+      'The active git branch changed. Useful when the agent or user switched branches mid-session.',
   },
   'todo.updated': {
     detail: "The session's todo list changed. Mirror into your UI to show agent planning.",
@@ -249,6 +276,14 @@ export const eventDetails: Record<EventType, EventDetail> = {
   'command.executed': {
     detail:
       'A shell command finished — carries the exit code and output. Pairs with a bash tool part.',
+  },
+  'server.connected': {
+    detail:
+      'SSE handshake completed. Useful for distinguishing "no events yet" from "connection failed."',
+  },
+  'server.instance.disposed': {
+    detail:
+      'The opencode server instance is shutting down. Clients should reconnect to the new instance once available.',
   },
 };
 
@@ -266,9 +301,27 @@ export const eventGroups: { label: string; events: EventType[] }[] = [
       'session.error',
     ],
   },
-  { label: 'message', events: ['message.updated', 'message.part.updated', 'message.part.removed'] },
-  { label: 'permission', events: ['permission.asked', 'permission.replied', 'permission.updated'] },
-  { label: 'file / cmd / todo', events: ['file.edited', 'todo.updated', 'command.executed'] },
+  {
+    label: 'message',
+    events: [
+      'message.updated',
+      'message.removed',
+      'message.part.updated',
+      'message.part.removed',
+    ],
+  },
+  { label: 'permission', events: ['permission.updated', 'permission.replied'] },
+  {
+    label: 'file / cmd / todo',
+    events: [
+      'file.edited',
+      'file.watcher.updated',
+      'vcs.branch.updated',
+      'todo.updated',
+      'command.executed',
+    ],
+  },
+  { label: 'server', events: ['server.connected', 'server.instance.disposed'] },
 ];
 
 // -------- Status details -------------------------------------------------

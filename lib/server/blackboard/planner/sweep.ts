@@ -163,7 +163,7 @@ export async function runPlannerSweep(
  readme,
  );
  // Planner dispatch. Always route through opencode's `plan` agent —
- // the agent carries tool definitions (todowrite, todoread, read, etc.)
+ // the agent carries tool definitions (todowrite, read, grep, etc.)
  // into the model dispatch. Without an agent, opencode dispatches
  // without tool definitions, so even tool-capable models like
  // opencode-go/deepseek-v4-pro produce prose-only assistant turns.

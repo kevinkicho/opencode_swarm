@@ -126,19 +126,28 @@ export interface ToolMeta {
 }
 
 // Per-tool display metadata. `task` is opencode's native A2A primitive —
-// calling it spawns/resumes a sub-agent.
+// calling it spawns/resumes a sub-agent. Hex palette mirrors the existing
+// fog/molten/mint/iris/amber accent system.
 export const toolMeta: Record<ToolName, ToolMeta> = {
+  // file & code surface
   bash: { label: 'bash', blurb: 'execute shell command', hex: '#a5f3c9' },
   read: { label: 'read', blurb: 'read file or directory', hex: '#9ba5b5' },
   write: { label: 'write', blurb: 'overwrite file', hex: '#ff7a3d' },
   edit: { label: 'edit', blurb: 'string-replace edit', hex: '#ff7a3d' },
-  list: { label: 'list', blurb: 'list directory', hex: '#9ba5b5' },
+  apply_patch: { label: 'apply_patch', blurb: 'apply unified diff', hex: '#ff7a3d' },
+  // search surface
   grep: { label: 'grep', blurb: 'ripgrep file contents', hex: '#c084fc' },
   glob: { label: 'glob', blurb: 'file pattern match', hex: '#c084fc' },
+  codesearch: { label: 'codesearch', blurb: 'symbol/code-aware search (LSP)', hex: '#c084fc' },
+  // network surface
   webfetch: { label: 'webfetch', blurb: 'fetch + convert URL', hex: '#fbbf24' },
+  websearch: { label: 'websearch', blurb: 'general web search', hex: '#fbbf24' },
+  // planning & coordination
   todowrite: { label: 'todowrite', blurb: 'update todo list', hex: '#fbbf24' },
-  todoread: { label: 'todoread', blurb: 'read todo list', hex: '#fbbf24' },
   task: { label: 'task', blurb: 'delegate to sub-agent', hex: '#ff7a3d' },
+  // user-facing
+  question: { label: 'question', blurb: 'ask user for clarification', hex: '#5eead4' },
+  skill: { label: 'skill', blurb: 'invoke user-installed skill', hex: '#5eead4' },
 };
 
 export const toolOrder: ToolName[] = [
@@ -146,13 +155,16 @@ export const toolOrder: ToolName[] = [
   'read',
   'edit',
   'write',
+  'apply_patch',
   'bash',
   'grep',
   'glob',
-  'list',
+  'codesearch',
   'webfetch',
+  'websearch',
   'todowrite',
-  'todoread',
+  'question',
+  'skill',
 ];
 
 export const hueClass: Record<Hue, { text: string; bg: string; border: string }> = {

@@ -9,18 +9,26 @@ export type NodeKind =
   | 'decision'
   | 'milestone';
 
+// Legacy mock-data tool kind. Mirrors lib/swarm-types.ts ToolName, kept
+// in sync with v1.14.28 — but ToolKind itself is only referenced inside
+// this file's TimelineNode/ChatMessage shapes (legacy mock-fixture types
+// that haven't been folded into swarm-types yet). Drop this whole file
+// once mock-fixture timeline rendering is replaced by the live transform.
 export type ToolKind =
   | 'read'
   | 'write'
   | 'edit'
+  | 'apply_patch'
   | 'bash'
   | 'grep'
   | 'glob'
-  | 'list'
+  | 'codesearch'
   | 'webfetch'
+  | 'websearch'
   | 'todowrite'
-  | 'todoread'
-  | 'task';
+  | 'task'
+  | 'question'
+  | 'skill';
 
 export interface DiffLine {
   type: 'add' | 'remove' | 'context';

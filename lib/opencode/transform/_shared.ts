@@ -22,8 +22,10 @@ import { priceFor } from '../pricing';
 export const ACCENT_ROTATION: Agent['accent'][] = ['molten', 'mint', 'iris', 'amber', 'fog'];
 
 const KNOWN_TOOLS: ToolName[] = [
-  'bash', 'read', 'write', 'edit', 'list', 'grep', 'glob',
-  'webfetch', 'todowrite', 'todoread', 'task',
+  'bash', 'read', 'write', 'edit', 'grep', 'glob',
+  'webfetch', 'websearch', 'codesearch',
+  'todowrite', 'task',
+  'question', 'skill', 'apply_patch',
 ];
 
 const KNOWN_PARTS: PartType[] = [

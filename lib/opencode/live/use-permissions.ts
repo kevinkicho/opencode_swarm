@@ -1,11 +1,15 @@
 'use client';
 
 //
-// Permission-request observation + reply hook. opencode emits
-// `permission.asked` when a tool call needs approval and blocks the
-// tool until `permission.replied` resolves it. Hydrates via GET on mount
-// then mutates local state from SSE — no refetch needed because the
-// asked event carries the full Request payload.
+// Permission-request observation + reply hook. v1.14 contract:
+//   - `permission.updated` — fires when a permission request is created
+//     (the asked state) or its metadata mutates. Carries the full
+//     Permission record, so we can mutate local state from the event
+//     payload alone — no refetch needed.
+//   - `permission.replied` — fires when the user resolves the request.
+//     Carries `{ sessionID, permissionID, response }`.
+// The pre-v1.14 `permission.asked` event was retired; the asked state
+// now arrives via `permission.updated` (see docs/opencode-quirks.md §1).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -17,14 +21,15 @@ import {
 
 export interface LivePermissions {
   pending: OpencodePermissionRequest[];
-  approve: (requestID: string, scope: 'once' | 'always') => Promise<void>;
-  reject: (requestID: string, message?: string) => Promise<void>;
+  approve: (permissionID: string, scope: 'once' | 'always') => Promise<void>;
+  reject: (permissionID: string) => Promise<void>;
   error: string | null;
 }
 
 // Tracks pending permission requests for one session. Hydrates via GET on
-// mount, then mutates local state from SSE `permission.asked` / `permission.replied`
-// — no refetch needed because the asked event carries the full Request payload.
+// mount, then mutates local state from SSE `permission.updated` /
+// `permission.replied` — no refetch needed because the updated event
+// carries the full Permission record.
 export function useLivePermissions(
   sessionId: string | null,
   directory: string | null
@@ -32,7 +37,9 @@ export function useLivePermissions(
   const [pending, setPending] = useState<OpencodePermissionRequest[]>([]);
   const [error, setError] = useState<string | null>(null);
   const directoryRef = useRef<string | null>(directory);
+  const sessionIdRef = useRef<string | null>(sessionId);
   directoryRef.current = directory;
+  sessionIdRef.current = sessionId;
 
   useEffect(() => {
     if (!sessionId || !directory) {
@@ -63,22 +70,29 @@ export function useLivePermissions(
           type?: string;
           properties?: unknown;
         };
-        if (parsed.type === 'permission.asked') {
+        if (parsed.type === 'permission.updated') {
           const req = parsed.properties as OpencodePermissionRequest;
           if (req.sessionID !== sessionId) return;
-          setPending((prev) =>
-            prev.some((p) => p.id === req.id) ? prev : [...prev, req]
-          );
+          setPending((prev) => {
+            const idx = prev.findIndex((p) => p.id === req.id);
+            if (idx === -1) return [...prev, req];
+            // metadata-only updates (scope flip, etc.) overwrite the
+            // existing entry in place
+            const next = prev.slice();
+            next[idx] = req;
+            return next;
+          });
         } else if (parsed.type === 'permission.replied') {
           const payload = parsed.properties as {
             sessionID: string;
-            requestID: string;
+            permissionID: string;
+            response?: string;
           };
           if (payload.sessionID !== sessionId) return;
-          setPending((prev) => prev.filter((p) => p.id !== payload.requestID));
+          setPending((prev) => prev.filter((p) => p.id !== payload.permissionID));
         }
       } catch {
-        // heartbeats / connected frames — ignore
+        // server.connected / heartbeat / disposed frames — ignore
       }
     };
 
@@ -90,15 +104,16 @@ export function useLivePermissions(
   }, [sessionId, directory]);
 
   const approve = useCallback(
-    async (requestID: string, scope: 'once' | 'always') => {
+    async (permissionID: string, scope: 'once' | 'always') => {
       const dir = directoryRef.current;
-      if (!dir) return;
+      const sid = sessionIdRef.current;
+      if (!dir || !sid) return;
       // optimistic remove — the replied event will confirm, and if the POST
       // fails we surface the error and put it back
       const snapshot = pending;
-      setPending((prev) => prev.filter((p) => p.id !== requestID));
+      setPending((prev) => prev.filter((p) => p.id !== permissionID));
       try {
-        await replyPermissionBrowser(requestID, dir, scope);
+        await replyPermissionBrowser(sid, permissionID, dir, scope);
       } catch (err) {
         setError((err as Error).message);
         setPending(snapshot);
@@ -108,13 +123,14 @@ export function useLivePermissions(
   );
 
   const reject = useCallback(
-    async (requestID: string, message?: string) => {
+    async (permissionID: string) => {
       const dir = directoryRef.current;
-      if (!dir) return;
+      const sid = sessionIdRef.current;
+      if (!dir || !sid) return;
       const snapshot = pending;
-      setPending((prev) => prev.filter((p) => p.id !== requestID));
+      setPending((prev) => prev.filter((p) => p.id !== permissionID));
       try {
-        await replyPermissionBrowser(requestID, dir, 'reject', message);
+        await replyPermissionBrowser(sid, permissionID, dir, 'reject');
       } catch (err) {
         setError((err as Error).message);
         setPending(snapshot);

@@ -12,43 +12,59 @@ and link the cross-reference here.
 
 ## 1. Vocabulary
 
-Source: `github.com/sst/opencode` — `packages/sdk/js/src/gen/types.gen.ts`.
+Source: `github.com/sst/opencode` — `packages/sdk/js/src/gen/types.gen.ts`
+at tag `v1.14.28` (2026-04-27 audit).
 
 **Message part types** (atoms of the timeline):
 
 `text` `reasoning` `tool` `file` `agent` `subtask` `step-start` `step-finish`
 `snapshot` `patch` `retry` `compaction`
 
-**Tool names** (built-in primitives):
+**Tool names** (built-in primitives, from `GET /experimental/tool/ids`):
 
-`bash` `read` `write` `edit` `list` `grep` `glob` `webfetch` `todowrite`
-`todoread` `task`
+`bash` `read` `write` `edit` `apply_patch` `grep` `glob` `codesearch`
+`webfetch` `websearch` `todowrite` `task` `question` `skill`
 
 `task` is opencode's native A2A primitive. There is **no separate
 "agent message" type** — sub-agent communication is `task` invocations
-plus `subtask` parts.
+plus `subtask` parts. `apply_patch` is the patch-apply path that complements
+the string-replace `edit` tool. `question` is a first-class interactive
+prompt (the agent asking the user for clarification — not a free-form text
+turn). The pre-v1.14 `list` and `todoread` tools were removed; use `glob`
+in place of `list`, and `todowrite` round-trips state so no separate read
+is needed.
 
-**SSE event stream** (the UI subscribes to):
+**SSE event stream** the UI can subscribe to (we filter to the subset
+relevant to swarm coordination — TUI/PTY/installation/lsp events are
+emitted but ignored):
 
 ```
 session.{created,updated,deleted,status,idle,compacted,diff,error}
 message.{updated,removed}
-message.part.{updated,removed,delta}
-permission.{asked,replied,updated}
-question.{asked,replied,rejected}
+message.part.{updated,removed}
+permission.{updated,replied}
 file.edited · file.watcher.updated · vcs.branch.updated
-lsp.client.diagnostics · lsp.updated
 todo.updated · command.executed
-pty.{created,updated,exited,deleted}
-server.{connected,instance.disposed,heartbeat}
-installation.{updated,update-available} · project.updated
+server.{connected,instance.disposed}
 ```
+
+Notes:
+- `permission.asked` does **not** exist in v1.14 — the asked state arrives
+  via `permission.updated` (the SDK collapsed ask + state-change into one
+  channel). `permission.replied` is fired separately on resolution.
+- `question.{asked,replied,rejected}` do **not** exist — `question` is now
+  a tool, not an event family.
+- `message.part.delta` does **not** exist — only `updated` and `removed`.
+- `server.heartbeat` does **not** exist — only `connected` and
+  `instance.disposed`.
+- `project.updated` does **not** exist.
 
 **Session status:** `idle` `busy` `retry`
 **Tool state:** `pending` `running` `completed` `error`
 
-**Built-in agents** (as of 2026-04-25): `build`, `compaction`, `explore`,
-`general`, `plan`, `summary`, `title`. Plus any from user's `opencode.json`.
+**Built-in agents** (verified against v1.14 SDK): `build`, `compaction`,
+`explore`, `general`, `plan`, `summary`, `title`. Plus any from user's
+`opencode.json`.
 
 ---
 
@@ -91,6 +107,8 @@ it just won't read the file.
 
 ## 4. Endpoints we call
 
+### Core (primary call path for every run)
+
 | Verb · Path | What we use it for | Quirks |
 |---|---|---|
 | `POST /session?directory=<path>` | Create a session in a workspace | Body: `{ title? }`. |
@@ -103,7 +121,19 @@ it just won't read the file.
 | `GET /agent?directory=<path>` | List agents | Built-ins + user's `opencode.json`. |
 | `GET /event?directory=<path>` | SSE event stream | EventSource auto-reconnects. |
 | `GET /permission?directory=<path>` | Pending permission requests | Only populated under permission gating; we run allow-all. |
-| `POST /permission/{id}/reply?directory=<path>` | Reply to a permission request | Plumbed but unused. |
+| `POST /session/{id}/permissions/{permissionID}?directory=<path>` | Reply to a permission request | Body `{ response: 'once'\|'always'\|'reject' }`. **Replaced** the pre-v1.14 `POST /permission/{id}/reply` (body field was `reply`). |
+
+### Diagnostics + supplementary surfaces (v1.14)
+
+| Verb · Path | What we use it for |
+|---|---|
+| `GET /experimental/tool/ids?directory=<path>` | Live tool catalog — cross-checks `ToolName` at startup |
+| `GET /config?directory=<path>` | Effective opencode.json (theme, watcher ignores, share policy, …) |
+| `GET /mcp?directory=<path>` | MCP server status map |
+| `GET /command?directory=<path>` | User-defined commands from opencode.json |
+| `GET /session/{id}/children?directory=<path>` | Direct children of a session (sub-agent forks) |
+| `GET /session/{id}/todo?directory=<path>` | Session-scoped todo list (cross-check against blackboard plan) |
+| `POST /session/{id}/summarize?directory=<path>` | Manually trigger summarization for long-running sessions |
 
 We use `prompt_async` exclusively (sync prompt would force a long-held HTTP
 connection). Authentication = out of scope (personal use, never SaaS).
