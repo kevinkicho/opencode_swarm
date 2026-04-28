@@ -36,6 +36,7 @@ import {
   FamilyCell,
   PriceCell,
 } from './sub-components';
+import { OllamaHelpPopover } from './ollama-help-popover';
 
 // Provider-tier metadata for the filter chips. Order matches the
 // recommended preference: go (free quota first) → zen (metered) →
@@ -205,6 +206,16 @@ export function TeamSection({
               </Tooltip>
             );
           })}
+          {/* "?" help affordance — only mounted when there's at least
+              one ollama model in scope, so non-ollama users don't see
+              irrelevant chrome. The popover holds Layer 2 (checklist
+              with click-to-copy) + Layer 3 (live diagnostic showing
+              the gap between pulled-locally and declared-in-opencode). */}
+          {providerCounts.ollama > 0 && (
+            <OllamaHelpPopover
+              ollamaModelsInCatalog={orderedModels.filter((m) => m.provider === 'ollama')}
+            />
+          )}
           <span className="ml-auto font-mono text-[9.5px] tabular-nums text-fog-700">
             {filteredModels.length}/{orderedModels.length} models
           </span>
@@ -274,6 +285,21 @@ export function TeamSection({
         agents self-select within the run's bounds. stacking N of the same model spawns N
         peer agents on that model.
       </div>
+      {/* Layer 1 — always-visible ollama hint, only when ollama is
+          among the active providers. Catches the structural case
+          (opencode.json not updated and/or opencode not restarted)
+          for first-time users without making them open the help
+          popover. The "?" chip above carries Layers 2 + 3 for users
+          who need more depth. */}
+      {providerFilter.has('ollama') && providerCounts.ollama > 0 && (
+        <div className="mt-1 font-mono text-[10.5px] text-fog-700 leading-snug">
+          <span className="text-iris">ollama tip · </span>
+          don't see a pulled model? declare it in your{' '}
+          <code className="text-fog-500">opencode.json</code> ollama provider block, then
+          restart opencode. <code className="text-fog-500">ollama pull</code> alone doesn't
+          update opencode's catalog.
+        </div>
+      )}
       {/*
         recommended-max readout (#103). Empirical ceiling per pattern
         from the MAXTEAM-2026-04-26 stress test. Stays muted by default
