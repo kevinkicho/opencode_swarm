@@ -16,6 +16,7 @@ export interface TickerSnapshot {
   stoppedAtMs?: number;
   stopReason?:
     | 'auto-idle'
+    | 'auto-idle-drained'
     | 'manual'
     | 'opencode-frozen'
     | 'zen-rate-limit'

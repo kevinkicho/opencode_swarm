@@ -87,6 +87,12 @@ if (NO_SPAWN) {
   if (PATTERN === 'debate-judge' && args['debate-rounds']) {
     body.debateMaxRounds = parseInt(args['debate-rounds'], 10);
   }
+  if (PATTERN === 'council' && args['no-converge-stop'] !== true) {
+    // Default-on for council: drafts that converge before maxRounds end
+    // the run early instead of running all 3. Pass --no-converge-stop
+    // to disable for testing the full-rounds path.
+    body.autoStopOnConverge = true;
+  }
   const spawnRes = await fetch(`${BASE}/api/swarm/run`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

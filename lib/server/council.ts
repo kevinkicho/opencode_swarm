@@ -299,6 +299,14 @@ export async function runCouncilRounds(
  );
  return;
  }
+ // Always log the measurement, even when below threshold. Without
+ // this the gate is invisible during diagnosis: a run that doesn't
+ // converge looks identical to a run with the gate disabled.
+ if (conv !== null) {
+ console.log(
+ `[council] run ${swarmRunID} — R${roundNum - 1} convergence ${(conv * 100).toFixed(0)}% < ${(COUNCIL_CONVERGENCE_THRESHOLD * 100).toFixed(0)}% — continuing to round ${roundNum}`,
+ );
+ }
  }
 
  const prompt = buildRoundPrompt(roundNum, drafts, roundNum === maxRounds);

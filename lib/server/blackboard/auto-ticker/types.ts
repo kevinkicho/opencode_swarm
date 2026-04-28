@@ -44,6 +44,12 @@ export const MIN_MS_BETWEEN_SWEEPS = 2 * 60 * 1000;
 
 export type StopReason =
   | 'auto-idle'
+  // Same shape as 'auto-idle' but specifically when periodicSweepMs > 0
+  // (long-running mode with re-sweeps) — the run is idle AND the board
+  // has 0 work-class items in flight, so no future re-sweep would have
+  // anything to dispatch. Distinct reason so the ledger can show
+  // "stopped because work ran out, not because the ticker timed out."
+  | 'auto-idle-drained'
   | 'manual'
   | 'opencode-frozen'
   | 'zen-rate-limit'

@@ -282,6 +282,25 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
     req.enableSynthesisCritic = obj.enableSynthesisCritic;
   }
 
+  // Council convergence auto-stop. When true, the orchestrator measures
+  // mean-pairwise jaccard similarity between member drafts at each
+  // round boundary; if it crosses COUNCIL_CONVERGENCE_THRESHOLD (0.85)
+  // the run ends early instead of running all maxRounds. The gate code
+  // lives in lib/server/council.ts (already wired against
+  // meta.autoStopOnConverge); validator just plumbs the field through.
+  if (obj.autoStopOnConverge !== undefined) {
+    if (typeof obj.autoStopOnConverge !== 'boolean') {
+      return 'autoStopOnConverge must be boolean';
+    }
+    if (
+      obj.autoStopOnConverge === true &&
+      req.pattern !== 'council'
+    ) {
+      return `autoStopOnConverge only applies to pattern='council' (got '${req.pattern}')`;
+    }
+    req.autoStopOnConverge = obj.autoStopOnConverge;
+  }
+
   if (obj.enableCriticGate !== undefined) {
     if (typeof obj.enableCriticGate !== 'boolean') {
       return 'enableCriticGate must be boolean';

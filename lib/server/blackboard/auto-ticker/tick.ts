@@ -10,6 +10,7 @@ import 'server-only';
 import { liveExports } from '../../hmr-exports';
 import { getRun } from '../../swarm-registry';
 import { emitTickerTick } from '../bus';
+import { listBoardItems } from '../store';
 import { maybeRunAudit } from './audit';
 import { checkHardCaps } from './hard-caps';
 import { liveCoordinator } from './live-exports';
@@ -165,21 +166,57 @@ async function tickSession(
     // Auto-stop when every session is simultaneously idle-past-threshold.
     // A single active session (consecutiveIdle == 0) holds the run open.
     //
-    // Skipped entirely when periodicSweepMs > 0: the run has opted into
-    // "keep going until told to stop," so steady-state idle between
-    // sweeps is a normal phase, not a shutdown signal. Without this
-    // skip, a long-running run would auto-stop on the first drain
-    // before the first periodic sweep ever fired.
-    if (
-      state.periodicSweepMs === 0 &&
+    // Two paths now (refined 2026-04-27 after live OW test ran to
+    // wall-clock cap with 5/5 todos done):
+    //
+    // (a) Plain auto-idle — periodicSweepMs === 0. Original path:
+    //     every session idle for IDLE_TICKS_BEFORE_STOP ticks → stop.
+    //
+    // (b) Drained-and-idle — periodicSweepMs > 0 BUT the board has zero
+    //     work-class items in flight (no open todos, no claims, no
+    //     in-progress). Without this, OW with persistent re-sweeps
+    //     keeps the ticker alive after the planner's todos are all
+    //     done, even though no re-sweep would dispatch new work
+    //     before the wall-clock cap fires. The drained check requires
+    //     the same idle-threshold so a transient gap between two
+    //     workers' commits doesn't trigger a premature stop.
+    const allSessionsIdle =
       slots.length > 0 &&
-      slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP)
-    ) {
-      // Auto-idle: every session has been idle for IDLE_TICKS_BEFORE_STOP
-      // consecutive ticks → stop the ticker. Runs that opt into
-      // periodicSweepMs > 0 keep going on a fixed cadence and skip this
-      // path entirely (idle between sweeps is normal, not a stop signal).
+      slots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP);
+
+    if (state.periodicSweepMs === 0 && allSessionsIdle) {
       stopAutoTicker(state.swarmRunID, 'auto-idle');
+    } else if (state.periodicSweepMs > 0 && allSessionsIdle) {
+      // Board-drained check. Only the work-class kinds count: open
+      // todos / claimed / in-progress. Criteria, findings, and
+      // synthesize items don't dispatch to workers, so leaving them
+      // around shouldn't keep the ticker alive.
+      let workInFlight = 0;
+      try {
+        const items = listBoardItems(state.swarmRunID);
+        for (const item of items) {
+          if (item.kind !== 'todo' && item.kind !== 'claim') continue;
+          if (
+            item.status === 'open' ||
+            item.status === 'claimed' ||
+            item.status === 'in-progress'
+          ) {
+            workInFlight += 1;
+          }
+        }
+      } catch {
+        // listBoardItems is sub-ms local SQL; a throw here is unusual.
+        // If it does throw, default to "don't auto-stop" (keep the
+        // ticker alive) — losing the auto-stop signal is better than
+        // ending a healthy run on a transient I/O blip.
+        return;
+      }
+      if (workInFlight === 0) {
+        console.log(
+          `[board/auto-ticker] ${state.swarmRunID}: board drained (0 work-class items in flight) and all sessions idle ≥${IDLE_TICKS_BEFORE_STOP} ticks — auto-stopping despite periodicSweepMs=${state.periodicSweepMs}`,
+        );
+        stopAutoTicker(state.swarmRunID, 'auto-idle-drained');
+      }
     }
   } catch (err) {
     // tickCoordinator's declared return type is TickOutcome (it wraps its
