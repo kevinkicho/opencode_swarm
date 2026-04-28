@@ -3,12 +3,12 @@
 // SwarmTopbar — top-level navigation bar with run anchor + control chips
 // + provider mix + palette / settings / account buttons.
 //
-// Decomposed in #108: RunAnchorChip moved to swarm-topbar/run-anchor-chip.tsx
+// Decomposed: RunAnchorChip moved to swarm-topbar/run-anchor-chip.tsx
 // (its own file because the popover content alone is ~200 lines), and the
-// status / control chips (AbortChip, HardStopChip, BudgetChip,
-// RetryAfterChip, RunHealthChip + fmtAbsTs helper) moved to
-// swarm-topbar/chips.tsx. This file owns the layout shell + the
-// directive-teaser popover.
+// status / control chips moved into a per-concern split 2026-04-28:
+//   - abort-chips.tsx     AbortChip, HardStopChip, fmtAbsTs
+//   - health-chips.tsx    BudgetChip, RetryAfterChip, RunHealthChip
+// This file owns the layout shell + the directive-teaser popover.
 
 import type { RunMeta, ProviderSummary } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
@@ -20,13 +20,8 @@ import { Popover } from './ui/popover';
 import { ProviderBadge } from './provider-badge';
 import { useBackendStale } from '@/lib/opencode/live';
 import { compact } from '@/lib/format';
-import {
-  AbortChip,
-  BudgetChip,
-  HardStopChip,
-  RetryAfterChip,
-  RunHealthChip,
-} from './swarm-topbar/chips';
+import { AbortChip, HardStopChip } from './swarm-topbar/abort-chips';
+import { BudgetChip, RetryAfterChip, RunHealthChip } from './swarm-topbar/health-chips';
 import { RunAnchorChip } from './swarm-topbar/run-anchor-chip';
 
 export function SwarmTopbar({

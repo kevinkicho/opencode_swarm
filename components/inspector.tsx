@@ -3,19 +3,14 @@
 import clsx from 'clsx';
 import type { Agent, AgentMessage } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
-import {
-  AgentInspector,
-  EmptyState,
-  FileHeatInspector,
-  MessageInspector,
-} from './inspector/sub-components';
+import { AgentInspector } from './inspector/agent-inspector';
+import { MessageInspector } from './inspector/message-inspector';
+import { EmptyState, FileHeatInspector } from './inspector/file-heat-inspector';
 
 // Inspector — drawer panel that surfaces details for whatever is focused
 // (a message, an agent, or a heat-rail file selection). The four panels
-// (MessageInspector, AgentInspector, FileHeatInspector, EmptyState) live
-// in inspector/sub-components.tsx; this file owns the dispatch.
-//
-// Decomposed in #108.
+// live in per-concern files under ./inspector/; this file owns the
+// dispatch.
 
 export function Inspector({
   agents,
