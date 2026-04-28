@@ -46,16 +46,37 @@ Point the app at an already-cloned repo via the new-run modal (⌘N), pick a pat
 
 ## Documentation
 
-Read in order when extending:
+### Canonical (read in order when extending)
 
 1. **[`DESIGN.md`](./DESIGN.md)** — vision, mental model, UI surface map, state contracts, retention, planning model. The one document nothing else replaces.
-2. **[`docs/opencode-quirks.md`](./docs/opencode-quirks.md)** — opencode SDK vocabulary + HTTP API behaviors (silent-drop traps, model-format shape, workspace path encoding, zombie turns).
+2. **[`docs/opencode-quirks.md`](./docs/opencode-quirks.md)** — opencode SDK v1.14.28 vocabulary + HTTP API behaviors (silent-drop traps, model-format shape, workspace path encoding, zombie turns, phantom events).
 3. **[`docs/PATTERNS.md`](./docs/PATTERNS.md)** — orchestration pattern cheatsheet (one paragraph each + reliability tiers).
 4. **[`docs/API.md`](./docs/API.md)** — greppable HTTP endpoint catalog for our routes.
 5. **[`docs/VALIDATION.md`](./docs/VALIDATION.md)** — runbook for features shipped but not yet exercised live.
 6. **[`CLAUDE.md`](./CLAUDE.md)** — briefing for AI agents opening the repo.
 
-In-app, the **glossary modal** (footer link) covers actor/transcript vocabulary at a glance.
+### Situational (read when relevant)
+
+- **[`STATUS.md`](./STATUS.md)** — what shipped + what's queued right now. Time-scoped — re-check before assuming.
+- **[`docs/CALL_GRAPH.md`](./docs/CALL_GRAPH.md)** — generated function-call graph across the repo. Useful for "where is this function called from?" without having to grep.
+- **[`docs/REVIEW_CHECKLIST.md`](./docs/REVIEW_CHECKLIST.md)** — 30-minute structured walk-through that exercises every major surface of the app. Run before PR, after upgrades, or when re-orienting.
+
+### Postmortems
+
+- **[`docs/POSTMORTEMS/`](./docs/POSTMORTEMS/)** — forensic notes on run failures + notable near-misses. Every entry has *what broke*, *why*, *what we did*, and *how we'd know it regressed* (with the regression probe). Re-run probes after upgrades to catch recurrences. See the [POSTMORTEMS index](./docs/POSTMORTEMS/README.md) for the shape contract.
+
+  Recent (chronological):
+  - [2026-04-24 — orchestrator-worker silent dispatch](./docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md)
+  - [2026-04-25 — agent-name silent drop trap](./docs/POSTMORTEMS/2026-04-25-agent-name-silent-drop.md)
+  - [2026-04-26 — critic-loop runaway tokens](./docs/POSTMORTEMS/2026-04-26-critic-loop-runaway-token.md)
+  - [2026-04-27 — blackboard recording diagnostic](./docs/POSTMORTEMS/2026-04-27-blackboard-recording-diagnostic.md)
+  - [2026-04-27 — pattern-sweep validation](./docs/POSTMORTEMS/2026-04-27-pattern-sweep-validation.md)
+  - [2026-04-27 — natural-stop fixes (council convergence + OW auto-idle)](./docs/POSTMORTEMS/2026-04-27-natural-stop-fixes.md)
+  - [2026-04-27 — extended blackboard run (periodic re-sweeps)](./docs/POSTMORTEMS/2026-04-27-extended-blackboard-run.md)
+
+### In-app reference
+
+The **glossary modal** (footer right · `glossary`) covers actor/transcript vocabulary at a glance. The **diagnostics modal** (footer right · `diagnostics`) surfaces the live opencode daemon state — tool catalog, MCP servers, effective `opencode.json`, user-defined commands — with a drift indicator vs. the static `ToolName` union.
 
 ## Design stance
 
