@@ -4,15 +4,14 @@ import clsx from 'clsx';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { SWARM_RUNS_QUERY_KEY } from '@/lib/opencode/live';
+import { SWARM_RUNS_QUERY_KEY, useOpencodeProviders } from '@/lib/opencode/live';
+import type { ProviderModel } from '@/app/api/swarm/providers/route';
 import { Modal } from './ui/modal';
 import { Tooltip } from './ui/tooltip';
 import { IconBranch, IconMilestone, IconSettings } from './icons';
 import {
-  zenModels,
   familyMeta,
   fmtZenPrice,
-  type ZenModel,
 } from '@/lib/zen-catalog';
 import {
   patternMeta,
@@ -79,6 +78,26 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const [copiedPattern, setCopiedPattern] = useState<SwarmPattern | null>(null);
   const router = useRouter();
   const queryClient = useQueryClient();
+
+  // Live provider/model catalog. Replaces the static zenModels import —
+  // opencode's /config/providers is now the source of truth for what a
+  // run can dispatch to. The hook caches one entry across modal mounts so
+  // the click→open flow doesn't refetch each time.
+  const { models: liveModels, source: catalogSource } = useOpencodeProviders();
+  // Stable order: tier first (zen → ollama → go → byok), then by label.
+  // Opencode response order isn't guaranteed stable; sorting here keeps
+  // the picker rows from reshuffling between polls.
+  const TIER_ORDER: Record<ProviderModel['provider'], number> = {
+    zen: 0, ollama: 1, go: 2, byok: 3,
+  };
+  const orderedModels = useMemo(
+    () =>
+      [...liveModels].sort((a, b) => {
+        const tierDelta = TIER_ORDER[a.provider] - TIER_ORDER[b.provider];
+        return tierDelta !== 0 ? tierDelta : a.label.localeCompare(b.label);
+      }),
+    [liveModels],
+  );
 
   const copyRecipe = async (p: SwarmPattern, body: string) => {
     try {
@@ -190,14 +209,14 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     if (title) body.title = title;
     if (totalAgents > 0) body.teamSize = totalAgents;
     // Flatten teamCounts into a per-session model list. Order matters:
-    // catalog order is stable (see zen-catalog.ts), so iterating via
-    // zenModels preserves a deterministic slot assignment. Each count
-    // N emits N copies of the model ID. Empty totalAgents = undefined
-    // teamModels = opencode picks each session's model from its
-    // default agent config.
+    // we iterate `orderedModels` (live opencode catalog, sorted by tier
+    // then label) so slot assignment is deterministic for a given live
+    // catalog. Each count N emits N copies of the model ID. Empty
+    // totalAgents = undefined teamModels = opencode picks each session's
+    // model from its default agent config.
     if (totalAgents > 0) {
       const teamModels: string[] = [];
-      for (const model of zenModels) {
+      for (const model of orderedModels) {
         const count = teamCounts[model.id] ?? 0;
         for (let i = 0; i < count; i += 1) teamModels.push(model.id);
       }
@@ -237,12 +256,12 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     () =>
       Object.entries(teamCounts)
         .map(([id, count]) => {
-          const model = zenModels.find((m) => m.id === id);
+          const model = orderedModels.find((m) => m.id === id);
           return model ? { model, count } : null;
         })
-        .filter((r): r is { model: ZenModel; count: number } => r !== null)
+        .filter((r): r is { model: ProviderModel; count: number } => r !== null)
         .sort((a, b) => b.count - a.count),
-    [teamCounts]
+    [teamCounts, orderedModels]
   );
 
   return (
@@ -330,11 +349,34 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
             step="04"
             label="team"
             optional
-            hint="pick agents from the opencode zen catalog. stack multiples of the same model with the +/− stepper. leave empty and agents will spawn as work demands."
+            hint="pick agents from the live opencode catalog (driven by /config/providers). stack multiples of the same model with the +/− stepper. leave empty and agents will spawn as work demands."
             trailing={
-              <span className="font-mono text-[10.5px] text-fog-700 tabular-nums">
-                {totalAgents} on deck
-              </span>
+              <div className="flex items-center gap-2">
+                {catalogSource === 'fallback' && (
+                  <Tooltip
+                    side="left"
+                    wide
+                    content={
+                      <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
+                        opencode is unreachable — showing the bundled static catalog. once the
+                        backend reconnects, the team picker repopulates from /config/providers.
+                      </div>
+                    }
+                  >
+                    <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-amber/70 cursor-help">
+                      static
+                    </span>
+                  </Tooltip>
+                )}
+                {catalogSource === 'live' && (
+                  <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-mint/70">
+                    live
+                  </span>
+                )}
+                <span className="font-mono text-[10.5px] text-fog-700 tabular-nums">
+                  {totalAgents} on deck
+                </span>
+              </div>
             }
           >
             <div className="rounded-md hairline bg-ink-900/40 overflow-hidden">
@@ -346,9 +388,14 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                 <HeaderCell cls="w-[74px] text-right">count</HeaderCell>
               </div>
               <ul className="max-h-[280px] overflow-y-auto">
-                {zenModels.map((m) => {
+                {orderedModels.map((m) => {
                   const count = teamCounts[m.id] ?? 0;
                   const active = count > 0;
+                  // Pricing may be missing when opencode reports a model we
+                  // have no override for and the upstream cost is undefined.
+                  // Render an em-dash so the column doesn't collapse.
+                  const inPrice = m.pricing ? fmtZenPrice(m.pricing.input) : '—';
+                  const outPrice = m.pricing ? fmtZenPrice(m.pricing.output) : '—';
                   return (
                     <li key={m.id}>
                       <div
@@ -358,9 +405,9 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                         )}
                       >
                         <ModelNameCell label={m.label} active={active} />
-                        <FamilyCell family={m.family} />
-                        <PriceCell value={fmtZenPrice(m.in)} cls="w-12 text-right" />
-                        <PriceCell value={fmtZenPrice(m.out)} cls="w-12 text-right" />
+                        <FamilyCell family={m.vendor} />
+                        <PriceCell value={inPrice} cls="w-12 text-right" />
+                        <PriceCell value={outPrice} cls="w-12 text-right" />
                         <CountStepper
                           count={count}
                           onMinus={() => bumpCount(m.id, -1)}
@@ -735,7 +782,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                           key={model.id}
                           className="flex items-center gap-2 h-4 font-mono text-[10.5px]"
                         >
-                          <span className={clsx('w-1 h-1 rounded-full', familyMeta[model.family].color.replace('text-', 'bg-'))} />
+                          <span className={clsx('w-1 h-1 rounded-full', familyMeta[model.vendor].color.replace('text-', 'bg-'))} />
                           <span className="text-fog-300 truncate flex-1 min-w-0">
                             {model.label}
                           </span>

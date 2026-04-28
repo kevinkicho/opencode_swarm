@@ -10,13 +10,13 @@
 
 import clsx from 'clsx';
 import { useState } from 'react';
-import type { Agent, AgentMessage, ModelRef } from '@/lib/swarm-types';
+import type { Agent, AgentMessage, ModelRef, Provider } from '@/lib/swarm-types';
 import { ProviderBadge } from '../provider-badge';
 import { Popover } from '../ui/popover';
 import { Tooltip } from '../ui/tooltip';
 import { compact } from '@/lib/format';
 import { partHex, toolMeta } from '@/lib/part-taxonomy';
-import { modelCatalog } from '@/lib/model-catalog';
+import { useOpencodeProviders } from '@/lib/opencode/live';
 
 export function AgentInspector({
   agent,
@@ -215,15 +215,25 @@ function ModelPicker({
   current: ModelRef;
   onPick: (m: ModelRef) => void;
 }) {
-  const groups: Array<{ provider: 'zen' | 'go' | 'byok'; label: string; hint: string }> = [
+  // Live catalog from opencode's /config/providers (via /api/swarm/
+  // providers). Replaces the static modelCatalog.filter() approach so
+  // adding a provider in opencode.json shows up here without a code edit.
+  const { byTier, source } = useOpencodeProviders();
+  const groups: Array<{ provider: Provider; label: string; hint: string }> = [
     { provider: 'zen', label: 'opencode zen', hint: 'premium routing, metered per token' },
+    { provider: 'ollama', label: 'ollama max', hint: 'subscription bundle, $100/mo cap' },
     { provider: 'go', label: 'opencode go', hint: 'shared go-tier quota' },
     { provider: 'byok', label: 'bring your own key', hint: 'direct provider keys' },
   ];
   return (
     <div className="p-1 max-h-[360px] overflow-y-auto">
+      {source === 'fallback' && (
+        <div className="px-2 py-1 mb-1 font-mono text-[9.5px] uppercase tracking-widest2 text-amber/70 hairline-b">
+          static catalog · opencode unreachable
+        </div>
+      )}
       {groups.map((g) => {
-        const rows = modelCatalog.filter((m) => m.provider === g.provider);
+        const rows = byTier(g.provider);
         if (rows.length === 0) return null;
         return (
           <div key={g.provider} className="mb-1">

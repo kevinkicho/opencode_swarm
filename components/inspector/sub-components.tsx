@@ -15,7 +15,6 @@ import { toolIcon } from '../icons';
 import { Tooltip } from '../ui/tooltip';
 import { compact } from '@/lib/format';
 import { partMeta, partHex, toolMeta, hueClass } from '@/lib/part-taxonomy';
-import { modelCatalog } from '@/lib/model-catalog';
 import { MarkdownBody } from '../ui/markdown-body';
 
 export function EmptyState() {

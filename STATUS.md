@@ -149,6 +149,23 @@ Not urgent.
   surface, the wiring change is making it the default + adding lane
   grouping + tool-call folding.
 
+**Validation tooling** (queued 2026-04-27 — improves the live-run
+diagnostic loop, not the app itself):
+
+- **Playwright video + frame extraction post-mortem.** Today the watcher
+  takes 30s-tick screenshots (PNGs, callable mid-run) and writes a single
+  `.webm` recordVideo at session-end. The `.webm` is binary — useless
+  inline in chat — but valuable post-mortem if a workflow extracts frames
+  from it. Add a post-terminal hook that locates
+  `runs/_monitor/<runId>/playwright/video/page@*.webm`, runs
+  `ffmpeg -i page.webm -vf fps=1/5 frame-%04d.png` to dump frames every
+  5s, walks frames + flags anomalies (no-op diffs, missing bubbles,
+  broken streaming, unexpected layout), writes findings to
+  `runs/_monitor/<runId>/post-mortem.md`. Keeps screenshots as the
+  mid-run probe (live answer to "what looks weird?") and adds video as
+  the post-run scrub artifact. Label which artifact is being read from
+  when describing UI state mid-run ("(latest 30s-tick screenshot)").
+
 **UI/UX test surface gaps the sweep can't reach** (560 assertions
 live; only items below pass the right-size gate per
 `feedback_right_size_prototype.md` — the items I previously listed

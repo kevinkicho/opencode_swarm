@@ -1,14 +1,13 @@
 'use client';
 
 import clsx from 'clsx';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useMutation } from '@tanstack/react-query';
 import { Modal } from './ui/modal';
 import { ProviderBadge } from './provider-badge';
 import { Tooltip } from './ui/tooltip';
 import {
-  zenModels,
   familyMeta,
   fmtZenPrice as fmtPrice,
   type ZenFamily as Family,
@@ -16,6 +15,7 @@ import {
 import {
   createSessionBrowser,
   postSessionMessageBrowser,
+  useOpencodeProviders,
 } from '@/lib/opencode/live';
 
 interface Skill {
@@ -46,6 +46,18 @@ export function SpawnAgentModal({
   directory: string | null;
 }) {
   const router = useRouter();
+  // Live provider/model catalog — replaces the static zenModels import.
+  // Models are sorted by tier+label for stable picker order; first row
+  // is the default selection until the user clicks one.
+  const { models: liveModels, source: catalogSource } = useOpencodeProviders();
+  const orderedModels = useMemo(() => {
+    const tierOrder = { zen: 0, ollama: 1, go: 2, byok: 3 } as const;
+    return [...liveModels].sort((a, b) => {
+      const t = tierOrder[a.provider] - tierOrder[b.provider];
+      return t !== 0 ? t : a.label.localeCompare(b.label);
+    });
+  }, [liveModels]);
+
  // Form state consolidated — useState-count reduction.
   // 7 useState pairs → 1 form object + 1 mode + 1 mutation (no useState).
   const [form, setForm] = useState<{
@@ -54,7 +66,7 @@ export function SpawnAgentModal({
     name: string;
     directive: string;
   }>({
-    modelId: zenModels[0].id,
+    modelId: '',
     selectedSkills: new Set(),
     name: '',
     directive: '',
@@ -65,11 +77,20 @@ export function SpawnAgentModal({
   const setDirective = (v: string) => setForm((p) => ({ ...p, directive: v }));
   const [spawnMode, setSpawnMode] = useState<SpawnMode>('idle');
 
+  // Once the live catalog hydrates (or the fallback resolves), seed the
+  // selected model to the first row. Avoids flashing an empty picker on
+  // first paint and keeps the prior "first model is default" UX.
+  useEffect(() => {
+    if (!modelId && orderedModels[0]) {
+      setForm((p) => ({ ...p, modelId: orderedModels[0].id }));
+    }
+  }, [orderedModels, modelId]);
+
   const autoId = 'agent-03';
   const trimmedName = name.trim();
   const trimmedDirective = directive.trim();
   const previewName = trimmedName || autoId;
-  const currentModel = zenModels.find((m) => m.id === modelId) ?? zenModels[0];
+  const currentModel = orderedModels.find((m) => m.id === modelId) ?? orderedModels[0];
 
   // Active mode needs a directive to actually activate on — otherwise it's
   // indistinguishable from idle. Idle is always valid: creates a parked session.
@@ -156,16 +177,28 @@ export function SpawnAgentModal({
             <Section
               step="01"
               label="model"
-              hint="opencode zen catalog prices per 1M tokens click any row to pick"
+              hint="live opencode catalog (driven by /config/providers). prices per 1M tokens click any row to pick"
               trailing={
-                <a
-                  href="https://opencode.ai/docs/zen/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600 hover:text-molten transition"
-                >
-                  ref opencode.ai/docs/zen
-                </a>
+                <div className="flex items-center gap-2">
+                  {catalogSource === 'fallback' && (
+                    <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-amber/70">
+                      static
+                    </span>
+                  )}
+                  {catalogSource === 'live' && (
+                    <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-mint/70">
+                      live
+                    </span>
+                  )}
+                  <a
+                    href="https://opencode.ai/docs/zen/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-mono text-[10px] uppercase tracking-widest2 text-fog-600 hover:text-molten transition"
+                  >
+                    ref opencode.ai/docs/zen
+                  </a>
+                </div>
               }
             >
               <div className="rounded-md hairline bg-ink-900/40 overflow-hidden">
@@ -178,8 +211,12 @@ export function SpawnAgentModal({
                   <HeaderCell cls="w-14 text-right">cache w</HeaderCell>
                 </div>
                 <ul>
-                  {zenModels.map((m) => {
+                  {orderedModels.map((m) => {
                     const active = m.id === modelId;
+                    const inPrice = m.pricing ? fmtPrice(m.pricing.input) : '—';
+                    const outPrice = m.pricing ? fmtPrice(m.pricing.output) : '—';
+                    const cacheReadPrice = m.cacheRead != null ? fmtPrice(m.cacheRead) : '—';
+                    const cacheWritePrice = m.cacheWrite != null ? fmtPrice(m.cacheWrite, true) : '—';
                     return (
                       <li key={m.id}>
                         <button
@@ -190,11 +227,11 @@ export function SpawnAgentModal({
                           )}
                         >
                           <ModelNameCell label={m.label} active={active} />
-                          <FamilyCell family={m.family} />
-                          <PriceCell value={fmtPrice(m.in)} cls="w-14 text-right" />
-                          <PriceCell value={fmtPrice(m.out)} cls="w-16 text-right" />
-                          <PriceCell value={fmtPrice(m.cacheRead)} cls="w-14 text-right" muted />
-                          <PriceCell value={fmtPrice(m.cacheWrite, true)} cls="w-14 text-right" muted />
+                          <FamilyCell family={m.vendor} />
+                          <PriceCell value={inPrice} cls="w-14 text-right" />
+                          <PriceCell value={outPrice} cls="w-16 text-right" />
+                          <PriceCell value={cacheReadPrice} cls="w-14 text-right" muted />
+                          <PriceCell value={cacheWritePrice} cls="w-14 text-right" muted />
                         </button>
                       </li>
                     );
@@ -321,7 +358,9 @@ export function SpawnAgentModal({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    <ProviderBadge provider="zen" label={currentModel.label} size="sm" />
+                    {currentModel && (
+                      <ProviderBadge provider={currentModel.provider} label={currentModel.label} size="sm" />
+                    )}
                   </div>
 
                   <div className="pt-1 hairline-t">

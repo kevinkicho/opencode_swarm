@@ -78,3 +78,9 @@ export {
   type SwarmRunSnapshotResult,
   type SwarmRunsSnapshot,
 } from './live/use-swarm-runs';
+
+export {
+  OPENCODE_PROVIDERS_QUERY_KEY,
+  useOpencodeProviders,
+  type UseOpencodeProvidersResult,
+} from './live/use-opencode-providers';
