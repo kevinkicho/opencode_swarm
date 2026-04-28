@@ -71,6 +71,12 @@ const CostDashboard = dynamic(
   ),
   { ssr: false },
 );
+const DiagnosticsModal = dynamic(
+  lazyWithRetry(() =>
+    import('@/components/diagnostics-modal').then((m) => m.DiagnosticsModal),
+  ),
+  { ssr: false },
+);
 
 export interface PageModalsProps {
   state: PageModalState;
@@ -82,6 +88,10 @@ export interface PageModalsProps {
   diffLoading: boolean;
   diffError: string | null;
   liveDirectory: string | null;
+  // Swarm run's workspace path (Windows-format). Used as a fallback when
+  // no session is focused yet so workspace-scoped diagnostics can still
+  // probe — e.g., the diagnostics modal opening before liveData hydrates.
+  runWorkspace: string | null;
   swarmRunID: string | null;
 }
 
@@ -95,6 +105,7 @@ export function PageModals({
   diffLoading,
   diffError,
   liveDirectory,
+  runWorkspace,
   swarmRunID,
 }: PageModalsProps) {
   const { flags, closers } = state;
@@ -129,6 +140,11 @@ export function PageModals({
         onClose={closers.provenance}
       />
       <CostDashboard open={flags.cost} onClose={closers.cost} />
+      <DiagnosticsModal
+        open={flags.diagnostics}
+        onClose={closers.diagnostics}
+        directory={liveDirectory ?? runWorkspace}
+      />
     </>
   );
 }

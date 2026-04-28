@@ -2,19 +2,19 @@
 
 // Modal-flag state hub for the main page (#7.Q26 decomposition wave 2).
 //
-// The page hosts 8 mutually-exclusive overlays: command palette, routing
+// The page hosts 9 mutually-exclusive overlays: command palette, routing
 // editor, live commit history, spawn-agent, glossary, new run, run
-// provenance, cost dashboard. Originally each had its own `useState`
-// declaration inline in PageBody — that's 8 paired flag/setter lines
-// taking the top of the function body, plus 8 `() => setXxx(false)`
-// inline lambdas at every modal's onClose, plus duplicated open-handler
-// closures sprinkled across the page wiring.
+// provenance, cost dashboard, diagnostics. Originally each had its own
+// `useState` declaration inline in PageBody — that's many paired
+// flag/setter lines taking the top of the function body, plus inline
+// `() => setXxx(false)` lambdas at every modal's onClose, plus
+// duplicated open-handler closures sprinkled across the page wiring.
 //
 // This hook collapses all of that into one bag with stable closers.
 // Returned object is referentially stable across renders so consumer
 // memos that depend on `closers.palette` etc. don't re-fire.
 
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export interface PageModalState {
   // Open flags (read-only via this hook; writers are in `openers`).
@@ -27,6 +27,7 @@ export interface PageModalState {
     newRun: boolean;
     provenance: boolean;
     cost: boolean;
+    diagnostics: boolean;
   };
   // Imperative openers — call to mount the corresponding modal. Stable
   // identity (useCallback with no deps) so passing them down won't
@@ -41,6 +42,7 @@ export interface PageModalState {
     newRun: () => void;
     provenance: () => void;
     cost: () => void;
+    diagnostics: () => void;
   };
   // Imperative closers — call to dismiss. Stable identity.
   closers: {
@@ -52,6 +54,7 @@ export interface PageModalState {
     newRun: () => void;
     provenance: () => void;
     cost: () => void;
+    diagnostics: () => void;
   };
 }
 
@@ -64,10 +67,31 @@ export function useModalState(): PageModalState {
   const [newRun, setNewRun] = useState(false);
   const [provenance, setProvenance] = useState(false);
   const [cost, setCost] = useState(false);
+  const [diagnostics, setDiagnostics] = useState(false);
 
   const flags = useMemo(
-    () => ({ palette, routing, history, spawn, glossary, newRun, provenance, cost }),
-    [palette, routing, history, spawn, glossary, newRun, provenance, cost],
+    () => ({
+      palette,
+      routing,
+      history,
+      spawn,
+      glossary,
+      newRun,
+      provenance,
+      cost,
+      diagnostics,
+    }),
+    [
+      palette,
+      routing,
+      history,
+      spawn,
+      glossary,
+      newRun,
+      provenance,
+      cost,
+      diagnostics,
+    ],
   );
 
   // Openers / closers split rather than a single setter map so JSX call
@@ -84,6 +108,7 @@ export function useModalState(): PageModalState {
       newRun: () => setNewRun(true),
       provenance: () => setProvenance(true),
       cost: () => setCost(true),
+      diagnostics: () => setDiagnostics(true),
     }),
     [],
   );
@@ -98,6 +123,7 @@ export function useModalState(): PageModalState {
       newRun: () => setNewRun(false),
       provenance: () => setProvenance(false),
       cost: () => setCost(false),
+      diagnostics: () => setDiagnostics(false),
     }),
     [],
   );

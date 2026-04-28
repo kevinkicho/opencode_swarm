@@ -1020,6 +1020,7 @@ function PageBody({
         onOpenRouting={modals.openers.routing}
         onOpenHistory={modals.openers.history}
         onOpenGlossary={modals.openers.glossary}
+        onOpenDiagnostics={modals.openers.diagnostics}
         onOpenNewRun={modals.openers.newRun}
         onOpenProvenance={swarmRunID ? modals.openers.provenance : null}
         onOpenCost={modals.openers.cost}
@@ -1057,6 +1058,10 @@ function PageBody({
         diffLoading={diffLoading}
         diffError={diffError}
         liveDirectory={liveDirectory}
+        // For diagnostics + future workspace-scoped surfaces: fall back to
+        // the swarm run's workspace when no session is focused yet (cold
+        // load, or the user opened the modal before the session hydrated).
+        runWorkspace={swarmRunMeta?.workspace ?? null}
         swarmRunID={swarmRunID}
       />
     </div>

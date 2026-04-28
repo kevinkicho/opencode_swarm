@@ -23,17 +23,42 @@ export {
   abortSessionBrowser,
   createSessionBrowser,
   getAllSessionsBrowser,
+  getCommandsBrowser,
+  getConfigBrowser,
+  getMcpStatusBrowser,
   getPendingPermissionsBrowser,
   getProjectsBrowser,
   getSessionBrowser,
+  getSessionChildrenBrowser,
   getSessionDiffBrowser,
   getSessionMessagesBrowser,
+  getSessionTodoBrowser,
   getSessionsByDirectoryBrowser,
+  getToolIdsBrowser,
   postSessionMessageBrowser,
+  postSessionSummarizeBrowser,
   replyPermissionBrowser,
   sessionDiffQueryKey,
   sessionMessagesQueryKey,
 } from './live/_fetchers';
+
+export {
+  COMMANDS_QUERY_KEY,
+  CONFIG_QUERY_KEY,
+  MCP_STATUS_QUERY_KEY,
+  TOOL_IDS_QUERY_KEY,
+  useLiveCommands,
+  useLiveConfig,
+  useLiveMcpStatus,
+  useLiveToolIds,
+} from './live/use-instance-data';
+
+export {
+  SESSION_CHILDREN_QUERY_KEY,
+  SESSION_TODO_QUERY_KEY,
+  useLiveSessionChildren,
+  useLiveSessionTodos,
+} from './live/use-session-extras';
 
 export {
   OPENCODE_HEALTH_QUERY_KEY,

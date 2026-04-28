@@ -50,7 +50,12 @@ export function Inspector({
       {msg ? (
         <MessageInspector msg={msg} agents={agentMap} messages={messages} onFocus={onFocus} />
       ) : selectedAgent ? (
-        <AgentInspector agent={selectedAgent} messages={messages} onFocus={onFocus} />
+        <AgentInspector
+          agent={selectedAgent}
+          messages={messages}
+          onFocus={onFocus}
+          workspace={workspace}
+        />
       ) : selectedFileHeat ? (
         <FileHeatInspector
           heat={selectedFileHeat}

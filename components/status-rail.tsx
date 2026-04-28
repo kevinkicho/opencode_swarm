@@ -22,6 +22,7 @@ export function StatusRail({
   onOpenRouting,
   onOpenHistory,
   onOpenGlossary,
+  onOpenDiagnostics,
   onOpenNewRun,
   onOpenProvenance,
   onOpenCost,
@@ -31,6 +32,7 @@ export function StatusRail({
   onOpenRouting: () => void;
   onOpenHistory: () => void;
   onOpenGlossary: () => void;
+  onOpenDiagnostics: () => void;
   onOpenNewRun: () => void;
   onOpenProvenance: (() => void) | null;
   onOpenCost: () => void;
@@ -225,6 +227,26 @@ export function StatusRail({
             className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
           >
             <span className="text-fog-700">glossary</span>
+          </button>
+        </Tooltip>
+
+        <Tooltip
+          side="top"
+          wide
+          content={
+            <div className="space-y-0.5">
+              <div className="font-mono text-[11px] text-fog-200">opencode diagnostics</div>
+              <div className="font-mono text-[10.5px] text-fog-600">
+                tool catalog · MCP servers · effective config · user commands
+              </div>
+            </div>
+          }
+        >
+          <button
+            onClick={onOpenDiagnostics}
+            className="flex items-center gap-1 h-5 px-1.5 rounded hover:bg-ink-800 transition text-fog-600 hover:text-fog-200"
+          >
+            <span className="text-fog-700">diagnostics</span>
           </button>
         </Tooltip>
 
