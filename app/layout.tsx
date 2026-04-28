@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { ChunkErrorReload } from '@/components/chunk-error-reload';
+import { DevBuildIdReload } from '@/components/dev-build-id-reload';
 import { AxeReactProbe } from '@/components/perf/axe-react-probe';
 import { ReactScanProbe } from '@/components/perf/react-scan-probe';
 import { WebVitalsReporter } from '@/components/perf/web-vitals-reporter';
@@ -39,6 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <h1>opencode swarm</h1>
         </header>
         <ChunkErrorReload />
+        <DevBuildIdReload />
         <AxeReactProbe />
         <ReactScanProbe />
         <WebVitalsReporter />
