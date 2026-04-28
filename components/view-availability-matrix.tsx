@@ -108,7 +108,9 @@ export function ViewAvailabilityMatrix({
                         className={clsx(
                           'text-center py-1.5 px-2',
                           isCurrentCol && 'bg-molten/[0.06]',
-                          enabled ? 'text-mint/80' : 'text-fog-800',
+                          enabled
+                            ? 'text-mint/80'
+                            : 'text-fog-800 opacity-50',
                         )}
                       >
                         {enabled ? '✓' : '·'}
