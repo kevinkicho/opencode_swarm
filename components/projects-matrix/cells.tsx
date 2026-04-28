@@ -22,6 +22,7 @@ import {
   ROW_HEIGHT,
   STATUS_DOT_TONE,
   STATUS_TONE,
+  activityIntensity,
   bucketByDay,
   dayKeyOf,
   dayStartMs,
@@ -31,6 +32,10 @@ import {
   fmtTime,
   type Project,
 } from './helpers';
+
+// Inner colored block size — leaves 1.5px gutter on each side for that
+// GitHub contribution-graph rhythm.
+const INNER_BLOCK = 11;
 
 export function MatrixHeader({ days }: { days: number[] }) {
   // Week markers: show the day-of-month only on Mondays or on the first
@@ -113,7 +118,9 @@ export function MatrixRow({
         </Tooltip>
       </div>
 
-      <div className="flex items-center">
+      {/* gap-[2px] gives the GitHub contribution-graph rhythm — cells
+          read as a grid rather than a striped row of touching tiles. */}
+      <div className="flex items-center gap-[2px]">
         {days.map((t) => {
           const key = dayKeyOf(t);
           const runs = byDay.get(key);
@@ -127,45 +134,58 @@ export function MatrixRow({
 function DayCell({ dayMs, runs }: { dayMs: number; runs?: SwarmRunListRow[] }) {
   const isToday = dayMs === dayStartMs(Date.now());
 
+  // Empty day — render a dim base block (not just a dot). GitHub's
+  // contribution graph keeps every cell a uniform square so the eye
+  // tracks the grid; a single tiny dot for empties broke that rhythm
+  // and made the matrix read striped rather than gridded.
   if (!runs || runs.length === 0) {
     return (
       <div
-        className={clsx(
-          'shrink-0 flex items-center justify-center',
-          isToday && 'bg-molten/[0.04]',
-        )}
+        className="shrink-0 grid place-items-center"
         style={{ width: DAY_WIDTH, height: ROW_HEIGHT }}
       >
-        <span className="w-0.5 h-0.5 rounded-full bg-fog-800" />
+        <span
+          className={clsx(
+            'block rounded-sm bg-ink-800',
+            isToday && 'ring-1 ring-molten/40',
+          )}
+          style={{ width: INNER_BLOCK, height: INNER_BLOCK }}
+        />
       </div>
     );
   }
 
   const status = dominantStatus(runs);
+  // Opacity ladder by run count (1 → faint, 4+ → fully saturated) —
+  // same GitHub-style intensity scaling, just expressed via opacity
+  // since our hues encode status (live/idle/error/stale/unknown)
+  // rather than a single contribution color.
+  const intensity = activityIntensity(runs.length);
+
   const cell = (
     <button
       type="button"
-      // Day cells render as small colored squares — visually clear but
+      // Day cells render as colored squares — visually clear but
       // opaque to screen readers without an explicit label. axe flags
       // this as `button-name` (critical). Pull the day, run count, and
       // dominant status into the aria-label so the popover content is
       // discoverable without sighted UI.
       aria-label={`${fmtDayLong(dayMs)} · ${runs.length} run${runs.length === 1 ? '' : 's'} · ${status}`}
-      className={clsx(
-        'shrink-0 grid place-items-center relative cursor-pointer hover:ring-1 hover:ring-fog-500 transition',
-        isToday && 'bg-molten/[0.04]',
-      )}
+      className="shrink-0 grid place-items-center cursor-pointer transition hover:scale-110"
       style={{ width: DAY_WIDTH, height: ROW_HEIGHT }}
     >
       <span
-        className={clsx('block rounded-[1px]', STATUS_TONE[status])}
-        style={{ width: 10, height: 10 }}
+        className={clsx(
+          'block rounded-sm transition',
+          STATUS_TONE[status],
+          isToday && 'ring-1 ring-molten/60',
+        )}
+        style={{
+          width: INNER_BLOCK,
+          height: INNER_BLOCK,
+          opacity: intensity,
+        }}
       />
-      {runs.length > 1 && (
-        <span className="absolute -top-0.5 -right-0.5 font-mono text-[8px] leading-none text-ink-900 bg-fog-400 rounded-full px-[2px] tabular-nums">
-          {runs.length > 9 ? '9+' : runs.length}
-        </span>
-      )}
     </button>
   );
 

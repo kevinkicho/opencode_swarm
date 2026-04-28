@@ -168,16 +168,32 @@ export function ProjectsMatrix({
             </ul>
           </div>
 
-          {/* Legend — status color key */}
-          <div className="px-4 py-2 hairline-t bg-ink-850/40">
-            <div className="flex items-center gap-3 font-mono text-micro uppercase tracking-widest2 text-fog-600">
-              <span>status:</span>
+          {/* Legend — status hue + activity intensity. The matrix
+              follows the GitHub contribution-graph aesthetic: cells
+              encode HUE = dominant run status, OPACITY = activity
+              count. Both are surfaced in the legend so a viewer knows
+              "darker square = busier day" without needing to hover. */}
+          <div className="px-4 py-2 hairline-t bg-ink-850/40 flex items-center gap-6 flex-wrap">
+            <div className="flex items-center gap-2 font-mono text-micro uppercase tracking-widest2 text-fog-600">
+              <span>status</span>
               {(['live', 'idle', 'error', 'stale', 'unknown'] as SwarmRunStatus[]).map((s) => (
                 <span key={s} className="flex items-center gap-1">
-                  <span className={clsx('inline-block w-2.5 h-2.5', STATUS_TONE[s])} />
+                  <span className={clsx('inline-block w-2.5 h-2.5 rounded-sm', STATUS_TONE[s])} />
                   <span className="text-fog-500 normal-case">{s}</span>
                 </span>
               ))}
+            </div>
+            <div className="flex items-center gap-1.5 font-mono text-micro uppercase tracking-widest2 text-fog-600">
+              <span>activity</span>
+              <span className="text-fog-700 normal-case">less</span>
+              {[0.4, 0.6, 0.8, 1].map((o) => (
+                <span
+                  key={o}
+                  className="inline-block w-2.5 h-2.5 rounded-sm bg-mint"
+                  style={{ opacity: o }}
+                />
+              ))}
+              <span className="text-fog-700 normal-case">more</span>
             </div>
           </div>
         </div>

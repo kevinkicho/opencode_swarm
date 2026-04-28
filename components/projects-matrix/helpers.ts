@@ -10,11 +10,27 @@ import { STATUS_BURN_VISUAL, STATUS_PRIORITY } from '../swarm-run-visual';
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const DEFAULT_WINDOW_DAYS = 30;
 
-// Fixed cell geometry. Day column narrows on smaller windows; we don't
-// scale — readers learn the pitch once and scanning is spatial.
-export const DAY_WIDTH = 16;
-export const ROW_HEIGHT = 20;
+// Fixed cell geometry. Square cells (14×14 with a 11×11 inner block)
+// match the GitHub contribution-graph aesthetic: dense, uniformly
+// proportioned, scannable as a grid rather than a striped table.
+// Pre-2026-04-28 these were 16×20 — visually rectangular and the
+// per-day-count badges added more chrome than the count was worth.
+export const DAY_WIDTH = 14;
+export const ROW_HEIGHT = 14;
 export const REPO_COL_WIDTH = 200;
+
+// Activity intensity scale — opacity bins so a "busy day" (many runs)
+// reads as a saturated block while a single-run day reads as a faint
+// one, same hue. Mirrors how GitHub's contribution graph uses 5
+// intensity levels for a single hue. We only ladder up to 4+ since
+// per-day run counts in this app rarely exceed single digits.
+export function activityIntensity(runCount: number): number {
+  if (runCount <= 0) return 0;
+  if (runCount === 1) return 0.45;
+  if (runCount === 2) return 0.65;
+  if (runCount === 3) return 0.85;
+  return 1; // 4+
+}
 
 // Day cells use the burn-rate palette (live=amber, idle=mint, stale=fog)
 // because this view's mental model is "who burned compute today."
