@@ -110,11 +110,15 @@ export function PageModals({
   swarmRunID,
 }: PageModalsProps) {
   const { flags, closers } = state;
-  // Each modal gets its own ErrorBoundary so a render error in one can't
-  // take down the others (or the surrounding page chrome). Without this,
-  // a throw inside e.g. DiagnosticsModal would unmount the whole tree —
-  // visible to the user as "footer buttons stop responding" because the
-  // whole app re-renders as nothing.
+  // Modals are always rendered (with open=false when closed) so their
+  // dynamic-import chunks fetch + compile on initial page mount, not on
+  // first click. Dev mode amplifies the difference: gating render behind
+  // `flag && <Modal>` makes the first click pay a 2-3s on-demand compile
+  // cost in Next.js dev, which manifests as "the button didn't fire."
+  // Each modal sits inside its own ErrorBoundary so a render error in
+  // one can't unmount the surrounding chrome — without this, a throw
+  // inside e.g. DiagnosticsModal would unmount the whole tree (which
+  // looks identical to "footer buttons stop responding").
   return (
     <>
       <ErrorBoundary scope="palette">
