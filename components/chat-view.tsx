@@ -192,7 +192,13 @@ export function ChatView({
                 </span>
               )}
             </div>
-            <div className="text-[12.5px] text-fog-200 leading-relaxed whitespace-pre-wrap break-words">
+            {/* Long-message containment. Without a max height a single
+                bubble (e.g. the planner sweep prompt at ~1.5K chars) fills
+                the entire viewport, pushing every other message off-screen.
+                Cap each bubble at 40vh and let it scroll internally;
+                clicking the bubble (focus path) navigates to the inspector
+                where the full body is visible. Diagnostic 2026-04-27. */}
+            <div className="text-[12.5px] text-fog-200 leading-relaxed whitespace-pre-wrap break-words max-h-[40vh] overflow-y-auto">
               {msg.body ?? msg.title}
             </div>
           </button>
