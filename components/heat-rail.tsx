@@ -20,11 +20,8 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { Agent } from '@/lib/swarm-types';
-import {
-  HeatRow,
-  HeatTreeView,
-  ViewToggleButton,
-} from './heat-rail/sub-components';
+import { HeatRow, ViewToggleButton } from './heat-rail/list-row';
+import { HeatTreeView } from './heat-rail/tree-view';
 
 // heat-rail ↔ sub-components import cycle. Re-exported so existing
 // callers (page.tsx etc.) don't need to update their imports.
