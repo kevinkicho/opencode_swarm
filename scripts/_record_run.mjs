@@ -59,18 +59,23 @@ if (NO_SPAWN) {
   // Pattern-specific options. Most patterns share the same shape; a few
   // (map-reduce, critic-loop, debate-judge) accept extra knobs that the
   // validator scopes to that pattern.
+  //
+  // teamSize defaults: critic-loop pins exactly 2 (1 worker + 1 critic);
+  // debate-judge needs ≥3 (judge + ≥2 generators). Other patterns float
+  // around 3 unless the user overrides via --team-size.
+  const teamSize = args['team-size']
+    ? parseInt(args['team-size'], 10)
+    : PATTERN === 'critic-loop'
+      ? 2
+      : 3;
   const body = {
     pattern: PATTERN,
     workspace: 'C:\\Users\\kevin\\Workspace\\kyahoofinance032926',
     directive:
       'Briefly survey the README. Each agent claims one specific README improvement and posts a finding to the board. Stop after 3 findings.',
     title: `recorded ${PATTERN} test · ${new Date().toISOString().slice(0, 10)}`,
-    teamSize: 3,
-    teamModels: [
-      'ollama/glm-5.1:cloud',
-      'ollama/glm-5.1:cloud',
-      'ollama/glm-5.1:cloud',
-    ],
+    teamSize,
+    teamModels: Array.from({ length: teamSize }, () => 'ollama/glm-5.1:cloud'),
     bounds: { costCap: 1, minutesCap: WATCH_MINUTES + 2 },
   };
   if (PATTERN === 'map-reduce' && args['synthesis-critic'] !== 'false') {
