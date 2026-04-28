@@ -655,10 +655,18 @@ function PageBody({
   // STATUS.md "silent since dispatch" — derive client-side so the
   // chip surfaces during the 90s window before F1 watchdog WARNs.
   // Memoised on the slots reference; recomputes when messages tick.
-  const silentSessions = useMemo(
-    () => deriveSilentSessions(liveSlots),
-    [liveSlots],
-  );
+  //
+  // Gated on swarmRunStatus: silent-session detection is a *liveness
+  // warning* — meaningful only while the run is alive. On stale/error
+  // runs the trailing user message of an aborted-mid-turn session
+  // would otherwise flag "silent N hours" forever, even though the
+  // run ended long ago and there's nothing to be silent about. Same
+  // for the unknown-during-first-load window. Only emit when the
+  // poll says the run is actively producing or quietly alive.
+  const silentSessions = useMemo(() => {
+    if (swarmRunStatus !== 'live' && swarmRunStatus !== 'idle') return [];
+    return deriveSilentSessions(liveSlots);
+  }, [liveSlots, swarmRunStatus]);
 
   return (
     <PlaybackProvider runDuration={runDuration}>

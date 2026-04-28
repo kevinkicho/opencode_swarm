@@ -133,7 +133,19 @@ export function SwarmTopbar({
           </button>
         </Popover>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} stale={backendStale} />}
-        {swarmRunMeta && (
+        {/*
+          Conditional chip set — gated on the authoritative live status
+          from the runs-poll (`swarmRunStatus`), NOT the mock-shaped
+          `run.status` which can disagree with reality on historic runs.
+          2026-04-28 fix:
+            - terminal (stale / error) → no health, no abort, no force
+            - active (live / idle) → health + force-stop; abort when
+              there's an in-flight assistant turn (live only)
+            - unknown / null → only the health chip renders (it has its
+              own ok/warn/error tone) so the user has SOME signal during
+              backend-blip / first-load windows
+        */}
+        {swarmRunMeta && swarmRunStatus !== 'stale' && swarmRunStatus !== 'error' && (
           <RunHealthChip
             tickerState={tickerState}
             boardItems={boardItems ?? null}
@@ -146,10 +158,10 @@ export function SwarmTopbar({
           tickerState.retryAfterEndsAtMs && (
             <RetryAfterChip endsAtMs={tickerState.retryAfterEndsAtMs} />
           )}
-        {liveSessionId && liveDirectory && run.status === 'active' && (
+        {liveSessionId && liveDirectory && swarmRunStatus === 'live' && (
           <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
         )}
-        {swarmRunMeta && run.status === 'active' && (
+        {swarmRunMeta && (swarmRunStatus === 'live' || swarmRunStatus === 'idle') && (
           <HardStopChip swarmRunID={swarmRunMeta.swarmRunID} />
         )}
       </nav>

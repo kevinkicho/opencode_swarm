@@ -169,6 +169,23 @@ try {
   record('council rail (jaccard + CouncilRowEl)', !!councilHeader);
 
   // ─────────────────────────────────────────────────────────────────
+  // 7b. Stale-run chip gating — abort / force-stop / health all hide
+  //     when swarmRunStatus is stale/error. The blackboard run we just
+  //     loaded is stale (146-run dataset, 0 live), so this is the
+  //     same page state.
+  console.log('\nstale-run chip gating');
+  await page.goto(`${BASE}/?swarmRun=${RUNS.blackboard}`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await page.waitForSelector('text=/session timeline/i', { timeout: 15_000 });
+  await page.waitForTimeout(2500);
+
+  const abortBtn = await page.$('button:has-text("abort")');
+  const forceBtn = await page.$('button:has-text("force stop"), button:has-text("hard stop")');
+  const healthChip = await page.$('text=/^health$/i');
+  record('stale run hides abort button', !abortBtn);
+  record('stale run hides force-stop button', !forceBtn);
+  record('stale run hides health chip', !healthChip);
+
+  // ─────────────────────────────────────────────────────────────────
   // 8. Cost dashboard drawer — helpers + sub-views split
   console.log('\ncost dashboard drawer');
   await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
