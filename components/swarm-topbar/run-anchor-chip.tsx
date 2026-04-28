@@ -11,7 +11,7 @@ import { IconCopy } from '../icons';
 import { Popover } from '../ui/popover';
 import { patternMeta, patternAccentText } from '@/lib/swarm-patterns';
 import { STATUS_VISUAL } from '../swarm-runs-picker';
-import { fmtAbsTs } from './chips';
+import { fmtAbsTs } from './abort-chips';
 
 export function RunAnchorChip({
   meta,
