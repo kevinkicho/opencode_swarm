@@ -462,15 +462,35 @@ interface CachedRow {
   fetchedAt: number;
 }
 
-// 2026-04-25 — bumped from 2s to 10s. Each derivation costs one
-// opencode message-fetch per session (100-300ms each on WSL2 in
-// dev). Across 80+ runs the list endpoint serializes 250+ probes,
-// taking 2-3s total. A 2s TTL meant the next poll always missed.
-// 10s lets one in three polls (default useSwarmRuns 30s cadence)
-// cached-fall-through. appendEvent still invalidates per-run on
-// state change so the freshness window is "no recent appends"
-// — actively-live runs are still up-to-date when something happens.
-const CACHE_TTL_MS = 10_000;
+// Status-aware TTL — 2026-04-28.
+//
+// Pre-fix: a single 10s TTL across every status. With 146 runs × ~3
+// sessions = ~470 opencode probes per cold poll (~5s on WSL2), and
+// the picker polling every 4s, every cycle missed cache and the
+// route handler was busy 100% of the time. Measured: t=0 cold 5s,
+// t=4s another 5s, etc.
+//
+// Post-fix: terminal statuses (stale, error) cache for 10 minutes
+// because they're ONLY revivable via an explicit appendEvent — and
+// appendEvent already invalidates the cache (see fs.ts:335). The TTL
+// for terminals is just defense against a missed-event regression;
+// in steady state, terminal rows derive once and stay derived.
+//
+// Active statuses (live, idle, unknown) keep the 10s TTL. `unknown`
+// stays short because the freshness contract is fuzzy (could be a
+// session that hasn't produced its first message yet, or a deleted
+// session that'll never produce again — we can't tell from outside).
+//
+// Net effect on the all-stale picker: cold poll 5s, every poll
+// after that <50ms until a real event invalidates a row.
+type SwarmStatusKey = SwarmRunStatus;
+const TTL_BY_STATUS: Record<SwarmStatusKey, number> = {
+  live: 10_000,
+  idle: 10_000,
+  unknown: 10_000,
+  stale: 600_000, // 10 min — terminal, only invalidated by appendEvent
+  error: 600_000, // 10 min — terminal
+};
 
 // dev a deleted run's CachedRow never expired. 500 is the same bound
 // as metaCache (paired keying — both keyed on swarmRunID).
@@ -495,7 +515,13 @@ export async function deriveRunRowCached(
   const cache = derivedRowCache();
   const now = Date.now();
   const hit = cache.get(meta.swarmRunID);
-  if (hit && now - hit.fetchedAt < CACHE_TTL_MS) return hit.row;
+  // TTL is per-cached-status: the entry's age is compared against the
+  // TTL keyed by that entry's status, not a global. Lets terminal rows
+  // (stale/error) live 10 min while active rows churn at 10s.
+  if (hit) {
+    const ttl = TTL_BY_STATUS[hit.row.status] ?? 10_000;
+    if (now - hit.fetchedAt < ttl) return hit.row;
+  }
   const row = await deriveRunRow(meta, signal);
   cache.set(meta.swarmRunID, { row, fetchedAt: now });
   return row;
