@@ -6,7 +6,6 @@
 // surfaces between them when MAP finishes and the synthesize item lands
 // on the board.
 //
-//
 // Data sources:
 //   - slots (LiveSwarmSessionSlot[]) — per-session messages for output
 //     length + per-session status
@@ -15,99 +14,28 @@
 // Scope-text comes from the first user message on each session — that's
 // the kickoff prompt where buildScopedDirective stamped the per-session
 // scope annotation. Cheap to extract.
+//
+// 2026-04-28 decomposition: pure derivation + types →
+// map-rail/helpers.ts; MapRowEl + ReduceRowEl + tone palettes →
+// map-rail/rows.tsx. Rail composition + phase-transition banner stay
+// here.
 
-import clsx from 'clsx';
 import { useMemo, useRef } from 'react';
 
 import type { LiveBoard } from '@/lib/blackboard/live';
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
-import type { OpencodeMessage } from '@/lib/opencode/types';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
-import { compactNum, countLines, turnText } from './rails/_shared';
-
-interface MapRow {
-  slotIndex: number;
-  sessionID: string;
-  scope: string; // truncated; full in title
-  scopeFull: string;
-  status: 'pending' | 'working' | 'idle' | 'errored';
-  outputLines: number;
-  filesTouched: number;
-  tokens: number;
-}
-
-interface ReduceRow {
-  itemID: string;
-  status: 'awaiting' | 'claimed' | 'running' | 'done' | 'stale';
-  ownerSlot: number | null;
-  elapsedMinutes: number | null;
-  outputLines: number;
-}
-
-// components/rails/_shared.ts.
-
-// Extract the scope annotation from the first user message. Convention
-// from buildScopedDirective (lib/server/map-reduce.ts:98-114): the
-// kickoff prompt mentions "your scope:" or similar followed by paths.
-// Fall back to a generic "scope?" placeholder if we can't find it.
-function extractScope(slot: LiveSwarmSessionSlot): string {
-  const firstUser = slot.messages.find((m) => m.info.role === 'user');
-  if (!firstUser) return '';
-  const text = turnText(firstUser);
-  // Look for "scope:" / "Your scope:" / "Slice:" prefixes (lenient).
-  const m = /(?:scope|slice)\s*:?\s*([^.\n]+)/i.exec(text);
-  if (m) return m[1].trim().slice(0, 80);
-  return '';
-}
-
-// Count files touched in a session via patch parts. We skip the read-
-// only file-watcher signal and only count parts whose type === 'patch'.
-function countFilesTouched(slot: LiveSwarmSessionSlot): number {
-  const seen = new Set<string>();
-  for (const m of slot.messages) {
-    for (const p of m.parts) {
-      if (p.type === 'patch') {
-        // patch parts have a `files` array (per opencode types).
-        const files = (p as { files?: string[] }).files ?? [];
-        for (const f of files) seen.add(f);
-      }
-    }
-  }
-  return seen.size;
-}
-
-function sessionTokens(slot: LiveSwarmSessionSlot): number {
-  let n = 0;
-  for (const m of slot.messages) {
-    if (m.info.role !== 'assistant') continue;
-    n += m.info.tokens?.total ?? 0;
-  }
-  return n;
-}
-
-function sessionStatus(slot: LiveSwarmSessionSlot): MapRow['status'] {
-  if (slot.messages.length === 0) return 'pending';
-  const lastAssist = [...slot.messages]
-    .reverse()
-    .find((m) => m.info.role === 'assistant');
-  if (!lastAssist) return 'pending';
-  if (lastAssist.info.error) return 'errored';
-  if (lastAssist.info.time.completed) return 'idle';
-  return 'working';
-}
-
-function sessionOutputLines(slot: LiveSwarmSessionSlot): number {
-  // Sum text-part lines across all assistant messages — proxy for
-  // "how much did this session generate" without holding the full text
-  // in memory.
-  let n = 0;
-  for (const m of slot.messages) {
-    if (m.info.role !== 'assistant') continue;
-    n += countLines(turnText(m));
-  }
-  return n;
-}
+import {
+  type MapRow,
+  type ReduceRow,
+  countFilesTouched,
+  extractScope,
+  sessionOutputLines,
+  sessionStatus,
+  sessionTokens,
+} from './map-rail/helpers';
+import { MapRowEl, ReduceRowEl } from './map-rail/rows';
 
 export function MapRail({
   slots,
@@ -228,8 +156,7 @@ export function MapRail({
 
 // Stick-to-bottom scrollable body for the MAP+REDUCE stack. Reduce
 // row appends BELOW the map sessions when the synthesize item lands;
-// auto-stick puts the user on the active phase. (
-// 6.7+6.8.)
+// auto-stick puts the user on the active phase.
 function MapScrollBody({
   mapRows,
   reduce,
@@ -311,162 +238,5 @@ function wrap(
       {header}
       {body}
     </section>
-  );
-}
-
-const MAP_STATUS_TONE: Record<MapRow['status'], string> = {
-  pending: 'text-fog-700',
-  working: 'text-molten animate-pulse',
-  idle: 'text-mint',
-  errored: 'text-rust',
-};
-
-const REDUCE_STATUS_TONE: Record<ReduceRow['status'], string> = {
-  awaiting: 'text-fog-700',
-  claimed: 'text-iris',
-  running: 'text-molten animate-pulse',
-  done: 'text-mint',
-  stale: 'text-amber',
-};
-
-// shared version absorbs map-rail's strict-superset M branch).
-
-function MapRowEl({
-  row,
-  onInspectSession,
-}: {
-  row: MapRow;
-  onInspectSession?: (sessionID: string) => void;
-}) {
-  const clickable = !!(onInspectSession && row.sessionID);
-  const onClick = clickable ? () => onInspectSession!(row.sessionID) : undefined;
-  return (
-    <li
-      onClick={onClick}
-      className={clsx(
-        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono transition',
-        clickable
-          ? 'cursor-pointer hover:bg-ink-800/60'
-          : 'cursor-default hover:bg-ink-800/40',
-      )}
-      style={{
-        // glyph 40 · scope flex · status 60 · output 48 · files 32 · tokens 48
-        gridTemplateColumns: '40px minmax(0, 1fr) 60px 48px 32px 48px',
-      }}
-      title={
-        (row.scopeFull || `slot s${row.slotIndex} · ${row.sessionID.slice(-8)}`) +
-        (clickable ? ' · click to inspect session' : '')
-      }
-    >
-      <span className="text-iris font-mono text-[10px] tabular-nums">
-        s{row.slotIndex}
-      </span>
-      <span className="text-fog-300 truncate min-w-0">
-        {row.scope || <span className="text-fog-700">no scope detected</span>}
-      </span>
-      <span
-        className={clsx(
-          'uppercase tracking-widest2 text-[9px] text-right',
-          MAP_STATUS_TONE[row.status],
-        )}
-      >
-        {row.status}
-      </span>
-      <span
-        className={clsx(
-          'tabular-nums text-right',
-          row.outputLines > 0 ? 'text-fog-400' : 'text-fog-700',
-        )}
-      >
-        {row.outputLines > 0 ? `${compactNum(row.outputLines)}L` : '—'}
-      </span>
-      <span
-        className={clsx(
-          'tabular-nums text-right',
-          row.filesTouched > 0 ? 'text-fog-400' : 'text-fog-700',
-        )}
-      >
-        {row.filesTouched > 0 ? row.filesTouched : '—'}
-      </span>
-      <span
-        className={clsx(
-          'tabular-nums text-right',
-          row.tokens > 0 ? 'text-fog-400' : 'text-fog-700',
-        )}
-      >
-        {row.tokens > 0 ? compactNum(row.tokens) : '—'}
-      </span>
-    </li>
-  );
-}
-
-function ReduceRowEl({
-  row,
-  ownerSessionID,
-  onInspectSession,
-}: {
-  row: ReduceRow;
-  ownerSessionID: string | null;
-  onInspectSession?: (sessionID: string) => void;
-}) {
-  const idShort = row.itemID.length > 12 ? `${row.itemID.slice(0, 8)}…` : row.itemID;
-  const clickable = !!(onInspectSession && ownerSessionID);
-  const onClick = clickable
-    ? () => onInspectSession!(ownerSessionID!)
-    : undefined;
-  return (
-    <li
-      onClick={onClick}
-      className={clsx(
-        'h-5 px-3 grid items-center gap-1.5 text-[10.5px] font-mono transition',
-        clickable
-          ? 'cursor-pointer hover:bg-ink-800/60'
-          : 'cursor-default hover:bg-ink-800/40',
-      )}
-      style={{
-        // glyph 16 · item 80 · status 80 · owner 32 · elapsed 48 · output 48
-        gridTemplateColumns: '16px 80px 80px 32px 48px 48px',
-      }}
-      title={
-        `synthesize ${row.itemID}` +
-        (clickable ? ' · click to inspect synthesizer' : '')
-      }
-    >
-      <span className="text-iris">⬢</span>
-      <span className="font-mono text-[9px] text-fog-500 tabular-nums truncate">
-        {idShort}
-      </span>
-      <span
-        className={clsx(
-          'uppercase tracking-widest2 text-[9px]',
-          REDUCE_STATUS_TONE[row.status],
-        )}
-      >
-        {row.status}
-      </span>
-      <span className="font-mono text-[10px] text-iris tabular-nums text-right">
-        {row.ownerSlot !== null ? `s${row.ownerSlot}` : '—'}
-      </span>
-      <span
-        className={clsx(
-          'tabular-nums text-right',
-          row.elapsedMinutes !== null ? 'text-fog-400' : 'text-fog-700',
-        )}
-      >
-        {row.elapsedMinutes !== null
-          ? row.elapsedMinutes < 10
-            ? `${row.elapsedMinutes.toFixed(1)}m`
-            : `${Math.round(row.elapsedMinutes)}m`
-          : '—'}
-      </span>
-      <span
-        className={clsx(
-          'tabular-nums text-right',
-          row.outputLines > 0 ? 'text-fog-400' : 'text-fog-700',
-        )}
-      >
-        {row.outputLines > 0 ? `${compactNum(row.outputLines)}L` : '—'}
-      </span>
-    </li>
   );
 }

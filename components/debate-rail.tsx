@@ -6,11 +6,14 @@
 // another. The user gets a one-screen answer to "what did each
 // generator say each round, and how did the judge call it?"
 //
-//
 // Slot layout (per debate-judge kickoff in lib/server/debate-judge.ts):
 //   slots[0]   = judge   (agent='judge')
 //   slots[1..] = generators (agent='generator-1', 'generator-2', …)
 // Same defensive identification-by-agent-name pattern as iterations-rail.
+//
+// 2026-04-28 decomposition: pure parser + classifier + types →
+// debate-rail/helpers.ts; DebateRowEl per-round renderer →
+// debate-rail/row.tsx. This file holds the rail composition.
 
 import clsx from 'clsx';
 import { useMemo, useRef } from 'react';
@@ -19,102 +22,15 @@ import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
 import type { OpencodeMessage } from '@/lib/opencode/types';
 import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
-import { compactNum, countLines, turnText } from './rails/_shared';
-
-interface RoundCell {
-  // Length in lines of the generator's proposal that round; null when
-  // the generator hasn't produced anything yet for that round.
-  lines: number | null;
-  // For round ≥ 2, a diff signal vs prior round. null on R1 / no prior.
-  diff: string | null;
-  status: 'pending' | 'drafting' | 'completed' | 'errored';
-}
-
-interface RoundRow {
-  round: number; // 1-indexed
-  generators: RoundCell[];
-  judge: {
-    verdict: 'winner' | 'merge' | 'revise' | 'pending' | 'unknown';
-    target: number | null; // for WINNER:N — which generator index (0-based)
-    text: string | null; // first ~80 chars of judge text after the keyword
-    completed: boolean;
-  };
-  status: 'pending' | 'deliberating' | 'done';
-}
-
-// components/rails/_shared.ts.
-
-function diffSummary(prev: string, next: string): string {
-  if (!prev && !next) return '';
-  const prevSet = new Set(prev.split('\n').map((l) => l.trim()).filter(Boolean));
-  const nextSet = new Set(next.split('\n').map((l) => l.trim()).filter(Boolean));
-  let added = 0;
-  let removed = 0;
-  for (const l of nextSet) if (!prevSet.has(l)) added += 1;
-  for (const l of prevSet) if (!nextSet.has(l)) removed += 1;
-  if (added === 0 && removed === 0) return 'no change';
-  return `+${added} / -${removed}`;
-}
-
-// Parse judge verdict + target from review text. Convention from
-// buildJudgePrompt: WINNER:<N> / MERGE:<text> / REVISE:<feedback>.
-// Lenient on case + colon-vs-space.
-function parseVerdict(text: string): {
-  verdict: 'winner' | 'merge' | 'revise' | 'unknown';
-  target: number | null;
-  body: string;
-} {
-  if (!text) return { verdict: 'unknown', target: null, body: '' };
-  const trimmed = text.trimStart();
-  const head = trimmed.slice(0, 40).toUpperCase();
-  if (head.startsWith('WINNER')) {
-    const m = /^WINNER\s*[:\s]\s*(\d+)/i.exec(trimmed);
-    const target = m ? parseInt(m[1] ?? '0', 10) - 1 : null; // user-facing 1-indexed → 0-indexed
-    return {
-      verdict: 'winner',
-      target,
-      body: trimmed.replace(/^WINNER\s*[:\s]\s*\d+\s*/i, '').slice(0, 80),
-    };
-  }
-  if (head.startsWith('MERGE')) {
-    return {
-      verdict: 'merge',
-      target: null,
-      body: trimmed.replace(/^MERGE\s*[:\s]\s*/i, '').slice(0, 80),
-    };
-  }
-  if (head.startsWith('REVISE')) {
-    return {
-      verdict: 'revise',
-      target: null,
-      body: trimmed.replace(/^REVISE\s*[:\s]\s*/i, '').slice(0, 80),
-    };
-  }
-  return { verdict: 'unknown', target: null, body: trimmed.slice(0, 80) };
-}
-
-// Identify judge + generators from slots. judge has agent='judge';
-// generators have 'generator-N' or just 'generator'. Falls back to
-// slot-order: slot[0]=judge, slot[1..]=generators.
-function classifySlots(slots: LiveSwarmSessionSlot[]): {
-  judge: LiveSwarmSessionSlot | null;
-  generators: LiveSwarmSessionSlot[];
-} {
-  let judge: LiveSwarmSessionSlot | null = null;
-  const generators: LiveSwarmSessionSlot[] = [];
-  for (const s of slots) {
-    const firstAssist = s.messages.find((m) => m.info.role === 'assistant');
-    const agent = firstAssist?.info.agent ?? '';
-    if (agent === 'judge') judge = judge ?? s;
-    else if (agent.startsWith('generator')) generators.push(s);
-  }
-  // Fallback: slot order.
-  if (!judge && slots.length > 0) judge = slots[0];
-  if (generators.length === 0 && slots.length > 1) {
-    for (let i = 1; i < slots.length; i += 1) generators.push(slots[i]);
-  }
-  return { judge, generators };
-}
+import { countLines, turnText } from './rails/_shared';
+import {
+  type RoundCell,
+  type RoundRow,
+  classifySlots,
+  diffSummary,
+  parseVerdict,
+} from './debate-rail/helpers';
+import { DebateRowEl } from './debate-rail/row';
 
 export function DebateRail({
   slots,
@@ -122,7 +38,7 @@ export function DebateRail({
   // Accepted but not wired in v1 — debate rows are rounds, not sessions,
   // so inspector wiring needs cell-level (per-generator / judge) clicks
   // which require restructuring the row component. Page passes this so
- // a future cell-level enhancement is non-breaking. 
+  // a future cell-level enhancement is non-breaking.
   // 6.9 v2.
   onInspectSession: _onInspectSession,
 }: {
@@ -235,7 +151,6 @@ export function DebateRail({
     !!final,
     <DebateListBody
       rows={rows}
-      generatorCount={generators.length}
       finalRound={final?.round ?? null}
     />,
   );
@@ -271,130 +186,11 @@ function wrap(
   );
 }
 
-const VERDICT_TONE: Record<RoundRow['judge']['verdict'], string> = {
-  winner: 'text-mint',
-  merge: 'text-iris',
-  revise: 'text-amber',
-  pending: 'text-fog-700',
-  unknown: 'text-fog-500',
-};
-
-const VERDICT_LABEL: Record<RoundRow['judge']['verdict'], string> = {
-  winner: 'WINNER',
-  merge: 'MERGE',
-  revise: 'REVISE',
-  pending: '—',
-  unknown: '?',
-};
-
-const STATUS_TONE: Record<RoundRow['status'], string> = {
-  pending: 'text-fog-700',
-  deliberating: 'text-iris animate-pulse',
-  done: 'text-fog-500',
-};
-
-
-function DebateRowEl({
-  row,
-  generatorCount,
-  isFinal,
-}: {
-  row: RoundRow;
-  generatorCount: number;
-  isFinal: boolean;
-}) {
-  // Cap visible generator columns at 4 for layout; collapse extras into
-  // a "+N more" chip. Most debate runs are 2-4 generators per the
-  const visibleGens = row.generators.slice(0, 4);
-  const overflowGens = row.generators.length - visibleGens.length;
-
-  // grid: round 24 · gen × visibleN (~64px each) · judge flex · status 56
-  const gridCols = `24px repeat(${visibleGens.length}, 64px)${overflowGens > 0 ? ' 32px' : ''} minmax(0, 1fr) 56px`;
-
-  return (
-    <li
-      className={clsx(
-        'h-6 px-3 grid items-center gap-1.5 text-[10.5px] font-mono cursor-default hover:bg-ink-800/40 transition',
-        isFinal && 'bg-mint/[0.06]',
-      )}
-      style={{ gridTemplateColumns: gridCols }}
-      title={row.judge.text ?? undefined}
-    >
-      <span className="text-fog-400 tabular-nums">R{row.round}</span>
-      {visibleGens.map((cell, gi) => (
-        <span
-          key={gi}
-          className={clsx(
-            'tabular-nums text-[9px]',
-            cell.status === 'pending'
-              ? 'text-fog-800'
-              : cell.status === 'errored'
-                ? 'text-rust'
-                : cell.status === 'drafting'
-                  ? 'text-fog-300 animate-pulse'
-                  : 'text-fog-400',
-          )}
-          title={
-            cell.diff
-              ? `R${row.round} draft from generator ${gi + 1} · ${cell.lines}L · ${cell.diff} vs prior round`
-              : cell.lines !== null
-                ? `R${row.round} draft from generator ${gi + 1} · ${cell.lines}L`
-                : 'pending'
-          }
-        >
-          {cell.lines !== null ? `${compactNum(cell.lines)}L` : '—'}
-          {cell.diff && cell.diff !== 'no change' && (
-            <span className="ml-1 text-fog-700 text-[8px]">{cell.diff}</span>
-          )}
-        </span>
-      ))}
-      {overflowGens > 0 && (
-        <span
-          className="font-mono text-[9px] text-fog-700 text-center"
-          title={`+${overflowGens} more generator${overflowGens === 1 ? '' : 's'}`}
-        >
-          +{overflowGens}
-        </span>
-      )}
-      <span className="truncate min-w-0 flex items-center gap-1.5">
-        <span
-          className={clsx(
-            'uppercase tracking-widest2 text-[9px] shrink-0',
-            VERDICT_TONE[row.judge.verdict],
-          )}
-        >
-          {VERDICT_LABEL[row.judge.verdict]}
-          {row.judge.target !== null && (
-            <span className="ml-1 text-fog-500 normal-case tracking-normal">
-              → g{row.judge.target + 1}
-            </span>
-          )}
-        </span>
-        {row.judge.text && (
-          <span className="text-fog-500 truncate text-[9.5px] min-w-0">
-            {row.judge.text}
-          </span>
-        )}
-      </span>
-      <span
-        className={clsx(
-          'uppercase tracking-widest2 text-[9px] text-right',
-          STATUS_TONE[row.status],
-        )}
-      >
-        {row.status}
-      </span>
-    </li>
-  );
-}
-
 function DebateListBody({
   rows,
-  generatorCount,
   finalRound,
 }: {
   rows: RoundRow[];
-  generatorCount: number;
   finalRound: number | null;
 }) {
   const scrollRef = useRef<HTMLUListElement>(null);
@@ -409,7 +205,6 @@ function DebateListBody({
           <DebateRowEl
             key={row.round}
             row={row}
-            generatorCount={generatorCount}
             isFinal={finalRound === row.round}
           />
         ))}
