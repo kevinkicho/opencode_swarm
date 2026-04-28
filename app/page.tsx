@@ -119,6 +119,7 @@ import { SynthesisStrip } from '@/components/synthesis-strip';
 import { JudgeVerdictStrip } from '@/components/judge-verdict-strip';
 import { CriticVerdictStrip } from '@/components/critic-verdict-strip';
 import { OrchestratorActionsStrip } from '@/components/orchestrator-actions-strip';
+import { EmptyViewState } from '@/components/empty-view-state';
 import { Drawer } from '@/components/ui/drawer';
 import { Tooltip } from '@/components/ui/tooltip';
 import { IconBranch } from '@/components/icons';
@@ -151,72 +152,13 @@ import type { AgentMessage, Agent, RunMeta, ProviderSummary, TodoItem } from '@/
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TimelineNode } from '@/lib/types';
 
-// runView gates — single source of truth for which main-panel views
-// are available given the active run's pattern + board state. Three
-// surfaces consume this:
-//   - the runView state union type (derived via keyof typeof)
-//   - the toolbar render (filter visible buttons by gate(ctx)===true)
-//   - the auto-reset effect (snap back to 'timeline' when the current
-//     view's gate flips false, e.g. user navigates from critic-loop
-//     with `iterations` to a council run)
-// Pre-2026-04-25 each surface had its own copy of the conditional
-// logic; drift would silently render dead tabs or auto-reset away
-// from a valid view.
-type ViewGateContext = {
-  pattern: SwarmRunMeta['pattern'] | undefined;
-  boardSwarmRunID: string | null;
-};
-type ViewConfig = {
-  enabled: (ctx: ViewGateContext) => boolean;
-  // Hover hint surfaced via Tooltip on the toolbar button. Keep one
-  // sentence — long enough to disambiguate from siblings, short enough
-  // to read in a hover.
-  hint: string;
-};
-const VIEW_PATTERN_GATES: Record<string, ViewConfig> = {
-  timeline: {
-    enabled: () => true,
-    hint: 'cross-lane event flow with A2A wires',
-  },
-  chat: {
-    enabled: () => true,
-    hint: 'chronological per-agent bubble stream · tool calls fold as chips',
-  },
-  cards: {
-    enabled: () => true,
-    hint: 'per-turn conversation cards · collapses tool calls into chips',
-  },
-  board: {
-    enabled: (ctx) => !!ctx.boardSwarmRunID,
-    hint: 'full blackboard kanban · todos / claims / findings',
-  },
-  contracts: {
-    enabled: (ctx) => !!ctx.boardSwarmRunID,
-    hint: 'auditor verdicts against acceptance criteria',
-  },
-  iterations: {
-    enabled: (ctx) => ctx.pattern === 'critic-loop',
-    hint: 'critic-loop: worker draft → critic review → revise',
-  },
-  debate: {
-    enabled: (ctx) => ctx.pattern === 'debate-judge',
-    hint: 'debate-judge: N generators propose, judge picks',
-  },
-  map: {
-    enabled: (ctx) => ctx.pattern === 'map-reduce',
-    hint: 'map-reduce: per-mapper drafts + synthesis claim',
-  },
-  council: {
-    enabled: (ctx) => ctx.pattern === 'council',
-    hint: 'council members\' drafts + reconciliation',
-  },
-  strategy: {
-    enabled: (ctx) => ctx.pattern === 'orchestrator-worker',
-    hint: 'orchestrator-worker: planner sweeps + re-plan history',
-  },
-} as const;
-type RunView = keyof typeof VIEW_PATTERN_GATES;
-const RUN_VIEW_KEYS = Object.keys(VIEW_PATTERN_GATES) as RunView[];
+// View gating + per-view metadata moved to lib/view-availability.ts
+// 2026-04-28 so the EmptyViewState component + the patterns × views
+// reference matrix can read the same source of truth as this page's
+// toolbar render. Aliased here to keep the call-site shape that
+// existed before the lift.
+import { RUN_VIEW_KEYS, VIEW_META, type RunView } from '@/lib/view-availability';
+const VIEW_PATTERN_GATES = VIEW_META;
 
 export default function Page() {
   return (
@@ -505,18 +447,21 @@ function PageBody({
   );
 
   // View state hub — leftTab, runView, focusTodoId + jumpToTodo. See
-  // app/page-internals/use-view-state.ts. Single source for the cross-
-  // cutting "click a card → flip plan tab + flash a todo" UX, plus the
-  // auto-reset effect that resets runView when its gate stops applying
-  // (mid-pattern-switch).
+  // app/page-internals/use-view-state.ts.
+  //
+  // Auto-reset behavior changed 2026-04-28: previously the hook
+  // snapped runView back to 'timeline' whenever its gate flipped
+  // false (mid-pattern-switch). After the "all tabs visible" UX
+  // change, that fights with explicit user clicks on disabled tabs:
+  // the user clicks `map` on a council run, the gate fails, the
+  // auto-reset reverts to timeline before they ever see the empty
+  // state. Pass a tautology predicate so the hook keeps its
+  // structure but never resets — disabled tabs are a valid view
+  // that renders EmptyViewState.
   const viewState = useViewState<RunView>(
     'timeline',
-    (view) =>
-      VIEW_PATTERN_GATES[view].enabled({
-        pattern: swarmRunMeta?.pattern,
-        boardSwarmRunID,
-      }),
-    [swarmRunMeta?.pattern, boardSwarmRunID],
+    () => true,
+    [],
   );
   const { leftTab, setLeftTab, runView, setRunView, focusTodoId, jumpToTodo } = viewState;
   // (leftTab/runView/focusTodoId state, auto-reset effect, and jumpToTodo
@@ -731,31 +676,46 @@ function PageBody({
           <div className="h-7 hairline-b px-3 flex items-center gap-2 bg-ink-850/80 backdrop-blur shrink-0">
             <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">view</span>
             <div className="flex items-center gap-0.5 font-mono text-micro uppercase tracking-widest2">
-              {/* Toolbar visibility gate: each view's button is shown only
-                  when its VIEW_PATTERN_GATES entry passes for the active
-                  run. Single source of truth shared with the auto-reset
-                  effect above so the two never drift. */}
-              {RUN_VIEW_KEYS.filter((k) =>
-                VIEW_PATTERN_GATES[k].enabled({
+              {/* All 10 view tabs render always, even when the gate
+                  fails for the current run's pattern. Disabled tabs
+                  are dimmed but stay clickable — clicking shows an
+                  EmptyViewState that explains what the view does and
+                  which patterns activate it, plus the full availability
+                  matrix. 2026-04-28 — user wanted to "familiarize
+                  myself of these views' existence as I work with various
+                  swarm modes" without having to switch runs. */}
+              {RUN_VIEW_KEYS.map((k) => {
+                const enabled = VIEW_PATTERN_GATES[k].enabled({
                   pattern: swarmRunMeta?.pattern,
                   boardSwarmRunID,
-                }),
-              ).map((k) => (
-                <Tooltip key={k} content={VIEW_PATTERN_GATES[k].hint} side="bottom">
-                  <button
-                    type="button"
-                    onClick={() => setRunView(k)}
-                    className={clsx(
-                      'h-5 px-2 rounded-sm transition-colors cursor-pointer',
-                      runView === k
-                        ? 'bg-molten/15 text-molten'
-                        : 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60',
-                    )}
+                });
+                return (
+                  <Tooltip
+                    key={k}
+                    content={
+                      enabled
+                        ? VIEW_PATTERN_GATES[k].hint
+                        : `${VIEW_PATTERN_GATES[k].hint} · click to see when this view applies`
+                    }
+                    side="bottom"
                   >
-                    {k}
-                  </button>
-                </Tooltip>
-              ))}
+                    <button
+                      type="button"
+                      onClick={() => setRunView(k)}
+                      className={clsx(
+                        'h-5 px-2 rounded-sm transition-colors cursor-pointer',
+                        runView === k
+                          ? 'bg-molten/15 text-molten'
+                          : enabled
+                            ? 'text-fog-500 hover:text-fog-300 hover:bg-ink-800/60'
+                            : 'text-fog-700 hover:text-fog-500 hover:bg-ink-800/60',
+                      )}
+                    >
+                      {k}
+                    </button>
+                  </Tooltip>
+                );
+              })}
             </div>
             <div className="flex-1" />
             <span className={clsx('font-mono text-micro tabular-nums', messagesLoading ? 'text-fog-600 animate-pulse' : 'text-fog-700')}>
@@ -773,11 +733,26 @@ function PageBody({
             </span>
           </div>
           {(() => {
+            // Gate check at entry: if the current view's predicate is
+            // false for this run, short-circuit to EmptyViewState
+            // (which explains what the view does + when it applies +
+            // shows the full availability matrix). 2026-04-28 — this
+            // replaces the older "filter the toolbar so disabled tabs
+            // don't render" approach so users can discover all 10
+            // views even on patterns that don't use them.
+            const viewEnabled = VIEW_PATTERN_GATES[runView].enabled({
+              pattern: swarmRunMeta?.pattern,
+              boardSwarmRunID,
+            });
+            if (!viewEnabled) {
+              return (
+                <EmptyViewState
+                  view={runView}
+                  currentPattern={swarmRunMeta?.pattern}
+                />
+              );
+            }
             // Switch-style render so we don't pile 11 ternary branches.
-            // Each pattern-specific view falls back to timeline when its
-            // pattern flag is false, which can happen if the user lands
-            // on the URL with a stale runView selection from before a
-            // pattern switch.
             switch (runView) {
               case 'timeline':
                 return (
@@ -872,6 +847,9 @@ function PageBody({
                   </ProfileBoundary>
                 );
               case 'strategy':
+                // Gate already filtered out runs without a board, but
+                // narrow the type so StrategyRail's required string
+                // prop is satisfied — boardSwarmRunID is non-null here.
                 return boardSwarmRunID ? (
                   <ProfileBoundary id="strategy-rail">
                     <StrategyRail swarmRunID={boardSwarmRunID} embedded />

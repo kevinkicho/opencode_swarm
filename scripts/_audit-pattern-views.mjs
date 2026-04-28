@@ -39,26 +39,27 @@ const RUNS = {
 
 // What the code says SHOULD be true.
 //
-// Two layers of gating in app/page.tsx:
-//   - VIEW_PATTERN_GATES (lines 176-217) determines which TABS exist
-//   - boardPatterns (lines 485-491) limits which patterns get a board:
-//       blackboard, orchestrator-worker — those gain board + contracts
-//       all other patterns: no board → board/contracts tabs hidden
+// 2026-04-28 UX change: ALL 10 view tabs render for every pattern;
+// non-applicable ones are dimmed and click-through to an
+// EmptyViewState that explains when the view applies. Two-layer
+// gating still drives WHICH tabs are interactive vs disabled, but
+// all 10 are present in the DOM:
 //
-// Pattern-specific tabs gate only on `pattern === 'X'`:
-//   iterations  ← critic-loop
-//   debate      ← debate-judge
-//   map         ← map-reduce
-//   council     ← council
-//   strategy    ← orchestrator-worker
+//   - VIEW_META.{view}.enabled (lib/view-availability.ts) — predicate
+//   - boardPatterns (= ['blackboard','orchestrator-worker']) — board
+//     and contracts views require a boardSwarmRunID
+//
+// So the "expected" set is the same for every pattern: all 10.
+const ALL_TEN = ['timeline','chat','cards','board','contracts',
+  'iterations','debate','map','council','strategy'];
 const EXPECTED_VIEW_TABS = {
-  'none':                ['timeline', 'chat', 'cards'],
-  'blackboard':          ['timeline', 'chat', 'cards', 'board', 'contracts'],
-  'map-reduce':          ['timeline', 'chat', 'cards', 'map'],
-  'council':             ['timeline', 'chat', 'cards', 'council'],
-  'orchestrator-worker': ['timeline', 'chat', 'cards', 'board', 'contracts', 'strategy'],
-  'debate-judge':        ['timeline', 'chat', 'cards', 'debate'],
-  'critic-loop':         ['timeline', 'chat', 'cards', 'iterations'],
+  'none':                ALL_TEN,
+  'blackboard':          ALL_TEN,
+  'map-reduce':          ALL_TEN,
+  'council':             ALL_TEN,
+  'orchestrator-worker': ALL_TEN,
+  'debate-judge':        ALL_TEN,
+  'critic-loop':         ALL_TEN,
 };
 // Left tabs: plan + roster always. board iff boardSwarmRunID (i.e.
 // blackboard or orchestrator-worker only). heat iff any file edits.
@@ -92,21 +93,48 @@ for (const [pattern, runID] of Object.entries(RUNS)) {
   ).catch(() => {});
   await page.waitForTimeout(6000);
 
-  // Pull every button-label that matches our expected vocabulary. The
-  // toolbar uses lowercase labels; we lowercase before comparing.
-  const found = await page.evaluate((vocab) => {
-    const labels = new Set();
-    Array.from(document.querySelectorAll('button')).forEach((b) => {
-      const t = (b.textContent || '').trim().toLowerCase();
-      if (vocab.includes(t)) labels.add(t);
+  // Scope the scrape: the view-tab toolbar lives in <main> under the
+  // top "view" eyebrow; the left-panel tabs live in the sidebar
+  // <section> with the LeftTabs strip. After the 2026-04-28 "all tabs
+  // visible" change, both surfaces have a `board` button — without
+  // scoping, the probe can't tell them apart. We anchor on the
+  // surrounding "view" / "plan" eyebrow text.
+  const { view, left } = await page.evaluate((vocab) => {
+    const buttons = (root) => Array.from(root.querySelectorAll('button'));
+    const matchSet = (root, set) => {
+      const out = new Set();
+      buttons(root).forEach((b) => {
+        const t = (b.textContent || '').trim().toLowerCase();
+        if (set.has(t)) out.add(t);
+      });
+      return Array.from(out);
+    };
+    // Find the view-toolbar by its containing eyebrow span
+    const viewLabels = new Set(vocab.viewLabels);
+    const leftLabels = new Set(vocab.leftLabels);
+    let viewToolbar = null;
+    let leftToolbar = null;
+    Array.from(document.querySelectorAll('span')).forEach((s) => {
+      const txt = (s.textContent || '').trim().toLowerCase();
+      if (txt === 'view' && !viewToolbar) {
+        // walk up to the toolbar row
+        viewToolbar = s.closest('div');
+      }
     });
-    return Array.from(labels);
-  }, [...ALL_VIEW_LABELS, ...ALL_LEFT_TABS]);
-
-  // The view-tab toolbar lives in the main viewport (not the left
-  // section). Filter by which set each label belongs to.
-  const view = found.filter((l) => ALL_VIEW_LABELS.includes(l));
-  const left = found.filter((l) => ALL_LEFT_TABS.includes(l));
+    // Fallback to whole-document if scoping failed.
+    const viewRoot = viewToolbar || document.body;
+    const view = matchSet(viewRoot, viewLabels);
+    // The left tab strip is the sidebar header's button row. Find a
+    // section that contains a button labeled exactly "plan" then
+    // narrow to its tab strip.
+    const planBtn = buttons(document.body).find((b) => (b.textContent || '').trim() === 'plan');
+    if (planBtn) {
+      leftToolbar = planBtn.closest('div');
+    }
+    const leftRoot = leftToolbar || document.body;
+    const left = matchSet(leftRoot, leftLabels);
+    return { view, left };
+  }, { viewLabels: ALL_VIEW_LABELS, leftLabels: ALL_LEFT_TABS });
   observed[pattern] = { view, left };
   console.log(`  view tabs: ${view.sort().join(', ') || '(none)'}`);
   console.log(`  left tabs: ${left.sort().join(', ') || '(none)'}`);
