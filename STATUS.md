@@ -106,30 +106,28 @@ Not urgent.
   than a half-day; punt until a live run shows the demand.
 
 **UI bugs queued (deferred):**
-- **Inspector pane doesn't open when clicking timeline blocks** (reported
-  2026-04-27). Repro: click a message card on the timeline. Expected:
-  inspector drawer slides in showing the part detail. Actual: nothing.
-  Suspect chain: timeline card `onClick → onFocus(msgId)` →
-  `setFocusedMsgId` → Drawer renders when `drawerOpen && focusedMsgId`.
-  One of those three steps is broken — likely either drawerOpen isn't
-  being set on focus, or onClick isn't propagating from the card. Files
-  to check: `app/page.tsx` (Drawer wiring), `components/timeline-flow/
-  sub-components.tsx` (EventCard onClick), `app/page-internals/use-
-  page-state.ts` or similar (focus state handler).
-- **Runs picker line-item click + retro link don't work** (reported
-  2026-04-27). Repro: open the runs picker (status rail "runs" button);
-  click a row, or click the "retro" affordance on a row. Expected: row
-  click navigates to `/?swarmRun=<id>`, retro link navigates to
-  `/retro/<id>`. Actual: nothing. Suspect: row Link's href construction
-  in `components/swarm-runs-picker.tsx` (the PickerPanel's `<Link>`
-  may not be receiving the click — could be the Popover capturing
-  events, the row's `onMouseDown` stopping propagation for some
-  inner span, or the Link's `href` ending up undefined for some rows).
-  Files to check: `components/swarm-runs-picker.tsx` (row + retro
-  Link wiring), `components/ui/popover.tsx` (event handling — the
-  popover already had a `onMouseDown stopPropagation` from the
-  earlier ARIA-fix work; might be over-stopping clicks meant for
-  the row).
+- ~~**Inspector pane doesn't open when clicking timeline blocks**~~
+  **VERIFIED FIXED 2026-04-28.** Empirical Playwright probe against
+  `run_moi2gc24_r4p5i1` (199 messages, populated state per
+  `feedback_verify_populated_state.md`): clicking a timeline chip
+  fires the `onClick`, the drawer ASIDE (`class="fixed right-0 top-12
+  bottom-7 z-50"`) renders with "message inspector" content + the
+  part details. Already fixed by the 2026-04-27 Popover refactor
+  (`components/ui/popover.tsx`): `cloneElement` now merges the
+  trigger child's existing `onClick` with the popover's reference
+  props, so `<Popover><button onClick={() => onFocus(m.id)}>` no
+  longer drops the inner handler.
+- ~~**Runs picker line-item click + retro link don't work**~~
+  **VERIFIED FIXED 2026-04-28.** Empirical probe: opened picker,
+  enumerated rows — each row has 2 valid anchors (`/?swarmRun=<id>`
+  + `/retro/<id>`). Clicking the row link navigated cleanly from
+  `run_moi2gc24` → `run_moistttk` (the topmost row's id). Already
+  fixed by the same 2026-04-27 Popover refactor: the floating-tree
+  `onMouseDown stopPropagation` was removed because Floating UI's
+  `useDismiss({outsidePress})` already excludes the floating tree
+  from outside-press detection — so the stopPropagation served no
+  purpose AND was killing anchor navigation on Next.js `<Link>`
+  inside the popover.
 - ~~**Run-detail URL takes 30+ seconds to load** (reported 2026-04-27).~~
   **FIXED 2026-04-27.** Measurement showed two long poles when opencode
   :4097 is unreachable: /api/swarm/run fanned out 130 runs × N session
