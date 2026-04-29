@@ -14,6 +14,12 @@ import {
   useOpencodeProviders,
 } from '@/lib/opencode/live';
 import {
+  PROVIDER_META,
+  PROVIDER_ORDER,
+  useProviderFilter,
+} from '@/lib/swarm-provider-tiers';
+import { Tooltip } from './ui/tooltip';
+import {
   Section,
   HeaderCell,
   ModelNameCell,
@@ -24,6 +30,7 @@ import {
   type SpawnState,
   type SpawnMode,
 } from './spawn-agent/sub-components';
+import { OllamaHelpPopover } from './new-run/ollama-help-popover';
 import { PreviewPanel, type SpawnSkill } from './spawn-agent/preview-panel';
 
 const skills: SpawnSkill[] = [
@@ -47,15 +54,23 @@ export function SpawnAgentModal({
   const router = useRouter();
   // Live provider/model catalog — replaces the static zenModels import.
   // Models are sorted by tier+label for stable picker order; first row
-  // is the default selection until the user clicks one.
+  // is the default selection until the user clicks one. Tier order
+  // matches the new-run modal — go (free quota) before zen (metered)
+  // before ollama (subscription) before byok.
   const { models: liveModels, source: catalogSource } = useOpencodeProviders();
   const orderedModels = useMemo(() => {
-    const tierOrder = { zen: 0, ollama: 1, go: 2, byok: 3 } as const;
+    const tierOrder = { go: 0, zen: 1, ollama: 2, byok: 3 } as const;
     return [...liveModels].sort((a, b) => {
       const t = tierOrder[a.provider] - tierOrder[b.provider];
       return t !== 0 ? t : a.label.localeCompare(b.label);
     });
   }, [liveModels]);
+  const {
+    providerFilter,
+    providerCounts,
+    filteredModels,
+    toggleProvider,
+  } = useProviderFilter(orderedModels);
 
  // Form state consolidated — useState-count reduction.
   // 7 useState pairs → 1 form object + 1 mode + 1 mutation (no useState).
@@ -76,20 +91,28 @@ export function SpawnAgentModal({
   const setDirective = (v: string) => setForm((p) => ({ ...p, directive: v }));
   const [spawnMode, setSpawnMode] = useState<SpawnMode>('idle');
 
-  // Once the live catalog hydrates (or the fallback resolves), seed the
-  // selected model to the first row. Avoids flashing an empty picker on
-  // first paint and keeps the prior "first model is default" UX.
+  // Seed + re-seed the selected model. Two cases trigger:
+  //  1. Catalog hydrates / fallback resolves — pick the first row.
+  //  2. The active provider filter hides the currently-selected model
+  //     (e.g. user picked an ollama model, then unticked the ollama
+  //     chip) — slide selection to the first visible row so the
+  //     preview panel never shows a model that's no longer in scope.
   useEffect(() => {
-    if (!modelId && orderedModels[0]) {
-      setForm((p) => ({ ...p, modelId: orderedModels[0].id }));
+    const visibleHasCurrent = filteredModels.some((m) => m.id === modelId);
+    if (!visibleHasCurrent && filteredModels[0]) {
+      setForm((p) => ({ ...p, modelId: filteredModels[0].id }));
     }
-  }, [orderedModels, modelId]);
+  }, [filteredModels, modelId]);
 
   const autoId = 'agent-03';
   const trimmedName = name.trim();
   const trimmedDirective = directive.trim();
   const previewName = trimmedName || autoId;
-  const currentModel = orderedModels.find((m) => m.id === modelId) ?? orderedModels[0];
+  const currentModel =
+    filteredModels.find((m) => m.id === modelId) ??
+    orderedModels.find((m) => m.id === modelId) ??
+    filteredModels[0] ??
+    orderedModels[0];
 
   // Active mode needs a directive to actually activate on — otherwise it's
   // indistinguishable from idle. Idle is always valid: creates a parked session.
@@ -180,9 +203,20 @@ export function SpawnAgentModal({
               trailing={
                 <div className="flex items-center gap-2">
                   {catalogSource === 'fallback' && (
-                    <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-amber/70">
-                      static
-                    </span>
+                    <Tooltip
+                      side="left"
+                      wide
+                      content={
+                        <div className="font-mono text-[10.5px] text-fog-500 leading-snug">
+                          opencode is unreachable — showing the bundled static catalog. once the
+                          backend reconnects, the picker repopulates from /config/providers.
+                        </div>
+                      }
+                    >
+                      <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-amber/70 cursor-help">
+                        static
+                      </span>
+                    </Tooltip>
                   )}
                   {catalogSource === 'live' && (
                     <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-mint/70">
@@ -201,6 +235,57 @@ export function SpawnAgentModal({
               }
             >
               <div className="rounded-md hairline bg-ink-900/40 overflow-hidden">
+                {/* Provider-tier filter strip — same widget shape as
+                    the new-run team picker. Click toggles narrow which
+                    tiers are visible in the model list below; the model
+                    IDs already encode tier via prefix, so this is purely
+                    a presentation filter. */}
+                <div className="px-3 h-7 hairline-b bg-ink-900/60 flex items-center gap-1.5">
+                  <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-600 mr-1">
+                    provider
+                  </span>
+                  {PROVIDER_ORDER.filter((p) => providerCounts[p] > 0).map((p) => {
+                    const active = providerFilter.has(p);
+                    const meta = PROVIDER_META[p];
+                    return (
+                      <Tooltip
+                        key={p}
+                        side="top"
+                        wide
+                        content={
+                          <div className="font-mono text-[10.5px] text-fog-400 leading-snug max-w-[320px]">
+                            {meta.hint}
+                          </div>
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() => toggleProvider(p)}
+                          className={clsx(
+                            'h-5 px-1.5 rounded font-mono text-[10px] uppercase tracking-widest2 transition cursor-pointer hairline flex items-center gap-1',
+                            active
+                              ? clsx('bg-ink-800', meta.accent)
+                              : 'text-fog-700 hover:text-fog-400 opacity-60',
+                          )}
+                          aria-pressed={active}
+                        >
+                          {meta.label}
+                          <span className="font-mono text-[9px] tabular-nums opacity-70">
+                            {providerCounts[p]}
+                          </span>
+                        </button>
+                      </Tooltip>
+                    );
+                  })}
+                  {providerCounts.ollama > 0 && (
+                    <OllamaHelpPopover
+                      ollamaModelsInCatalog={orderedModels.filter((m) => m.provider === 'ollama')}
+                    />
+                  )}
+                  <span className="ml-auto font-mono text-[9.5px] tabular-nums text-fog-700">
+                    {filteredModels.length}/{orderedModels.length} models
+                  </span>
+                </div>
                 <div className="px-3 h-6 hairline-b bg-ink-900/70 flex items-center gap-3">
                   <HeaderCell cls="flex-1 min-w-0">model</HeaderCell>
                   <HeaderCell cls="w-[92px]">family</HeaderCell>
@@ -209,8 +294,13 @@ export function SpawnAgentModal({
                   <HeaderCell cls="w-14 text-right">cache r</HeaderCell>
                   <HeaderCell cls="w-14 text-right">cache w</HeaderCell>
                 </div>
+                {filteredModels.length === 0 && (
+                  <div className="px-3 py-3 font-mono text-[10.5px] text-fog-600 leading-snug">
+                    no models — every provider tier is filtered out. click a provider chip above to bring its models back.
+                  </div>
+                )}
                 <ul>
-                  {orderedModels.map((m) => {
+                  {filteredModels.map((m) => {
                     const active = m.id === modelId;
                     const inPrice = m.pricing ? fmtPrice(m.pricing.input) : '—';
                     const outPrice = m.pricing ? fmtPrice(m.pricing.output) : '—';
@@ -249,6 +339,19 @@ export function SpawnAgentModal({
                 </a>
                 . model selection is cosmetic today — the session runs with whatever opencode picks per prompt.
               </div>
+              {/* Layer 1 ollama hint — same logic as the new-run team
+                  picker. Catches the structural case (config not
+                  updated and/or opencode not restarted) without
+                  forcing the user to open the help popover. */}
+              {providerFilter.has('ollama') && providerCounts.ollama > 0 && (
+                <div className="mt-1 font-mono text-[10.5px] text-fog-700 leading-snug">
+                  <span className="text-iris">ollama tip · </span>
+                  don't see a pulled model? declare it in your{' '}
+                  <code className="text-fog-500">opencode.json</code> ollama provider block, then
+                  restart opencode. <code className="text-fog-500">ollama pull</code> alone doesn't
+                  update opencode's catalog.
+                </div>
+              )}
             </Section>
           </div>
 

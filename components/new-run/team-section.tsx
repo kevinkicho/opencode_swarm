@@ -22,11 +22,15 @@
 // narrow which rows are visible; selection still happens per-row.
 
 import clsx from 'clsx';
-import { useMemo, useState } from 'react';
 import { fmtZenPrice } from '@/lib/zen-catalog';
 import { patternMeta, patternAccentText, teamSizeWarningMessage } from '@/lib/swarm-patterns';
-import type { Provider, SwarmPattern } from '@/lib/swarm-types';
+import type { SwarmPattern } from '@/lib/swarm-types';
 import type { ProviderModel } from '@/app/api/swarm/providers/route';
+import {
+  PROVIDER_META,
+  PROVIDER_ORDER,
+  useProviderFilter,
+} from '@/lib/swarm-provider-tiers';
 import { Tooltip } from '../ui/tooltip';
 import {
   Section,
@@ -37,37 +41,6 @@ import {
   PriceCell,
 } from './sub-components';
 import { OllamaHelpPopover } from './ollama-help-popover';
-
-// Provider-tier metadata for the filter chips. Order matches the
-// recommended preference: go (free quota first) → zen (metered) →
-// ollama (subscription) → byok.
-const PROVIDER_META: Record<Provider, {
-  label: string;
-  accent: string;
-  hint: string;
-}> = {
-  go: {
-    label: 'go',
-    accent: 'text-mint',
-    hint: 'opencode-go — free daily quota first; if "extra usage" is enabled in opencode.ai dashboard, falls through to zen billing on quota hit. preferred default.',
-  },
-  zen: {
-    label: 'zen',
-    accent: 'text-molten',
-    hint: 'opencode-zen — direct metered billing. picking these over go skips the free quota and bills per-token immediately.',
-  },
-  ollama: {
-    label: 'ollama',
-    accent: 'text-iris',
-    hint: 'ollama-max subscription bundle ($100/mo). per-token cost is imputed from quota; bundle covers all usage up to the weekly token cap.',
-  },
-  byok: {
-    label: 'byok',
-    accent: 'text-fog-400',
-    hint: 'bring-your-own-key — direct provider keys configured in opencode.json. only shows up when you have BYOK provider blocks.',
-  },
-};
-const PROVIDER_ORDER: readonly Provider[] = ['go', 'zen', 'ollama', 'byok'];
 
 export function TeamSection({
   pattern,
@@ -91,42 +64,12 @@ export function TeamSection({
     ? teamSizeWarningMessage(pattern, totalAgents)
     : undefined;
 
-  // Provider-tier filter — local UI state, doesn't bleed into form
-  // submission (the model IDs already encode the tier via prefix).
-  // Default: every tier with at least one model in the catalog is
-  // selected, so the user sees the same flat list as before until
-  // they actively filter.
-  const availableProviders = useMemo(() => {
-    const set = new Set<Provider>();
-    orderedModels.forEach((m) => set.add(m.provider));
-    return set;
-  }, [orderedModels]);
-  const [providerFilter, setProviderFilter] = useState<Set<Provider>>(
-    () => new Set(availableProviders),
-  );
-  // Re-sync defaults if the catalog repopulates (e.g. opencode
-  // reconnects after a backend blip): only ADD newly-available
-  // providers; never silently re-enable ones the user explicitly
-  // toggled off this session. Cheap with 3-4 providers.
-  const filteredModels = useMemo(
-    () => orderedModels.filter((m) => providerFilter.has(m.provider)),
-    [orderedModels, providerFilter],
-  );
-  const providerCounts = useMemo(() => {
-    const counts: Record<Provider, number> = { go: 0, zen: 0, ollama: 0, byok: 0 };
-    orderedModels.forEach((m) => {
-      counts[m.provider] += 1;
-    });
-    return counts;
-  }, [orderedModels]);
-  const toggleProvider = (p: Provider) => {
-    setProviderFilter((prev) => {
-      const next = new Set(prev);
-      if (next.has(p)) next.delete(p);
-      else next.add(p);
-      return next;
-    });
-  };
+  const {
+    providerFilter,
+    providerCounts,
+    filteredModels,
+    toggleProvider,
+  } = useProviderFilter(orderedModels);
 
   return (
     <Section
