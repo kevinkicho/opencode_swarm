@@ -1,6 +1,15 @@
 import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
+// Pin the test timezone so snapshots match across machines. Without
+// this, tests that format wall times via toLocaleString render in the
+// runner's local timezone — fine on a developer laptop, broken in
+// CI (UTC) or any other timezone. Setting `process.env.TZ` here
+// propagates to every worker fork. Date formatting reads TZ at call
+// time, so the assignment must land before vitest spawns workers —
+// hence the top-of-file placement.
+process.env.TZ = 'UTC';
+
 // Vitest config — minimal, matches the project's tsconfig conventions.
 //
 // Test layout:
