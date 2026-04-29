@@ -25,6 +25,19 @@ Next.js 14 (App Router) · TypeScript strict · Tailwind · framer-motion · cmd
 
 **To use the `ollama` provider tier:** configure your `opencode.json` (or equivalent opencode config) with a provider block that routes the `ollama/*:cloud` model IDs to ollama's cloud API. Requires an ollama account with a max plan subscription. The [`ollama_swarm`](https://github.com/kevinkicho/ollama_swarm) sibling project is a working example of ollama integration at the raw-swarm level if you want a reference for the provider block shape. Without this opencode.json configuration, `ollama/*` model selections in new-run-modal will fail to dispatch — opencode needs to know how to reach the ollama API.
 
+## What costs money
+
+The provider tier you pick at run-creation determines the billing path. Both modals (new-run team picker, spawn-agent) gate by the same tier filter chips:
+
+| Tier | Shape | What you pay | Tier chip |
+|---|---|---|---|
+| **`go`** | opencode subscription bundle | Monthly subscription; runs draw from a fixed quota (qwen / kimi / glm / minimax / mimo). Falls through to `zen` once the quota is hit. | mint |
+| **`zen`** | opencode pay-per-token marketplace | Per-token (Claude, GPT, Gemini, …). Pricing visible in the model picker; live spend in the run-detail dashboard. | iris |
+| **`ollama`** | ollama.com max subscription | Monthly subscription; `ollama/*:cloud` model IDs route to ollama's cloud API at $0/run. Requires opencode.json provider block (see above). | amber |
+| **`byok`** | bring-your-own-key (read-only) | Whatever the provider behind the BYOK key charges. Surfaced in the catalog if `opencode.json` carries a BYOK provider block, but never selectable from creation surfaces. | fog |
+
+**Spend ceiling.** Every run carries a `bounds.costCap` (default $5, raise/disable in the new-run modal's `bounds` row). When the run's accumulated $ crosses the cap, the proxy gate at `/api/opencode/[...path]` returns 402 to the next prompt before opencode sees it — the cost-cap banner replaces the chat composer, and you raise the cap (routing modal) or start a new run. Hard wall, server-side, no AFK surprises. See [`DESIGN.md` §9](./DESIGN.md) for the gate details.
+
 Node + npm — any version that runs Next.js 14. SQLite is bundled via `better-sqlite3`; no separate DB to install.
 
 ## Quick start

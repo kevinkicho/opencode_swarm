@@ -9,6 +9,25 @@ Run these against the real opencode at `OPENCODE_URL` and a real
 workspace. Smoke scripts in `scripts/_*.mjs` hit the same endpoints
 the browser does; nothing here requires a new sandbox.
 
+## Before you start
+
+Common prereqs across every section below:
+
+1. **opencode reachable.** `OPENCODE_URL` resolves to a running opencode
+   instance (default `http://localhost:4097`, see README §Prerequisites).
+   Without it `/api/swarm/run` returns 502 and live views stall.
+2. **Dev server running on port 8044.** `npm run dev` claims port 8044;
+   `scripts/dev.mjs` kills any holder before binding. Override via
+   `DEV_PORT=xxxx`. Every `curl` in this doc uses `localhost:8044`.
+3. **A target repo workspace.** Any local clone with the toolchain its
+   directive needs (e.g. `npm run dev` for verifier-gate tests). Examples
+   below say "the kyahoofinance repo" — that's the operator's local
+   reference; substitute any Vite/Next/runnable repo of your own.
+4. **A spend cap you're comfortable with.** Sections 2, 3, 5, 7 spawn
+   real runs that consume Zen credit. Set `bounds.costCap` in the
+   new-run modal (or the `bounds` payload field) to a hard $ wall —
+   the proxy gate enforces it server-side.
+
 ---
 
 ## 1. Playwright verifier gate
@@ -38,8 +57,10 @@ Example verifier-rejected rejections (real output, not synthetic):
 verifier gates run together correctly without stepping on each other.
 
 **Setup (one-time).**
-1. Pick a target repo with a runnable dev server (the kyahoofinance
-   repo works — `npm run dev` on port 3000).
+1. Pick a target repo with a runnable dev server (any Vite/Next/runnable
+   repo where `npm run dev` boots a working UI; the operator's local
+   `kyahoofinance` clone is one example, your own repo works equally
+   well).
 2. Ensure Playwright is installed in the target repo: `npx playwright
    install chromium`.
 3. Start the target dev server in a separate shell: `cd <repo> && npm
@@ -183,7 +204,7 @@ with live data; the run ends with status `idle` via
 
 ---
 
-## 5. Overnight-safety stack end-to-end
+## 4. Overnight-safety stack end-to-end
 
 **What it does.** Sum of every reliability layer: zombie auto-abort,
 per-pattern turn timeout, eager re-sweep, periodic planner sweep,
@@ -229,7 +250,7 @@ there are 429s, the Zen probe didn't find them and
 
 ---
 
-## 6. Ollama tier — code-level invariants
+## 5. Ollama tier — code-level invariants
 
 **What it does.** Locks in the 2026-04-24 three-tier reversal at the
 Next.js layer: `providerOf()` buckets ollama correctly, `priceFor()`
@@ -253,13 +274,13 @@ npx tsx scripts/_ollama_smoke.mjs
 - `familyMeta['ollama']` accidentally dropped → modal picker crashes
 
 **What this does NOT cover.** Actual dispatch through opencode to
-ollama's cloud API. That needs §6.6 below — live-run validation with
+ollama's cloud API. That needs §6 below — live-run validation with
 opencode configured for the ollama provider.
 
-## 7. Ollama tier — live dispatch (not yet exercised)
+## 6. Ollama tier — live dispatch (not yet exercised)
 
 **What needs validating.** An actual run dispatching through an
-`ollama/*:cloud` model. The Next.js layer is invariant-tested in §6.5;
+`ollama/*:cloud` model. The Next.js layer is invariant-tested in §5;
 what remains is verifying opencode correctly routes to the ollama
 endpoint when given `ollama/glm-5.1:cloud` (etc.) as the model field.
 
@@ -274,7 +295,7 @@ endpoint when given `ollama/glm-5.1:cloud` (etc.) as the model field.
 
 **Invocation.**
 ```bash
-curl -X POST http://localhost:<port>/api/swarm/run \
+curl -X POST http://localhost:8044/api/swarm/run \
   -H 'Content-Type: application/json' \
   -d '{
     "pattern": "blackboard",
@@ -303,7 +324,7 @@ new-run-modal (or include it in the team config).
   `opencode-frozen` or `zen-rate-limit`. Grep opencode's log for
   `ollama` to confirm the request even got routed there.
 - Costs accumulate > $0 on ollama-tier sessions → LOOKUP reorder
-  broke; re-run §6.5 smoke to pinpoint.
+  broke; re-run §5 smoke to pinpoint.
 
 **This is the one live validation this session shipped without
 exercising — feeding it to a real opencode + ollama is the first
@@ -329,7 +350,7 @@ orchestrator-worker intro. Tracked in STATUS.md; wiring is a
 mechanical follow-up (each `postSessionMessageServer` call adds
 `model: meta.teamModels?.[sessionIDs.indexOf(sid)]`).
 
-## 8. Parser correctness (stripVerifyTag, stripRoleTag)
+## 7. Parser correctness (stripVerifyTag, stripRoleTag)
 
 **What it does.** `latestTodosFrom` in `lib/server/blackboard/planner.ts`
 strips leading `[verify]` / `[role:<name>]` prefixes from todo content

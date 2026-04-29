@@ -52,14 +52,22 @@ function* walkTs(dir: string): Generator<string> {
   }
 }
 
+function relPath(file: string): string {
+  // Normalize to forward-slash repo-relative so Windows + Linux produce
+  // the same string for ALLOWLIST lookups.
+  return file
+    .replace(REPO_ROOT, '')
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '');
+}
+
 function findEmptyCatches(file: string, src: string): EmptyCatchSite[] {
   const out: EmptyCatchSite[] = [];
   const lines = src.split('\n');
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    // Match `catch (...) {}` or `catch {}` on a single line.
     if (/catch\s*(\([^)]*\))?\s*\{\s*\}/.test(line)) {
-      out.push({ file: file.replace(REPO_ROOT + '/', ''), line: i + 1 });
+      out.push({ file: relPath(file), line: i + 1 });
     }
   }
   return out;

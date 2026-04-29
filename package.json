@@ -22,6 +22,7 @@
     "test:integration": "VITEST_INTEGRATION=1 vitest run",
     "test:visual": "playwright test tests/visual --config=playwright.config.ts",
     "test:visual:update": "playwright test tests/visual --update-snapshots --config=playwright.config.ts",
+    "test:e2e": "playwright test --config=playwright.ci.config.ts",
     "test:perf": "playwright test --config=playwright.perf.config.ts",
     "test:perf:no-build": "PERF_SKIP_BUILD=1 playwright test --config=playwright.perf.config.ts"
   },

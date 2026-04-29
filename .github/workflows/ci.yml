@@ -43,3 +43,13 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Install Playwright (chromium)
+        run: npx playwright install --with-deps chromium
+
+      - name: Golden-path E2E
+        # Boots Next.js prod server via playwright.ci.config.ts webServer
+        # block, intercepts /api/swarm/run + /api/opencode/*, asserts the
+        # new-run modal POSTs the body fields it shows. Proves the wiring,
+        # not just the transforms.
+        run: npm run test:e2e
