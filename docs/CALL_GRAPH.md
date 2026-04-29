@@ -2,6 +2,14 @@
 
 Generated 2026-04-26. Files scanned: 269. Function defs: 792.
 
+> **Staleness note (2026-04-28):** the snapshot is pre-decomposition;
+> ~88 files have moved or been added since (component splits, ChatView
+> rewrite, provider-tier hook lift, modal-instead-of-route shifts).
+> The "Possibly unused" list in particular is unreliable — many flagged
+> entries are now consumed via re-exports. Treat this file as a
+> direction-finder, not authority. Regenerate before relying on a
+> "find usages" pass.
+
 ## High-fan-in hubs (≥8 caller files) — break these and many cascade
 
 | Function | Defined in | Callers |

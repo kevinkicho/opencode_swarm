@@ -6,6 +6,17 @@ ideology — both self-organizing and hierarchical patterns are first-class.
 A run = one or more opencode sessions. The pattern controls how those
 sessions coordinate and which roles, if any, are pinned.
 
+The current pattern set is **6 + 1 native**:
+`blackboard · council · orchestrator-worker · debate-judge · critic-loop
+· map-reduce`, plus `none` (single-session opencode native).
+`deliberate-execute` and `role-differentiated` were cut as
+non-load-bearing after the original 8-pattern sweep.
+
+Note on heat: agents leave traces (file edits, heat counts) and the
+heat-rail (left panel `heat` tab) surfaces edit pressure per file. This
+is a **UI affordance** that lights up on every pattern when ≥1 file has
+been touched — it isn't a separate pattern.
+
 ---
 
 ## Self-organizing (no pinned roles)
@@ -40,20 +51,6 @@ token-jaccard ≥0.85. Round 2/3 fire server-side automatically.
 critical decisions where a single agent might miss a constraint.
 
 **Sizing.** ≤5. Above that drafts don't converge in cap.
-
-### stigmergy
-
-Agents leave traces (file edits, heat counts) and the next agent picks
-work from the heat map. No explicit coordination. Heat-rail surfaces
-edit pressure per file.
-
-**Files.** `components/heat-rail.tsx` (heat map view).
-
-**Strengths.** Emergent prioritization; works well when "what matters"
-isn't pre-decidable.
-
-**State.** Mostly UI-shipped, backend coordination is light — the heat
-map IS the coordination signal.
 
 ---
 

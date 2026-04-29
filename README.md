@@ -6,7 +6,7 @@ Built for keyboard-first developers who want to read a 5-agent run as easily as 
 
 ## Status
 
-**Functioning prototype.** The UI surface is complete and the backend is wired to real opencode sessions. Seven orchestration patterns ship end-to-end — see [`docs/PATTERNS.md`](./docs/PATTERNS.md) for one-paragraph descriptions and reliability profiles.
+**Functioning prototype.** The UI surface is complete and the backend is wired to real opencode sessions. Six orchestration patterns ship end-to-end (`blackboard`, `council`, `orchestrator-worker`, `debate-judge`, `critic-loop`, `map-reduce`) plus `none` (single-session opencode native) — see [`docs/PATTERNS.md`](./docs/PATTERNS.md) for one-paragraph descriptions and reliability profiles. Default landing view is `chat` (per-turn bubbles with inline tool pills); `timeline` and `cards` are one click away.
 
 Personal-use tooling — no auth, no multi-tenancy, never SaaS. By design, not a deferred feature.
 
@@ -34,9 +34,9 @@ npm install
 npm run dev
 ```
 
-The dev server rolls a sticky random port on first run and writes it to `.dev-port` so your bookmarked tab keeps working across restarts. Open whatever URL the console prints.
+The dev server is pinned to **port 8044** (override via `DEV_PORT=xxxx`). `scripts/dev.mjs` kills any process holding the port before claiming it, so a stale leftover never blocks startup. The `.dev-port` file is still written for callers that read it, and tabs auto-reload on dev-server restart via `/api/dev/build-id` so stale browser state never lingers. Open `http://localhost:8044/` (or, on WSL2 with a Windows browser, the WSL eth0 IP — `ifconfig eth0` for the address).
 
-Point the app at an already-cloned repo via the new-run modal (⌘N), pick a pattern, hit spawn. Agents claim work, edit files, land patches, timeline populates live.
+Point the app at an already-cloned repo via the new-run modal (⌘N), pick a pattern, hit spawn. Agents claim work, edit files, land patches, your chosen view (chat by default) populates live.
 
 ## Keyboard
 
@@ -80,11 +80,12 @@ The **glossary modal** (footer right · `glossary`) covers actor/transcript voca
 
 ## Design stance
 
-- **Timeline-centric, not chat-centric.** Tool calls and agent spawns are visual nodes on a 2-D plane, not log entries. 5 agents must be as legible as 1.
+- **Chat is the landing lens; timeline is the power lens.** Chat (per-turn bubbles, inline tool pills, multi-session user prompts deduped) reads like every other agent product, so first-time users find their footing. Timeline shows N agents as visual nodes on a 2-D plane and is where 5-agent runs become as legible as 1-agent runs. Both ship; click to switch.
+- **All 10 view tabs always visible.** Non-applicable tabs (e.g. `iterations` outside critic-loop) render dim and lead to a per-view explainer with a 7×10 patterns × views availability matrix. Discoverable without docs.
 - **Roles are pattern-scoped, not universal.** Self-organizing patterns (blackboard, council) have no pinned roles — agents self-select work within run bounds. Hierarchical patterns carry explicit roles when the work needs them. Routing stays bounds-driven either way; `if role=X → provider=Y` remains off-limits.
 - **Declarative and imperative separated.** The routing modal sets policy (saves apply to the next dispatch); the spawn modal and palette trigger actions. Never both in one panel.
 - **Dense-factory aesthetic.** Monospace, tabular-nums, hairline borders, h-5/h-6 rows, `text-micro` uppercase labels. Not a ChatGPT/Perplexity/Claude.ai clone.
-- **Three provider tiers: `zen` + `go` + `ollama`.** All three route through opencode (configure `opencode.json` for the ollama provider). No BYOK UI, no local-model picker as a selection affordance — each tier has a different billing/limit shape (zen pay-per-token, go subscription bundle, ollama max subscription).
+- **Three provider tiers: `zen` + `go` + `ollama`** (plus `byok` when opencode.json carries a BYOK provider block). All routed through opencode. The new-run team picker and the spawn-agent modal both gate by tier filter chips with per-tier counts, so picking a model implicitly picks a billing path. Each tier has a different shape — zen pay-per-token, go subscription bundle, ollama max subscription.
 
 ## Contributing
 

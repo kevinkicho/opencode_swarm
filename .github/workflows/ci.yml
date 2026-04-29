@@ -1,0 +1,45 @@
+name: CI
+
+# Type-check + unit tests. These are the same two gates CLAUDE.md
+# requires for every local edit, so passing CI ≡ passing local
+# validation. The visual / perf Playwright suites need a live opencode
+# daemon and are intentionally excluded — those run locally per
+# docs/VALIDATION.md. ESLint is not yet initialized in the repo;
+# running `next lint` would prompt interactively and hang CI.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-flight runs of the same ref when a new push arrives so we
+# don't burn minutes on superseded commits.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test

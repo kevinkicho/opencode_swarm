@@ -7,8 +7,9 @@ Everything here is **personal-use, unauthenticated**. There is no login
 flow, no tenant scoping, no rate limiting. Personal-use only by design,
 not a deferred feature.
 
-**Base URL:** whatever Next.js prints on startup (`http://localhost:<port>`
-— sticky port via `scripts/dev.mjs`).
+**Base URL:** `http://localhost:8044/` (dev server is pinned to 8044 by
+`scripts/dev.mjs`; override with `DEV_PORT=xxxx`). On WSL2 with a
+Windows browser, use the WSL eth0 IP instead of `127.0.0.1`.
 
 ---
 
@@ -149,6 +150,98 @@ opencode events filtered to the run's `sessionIDs`.
 `message.part.updated` frames are coalesced at 100 ms per `part.id` to
 avoid choking a browser tab on a firehose. See
 `lib/server/sse-shaping.ts`.
+
+---
+
+### `GET /api/swarm/run/{swarmRunID}/snapshot`
+
+Single-call cold-load seed. Resolves `meta` + `agents` + initial
+messages + diffs + provider catalog + roles in one round-trip so a
+fresh tab doesn't fan out 5 sequential GETs to render. Used by
+`useLiveSwarmRunMessages` on first mount.
+
+**Response 200**
+```ts
+{
+  meta: SwarmRunMeta;
+  agents: Agent[];
+  messages: Array<...>;       // initial replay frames
+  diffs: Record<sessionID, ...>;
+  providers: ProviderSnapshot;
+  rolesBySessionID: Record<sessionID, string>;
+}
+```
+
+---
+
+### `POST /api/swarm/run/{swarmRunID}/stop`
+
+Hard stop. Distinct from soft abort (which closes the current turn but
+leaves the ticker armed): `/stop` cancels every in-flight session AND
+stops the auto-ticker AND marks the run terminal. Used by the topbar
+`stop` chip.
+
+**Body:** `{ reason?: string }`.
+
+**Response 200:** `{ stopped: number; reason: string }`.
+
+---
+
+### `GET /api/swarm/run/{swarmRunID}/strategy`
+
+Plan-revision ledger for `pattern='orchestrator-worker'`. Returns the
+sequence of orchestrator strategy decisions (initial plan + each
+re-plan trigger) so the `strategy` view can render them as a vertical
+history.
+
+**Response 200**
+```ts
+{
+  swarmRunID: string;
+  revisions: Array<{
+    revisionNumber: number;
+    ts: number;
+    triggeredBy: string;       // e.g. "worker-completed", "rate-limit", "manual"
+    plan: string;              // raw plan text
+    actions: Array<...>;
+  }>;
+}
+```
+
+`404` if the run isn't orchestrator-worker.
+
+---
+
+### `POST /api/swarm/run/{swarmRunID}/replan`
+
+Trigger a re-plan now (orchestrator-worker only). Equivalent to the
+`OrchestratorActionsStrip`'s `replan` button. Useful for a human who
+sees the plan drifting from intent.
+
+**Body:** `{ reason?: string }`.
+
+**Response 200:** `{ revisionNumber: number; ts: number }`.
+
+---
+
+### `GET /api/swarm/run/{swarmRunID}/tree`
+
+Workspace file tree, gitignore-aware. Powers the `heat` left-rail tab's
+`tree` and `all` modes. Cached 5 min via TanStack Query (the tree
+changes far slower than messages do).
+
+**Response 200**
+```ts
+{
+  workspace: string;
+  tree: Array<{
+    path: string;       // relative to workspace
+    type: 'file' | 'dir';
+    size?: number;      // bytes, for files
+  }>;
+  truncated: boolean;   // true when the walker hit a node-count safety cap
+}
+```
 
 ---
 
@@ -345,6 +438,74 @@ Also auto-starts the ticker if it was stopped and the pattern is in
 
 Recovery path for rate-limit-stranded runs — see
 `memory/reference_opencode_freeze.md`.
+
+---
+
+## 4c. Provider catalog
+
+### `GET /api/swarm/providers`
+
+Live opencode `/config/providers` proxy with merged catalog metadata
+(per-1M token pricing from `lib/zen-catalog.ts`, vendor + family
+labels for the FamilyCell). Powers the new-run modal's team picker
+and the spawn-agent modal's model list.
+
+**Response 200**
+```ts
+{
+  source: 'live' | 'fallback';
+  fetchedAt: number;
+  providers: ProviderInfo[];
+  defaults?: Record<string, string>;
+  error?: string;
+}
+```
+
+`source: 'fallback'` means opencode was unreachable — the route serves
+the bundled static catalog so the picker doesn't go blank. The new-run
+modal surfaces this as a `static` badge with a hover tooltip.
+
+Cached 30 s. The new-run team picker + spawn modal share one cache
+entry via TanStack Query (`useOpencodeProviders`).
+
+### `GET /api/ollama/tags`
+
+Proxy to ollama's local `/api/tags` (default `http://localhost:11434/api/tags`).
+Powers the ollama-help popover's Layer-3 live diagnostic — comparing the
+list of models pulled locally against the list opencode declares in its
+`/config/providers` response.
+
+**Response 200**
+```ts
+{
+  reachable: boolean;
+  ollamaUrl: string;     // resolved target (env-driven or default)
+  pulled: string[];      // model ids that ollama reports as pulled
+  error?: string;        // populated when reachable=false
+}
+```
+
+`OLLAMA_URL` env var overrides the default target.
+
+---
+
+## 4d. Dev / build identity
+
+### `GET /api/dev/build-id`
+
+Per-instance build identity for the dev-server staleness detector. Mounted
+only in dev (`NODE_ENV !== 'production'`). When the dev server restarts,
+the in-memory id changes; the client's `useDevBuildId` hook detects the
+flip and triggers a single page reload to discard the stale React module
+graph. Closes the "edits don't reflect in browser" gap.
+
+**Response 200**
+```ts
+{ buildId: string; startedAt: number }
+```
+
+`buildId` is a `crypto.randomUUID()` minted at process start; never
+persisted.
 
 ---
 

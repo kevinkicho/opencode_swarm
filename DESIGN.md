@@ -18,8 +18,8 @@ The UI's job is to make a 5-agent run as legible as a 1-agent run. That is
 the entire premise.
 
 **On roles.** Roles are a per-run choice, not a project-level ideology.
-Self-organizing patterns (blackboard, council, stigmergy) have no pinned
-roles — agents self-select. Hierarchical patterns (orchestrator-worker,
+Self-organizing patterns (blackboard, council) have no pinned roles —
+agents self-select. Hierarchical patterns (orchestrator-worker,
 debate-judge, critic-loop) carry implicit roles when the work needs them
 (orchestrator vs worker, judge vs generator, critic vs worker). The
 pattern picks the role model; the human picks the pattern.
@@ -58,13 +58,23 @@ The predicate `isCrossLane()` and the canonical part/tool color map live in
 ### Layout shell — `app/page.tsx`
 - **Topbar** — run anchor chip (title · pattern · session count), tier chip
   (`1/5..5/5`), $ budget chip, agent count, retry-after countdown when a
-  Zen 429 is active, provider-stats popover, palette/settings/account.
+  Zen 429 is active, provider-stats popover, metrics + projects opener
+  buttons (open as modals, not full-page nav), palette/diagnostics/account.
+- **View toolbar** (above the main viewport) — all 10 view tabs render
+  always: `chat → timeline → cards` (universal trio) | divider |
+  `board · contracts · iterations · debate · map · council · strategy`
+  (pattern-specific). Non-applicable tabs render dim and lead to an
+  `EmptyViewState` with a 7×10 patterns × views availability matrix.
+  Default landing view is `chat`.
 - **Roster** (260px left rail, `components/agent-roster.tsx`) — collapsed
-  agent rows: accent stripe, status circle, name, attention badge.
-- **Left-rail tabs** — `plan` (always on), `heat` (file-edit heatmap),
-  `board` (visible only when `pattern='blackboard'`).
-- **Timeline** (1fr center) — sticky lane headers + event canvas.
-- **Pattern-specific strips** under the timeline:
+  agent rows: accent stripe, status circle, name, attention badge,
+  `+` icon to spawn a new agent.
+- **Left-rail tabs** — `plan` (always on), `roster`, `heat` (file-edit
+  heatmap; mounts when ≥1 file has been touched), `board` (visible only
+  when the run has a `boardSwarmRunID`).
+- **Main viewport** (1fr center) — renders the active view; defaults to
+  ChatView (per-turn cards with inline tool pills).
+- **Pattern-specific strips** under the timeline view:
   - `SynthesisStrip` (map-reduce), `ReconcileStrip` (council),
     `JudgeVerdictStrip` (debate-judge), `CriticVerdictStrip` (critic-loop),
     `OrchestratorActionsStrip` (orchestrator-worker).
@@ -74,12 +84,16 @@ The predicate `isCrossLane()` and the canonical part/tool color map live in
 - **Composer** (bottom) — typed dispatch with target picker (broadcast /
   specific agent / human).
 - **Status rail** (footer) — websocket dot, palette / routing / glossary /
-  branch-history triggers.
+  diagnostics / branch-history triggers.
 - **Drawer** (right, 380px) — inspector for the focused message OR agent.
 - **Modals** — palette (⌘K), new-run (⌘N), routing, branch history, spawn,
-  glossary.
+  glossary, diagnostics, metrics, projects.
 
 ### Standalone routes
+Bookmark / new-tab fallbacks. The primary in-app entry for the first
+two is the topbar modal, but the routes still resolve so a middle-click
+"open in new tab" works for sharing a URL.
+
 - `/metrics` — cross-preset cost dashboard (groups runs by `meta.pattern`).
 - `/projects` — run picker grouped by source/workspace.
 - `/board-preview?swarmRun=<id>` — full-screen blackboard view.
@@ -97,14 +111,29 @@ The predicate `isCrossLane()` and the canonical part/tool color map live in
   `hidden → streaming → settled`.
 
 ### Modal contracts (each has one — do not mix)
-- **New-run** — *imperative*. `launch`. Source required; everything else seeds.
-- **Spawn** — *imperative*. `spawn`. Creates an agent now.
+- **New-run** — *imperative*. `launch`. Source required; everything else
+  seeds. Team picker has provider-tier filter chips (`go / zen / ollama
+  / byok`) above the model rows so picking a model implicitly picks a
+  billing path.
+- **Spawn** — *imperative*. `spawn`. Creates an agent now. Same provider-
+  tier filter chips and 3-layer ollama help (footer hint + popover
+  checklist + live `/api/tags` diagnostic) as new-run, shared via
+  `lib/swarm-provider-tiers.ts`.
 - **Routing** — *declarative*. `save`. Run-level bounds + observed dispatch
   readout. **No per-agent assignments. No system-inferred role labels.**
   Agents self-select; humans set bounds. The `eyebrow="observation"` tooltip
   explains this in-product.
 - **Branch history** — *read-only*.
 - **Glossary** — *reference*. Actor/transcript vocabulary only.
+- **Diagnostics** — *read-only*. Live opencode daemon state — tool catalog,
+  MCP servers, effective `opencode.json`, user-defined commands — with a
+  drift indicator vs. the static `ToolName` union.
+- **Metrics** — *read-only*. Cross-preset cost dashboard, opens from
+  topbar (matches `/metrics` route).
+- **Projects** — *read-only*. Run picker grouped by source/workspace +
+  GitHub-style projects matrix (rows = repos, columns = days, cell hue
+  = dominant run status, opacity = activity intensity). Drill-down stays
+  inside the modal.
 - **Palette** — *imperative*. ⌘K. Jump or trigger.
 
 ### Conventions
@@ -114,7 +143,13 @@ The predicate `isCrossLane()` and the canonical part/tool color map live in
   `text-micro` (10px) uppercase tracking-widest2 for labels, hairline borders.
 - **Provider tier vocabulary** — `zen` (pay-per-token marketplace), `go`
   (opencode subscription bundle), `ollama` (ollama.com max subscription —
-  `:cloud` models). All routed through opencode.
+  `:cloud` models), `byok` (when `opencode.json` carries a BYOK provider
+  block). All routed through opencode. Both new-run team picker and
+  spawn modal expose tier filter chips with per-tier counts; the model
+  ID prefix encodes the routing (`opencode-go/...` vs `opencode/...` vs
+  `ollama/...`), so picking a row implicitly picks the billing path.
+  `lib/swarm-provider-tiers.ts` is the shared source of truth for both
+  surfaces.
 
 ---
 

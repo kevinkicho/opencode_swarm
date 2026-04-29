@@ -47,7 +47,7 @@ verifier gates run together correctly without stepping on each other.
 
 **Re-validation invocation.**
 ```bash
-curl -X POST http://localhost:<this-app-port>/api/swarm/run \
+curl -X POST http://localhost:8044/api/swarm/run \
   -H 'Content-Type: application/json' \
   -d '{
     "pattern": "blackboard",

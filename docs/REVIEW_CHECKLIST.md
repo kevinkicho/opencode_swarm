@@ -22,8 +22,9 @@ todos in `STATUS.md` and / or postmortem entries.
 Goal: confirm the page hydrates correctly and renders all expected
 chrome on first paint.
 
-- [ ] Navigate to `http://localhost:49187/` (root, no swarmRun) — should
-  render the empty shell within 2 seconds
+- [ ] Navigate to `http://localhost:8044/` (root, no swarmRun; or the
+  WSL eth0 IP on WSL2 with a Windows browser) — should render the
+  empty shell within 2 seconds
 - [ ] Note: TTFB, FCP, time-to-any-button, time-to-data-populated
 - [ ] Verify no `Internal error: Error: No QueryClient set` in dev log
 - [ ] Verify no `ChunkLoadError` in the browser console
@@ -97,12 +98,22 @@ Goal: each view renders quickly + correctly; tab-switch UX feels snappy.
 Goal: every secondary surface opens, renders, dismisses cleanly.
 
 - [ ] **CMD+K palette** opens, has actions, jumps to nodes
-- [ ] **NEW RUN modal** — opens, all 9 patterns selectable, validates
-  required inputs, fires successfully
+- [ ] **NEW RUN modal** — opens, all 7 patterns selectable
+  (`none · blackboard · map-reduce · council · orchestrator-worker ·
+  debate-judge · critic-loop`), provider-tier filter chips above the
+  team picker (go / zen / ollama / byok), validates required inputs,
+  fires successfully
 - [ ] **Glossary modal** — opens, content readable, dismisses on Esc
 - [ ] **Routing modal** — opens, current bounds visible, save persists
-- [ ] **Spawn agent modal** — opens (blackboard only), spawns a new
-  session attached to the run
+- [ ] **Spawn agent modal** — opens from the roster `+` icon, has the
+  same provider-tier filter chips as new-run, spawns a new session
+  attached to the run
+- [ ] **Diagnostics modal** — opens from footer right, shows live
+  opencode daemon state with drift indicator vs. `ToolName` union
+- [ ] **Metrics modal** — opens from topbar, cross-preset cost dashboard
+  renders with totals row populated
+- [ ] **Projects modal** — opens from topbar, GitHub-style projects
+  matrix renders, drill-down stays inside the modal
 - [ ] **Inspector drawer** (focused message / agent / file heat) —
   opens, close button works, click-outside dismisses, Esc dismisses
 

@@ -7,19 +7,62 @@ not a roadmap.
 Maintenance: prune + rewrite every couple months. Remove items when shipped
 or abandoned.
 
-**Last updated:** 2026-04-27.
+**Last updated:** 2026-04-28.
 
 ---
 
 ## Current state
 
 **Functioning prototype.** UI complete, backend wired to real opencode
-sessions, 7 orchestration patterns shipped end-to-end (blackboard,
-council, stigmergy, orchestrator-worker, debate-judge, critic-loop,
-map-reduce — `deliberate-execute` and `role-differentiated` were cut as
-non-load-bearing). Personal-use only, never SaaS.
+sessions, 6 orchestration patterns shipped end-to-end (blackboard,
+council, orchestrator-worker, debate-judge, critic-loop, map-reduce)
+plus `none` (single-session opencode native). Personal-use only,
+never SaaS.
 
-Recent (last 7 days):
+Recent (last 7 days, newest first):
+- **Spawn modal parity with new-run team picker** (2026-04-28). Provider-
+  tier filter chips (go / zen / ollama / byok) above the model list,
+  3-layer ollama help (footer hint + `?` popover with checklist + live
+  `/api/tags` diagnostic), `static` / `live` catalog badge tooltip,
+  auto-reselect first visible model when active filter hides current
+  selection. Shared via `lib/swarm-provider-tiers.ts` so both modals
+  consume the same `useProviderFilter` hook.
+- **Chat as default view + turn-grouped chat rewrite** (2026-04-28).
+  Default landing view flipped from `timeline` to `chat`; toolbar
+  order is `chat → timeline → cards`. ChatView rewritten end-to-end:
+  step-start / step-finish parts filtered, parts grouped by threadId
+  (one assistant turn = one card), tool calls fold inline as clickable
+  pills, multi-session user prompts dedup within a 5s window (`council`
+  / `debate-judge` / `map-reduce` no longer show the same prompt 3
+  times), 3px accent stripe + agent label, `space-y-3` between turns.
+- **3-layer ollama help in new-run modal** (2026-04-28). Always-visible
+  Layer-1 footer hint, `?` popover with Layer-2 checklist (click-to-copy
+  `ollama list` and `cat ~/.config/opencode/opencode.json`), Layer-3
+  live diagnostic showing the gap between models pulled via ollama
+  and models declared in opencode.json.
+- **All 10 view tabs always visible + reference matrix** (2026-04-28).
+  Toolbar renders every view; non-applicable tabs render a dim
+  `EmptyViewState` with the per-view explanation and a 7×10
+  patterns × views availability matrix.
+- **GitHub-style projects matrix** (2026-04-28). 14×14 squared cells,
+  hue = dominant run status, opacity = activity intensity. Rows
+  per-repo, columns per-day. Drill-down stays inside the modal.
+- **Metrics + projects open as modals**, not full-page nav
+  (2026-04-28). Topbar buttons mount the modals; the standalone
+  `/metrics` and `/projects` routes still exist as fallbacks for
+  bookmarks and middle-click "open in new tab."
+- **Dev server staleness auto-reload** (2026-04-28). Per-instance
+  build-id endpoint at `/api/dev/build-id`; client-side detector
+  closes the stale-tab gap that wasted 5 days of debugging cycles.
+- **Picker rows + retro chip open in new tabs** (2026-04-28).
+  `target="_blank"` on row + retro links so the close-on-mousedown
+  race that ate 5 days no longer surfaces.
+- **Status-aware TTL on the runs-list derive cache** (2026-04-28).
+  Terminal rows (idle / stale / error) cache for 10 minutes, active
+  ones for 10 seconds. Warm polls dropped from ~5s to ~0.4s.
+- **Dev server pinned to permanent port 8044** (2026-04-28).
+  `scripts/dev.mjs` kills any holder before claiming. Override via
+  `DEV_PORT=xxxx`.
 - Phase 8 reliability hardening complete (~53 items: atomic writes,
   globalThis-keyed caches, server-only enforcement, typed opencode errors,
   per-run dispatch mutex, swarm-registry split into fs/derive halves, 7
@@ -28,10 +71,7 @@ Recent (last 7 days):
 - Status terminology rewrite: `live` (ticker + producing), `idle` (ticker
   alive but quiet), `error` (real failure), `stale` (ticker stopped),
   `unknown`. Picker visual realigned: live=mint pulse, idle=mint solid,
-  stale=fog gray. Old schema's "completed cleanly = idle" was confusing
-  ("are these still alive?").
-- Chatbox `all live` broadcast fan-outs to every session in the roster
-  (was: only primary).
+  stale=fog gray.
 - Critic-loop runaway-token leak fixed: `waitForSessionIdle` now aborts
   the opencode session on deadline expiry when a turn is still in-progress.
   See `docs/POSTMORTEMS/2026-04-26-critic-loop-runaway-token.md`.
@@ -46,10 +86,11 @@ Active substrate:
 
 ## Known limitations
 
-**Pattern reliability under GEMMA defaults.** Empirical from the 8-pattern ×
-60-min validation. Governing property: patterns where work concentrates in
-one critical session crash on a single silent turn; parallel-redundant
-patterns survive.
+**Pattern reliability under GEMMA defaults.** Empirical from the original
+8-pattern × 60-min validation (`deliberate-execute` and `role-differentiated`
+were cut after that sweep, leaving the 6 patterns below). Governing
+property: patterns where work concentrates in one critical session crash
+on a single silent turn; parallel-redundant patterns survive.
 
 | Profile | Patterns | Notes |
 |---|---|---|
@@ -96,14 +137,6 @@ Not urgent.
   Validator now accepts `enableSynthesisCritic`; new-run modal surfaces
   the toggle when pattern==='map-reduce'; the gate code already existed
   in `lib/server/map-reduce.ts::runSynthesisCriticGate`.
-- stigmergy: heat-picked-timeline-chip. **DEFERRED — needs schema work.**
-  BoardItem doesn't currently carry a `taskMessageID` link, so the
-  EventCard can't look up `pickedByHeat` for a given message. Two design
-  paths: (a) add `taskMessageID` on the BoardItem at claim time and join
-  in the transform, or (b) emit a stigmergy-decision event onto the
-  timeline at pick time. Path (a) is cheaper but couples the schemas;
-  path (b) is cleaner but adds a new event channel. Either way is more
-  than a half-day; punt until a live run shows the demand.
 
 **UI bugs queued (deferred):**
 - ~~**Inspector pane doesn't open when clicking timeline blocks**~~
@@ -140,17 +173,18 @@ Not urgent.
   to 1.8s with circuit-breaker armed, and to ~130ms once tripped.
 
 **UI redesign queued (deferred):**
-- ~~**Chat-bubble view as alternate main**~~ **MVP SHIPPED 2026-04-27.**
-  Added `chat` view alongside `timeline` and `cards` in the main-view
-  toolbar (`app/page.tsx` VIEW_PATTERN_GATES). Renders messages as a
-  chronological bubble stream — author + part-type + body, A2A
-  recipients shown as a "→ <agent>" header line, consecutive tool
-  calls collapse into a chip row instead of N bubbles. Lives at
-  `components/chat-view.tsx`. Default view is still `timeline` —
-  promoting `chat` to default is a UX call that should land with a
-  user-facing announcement, not silently. Empty state ("no messages
-  yet") renders correctly when opencode is reachable but the run hasn't
-  produced any output.
+- ~~**Chat-bubble view as alternate main**~~ **REWRITE SHIPPED 2026-04-28.**
+  `chat` is now the default landing view (was `timeline`). Toolbar
+  order is `chat → timeline → cards`. The view itself was rewritten
+  end-to-end on 2026-04-28: parts grouped by `threadId` (one assistant
+  turn = one card), `step-start` / `step-finish` filtered as plumbing,
+  tool / agent / subtask / patch parts fold inline as clickable pills,
+  multi-session user prompts dedup within a 5s window so council /
+  debate-judge / map-reduce no longer show the same prompt N times,
+  3px accent stripe + agent label per card, `space-y-3` between turns.
+  Empty state ("no messages yet") renders correctly when opencode is
+  reachable but the run hasn't produced any output. Verified via
+  `scripts/_verify-chat-view.mjs` against a 3-session council run.
 
 **Validation tooling** (queued 2026-04-27 — improves the live-run
 diagnostic loop, not the app itself):
