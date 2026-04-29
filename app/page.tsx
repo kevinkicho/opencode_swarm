@@ -458,8 +458,12 @@ function PageBody({
   // state. Pass a tautology predicate so the hook keeps its
   // structure but never resets — disabled tabs are a valid view
   // that renders EmptyViewState.
+  // Default landing view: chat. Timeline is the more powerful lens
+  // for multi-agent coordination but it's also the more unfamiliar
+  // one — every agent product the user has seen elsewhere uses
+  // chat-style bubbles. Land there, let users opt up to timeline.
   const viewState = useViewState<RunView>(
-    'timeline',
+    'chat',
     () => true,
     [],
   );
@@ -690,7 +694,9 @@ function PageBody({
                   pattern: swarmRunMeta?.pattern,
                   boardSwarmRunID,
                 };
-                const universal = ['timeline', 'chat', 'cards'] as RunView[];
+                // Order in toolbar: chat first (the familiar lens),
+                // then timeline (the powerful one), then cards.
+                const universal = ['chat', 'timeline', 'cards'] as RunView[];
                 const renderTab = (k: RunView) => {
                   const enabled = VIEW_PATTERN_GATES[k].enabled(gateCtx);
                   return (

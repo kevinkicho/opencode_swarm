@@ -13,9 +13,13 @@
 
 import type { SwarmPattern } from './swarm-types';
 
+// Order matters: this is the order RUN_VIEW_KEYS surfaces in the
+// toolbar AND the default-view fallback. `chat` leads because it's
+// the universally-familiar lens — most users coming in from any
+// agent product expect chat first, timeline second. 2026-04-28 swap.
 export type RunView =
-  | 'timeline'
   | 'chat'
+  | 'timeline'
   | 'cards'
   | 'board'
   | 'contracts'
@@ -72,16 +76,16 @@ export const BOARD_PATTERNS: readonly SwarmPattern[] = [
 ];
 
 export const VIEW_META: Record<RunView, ViewMeta> = {
-  timeline: {
-    hint: 'cross-lane event flow with A2A wires',
-    enabled: () => true,
-    description: 'Cross-lane event flow — every part fired by every agent, A2A wires showing handoffs.',
-    availablePatterns: [],
-  },
   chat: {
     hint: 'chronological per-agent bubble stream · tool calls fold as chips',
     enabled: () => true,
-    description: 'Chronological per-agent bubbles. Tool calls fold into chips so the conversation reads naturally.',
+    description: 'Chronological per-agent bubbles. Tool calls fold into chips so the conversation reads naturally — the universally-familiar agent lens.',
+    availablePatterns: [],
+  },
+  timeline: {
+    hint: 'cross-lane event flow with A2A wires',
+    enabled: () => true,
+    description: 'Cross-lane event flow — every part fired by every agent, A2A wires showing handoffs. Best for understanding multi-agent coordination at a glance.',
     availablePatterns: [],
   },
   cards: {
