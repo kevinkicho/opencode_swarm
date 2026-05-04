@@ -18,6 +18,41 @@ Next.js 14 (App Router) · TypeScript strict · Tailwind · framer-motion · cmd
 
 **A reachable opencode instance is required.** This app is a UI + orchestration layer on top of opencode — there is no local execution fallback. Every pattern routes through it. If `OPENCODE_URL` can't be reached, run creation returns 502 and live views stall.
 
+## Setup
+
+To set up the project locally:
+
+1. Install [Node.js](https://nodejs.org/) (version 18 or above).
+2. Clone this repository.
+3. Run `npm install` to install dependencies.
+4. Copy `.env.example` to `.env` (if it doesn't exist) and configure the environment variables.
+5. Ensure you have an opencode instance running and accessible at the URL specified in `OPENCODE_URL`.
+6. (Optional) If using the ollama provider tier, configure your `opencode.json` as described in the Prerequisites section.
+
+## Architecture Overview
+
+Opencode Swarm is a Next.js application that provides a multi-agent orchestration UI. The architecture consists of:
+
+- **Frontend**: Built with React (Next.js 14 App Router), TypeScript, Tailwind CSS, and various UI libraries (framer-motion, cmdk, @floating-ui/react).
+- **Backend**: Next.js API routes and server-side logic that orchestrate opencode sessions.
+- **Orchestration Layer**: Implements six coordination patterns (blackboard, council, orchestrator-worker, debate-judge, critic-loop, map-reduce) plus a passthrough mode (`none`). Each pattern defines how agents collaborate and share work.
+- **Persistence**: Uses better-sqlite3 to store run transcripts, agent states, and event logs.
+- **Integration**: Communicates with an external opencode instance via HTTP using the opencode SDK.
+
+For detailed descriptions of each pattern, refer to [`docs/PATTERNS.md`](./docs/PATTERNS.md).
+
+## Development Commands
+
+- `npm run dev`: Start the development server at `http://localhost:3000`.
+- `npm run build`: Build the application for production.
+- `npm run start`: Start the production server.
+- `npm run test`: Run the test suite (if applicable).
+- `npm run lint`: Run ESLint for code linting.
+- Custom scripts:
+  - `scripts/dev.mjs`: Starts the development server with additional environment setup (used in this repository).
+
+Note: A running opencode instance is required for the application to function. See the [Prerequisites](#prerequisites) section for details.
+
 - `OPENCODE_URL` — base URL of your opencode instance. Default `http://localhost:4096`; this repo currently targets `http://172.24.32.1:4097` (WSL → Windows host bridge, see `scripts/dev.mjs`). The `:4097` port is deliberate — `:4096` is reserved for the sibling ollama-swarm app.
 - `OPENCODE_BASIC_USER` / `OPENCODE_BASIC_PASS` — HTTP Basic auth, if your opencode enforces it. Server-side only; never prefix with `NEXT_PUBLIC_`. Leave empty when auth is off.
 - Optional: `OPENCODE_SWARM_ROOT` (runs dir override), `OPENCODE_LOG_DIR` (opencode's own log path — powers the Zen-429 vs. frozen distinction in the liveness watchdog), `DEMO_LOG_AUTO_DELETE` / `DEMO_LOG_RETENTION_DAYS` (event-log pruning), `OPENCODE_RESTART_CMD` (optional shell command the frozen watchdog runs to restart opencode).
