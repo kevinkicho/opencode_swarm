@@ -23,3 +23,6 @@ C:\\Users\\kevin\\AppData\\Local\\lighthouse.*
 # only diff/actual outputs from a failing visual run are noise.
 test-results/
 playwright-report/
+.opencode/
+deliverable-*.md
+next-actions-*.json
