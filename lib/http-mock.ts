@@ -143,3 +143,37 @@ export async function testCouncilPattern() {
   const isSuccess = decision === 'approved' && votes.length === 3;
   return { isSuccess, decision, votes };
 }
+/**
+ * Test suite for the Orchestrator-Worker pattern implementation using HttpMock.
+ * This validates the delegation of tasks from a central orchestrator to multiple workers.
+ */
+export async function testOrchestratorWorkerPattern() {
+  const mock = new HttpMock();
+  const tasks = ['task1', 'task2', 'task3'];
+  const results: Record<string, any> = {};
+
+  // Mock worker endpoints
+  tasks.forEach((task, index) => {
+    mock.mockPath(`/api/worker/${task}`, {
+      status: 200,
+      body: { id: task, result: `processed-${index}` }
+    });
+  });
+
+  // Orchestrator logic: delegate tasks to workers
+  for (const task of tasks) {
+    const response = await mock.call({ path: `/api/worker/${task}`, method: 'POST' });
+    if (response.status === 200) {
+      results[task] = response.body.result;
+    }
+  }
+
+  const expected = {
+    task1: 'processed-0',
+    task2: 'processed-1',
+    task3: 'processed-2'
+  };
+
+  const isSuccess = JSON.stringify(results) === JSON.stringify(expected);
+  return { isSuccess, results };
+}
