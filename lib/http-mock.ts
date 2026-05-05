@@ -177,3 +177,37 @@ export async function testOrchestratorWorkerPattern() {
   const isSuccess = JSON.stringify(results) === JSON.stringify(expected);
   return { isSuccess, results };
 }
+/**
+ * Test suite for the Debate-Judge pattern implementation using HttpMock.
+ * This validates a process where multiple agents provide conflicting arguments
+ * and a final judge resolves them based on the presented evidence.
+ */
+export async function testDebateJudgePattern() {
+  const mock = new HttpMock();
+  const argumentsList: any[] = [];
+
+  // Mock debating agents
+  mock.mockPath('/api/debate/proponent', { status: 200, body: { argument: 'Proposed solution is efficient' } });
+  mock.mockPath('/api/debate/opponent', { status: 200, body: { argument: 'Proposed solution is too costly' } });
+
+  const participants = ['/api/debate/proponent', '/api/debate/opponent'];
+
+  for (const path of participants) {
+    const response = await mock.call({ path, method: 'GET' });
+    if (response.status === 200) {
+      argumentsList.push(response.body);
+    }
+  }
+
+  // Mock the judge resolving the debate
+  mock.mockPath('/api/debate/judge', {
+    status: 200,
+    body: { verdict: 'costly', resolution: 'Reject proposal due to budget constraints' }
+  });
+
+  const judgeResponse = await mock.call({ path: '/api/debate/judge', method: 'POST' });
+  const verdict = judgeResponse.body.verdict;
+
+  const isSuccess = argumentsList.length === 2 && verdict === 'costly';
+  return { isSuccess, verdict, argumentsList };
+}
