@@ -211,3 +211,47 @@ export async function testDebateJudgePattern() {
   const isSuccess = argumentsList.length === 2 && verdict === 'costly';
   return { isSuccess, verdict, argumentsList };
 }
+/**
+ * Test suite for the Map-Reduce pattern implementation using HttpMock.
+ * This validates splitting a large task into smaller chunks (Map), processing them,
+ * and aggregating the results into a final output (Reduce).
+ */
+export async function testMapReducePattern() {
+  const mock = new HttpMock();
+  const dataChunks = ['chunk1', 'chunk2', 'chunk3', 'chunk4'];
+  const mapResults: any[] = [];
+
+  // Mock the 'Map' phase: endpoints that process individual data chunks
+  dataChunks.forEach((chunk, index) => {
+    mock.mockPath(`/api/map/${chunk}`, {
+      status: 200,
+      body: { chunk, value: index * 10 }
+    });
+  });
+
+  // Execute Map phase
+  for (const chunk of dataChunks) {
+    const response = await mock.call({ path: `/api/map/${chunk}`, method: 'POST' });
+    if (response.status === 200) {
+      mapResults.push(response.body.value);
+    }
+  }
+
+  // Mock the 'Reduce' phase: endpoint that aggregates the mapped values
+  const sum = mapResults.reduce((acc, val) => acc + val, 0);
+  mock.mockPath('/api/reduce', {
+    status: 200,
+    body: { result: sum }
+  });
+
+  const reduceResponse = await mock.call({ 
+    path: '/api/reduce', 
+    method: 'POST', 
+    body: { values: mapResults } 
+  });
+
+  const finalResult = reduceResponse.body.result;
+  const isSuccess = finalResult === 60 && mapResults.length === 4;
+
+  return { isSuccess, finalResult, mapResults };
+}
