@@ -114,3 +114,32 @@ export async function testBlackboardPattern() {
   const isSuccess = JSON.stringify(blackboardState.data) === JSON.stringify(expected);
   return { isSuccess, finalState: blackboardState };
 }
+/**
+ * Test suite for the Council pattern implementation using HttpMock.
+ * This validates a consensus-based decision process where multiple
+ * endpoints are queried and a majority or unanimous agreement is required.
+ */
+export async function testCouncilPattern() {
+  const mock = new HttpMock();
+  const votes: any[] = [];
+
+  // Mock multiple 'council members' providing their opinion/state
+  mock.mockPath('/api/council/member1', { status: 200, body: { vote: 'approve' } });
+  mock.mockPath('/api/council/member2', { status: 200, body: { vote: 'approve' } });
+  mock.mockPath('/api/council/member3', { status: 200, body: { vote: 'reject' } });
+
+  const members = ['/api/council/member1', '/api/council/member2', '/api/council/member3'];
+
+  for (const path of members) {
+    const response = await mock.call({ path, method: 'GET' });
+    if (response.status === 200) {
+      votes.push(response.body.vote);
+    }
+  }
+
+  const approveCount = votes.filter(v => v === 'approve').length;
+  const decision = approveCount > votes.length / 2 ? 'approved' : 'rejected';
+
+  const isSuccess = decision === 'approved' && votes.length === 3;
+  return { isSuccess, decision, votes };
+}
