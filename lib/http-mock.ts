@@ -185,6 +185,7 @@ export async function testOrchestratorWorkerPattern() {
 export async function testDebateJudgePattern() {
   const mock = new HttpMock();
   const argumentsList: any[] = [];
+  const blackboard = { arguments: [] };
 
   // Mock debating agents
   mock.mockPath('/api/debate/proponent', { status: 200, body: { argument: 'Proposed solution is efficient' } });
@@ -196,6 +197,7 @@ export async function testDebateJudgePattern() {
     const response = await mock.call({ path, method: 'GET' });
     if (response.status === 200) {
       argumentsList.push(response.body);
+      blackboard.arguments.push(response.body);
     }
   }
 
@@ -207,10 +209,13 @@ export async function testDebateJudgePattern() {
 
   const judgeResponse = await mock.call({ path: '/api/debate/judge', method: 'POST' });
   const verdict = judgeResponse.body.verdict;
+  blackboard.verdict = verdict;
+  blackboard.resolution = judgeResponse.body.resolution;
 
   const callSequence = ['/api/debate/proponent', '/api/debate/opponent', '/api/debate/judge'];
-  const isSuccess = argumentsList.length === 2 && verdict === 'costly';
-  return { isSuccess, verdict, argumentsList, callSequence };
+  const stateVerified = blackboard.arguments.length === 2 && blackboard.verdict === 'costly';
+  const isSuccess = argumentsList.length === 2 && verdict === 'costly' && stateVerified;
+  return { isSuccess, verdict, argumentsList, callSequence, blackboard };
 }
 /**
  * Test suite for the Map-Reduce pattern implementation using HttpMock.
@@ -221,6 +226,7 @@ export async function testMapReducePattern() {
   const mock = new HttpMock();
   const dataChunks = ['chunk1', 'chunk2', 'chunk3', 'chunk4'];
   const mapResults: any[] = [];
+  const sharedState = { mappedValues: [], finalResult: null };
 
   // Mock the 'Map' phase: endpoints that process individual data chunks
   dataChunks.forEach((chunk, index) => {
@@ -235,6 +241,7 @@ export async function testMapReducePattern() {
     const response = await mock.call({ path: `/api/map/${chunk}`, method: 'POST' });
     if (response.status === 200) {
       mapResults.push(response.body.value);
+      sharedState.mappedValues.push(response.body.value);
     }
   }
 
@@ -252,8 +259,10 @@ export async function testMapReducePattern() {
   });
 
   const finalResult = reduceResponse.body.result;
-  const isSuccess = finalResult === 60 && mapResults.length === 4;
+  sharedState.finalResult = finalResult;
+  const stateVerified = sharedState.mappedValues.length === 4 && sharedState.finalResult === 60;
+  const isSuccess = finalResult === 60 && mapResults.length === 4 && stateVerified;
   const activationCount = dataChunks.length + 1;
 
-  return { isSuccess, finalResult, mapResults, activationCount };
+  return { isSuccess, finalResult, mapResults, activationCount, sharedState };
 }
