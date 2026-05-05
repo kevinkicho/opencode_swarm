@@ -208,8 +208,9 @@ export async function testDebateJudgePattern() {
   const judgeResponse = await mock.call({ path: '/api/debate/judge', method: 'POST' });
   const verdict = judgeResponse.body.verdict;
 
+  const callSequence = ['/api/debate/proponent', '/api/debate/opponent', '/api/debate/judge'];
   const isSuccess = argumentsList.length === 2 && verdict === 'costly';
-  return { isSuccess, verdict, argumentsList };
+  return { isSuccess, verdict, argumentsList, callSequence };
 }
 /**
  * Test suite for the Map-Reduce pattern implementation using HttpMock.
@@ -252,6 +253,7 @@ export async function testMapReducePattern() {
 
   const finalResult = reduceResponse.body.result;
   const isSuccess = finalResult === 60 && mapResults.length === 4;
+  const activationCount = dataChunks.length + 1;
 
-  return { isSuccess, finalResult, mapResults };
+  return { isSuccess, finalResult, mapResults, activationCount };
 }
