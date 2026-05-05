@@ -6,6 +6,23 @@ export interface MockResponse {
   headers?: Record<string, string>;
 }
 
+/**
+ * HttpMock provides a way to intercept and mock HTTP calls made by the opencode SDK.
+ * 
+ * Example usage:
+ * 
+ * ```typescript
+ * const mock = new HttpMock();
+ * mock.mockPath('/api/v1/resource', {
+ *   status: 200,
+ *   body: { id: '123', name: 'Test Resource' }
+ * });
+ * 
+ * // When the SDK calls /api/v1/resource, it will receive the mocked response
+ * ```
+ * 
+ * @class HttpMock
+ */
 export class HttpMock {
   private mocks: Map<string, MockResponse> = new Map();
 
