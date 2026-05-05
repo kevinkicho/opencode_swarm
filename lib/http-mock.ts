@@ -22,6 +22,16 @@ export interface MockResponse {
  * ```
  * 
  * @class HttpMock
+ *
+ * ### Orchestration Integration Suite
+ * To run the orchestration integration tests, execute:
+ * `npm run test:integration`
+ * 
+ * Each pattern test validates the following:
+ * - **Request Sequencing**: Ensures requests are sent in the correct order.
+ * - **Payload Integrity**: Validates that data passed between orchestration steps remains intact.
+ * - **Error Propagation**: Confirms that a failure in one step correctly triggers the error handling path.
+ * - **State Consistency**: Verifies that the mock server state matches the expected SDK state after a sequence of calls.
  */
 export class HttpMock {
   private mocks: Map<string, MockResponse> = new Map();
