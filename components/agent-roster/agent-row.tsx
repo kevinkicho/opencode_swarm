@@ -12,7 +12,8 @@ import { ProviderBadge } from '../provider-badge';
 import { Tooltip } from '../ui/tooltip';
 import { Popover } from '../ui/popover';
 import { ToolList } from '../part-chip';
-import { compact } from '@/lib/format';
+import { compact, fmtElapsed } from '@/lib/format';
+import { MiniSparkline } from '../ui/mini-sparkline';
 import { statusCircle, type Attention } from '@/lib/agent-status';
 import { accentStripe, statusMeta } from './_shared';
 import { ActiveTodoChip } from './active-todo-chip';
@@ -22,22 +23,28 @@ export function AgentRow({
   agent,
   attention,
   activeTodos,
+  elapsedMs,
+  throughputSamples,
   selected,
   expanded,
   onToggleExpand,
   onSelect,
   onInspect,
   onFocus,
+  showCostInline = true,
 }: {
   agent: Agent;
   attention: Attention;
   activeTodos: TodoItem[];
+  elapsedMs?: number;
+  throughputSamples: number[];
   selected: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
   onSelect: () => void;
   onInspect: () => void;
   onFocus: (id: string) => void;
+  showCostInline?: boolean;
 }) {
   const st = statusMeta[agent.status];
   const tokenPct = Math.min(100, Math.round((agent.tokensUsed / agent.tokensBudget) * 100));
@@ -52,6 +59,9 @@ export function AgentRow({
     >
       {selected && (
         <span className="absolute right-0 top-0 bottom-0 w-[1px] bg-molten" />
+      )}
+      {(agent.status === 'thinking' || agent.status === 'working') && !selected && (
+        <span className="absolute inset-0 bg-molten/5 animate-pulse pointer-events-none" />
       )}
 
       <button
@@ -138,23 +148,39 @@ export function AgentRow({
             information as the colored dot — this fills the unused
             horizontal space with metrics that actually matter. */}
         <div className="flex items-center gap-2 w-full pl-3 pr-1">
+          {elapsedMs != null && elapsedMs > 0 && (
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 tabular-nums shrink-0">
+              {fmtElapsed(elapsedMs)}
+            </span>
+          )}
           <span className="font-mono text-[9.5px] uppercase tracking-widest2 text-fog-700 tabular-nums">
             {compact(agent.tokensUsed)}
             <span className="text-fog-700/70 mx-1">tok</span>
           </span>
-          <span className="font-mono text-[9.5px] text-fog-600 tabular-nums">
-            ${agent.costUsed.toFixed(2)}
-          </span>
-          <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 tabular-nums">
-            ↑{agent.messagesSent} ↓{agent.messagesRecv}
-          </span>
-          {/* Budget bar pushed right; thin (1px) so it doesn't add
-              visual weight, fills remaining space for max precision. */}
+          {/* When the agent has a self-authored focus string, show that
+              instead of sent/recv counts — focus answers "what is this
+              agent doing right now?" which is higher-signal than the
+              raw message counts. Falls back to ↑N ↓N when no focus. */}
+          {agent.focus ? (
+            <span className="font-mono text-[10.5px] text-fog-400 truncate min-w-0 flex-1">
+              {agent.focus}
+            </span>
+          ) : (
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 tabular-nums">
+              ↑{agent.messagesSent} ↓{agent.messagesRecv}
+            </span>
+          )}
+          {/* Budget bar — thin (2px) so it doesn't add visual weight.
+              When focus is shown, it has a fixed width since focus has flex-1.
+              Without focus, it fills all remaining space for max precision. */}
           <Tooltip
             content={`${compact(agent.tokensUsed)} of ${compact(agent.tokensBudget)} budget · ${tokenPct}%`}
             side="top"
           >
-            <span className="flex-1 min-w-[24px] h-[2px] rounded-full bg-ink-900 overflow-hidden cursor-help">
+            <span className={clsx(
+              'min-w-[24px] h-[2px] rounded-full bg-ink-900 overflow-hidden cursor-help',
+              agent.focus ? 'w-12' : 'flex-1',
+            )}>
               <span
                 className={clsx(
                   'block h-full rounded-full',
@@ -164,6 +190,26 @@ export function AgentRow({
               />
             </span>
           </Tooltip>
+          {/* Show cost inline only when at least one agent has non-zero
+              cost. On free-tier runs (ollama, go) every agent shows
+              $0.00 which is pure noise — suppress and show only in
+              expanded detail. */}
+          {showCostInline && !agent.focus && (
+            <span className="font-mono text-[9.5px] text-fog-600 tabular-nums shrink-0">
+              ${agent.costUsed.toFixed(2)}
+            </span>
+          )}
+          {/* Throughput sparkline — shows token activity over the last
+              30s. Only rendered when there are samples with any tokens;
+              all-zero sparklines read as dead noise. */}
+          {throughputSamples.some((t) => t > 0) && (
+            <MiniSparkline
+              samples={throughputSamples}
+              width={36}
+              height={12}
+              accent={st.color}
+            />
+          )}
         </div>
       </button>
 
@@ -205,6 +251,21 @@ export function AgentRow({
               </div>
             </div>
 
+            {/* Throughput sparkline — 30s lookback in the expanded detail */}
+            {throughputSamples.some((t) => t > 0) && (
+              <div className="space-y-1">
+                <div className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
+                  throughput (30s)
+                </div>
+                <MiniSparkline
+                  samples={throughputSamples}
+                  width={200}
+                  height={20}
+                  accent={st.color}
+                />
+              </div>
+            )}
+
             <div className="flex items-center gap-3 font-mono text-micro text-fog-600">
               <Popover
                 side="right"
@@ -219,6 +280,9 @@ export function AgentRow({
                       <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">cost</span><span className="text-fog-100">${agent.costUsed.toFixed(2)}</span></div>
                       <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">sent</span><span className="text-fog-100">{agent.messagesSent}</span></div>
                       <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">received</span><span className="text-fog-100">{agent.messagesRecv}</span></div>
+                      {elapsedMs != null && elapsedMs > 0 && (
+                        <div className="flex justify-between"><span className="text-fog-600 uppercase tracking-wider text-[10px]">elapsed</span><span className="text-fog-100">{fmtElapsed(elapsedMs)}</span></div>
+                      )}
                     </div>
                   </div>
                 )}

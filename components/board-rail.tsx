@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import {
   deriveBoardAgents,
   type LiveBoard,
@@ -96,10 +96,71 @@ const SECTIONS: Section[] = [
   { key: 'in-progress', label: 'in-progress', matches: ['in-progress'], tone: 'text-mint',    dot: 'bg-mint' },
   { key: 'claimed',     label: 'claimed',     matches: ['claimed'],     tone: 'text-iris',    dot: 'bg-iris' },
   { key: 'open',        label: 'open',        matches: ['open'],        tone: 'text-fog-300', dot: 'bg-fog-500' },
-  { key: 'stale',       label: 'stale',       matches: ['stale'],       tone: 'text-amber',   dot: 'bg-amber' },
+  { key: 'stale',       label: 'stale',       matches: ['stale'],       tone: 'text-amber',   dot: 'bg-amber', collapsed: true },
   { key: 'blocked',     label: 'blocked',     matches: ['blocked'],     tone: 'text-amber',   dot: 'bg-amber' },
   { key: 'done',        label: 'done',        matches: ['done'],        tone: 'text-fog-500', dot: 'bg-fog-600', collapsed: true },
 ];
+
+function PostQuestion({ swarmRunID }: { swarmRunID: string }) {
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [posting, setPosting] = useState(false);
+
+  const submit = useCallback(async () => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    setPosting(true);
+    try {
+      await fetch(
+        `/api/swarm/run/${encodeURIComponent(swarmRunID)}/board/items`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ kind: 'question', content: trimmed }),
+        },
+      );
+      setDraft('');
+      setOpen(false);
+    } catch { console.warn('board item post failed'); }
+    setPosting(false);
+  }, [draft, swarmRunID]);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="font-mono text-micro uppercase tracking-widest2 text-fog-600 hover:text-fog-200 transition-colors cursor-pointer"
+        title="post a question for agents or the human"
+      >
+        + ask
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="text"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false); }}
+        placeholder="type a question…"
+        autoFocus
+        disabled={posting}
+        className="flex-1 min-w-0 bg-ink-700 border border-amber/40 rounded-sm px-1.5 font-mono text-[11px] text-fog-100 outline-none focus:border-amber"
+      />
+      <button
+        type="button"
+        onClick={submit}
+        disabled={posting || !draft.trim()}
+        className="font-mono text-[9px] uppercase tracking-widest2 text-amber hover:text-amber/80 disabled:opacity-40 cursor-pointer"
+      >
+        post
+      </button>
+    </div>
+  );
+}
 
 export function BoardRail({
   swarmRunID,
@@ -109,6 +170,8 @@ export function BoardRail({
   roleNames,
   pattern,
   heat = [],
+  onSelectAgent,
+  selectedAgentId,
 }: {
   swarmRunID: string;
   // Live data passed in from a parent that owns the SSE subscription.
@@ -128,6 +191,12 @@ export function BoardRail({
   // Per-file heat data for the stigmergy decoration. Empty array →
   // no decoration rendered.
   heat?: FileHeat[];
+  // Cross-panel linking: clicking an owner glyph selects the agent in
+  // the roster and switches to that tab.
+  onSelectAgent?: (agentId: string) => void;
+  // Cross-panel linking: when an agent is selected elsewhere (roster,
+  // plan), dim board items not owned by that agent.
+  selectedAgentId?: string | null;
 }) {
   const items = live.items ?? [];
 
@@ -234,6 +303,9 @@ export function BoardRail({
                   owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) ?? null : null}
                   heatScore={heatScoreById.get(item.id) ?? 0}
                   maxHeatScore={maxHeatScore}
+                  swarmRunID={swarmRunID}
+                  onSelectAgent={onSelectAgent}
+                  dimmed={!!selectedAgentId && item.ownerAgentId !== selectedAgentId}
                 />
               ))
             )}
@@ -254,6 +326,9 @@ export function BoardRail({
         full board
         <span className="text-fog-700 group-hover:text-fog-400">→</span>
       </Link>
+      <div className="h-6 hairline-t px-3 flex items-center">
+        <PostQuestion swarmRunID={swarmRunID} />
+      </div>
     </>
   );
 

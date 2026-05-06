@@ -150,6 +150,7 @@ export const ALL_PATTERNS: readonly SwarmPattern[] = [
   'orchestrator-worker',
   'debate-judge',
   'critic-loop',
+  'pipeline',
 ];
 
 export function viewHasContent(view: RunView, ctx: ViewContentContext): boolean {

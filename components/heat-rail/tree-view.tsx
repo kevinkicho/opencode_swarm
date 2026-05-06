@@ -25,6 +25,8 @@ export function HeatTreeView({
   agentBySession,
   diffStatsByPath,
   onSelect,
+  onSelectAgent,
+  highlightSessionIds,
   coldPaths,
   coldLoading,
   coldError,
@@ -35,6 +37,8 @@ export function HeatTreeView({
   agentBySession: Map<string, Agent>;
   diffStatsByPath: DiffStatsByPath;
   onSelect?: (heat: FileHeat) => void;
+  onSelectAgent?: (id: string) => void;
+  highlightSessionIds: Set<string> | null;
   coldPaths: readonly string[] | null;
   coldLoading: boolean;
   coldError: string | null;
@@ -113,6 +117,12 @@ export function HeatTreeView({
           isExpanded={node.type === 'dir' && expanded.has(node.fullPath)}
           onToggle={() => toggle(node.fullPath)}
           onSelectFile={onSelect}
+          onSelectAgent={onSelectAgent}
+          dimmed={
+            highlightSessionIds && node.heat
+              ? !node.heat.sessionIDs.some((sid) => highlightSessionIds.has(sid))
+              : false
+          }
         />
       ))}
     </ul>
@@ -127,6 +137,8 @@ function HeatTreeRow({
   isExpanded,
   onToggle,
   onSelectFile,
+  onSelectAgent,
+  dimmed = false,
 }: {
   node: TreeNode;
   depth: number;
@@ -136,6 +148,8 @@ function HeatTreeRow({
   isExpanded: boolean;
   onToggle: () => void;
   onSelectFile?: (heat: FileHeat) => void;
+  onSelectAgent?: (id: string) => void;
+  dimmed?: boolean;
 }) {
   const intensity = node.editCount / maxCount;
   const barTone =
@@ -181,15 +195,19 @@ function HeatTreeRow({
                   touched by
                 </span>
                 {touchers.map((a) => (
-                  <span
+                  <button
                     key={a.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectAgent?.(a.id);
+                    }}
                     className={clsx(
-                      'inline-flex items-center h-4 px-1 rounded-sm font-mono text-[9px] leading-none',
+                      'inline-flex items-center h-4 px-1 rounded-sm font-mono text-[9px] leading-none cursor-pointer hover:opacity-80 transition',
                       accentBadge[a.accent],
                     )}
                   >
                     {a.name}
-                  </span>
+                  </button>
                 ))}
               </div>
             )}
@@ -207,7 +225,10 @@ function HeatTreeRow({
               handleClick();
             }
           }}
-          className="h-5 px-3 grid items-center gap-1.5 cursor-pointer hover:bg-ink-800/40 transition"
+          className={clsx(
+            'h-5 px-3 grid items-center gap-1.5 cursor-pointer hover:bg-ink-800/40 transition',
+            dimmed && 'opacity-40',
+          )}
           style={{
             gridTemplateColumns: `${indent}px 12px 16px minmax(0, 1fr) 32px 36px`,
           }}
@@ -236,7 +257,7 @@ function HeatTreeRow({
             {node.name}
             {isDir && (
               <span className="ml-1 text-fog-700 normal-case text-[9px]">
-                {node.fileCount} file{node.fileCount === 1 ? '' : 's'}
+                {node.fileCount} file{node.fileCount === 1 ? '' : 's'} · {node.editCount} edit{node.editCount === 1 ? '' : 's'}
               </span>
             )}
           </span>

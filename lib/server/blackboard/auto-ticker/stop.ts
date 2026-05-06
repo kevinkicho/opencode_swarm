@@ -104,10 +104,14 @@ export function stopAutoTicker(
 
     try {
       const { generateRollupById } = await import('../../memory/rollup');
-      await generateRollupById(swarmRunID);
+      const result = await generateRollupById(swarmRunID);
       console.log(
         `[board/auto-ticker] ${swarmRunID}: rollup generated post-stop`,
       );
+      if (result && meta) {
+        const { appendMemoryEntry, entryFromRetro } = await import('../../memory/memory-store');
+        await appendMemoryEntry(meta.workspace, entryFromRetro(result.retro));
+      }
     } catch (err) {
       console.warn(
         `[board/auto-ticker] ${swarmRunID}: rollup generation failed:`,

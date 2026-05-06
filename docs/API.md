@@ -77,6 +77,18 @@ Create a new multi-session run.
   enableVerifierGate?: boolean;    // opt-in Playwright verifier (any pattern)
   workspaceDevUrl?: string;        // required when enableVerifierGate=true
   continuationOf?: string;         // prior swarmRunID — inherits workspace + source
+  pipelineConfig?: {               // required when pattern='pipeline'
+    preset?: 'explore-then-execute' | 'deliberate-then-execute'
+           | 'explore-deliberate-execute' | 'explore-and-validate'
+           | 'explore-judge-execute';
+    phases?: Array<{
+      pattern: 'blackboard' | 'map-reduce' | 'council'
+             | 'orchestrator-worker' | 'debate-judge' | 'critic-loop';
+      teamSize?: number;
+      directive?: string;
+      workspace?: string;             // per-phase workspace override; inherits pipeline workspace if unset
+    }>;
+  };
 }
 ```
 
@@ -85,6 +97,18 @@ Create a new multi-session run.
 - If `workspace` is set, it must match the prior run's workspace (400 otherwise — prevents silent forks)
 - `source` is inherited when unset
 - `pattern`, `directive`, `teamSize`, `bounds` are NOT inherited — those are deliberate per-run choices
+
+**Pipeline semantics.** When `pattern='pipeline'`, `pipelineConfig` is required.
+Each phase is a standalone swarm run linked via `continuationOf`. The pipeline
+coordinator waits for each phase to complete, synthesizes output (findings,
+completed todos, memory lessons) into a directive for the next phase, and
+creates it as a continuation run. Presets:
+- `explore-then-execute`: map-reduce → blackboard
+- `deliberate-then-execute`: council → orchestrator-worker
+- `explore-deliberate-execute`: map-reduce → council → orchestrator-worker
+- `explore-and-validate`: map-reduce → critic-loop
+- `explore-judge-execute`: map-reduce → debate-judge → blackboard
+Custom: pass `phases` (2–4 entries with pattern + optional teamSize/directive).
 
 **Response 201**
 ```ts
@@ -324,6 +348,68 @@ the important fields are `consecutiveIdle`, `stopped`, `stopReason`,
 
 `state: 'none'` means never-started (distinct from `stopped: true`).
 
+### `PATCH /api/swarm/run/{swarmRunID}/board/items/{itemId}`
+
+Update a board item's content. Only `content` is mutable through this
+endpoint; status transitions must go through the coordinator's
+`transitionStatus()` (CAS-guarded, emits SSE events). Content edits are
+user-initiated corrections that don't change the item's lifecycle state.
+
+**Body**
+```ts
+{ content: string }   // non-empty, trimmed
+```
+
+**Response 200:** the updated `BoardItem` JSON. `400` for empty/missing
+content. `404` for unknown run or item.
+
+The store emits `item.updated` on the SSE bus so connected clients see
+the change without polling.
+
+### `POST /api/swarm/run/{swarmRunID}/board/items/{itemId}/transition`
+
+CAS-guarded status transition for board items. Mirrors the same
+`transitionStatus()` the coordinator uses server-side, so the CAS
+guarantees are identical.
+
+**Body**
+```ts
+{
+  from?: BoardItemStatus | BoardItemStatus[],  // defaults to current status
+  to: BoardItemStatus,                          // required
+  ownerAgentId?: string,                         // optional
+  note?: string,                                // optional
+}
+```
+
+Valid statuses: `open`, `claimed`, `in-progress`, `done`, `stale`, `blocked`.
+
+**Response 200:** `{ ok: true, item: BoardItem }`
+**Response 409:** `{ ok: false, currentStatus: BoardItemStatus | null }` — CAS
+lost (someone else transitioned first) or item missing.
+
+The store emits `item.updated` on the SSE bus on success.
+
+### `POST /api/swarm/run/{swarmRunID}/board/items`
+
+Create a new board item from the UI. Primarily used for posting `question`
+items that block until a human answers (human-in-the-loop gate).
+
+**Body**
+```ts
+{
+  kind: 'question' | 'todo' | 'claim' | 'finding' | 'criterion',
+  content: string,   // non-empty
+  note?: string,      // optional
+}
+```
+
+**Response 201:** the created `BoardItem`. `400` for invalid kind or empty content.
+`404` for unknown run.
+
+Defaults: `question → open`, `todo → open`, `claim → in-progress`,
+`finding → done`, `criterion → open`.
+
 ### `POST /api/swarm/run/{swarmRunID}/board/ticker`
 
 Start / stop the auto-ticker.
@@ -366,6 +452,41 @@ Run the L1 → L2 reducer. Generates per-session `AgentRollup` and a
 **Response 200 (all-runs):** `{ results: Array<...> }`.
 
 See DESIGN.md §7.4 for the `AgentRollup` / `RunRetro` schemas.
+
+### `GET /api/swarm/run/compare?ids=id1,id2,...`
+
+Batch-fetch retro data for cross-run comparison. Returns one object per
+requested ID in the same order. Missing or no-rollup runs include a
+null `retro`.
+
+**Query params:**
+- `ids` (required): comma-separated swarm run IDs, 2–10
+
+**Response 200:**
+```ts
+Array<{
+  swarmRunID: string;
+  retro: RunRetro | null;
+  agentRollups: AgentRollup[];
+  rollupCount: number;
+}>
+```
+
+**Errors:** 400 if fewer than 2 or more than 10 IDs, or missing `ids` param.
+
+### `GET /api/swarm/memory/lessons?workspace=...`
+
+Fetch latest lessons for a workspace (used by memory-seeded next runs).
+
+**Query params:**
+- `workspace` (required): absolute path of the git workspace
+
+**Response 200:**
+```ts
+{ workspace: string; lessons: Array<{ tag: string; text: string }> }
+```
+
+**Errors:** 400 if `workspace` is missing.
 
 <!-- HARDENING_PLAN.md#C9 — `POST /api/swarm/memory/reindex` and
 `POST /api/swarm/recall` removed 2026-04-26. Both had zero in-repo

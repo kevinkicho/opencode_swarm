@@ -17,6 +17,7 @@ import {
 import { isCrossLane } from '@/lib/part-taxonomy';
 import { useBackendStale } from '@/lib/opencode/live';
 import { usePlayback, phaseFor } from '@/lib/playback-context';
+import { PlaybackControls } from './playback-controls';
 
 const LANE_WIDTH = 168;
 const ROW_HEIGHT = 44;
@@ -320,6 +321,9 @@ export function SwarmTimeline({
         </div>
       </div>
       <ScrollToBottomButton scrollRef={scrollRef} />
+      <div className="absolute bottom-16 left-3 z-30">
+        <PlaybackControls />
+      </div>
     </section>
   );
 }

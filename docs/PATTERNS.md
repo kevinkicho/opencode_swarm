@@ -6,9 +6,10 @@ ideology — both self-organizing and hierarchical patterns are first-class.
 A run = one or more opencode sessions. The pattern controls how those
 sessions coordinate and which roles, if any, are pinned.
 
-The current pattern set is **6 + 1 native**:
+The current pattern set is **6 + 1 native + 1 composite**:
 `blackboard · council · orchestrator-worker · debate-judge · critic-loop
-· map-reduce`, plus `none` (single-session opencode native).
+· map-reduce`, plus `none` (single-session opencode native) and
+`pipeline` (multi-phase chain of existing patterns).
 `deliberate-execute` and `role-differentiated` were cut as
 non-load-bearing after the original 8-pattern sweep.
 
@@ -106,6 +107,45 @@ bounded. Optional synthesis-critic enables a post-reduce review loop.
 "survey N approaches and combine."
 
 **Sizing.** ≤5. Synthesizer context can't hold more drafts.
+
+---
+
+## Composite
+
+### pipeline
+
+Chains 2–4 existing pattern phases into a multi-phase workflow. Each phase
+is a standalone swarm run (with its own sessions, coordinator, and
+swarmRunID) linked via `continuationOf`. The pipeline coordinator waits
+for each phase to complete, synthesizes its output into a directive for
+the next phase, and creates the next run.
+
+**Presets.**
+- `explore-then-execute`: map-reduce → blackboard
+- `deliberate-then-execute`: council → orchestrator-worker
+- `explore-deliberate-execute`: map-reduce → council → orchestrator-worker
+- `explore-and-validate`: map-reduce → critic-loop
+- `explore-judge-execute`: map-reduce → debate-judge → blackboard
+
+Custom: pass `phases[]` with any 2–4 patterns and optional `teamSize` /
+`directive` per phase.
+
+**Mechanism.** The pipeline run itself is a thin watcher (1 session,
+pattern=`pipeline`). It creates phase-1 as a continuation run, polls until
+the phase completes (board items done + finding present or all sessions
+idle), reads the phase's findings + memory lessons, synthesizes a
+handoff directive, and creates phase-2 with `continuationOf` pointing to
+phase-1. Repeat for each phase.
+
+**Why chain, not merge.** Each phase is independent — a failed explore
+phase doesn't prevent a manual execute phase. The memory store is
+per-workspace (not per-run), so lessons from phase-1 automatically seed
+phase-2's intro directive. The UI already renders chains via
+`continuationOf`.
+
+**Files.** `lib/server/pipeline.ts`, coordinator + phase creation.
+
+**Sizing.** Each phase has its own teamSize. The pipeline session is always 1.
 
 ---
 

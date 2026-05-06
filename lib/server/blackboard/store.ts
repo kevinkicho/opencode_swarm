@@ -92,6 +92,25 @@ function hydrate(row: BoardRow): BoardItem {
   return item;
 }
 
+export function updateBoardItemContent(
+  swarmRunID: string,
+  itemId: string,
+  content: string,
+): BoardItem | null {
+  if (!content.trim()) return null;
+  const db = blackboardDb();
+  const result = db
+    .prepare(
+      `UPDATE board_items SET content = ? WHERE swarm_run_id = ? AND id = ?`,
+    )
+    .run(content, swarmRunID, itemId);
+  if (result.changes === 0) return null;
+  const item = getBoardItem(swarmRunID, itemId);
+  if (!item) return null;
+  emitBoardEvent(swarmRunID, { type: 'item.updated', item });
+  return item;
+}
+
 // Board view: every item for a run, newest-first. The UI (board-preview
 // today, live view later) does its own column grouping and filtering;
 // returning the flat list keeps the API surface narrow.

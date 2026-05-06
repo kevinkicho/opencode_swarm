@@ -25,6 +25,7 @@ import { postSessionMessageServer } from './opencode-server';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { runPlannerSweep } from './blackboard/planner';
 import { getRun } from './swarm-registry';
+import { buildLessonsBlock } from './lesson-inject';
 
 // The name carried in opencode's `info.agent` for the planner session.
 // Surfaces in the transform.ts-derived Agent so the roster shows a
@@ -116,7 +117,9 @@ export async function runOrchestratorWorkerKickoff(
   // 'build' is opencode's full-tool default agent; the `model` field
   // overrides build's configured default model so we still pin to the
   // user's teamModels[0] choice.
-  const intro = buildOrchestratorIntroPrompt(meta.directive, workerCount);
+  const introBase = buildOrchestratorIntroPrompt(meta.directive, workerCount);
+  const lessons = await buildLessonsBlock(meta.workspace);
+  const intro = lessons ? lessons + '\n\n' + introBase : introBase;
   try {
     await postSessionMessageServer(
       orchestratorSessionID,

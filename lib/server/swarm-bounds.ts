@@ -21,6 +21,7 @@
 import 'server-only';
 
 import type { SwarmRunMeta } from '@/lib/swarm-run-types';
+import { recordPartialOutcome } from './degraded-completion';
 
 export const DEFAULT_NONTICKER_WALLCLOCK_MINUTES = 60;
 
@@ -65,4 +66,37 @@ export function formatWallClockState(
   const cap = effectiveMinutesCap(meta);
   const elapsedMin = Math.round((nowMs - startedAtMs) / 60_000);
   return `${elapsedMin}min/${cap}min cap`;
+}
+
+// Combined wall-clock check + log + partial-outcome record.
+//
+// Replaces the 4-copy pattern in council, debate-judge, critic-loop,
+// and map-reduce where each orchestrator repeats:
+//   if (isWallClockExpired(...)) {
+//     console.warn(`[ctx] run ${id}: wall-clock cap — aborting`);
+//     recordPartialOutcome(id, { pattern, phase, reason: 'wall-clock-cap', summary });
+//     return;   ← caller's return
+//   }
+//
+// Returns true when expired (caller should return / abort the loop).
+// The summary is composed by the caller from its accumulated state —
+// we just hand it to recordPartialOutcome.
+export function checkWallClockExpired(
+  swarmRunID: string,
+  meta: Pick<SwarmRunMeta, 'bounds'> & { createdAt: number; pattern: string },
+  phase: string,
+  summary: string,
+  nowMs: number = Date.now(),
+): boolean {
+  if (!isWallClockExpired(meta, meta.createdAt, nowMs)) return false;
+  console.warn(
+    `[${meta.pattern}] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt, nowMs)}) — aborting at ${phase}`,
+  );
+  recordPartialOutcome(swarmRunID, {
+    pattern: meta.pattern,
+    phase: `${phase} (wall-clock)`,
+    reason: 'wall-clock-cap',
+    summary,
+  });
+  return true;
 }

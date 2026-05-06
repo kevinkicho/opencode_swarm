@@ -1,14 +1,16 @@
 'use client';
 
 import clsx from 'clsx';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Agent, AgentMessage, SwarmPattern, TodoItem } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
 import type { LiveBoard, LiveTicker } from '@/lib/blackboard/live';
 import type { LiveSwarmSessionSlot } from '@/lib/opencode/live';
+import type { SwarmRunListRow, SwarmRunMeta } from '@/lib/swarm-run-types';
 import { PlanRail } from './plan-rail';
 import { AgentRoster } from './agent-roster';
 import { BoardRail } from './board-rail';
+import { PhaseTracker, resolvePhases } from './phase-tracker';
 // Pattern-specific rails (contracts/iterations/debate/roles/map/
 // council/phases/strategy) moved 2026-04-24 to the main viewport in
 // app/page.tsx. The left panel now holds only the cross-pattern
@@ -19,8 +21,8 @@ import { IconPlus } from './icons';
 
 // 2026-04-24: pattern-specific tabs moved out of the left panel into
 // the main viewport. Left panel keeps only the cross-pattern
-// surfaces (plan / roster / board / heat).
-export type Tab = 'plan' | 'roster' | 'board' | 'heat';
+// surfaces (plan / roster / board / heat) plus pipeline phases.
+export type Tab = 'plan' | 'roster' | 'board' | 'heat' | 'phases';
 
 export function LeftTabs({
   plan,
@@ -44,8 +46,11 @@ export function LeftTabs({
   ticker,
   boardRoleNames,
   boardPattern,
+  pattern,
   liveSlots,
   runSessionIDs,
+  allRuns,
+  swarmRunMeta,
 }: {
   plan: TodoItem[];
   agents: Agent[];
@@ -97,6 +102,15 @@ export function LeftTabs({
   boardRoleNames?: ReadonlyMap<string, string>;
   // Pattern of the current run, forwarded to BoardRail.
   boardPattern?: SwarmPattern;
+  // Pattern of the current run, forwarded to PlanRail for empty-state
+  // messaging. When absent (no active run), plan shows a generic message.
+  pattern?: SwarmPattern;
+  // All run rows from useSwarmRuns, used by PhaseTracker to resolve
+  // continuation chains. Only needed when pattern === 'pipeline'.
+  allRuns?: SwarmRunListRow[];
+  // The pipeline run's meta, needed to resolve phase configs. Absent for
+  // non-pipeline runs.
+  swarmRunMeta?: SwarmRunMeta | null;
 }) {
   const [localTab, setLocalTab] = useState<Tab>('plan');
   const tab = tabProp ?? localTab;
@@ -104,6 +118,13 @@ export function LeftTabs({
     if (onTabChange) onTabChange(t);
     else setLocalTab(t);
   };
+
+  const isPipeline = pattern === 'pipeline';
+  const pipelineRows = useMemo(() => {
+    if (!isPipeline || !swarmRunMeta || !allRuns) return [];
+    return resolvePhases(swarmRunMeta, allRuns);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPipeline, swarmRunMeta, allRuns]);
 
   // If the active run stops being a blackboard (or we switch to a
   // different run that has no board), 'board' becomes an invalid
@@ -120,15 +141,24 @@ export function LeftTabs({
   // the flip only fires once on the 0→>0 transition. Subsequent user
   // clicks on 'plan' stick.
   const prevHeatLenRef = useRef(heat.length);
+  const prevIsPipelineRef = useRef(isPipeline);
   useEffect(() => {
     if (!boardSwarmRunID && tab === 'board') setTab('plan');
     if (heat.length === 0 && tab === 'heat') setTab('plan');
+    if (!isPipeline && tab === 'phases') setTab('plan');
+    // Auto-promote plan→phases only on initial pipeline detection,
+    // not on every render while pipeline is active (same shape as
+    // the plan→heat auto-promote below).
+    if (!prevIsPipelineRef.current && isPipeline && tab === 'plan') {
+      setTab('phases');
+    }
     if (prevHeatLenRef.current === 0 && heat.length > 0 && tab === 'plan') {
       setTab('heat');
     }
     prevHeatLenRef.current = heat.length;
+    prevIsPipelineRef.current = isPipeline;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boardSwarmRunID, heat.length, tab]);
+  }, [boardSwarmRunID, heat.length, isPipeline, tab]);
 
   const planCompleted = plan.filter((i) => i.status === 'completed').length;
   const agentsActive = agents.filter(
@@ -154,7 +184,7 @@ export function LeftTabs({
           // (singleton); standardizing on a single count keeps the tab
           // strip readable. Completion progress lives in the rail's
           // own header.
-          count={plan.length > 0 ? String(plan.length) : ''}
+          count={plan.length > 0 ? `${planCompleted}/${plan.length}` : ''}
           tooltip={
             <div className="space-y-0.5 max-w-[260px]">
               <div className="font-mono text-[11px] text-fog-200">plan</div>
@@ -190,6 +220,22 @@ export function LeftTabs({
                 <div className="font-mono text-[11px] text-fog-200">blackboard</div>
                 <div className="font-mono text-[10.5px] text-fog-500">
                   shared board — items claimed via CAS, status transitions live-streamed.
+                </div>
+              </div>
+            }
+          />
+        )}
+        {isPipeline && (
+          <TabButton
+            active={tab === 'phases'}
+            onClick={() => setTab('phases')}
+            label="phases"
+            count={pipelineRows.length > 0 ? String(pipelineRows.length) : ''}
+            tooltip={
+              <div className="space-y-0.5 max-w-[260px]">
+                <div className="font-mono text-[11px] text-fog-200">phases</div>
+                <div className="font-mono text-[10.5px] text-fog-500">
+                  pipeline phase chain — each phase is a separate run linked via continuation. click a row to navigate.
                 </div>
               </div>
             }
@@ -246,6 +292,10 @@ export function LeftTabs({
             agents={agents}
             onJump={onJump}
             focusTodoId={focusTodoId ?? null}
+            pattern={pattern}
+            onSelectAgent={(id) => { onSelectAgent(id); setTab('roster'); }}
+            selectedAgentId={selectedAgentId}
+            runStartMs={swarmRunMeta?.createdAt ?? undefined}
             embedded
           />
         )}
@@ -270,18 +320,25 @@ export function LeftTabs({
             roleNames={boardRoleNames}
             pattern={boardPattern}
             heat={heat}
+            onSelectAgent={(id) => { onSelectAgent(id); setTab('roster'); }}
+            selectedAgentId={selectedAgentId}
           />
         )}
         {tab === 'heat' && (
-          <HeatRail
+           <HeatRail
             heat={heat}
             agents={agents}
             workspace={workspace}
             diffStatsByPath={diffStatsByPath}
             onSelect={onSelectFileHeat}
+            onSelectAgent={(id) => { onSelectAgent(id); setTab('roster'); }}
+            selectedAgentId={selectedAgentId}
             embedded
             swarmRunID={boardSwarmRunID ?? undefined}
           />
+        )}
+        {tab === 'phases' && isPipeline && (
+          <PhaseTracker phases={pipelineRows} currentSwarmRunID={swarmRunMeta?.swarmRunID} />
         )}
       </div>
     </section>

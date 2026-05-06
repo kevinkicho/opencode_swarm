@@ -18,6 +18,7 @@ import { runMapReduceSynthesis } from '../../map-reduce';
 import { runOrchestratorWorkerKickoff } from '../../orchestrator-worker';
 import { runCriticLoopKickoff } from '../../critic-loop';
 import { runDebateJudgeKickoff } from '../../debate-judge';
+import { runPipelineKickoff } from '../../pipeline';
 import type { SwarmRunRequest } from '../../../swarm-run-types';
 import type { SwarmPattern } from '../../../swarm-types';
 
@@ -85,6 +86,14 @@ export function invokeKickoff(
         label: 'debate-judge',
         promise: runDebateJudgeKickoff(runID, {
           maxRounds: parsed.debateMaxRounds,
+        }),
+      };
+
+    case 'pipeline':
+      return {
+        label: 'pipeline',
+        promise: runPipelineKickoff(runID, {
+          pipelineConfig: parsed.pipelineConfig!,
         }),
       };
   }

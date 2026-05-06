@@ -31,7 +31,6 @@ import 'server-only';
 
 import { OLLAMA_URL } from '../../config';
 
-const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
 const WARMUP_TIMEOUT_MS = 120_000; // 2 min — covers nemotron's ~65s + buffer
 const WARMUP_PROMPT = 'hi';
 

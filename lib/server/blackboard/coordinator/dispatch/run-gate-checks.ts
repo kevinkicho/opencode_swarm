@@ -1,5 +1,5 @@
 //
-// runGateChecks — between "turn completed" and "mark done", run four
+// runGateChecks — between "turn completed" and "mark done", run five
 // gates in order. Any rejection bounces the item to stale; pass-through
 // hands the AwaitedContext forward extended with computed fileHashes.
 //
@@ -18,6 +18,9 @@
 //   4. verifier gate (opt-in via meta.enableVerifierGate +
 //      todo.requiresVerification) — Playwright-grounded check that
 //      the user-observable claim actually rendered. Same fail-open.
+//   5. build conformance gate (opt-in via meta.enableBuildGate) —
+//      runs `tsc --noEmit` in the workspace. Only blocks on genuine
+//      typecheck failures. Timeout/execution errors fail open.
 //
 // Computes fileHashes for the worker's edited paths regardless of
 // gate path so commitDone has them when gates fail-open and the
@@ -27,6 +30,7 @@ import 'server-only';
 
 import path from 'node:path';
 
+import type { SwarmRunMeta } from '@/lib/swarm-run-types';
 import { reviewWorkerDiff } from '../../critic';
 import { verifyWorkerOutcome } from '../../verifier';
 import { transitionStatus } from '../../store';
@@ -36,12 +40,30 @@ import {
   sha7,
 } from '../path-utils';
 import { retryOrStale } from '../retry';
+import { runBuildGate } from '../../build-gate';
+import { rollbackEditedFiles } from '../../auto-rollback';
 import type { TickOutcome } from '../types';
 import type { AwaitedContext, GatedContext } from './_context';
 
 export type GateResult =
   | { kind: 'fail'; outcome: TickOutcome }
   | { kind: 'ok'; context: GatedContext };
+
+async function staleRollback(
+  meta: SwarmRunMeta,
+  editedPaths: string[],
+): Promise<void> {
+  if (editedPaths.length === 0) return;
+  const result = await rollbackEditedFiles({
+    workspace: meta.workspace,
+    editedPaths,
+  });
+  if (result.failed.length > 0) {
+    console.warn(
+      `[coordinator] ${meta.swarmRunID}: rollback partial failure — ${result.failed.length}/${editedPaths.length} files could not be reverted`,
+    );
+  }
+}
 
 export async function runGateChecks(
   awaited: AwaitedContext,
@@ -89,6 +111,9 @@ export async function runGateChecks(
         staleSinceSha: driftedPaths[0],
       });
       if (rolled.ok) {
+        // Roll back the worker's own edits so the next claimant
+        // starts from a clean tree.
+        void staleRollback(meta, editedPaths);
         // Fire-and-forget a focused planner sweep so a replacement
         // todo lands in seconds rather than waiting for the next
         // periodic sweep.
@@ -193,6 +218,7 @@ export async function runGateChecks(
         note: `[critic-rejected] ${review.reason}`.slice(0, 200),
       });
       if (rejected.ok) {
+        void staleRollback(meta, editedPaths);
         return {
           kind: 'fail',
           outcome: {
@@ -237,6 +263,7 @@ export async function runGateChecks(
         note: `[verifier-rejected] ${v.reason}`.slice(0, 200),
       });
       if (rejected.ok) {
+        void staleRollback(meta, editedPaths);
         return {
           kind: 'fail',
           outcome: {
@@ -251,6 +278,43 @@ export async function runGateChecks(
     if (v.verdict === 'unclear') {
       console.log(
         `[coordinator] ${meta.swarmRunID}/${todo.id}: verifier returned 'unclear' (${v.reason}) — failing open`,
+      );
+    }
+  }
+
+  // 5. Build conformance gate (opt-in via meta.enableBuildGate).
+  // Runs `tsc --noEmit` in the workspace. Only blocks on genuine
+  // typecheck failures — timeout, missing tsc, and other execution
+  // errors fail open to 'unclear'.
+  if (meta.enableBuildGate && editedPaths.length > 0) {
+    const build = await runBuildGate({ workspace: meta.workspace });
+    if (build.verdict === 'fail') {
+      const note = `[build-failed] ${build.reason}`.slice(0, 200);
+      console.warn(
+        `[coordinator] ${meta.swarmRunID}/${todo.id}: ${note}`,
+        build.errorOutput ? `\n${build.errorOutput}` : '',
+      );
+      const rejected = transitionStatus(meta.swarmRunID, todo.id, {
+        from: 'in-progress',
+        to: 'stale',
+        note,
+      });
+      if (rejected.ok) {
+        void staleRollback(meta, editedPaths);
+        return {
+          kind: 'fail',
+          outcome: {
+            status: 'stale',
+            sessionID,
+            itemID: todo.id,
+            reason: `build-failed: ${build.reason}`,
+          },
+        };
+      }
+    }
+    if (build.verdict === 'unclear') {
+      console.log(
+        `[coordinator] ${meta.swarmRunID}/${todo.id}: build gate returned 'unclear' (${build.reason}) — failing open`,
       );
     }
   }

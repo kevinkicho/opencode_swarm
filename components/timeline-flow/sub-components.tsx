@@ -96,6 +96,9 @@ export function ChipCard({
           </span>
           <span className="flex-1 min-w-0 truncate text-[10.5px] text-fog-300 leading-none">
             {label}
+            {m.status === 'running' && !streaming && (
+              <span className="caret-blink text-fog-500 ml-0.5">▎</span>
+            )}
           </span>
           {right && (
             <span className="font-mono text-[9px] tabular-nums text-fog-600 shrink-0">
@@ -365,6 +368,9 @@ export function EventCard({
                   )}
                 >
                   {msg.title}
+                  {msg.status === 'running' && !streaming && (
+                    <span className="caret-blink text-fog-400 ml-0.5">▎</span>
+                  )}
                 </span>
                 {bodyRight && (
                   <span
@@ -375,6 +381,12 @@ export function EventCard({
                   </span>
                 )}
               </div>
+              {msg.status === 'running' && !streaming && msg.body && (
+                <div className="h-[13px] text-[10px] text-fog-400 truncate leading-tight">
+                  {msg.body.slice(-80)}
+                  <span className="caret-blink text-fog-500 ml-0.5">▎</span>
+                </div>
+              )}
             </div>
             {streaming && (
               <span

@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import { useEffect, useRef, useState } from 'react';
-import type { Agent, TodoItem, TodoStatus } from '@/lib/swarm-types';
+import type { Agent, SwarmPattern, TodoItem, TodoStatus } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 
 // Status is communicated via (1) the accent-stripe opacity — full tone for
@@ -51,6 +51,21 @@ const accentBadge: Record<Agent['accent'], string> = {
   amber: 'bg-amber/15 text-amber',
   fog: 'bg-fog-500/15 text-fog-400',
 };
+
+const accentBarTone: Record<TodoStatus, string> = {
+  pending: 'bg-fog-600',
+  in_progress: 'bg-molten',
+  completed: 'bg-mint',
+  failed: 'bg-rust',
+  abandoned: 'bg-fog-700',
+};
+
+function fmtWallClock(ms: number): string {
+  const d = new Date(ms);
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  return `${h}:${m}`;
+}
 
 // Plan content frequently arrives with a leading bracket-tag from the
 // blackboard planner (e.g. "[criterion] foo", "[files:src/x.ts] bar",
@@ -107,16 +122,21 @@ export function PlanRail({
   agents,
   onJump,
   focusTodoId = null,
+  pattern,
+  onSelectAgent,
+  selectedAgentId,
   embedded = false,
+  runStartMs,
 }: {
   items: TodoItem[];
   agents: Agent[];
   onJump: (messageId: string) => void;
-  // When a caller outside this component (e.g. a task card in the timeline)
-  // wants the plan to reveal a specific item, it sets this prop. The row
-  // scrolls into view and flashes briefly. Clear by setting back to null.
   focusTodoId?: string | null;
+  pattern?: SwarmPattern;
+  onSelectAgent?: (agentId: string) => void;
+  selectedAgentId?: string | null;
   embedded?: boolean;
+  runStartMs?: number;
 }) {
   const agentById = new Map(agents.map((a) => [a.id, a]));
   const completed = items.filter((i) => i.status === 'completed').length;
@@ -127,18 +147,49 @@ export function PlanRail({
   // working on right now?", board answers "what's the full lifecycle
   // including stale + done?".
   const [showAll, setShowAll] = useState(false);
-  const visible = showAll
+  // Priority sort: in_progress first (what's happening now), then failed
+  // (needs attention), then pending (queued). Completed/abandoned go last
+  // when showAll is on. A stable sort key prevents re-order flicker when
+  // items transition between states.
+  const statusPriority: Record<TodoStatus, number> = {
+    in_progress: 0,
+    failed: 1,
+    pending: 2,
+    completed: 3,
+    abandoned: 4,
+  };
+  const visible = (showAll
     ? items
     : items.filter(
         (i) => i.status === 'pending' || i.status === 'in_progress' || i.status === 'failed',
-      );
+      )
+  ).slice().sort((a, b) => statusPriority[a.status] - statusPriority[b.status]);
   const hiddenCount = items.length - visible.length;
+
+  // Pattern-aware empty state. Non-board patterns (council, debate-judge,
+  // critic-loop, map-reduce, none) don't use the plan board — their
+  // coordination is round-based, not todo-based. Telling the user
+  // "no plan items yet" reads like a bug; "this pattern doesn't use the
+  // plan board" is honest.
+  const NO_PLAN_PATTERNS: SwarmPattern[] = [
+    'council', 'debate-judge', 'critic-loop', 'map-reduce', 'none', 'pipeline',
+  ];
+  const emptyMessage = items.length === 0 && pattern && NO_PLAN_PATTERNS.includes(pattern)
+    ? `${pattern} doesn't use the plan board`
+    : items.length === 0
+    ? 'no plan items yet'
+    : 'all items complete';
+
+  const nowMs = Date.now();
+  const spanStartMs = runStartMs ?? items.reduce((min, i) => Math.min(min, i.createdAtMs ?? nowMs), nowMs);
+  const spanEndMs = nowMs;
+  const spanDuration = Math.max(spanEndMs - spanStartMs, 1);
 
   const body = (
     <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
       {visible.length === 0 ? (
         <li className="px-3 py-3 font-mono text-micro uppercase tracking-widest2 text-fog-700">
-          {items.length === 0 ? 'no plan items yet' : 'all items complete'}
+          {emptyMessage}
         </li>
       ) : (
         visible.map((item) => (
@@ -148,6 +199,11 @@ export function PlanRail({
             owner={item.ownerAgentId ? agentById.get(item.ownerAgentId) : undefined}
             onJump={onJump}
             focused={focusTodoId === item.id}
+            onSelectAgent={onSelectAgent}
+            dimmed={!!selectedAgentId && item.ownerAgentId !== selectedAgentId}
+            runStartMs={runStartMs}
+            spanStartMs={spanStartMs}
+            spanEndMs={spanEndMs}
           />
         ))
       )}
@@ -216,16 +272,27 @@ function PlanRow({
   item,
   owner,
   onJump,
+  onSelectAgent,
   focused = false,
+  dimmed = false,
+  runStartMs,
+  spanStartMs,
+  spanEndMs,
 }: {
   item: TodoItem;
   owner?: Agent;
   onJump: (messageId: string) => void;
+  onSelectAgent?: (agentId: string) => void;
   focused?: boolean;
+  dimmed?: boolean;
+  runStartMs?: number;
+  spanStartMs: number;
+  spanEndMs: number;
 }) {
   const tone = statusTone[item.status];
   const contentColor = contentTone[item.status];
   const hasDelegation = !!item.taskMessageId;
+  const spanDuration = Math.max(spanEndMs - spanStartMs, 1);
   const rowRef = useRef<HTMLLIElement | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -245,7 +312,8 @@ function PlanRow({
       ref={rowRef}
       className={clsx(
         'relative transition-colors',
-        focused && 'bg-molten/15'
+        focused && 'bg-molten/15',
+        dimmed && 'opacity-40',
       )}
     >
       {/* Clickable row — toggles inline detail. Any action that needs to
@@ -313,15 +381,20 @@ function PlanRow({
         </span>
 
         {owner ? (
-          <Tooltip content={owner.name} side="top">
-            <span
+          <Tooltip content={`${owner.name} — click to select in roster`} side="top">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectAgent?.(owner.id);
+              }}
               className={clsx(
-                'shrink-0 mt-[1px] w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none cursor-default',
+                'shrink-0 mt-[1px] w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none cursor-pointer hover:opacity-80 transition',
                 accentBadge[owner.accent]
               )}
             >
               {owner.glyph}
-            </span>
+            </button>
           </Tooltip>
         ) : (
           <Tooltip content="not yet delegated" side="top">
@@ -350,7 +423,26 @@ function PlanRow({
             )}
             <span className="text-fog-700">·</span>
             <span className="text-fog-700">{item.id}</span>
+            {item.createdAtMs && (
+              <>
+                <span className="text-fog-700">·</span>
+                <span className="text-fog-700 normal-case">{fmtWallClock(item.createdAtMs)}</span>
+              </>
+            )}
           </div>
+
+          {/* Gantt bar — shows item creation time within the run timeline. */}
+          {item.createdAtMs && spanDuration > 0 && (
+            <div className="relative h-1.5 rounded-full bg-ink-800 overflow-hidden">
+              <div
+                className={clsx('absolute top-0 bottom-0 rounded-full', accentBarTone[item.status])}
+                style={{
+                  left: `${Math.max(0, Math.min(100, ((item.createdAtMs - spanStartMs) / spanDuration) * 100))}%`,
+                  width: `${Math.max(4, Math.min(96, ((spanEndMs - item.createdAtMs) / spanDuration) * 100))}%`,
+                }}
+              />
+            </div>
+          )}
 
           {/* Worker-left annotation (blackboard coordinator writes these on
               stale / skipped / blocked transitions). */}

@@ -23,6 +23,7 @@ import {
   deriveSlices,
   detectScopeImbalance,
 } from '../map-reduce';
+import { readRecentMemory, renderMemoryForSeed } from '../memory/memory-store';
 import type { SwarmRunRequest } from '../../swarm-run-types';
 import type { SwarmPattern } from '../../swarm-types';
 
@@ -31,6 +32,7 @@ const PATTERNS_WITH_CUSTOM_INTRO: ReadonlySet<SwarmPattern> = new Set([
   'orchestrator-worker',
   'debate-judge',
   'critic-loop',
+  'pipeline',
 ]);
 
 interface SessionSlot {
@@ -47,13 +49,18 @@ export async function dispatchInitialDirective(
   if (!parsed.directive || !parsed.directive.trim()) return;
 
   const directive = parsed.directive;
+
+  const memoryEntries = await readRecentMemory(parsed.workspace);
+  const memorySeed = renderMemoryForSeed(memoryEntries);
+
   let directives: string[];
 
   if (parsed.pattern === 'map-reduce') {
     const slices = await deriveSlices(parsed.workspace, sessions.length);
-    directives = sessions.map((_, i) =>
-      buildScopedDirective(directive, slices[i], i, sessions.length),
-    );
+    directives = sessions.map((_, i) => {
+      const scoped = buildScopedDirective(directive, slices[i], i, sessions.length);
+      return memorySeed ? memorySeed + '\n\n' + scoped : scoped;
+    });
     // Fire-and-forget: walks the slice dirs to detect >5x imbalance.
     // Non-blocking — kickoff doesn't wait, the WARN just lands in logs
     // a few hundred ms later for the operator to notice.
@@ -64,7 +71,8 @@ export async function dispatchInitialDirective(
       );
     });
   } else {
-    directives = sessions.map(() => directive);
+    const full = memorySeed ? memorySeed + '\n\n' + directive : directive;
+    directives = sessions.map(() => full);
   }
 
   // Team-model pinning for the first directive. The `sessions[i].idx`

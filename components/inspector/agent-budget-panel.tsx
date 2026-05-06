@@ -13,13 +13,14 @@
 // exists.
 
 import clsx from 'clsx';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Agent } from '@/lib/swarm-types';
 import { Tooltip } from '../ui/tooltip';
 import { compact } from '@/lib/format';
 
 export function BudgetPanel({ agent }: { agent: Agent }) {
   const [budget, setBudget] = useState<number>(agent.tokensBudget);
+  useEffect(() => { setBudget(agent.tokensBudget); }, [agent.tokensBudget]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string>(String(agent.tokensBudget));
   const dirty = budget !== agent.tokensBudget;
@@ -114,6 +115,18 @@ export function BudgetPanel({ agent }: { agent: Agent }) {
         </Tooltip>
         <Tooltip content="messages this agent has received" side="top">
           <span className="text-fog-500 cursor-help">recv {agent.messagesRecv}</span>
+        </Tooltip>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 font-mono text-micro tabular-nums">
+        <Tooltip content="input tokens (prompt + cache read + cache write)" side="top">
+          <span className="text-fog-500 cursor-help">in {compact(agent.tokensIn)}</span>
+        </Tooltip>
+        <Tooltip content="output tokens generated" side="top">
+          <span className="text-fog-500 cursor-help">out {compact(agent.tokensOut)}</span>
+        </Tooltip>
+        <Tooltip content="total tokens used" side="top">
+          <span className="text-fog-400 cursor-help">{compact(agent.tokensUsed)} total</span>
         </Tooltip>
       </div>
 

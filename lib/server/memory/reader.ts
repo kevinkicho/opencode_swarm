@@ -78,3 +78,28 @@ export function countRollups(swarmRunID: string): number {
     .get(swarmRunID) as { n: number };
   return row.n;
 }
+
+// Fetch just the lessons from the most recent RunRetro for a workspace.
+// Used by the new-run modal to seed the directive with lessons from the
+// previous run. Returns null when no retro exists for the workspace.
+export function getLatestLessonsForWorkspace(workspace: string): RunRetro['lessons'] | null {
+  const db = memoryDb();
+  const row = db
+    .prepare(
+      `SELECT payload FROM rollups
+       WHERE workspace = ? AND kind = 'retro'
+       ORDER BY closed_at DESC
+       LIMIT 1`,
+    )
+    .get(workspace) as { payload: string } | undefined;
+  if (!row) return null;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(row.payload);
+  } catch {
+    return null;
+  }
+  const checked = validateMemoryKindDiscriminator(raw);
+  if (!checked || checked.kind !== 'retro') return null;
+  return (raw as RunRetro).lessons ?? null;
+}

@@ -44,18 +44,22 @@ export async function finalizeRun(
  // populated on every stopped run without a manual POST to the rollup
  // endpoint (#7.Q20 + #7.Q24). Dynamic import keeps finalize-run.ts's
  // static deps small; a slow rollup doesn't gate finalize.
- void (async () => {
- try {
- const { generateRollupById } = await import('./memory/rollup');
- await generateRollupById(swarmRunID);
- console.log(
- `[${context}] ${swarmRunID}: rollup generated post-finalize`,
- );
- } catch (err) {
- console.warn(
- `[${context}] ${swarmRunID}: rollup generation failed:`,
- err instanceof Error ? err.message : String(err),
- );
- }
- })();
+  void (async () => {
+  try {
+    const { generateRollupById } = await import('./memory/rollup');
+    const result = await generateRollupById(swarmRunID);
+    console.log(
+      `[${context}] ${swarmRunID}: rollup generated post-finalize`,
+    );
+    if (result) {
+      const { appendMemoryEntry, entryFromRetro } = await import('./memory/memory-store');
+      await appendMemoryEntry(meta.workspace, entryFromRetro(result.retro));
+    }
+  } catch (err) {
+    console.warn(
+      `[${context}] ${swarmRunID}: rollup generation failed:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+})();
 }

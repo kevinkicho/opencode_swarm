@@ -155,6 +155,7 @@ export async function createRun(
     auditorModel: req.auditorModel,
     continuationOf: req.continuationOf,
     teamModels: extras.teamModels,
+    pipelineConfig: req.pipelineConfig,
   };
   // Insert into SQLite. The transaction makes the events.ndjson touch +
   // the registry insert appear as one operation to readers.

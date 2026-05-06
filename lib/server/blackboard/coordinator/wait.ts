@@ -77,8 +77,6 @@ const TOOL_LOOP_THRESHOLD = 10;
 const PROBE_AFTER_MS = 30 * 1000;
 const PROBE_INTERVAL_MS = 30 * 1000;
 const PROBE_TIMEOUT_MS = 5 * 1000;
-const DEFAULT_OLLAMA_URL = 'http://localhost:11434';
-
 async function probeOllamaPs(): Promise<{ ok: boolean; detail?: string }> {
   const base = OLLAMA_URL.replace(/\/$/, '');
   const ac = new AbortController();

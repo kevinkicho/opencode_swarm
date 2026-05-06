@@ -11,7 +11,41 @@
 
 import type { SwarmPattern } from './swarm-types';
 
-// --- POST /api/swarm/run ----------------------------------------------------
+// --- Pipeline phase definition ------------------------------------------------
+
+// A pipeline chains 2–4 existing pattern phases sequentially. Each phase
+// is a standalone swarm run linked via continuationOf. The pipeline
+// coordinator waits for each phase to complete, synthesizes its output
+// into the next phase's directive, and creates the next run.
+//
+// Presets (sensible combinations — users pick one; power users can write
+// a custom array):
+//   'explore-then-execute'  map-reduce → blackboard
+//   'deliberate-then-execute' council → orchestrator-worker
+//   'explore-deliberate-execute' map-reduce → council → orchestrator-worker
+//   'explore-and-validate' map-reduce → critic-loop
+//   'explore-judge-execute' map-reduce → debate-judge → blackboard
+//
+// Custom pipelines pass a phases[] array directly.
+
+export type PipelinePreset =
+  | 'explore-then-execute'
+  | 'deliberate-then-execute'
+  | 'explore-deliberate-execute'
+  | 'explore-and-validate'
+  | 'explore-judge-execute';
+
+export interface PipelinePhase {
+  pattern: Exclude<SwarmPattern, 'none' | 'pipeline'>;
+  teamSize?: number;
+  directive?: string;
+  workspace?: string;
+}
+
+export interface PipelineConfig {
+  preset?: PipelinePreset;
+  phases?: PipelinePhase[];
+}
 
 // Body accepted by the run endpoint. `pattern` and `workspace` are required;
 // most other fields below now drive runtime routing (teamModels per slot,
@@ -139,6 +173,15 @@ export interface SwarmRunRequest {
   // peer to keep the infrastructure simple (matches deliberate-
   // execute I1 pattern). Default false. Map-reduce pattern only.
   enableSynthesisCritic?: boolean;
+  // Build conformance gate. When true, after the critic and verifier
+  // gates pass, the coordinator runs `tsc --noEmit` in the workspace
+  // before marking a todo done. Items that fail typecheck bounce to
+  // stale with a `[build-failed]` note; the planner can rephrase or
+  // the worker retries. Fail-open on timeout or tsc not found. Only
+  // applies to items with at least one edited file (text-only and
+  // skip items are exempt). Default false — opt-in. Blackboard-family
+  // only (other patterns don't route through the coordinator).
+  enableBuildGate?: boolean;
   // Per-gate model pins (2026-04-24). Each gate's dedicated opencode
   // session spawns without a model hint (opencode picks default);
   // when set, the session's prompts carry `model: <id>` so the gate
@@ -178,6 +221,11 @@ export interface SwarmRunRequest {
   // Pattern / directive / teamSize / bounds / team roles are NOT
   // inherited — those are deliberate per-run choices.
   continuationOf?: string;
+  // Pipeline configuration. When pattern='pipeline', this drives the
+  // multi-phase coordinator: each phase runs as a separate swarm run
+  // linked via continuationOf. Either preset or phases must be provided.
+  // Ignored for all other patterns.
+  pipelineConfig?: PipelineConfig;
 }
 
 export interface SwarmRunBounds {
@@ -260,6 +308,8 @@ export interface SwarmRunMeta {
   enableSynthesisCritic?: boolean;
   // Synthesis-model pin mirror
   synthesisModel?: string;
+  // Build gate mirror. When true, tsc --noEmit runs before commits.
+  enableBuildGate?: boolean;
   // Per-gate model pins mirrored from the request. See SwarmRunRequest
   // for semantics. Each gate's reviewer module reads these from meta
   // and passes as `model` on its postSessionMessageServer calls.
@@ -273,6 +323,9 @@ export interface SwarmRunMeta {
   // partial-spawn-survivor remapping (see route.ts createRun call).
   // Absent → no pinning, opencode picks each session's model.
   teamModels?: string[];
+  // Pipeline config mirror. Set when pattern='pipeline'; absent for
+  // all other patterns.
+  pipelineConfig?: PipelineConfig;
 }
 
 // --- response shape ---------------------------------------------------------

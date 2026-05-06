@@ -13,3 +13,16 @@ export function compact(n: number | null | undefined): string {
 function stripZero(s: string): string {
   return s.endsWith('.0') ? s.slice(0, -2) : s;
 }
+
+// Format elapsed ms as a short human-readable string: "3m 12s", "1h 4m", "42s"
+export function fmtElapsed(ms: number): string {
+  if (ms < 0) return '-';
+  const totalSec = Math.floor(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  if (m < 60) return `${m}m ${s}s`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return `${h}h ${rm}m`;
+}

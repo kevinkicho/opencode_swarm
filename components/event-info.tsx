@@ -102,6 +102,11 @@ export function EventInfo({
             </span>
           )}
           <StatusPill status={msg.status} />
+          {msg.status === 'running' && (
+            <span className="font-mono text-[9px] uppercase tracking-widest2 text-molten bg-molten/10 border border-molten/30 px-1 rounded animate-pulse">
+              live
+            </span>
+          )}
           <span className="ml-auto font-mono text-[10px] text-fog-600 tabular-nums">
             {msg.timestamp}
           </span>
@@ -127,6 +132,9 @@ export function EventInfo({
             body
           </div>
           <MarkdownBody text={msg.body} tone="fog-200" />
+          {msg.status === 'running' && (
+            <span className="caret-blink text-molten text-sm ml-0.5">▎</span>
+          )}
         </div>
       )}
 

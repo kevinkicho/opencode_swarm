@@ -71,7 +71,14 @@ The predicate `isCrossLane()` and the canonical part/tool color map live in
   `+` icon to spawn a new agent.
 - **Left-rail tabs** — `plan` (always on), `roster`, `heat` (file-edit
   heatmap; mounts when ≥1 file has been touched), `board` (visible only
-  when the run has a `boardSwarmRunID`).
+  when the run has a `boardSwarmRunID`), `phases` (visible only when
+  `pattern='pipeline'`; shows each phase's pattern, status, and navigation
+  link via `components/phase-tracker.tsx` resolving the continuationOf chain).
+- **Cross-panel linking** — all left-rail panels respond to agent selection:
+  plan owner glyphs and board item owner glyphs are clickable (select agent,
+  switch to roster tab); selecting an agent in the roster dims plan items,
+  board items, and heat rows not owned by that agent (`opacity-40`);
+  heat toucher badges are clickable (select agent, switch to roster).
 - **Main viewport** (1fr center) — renders the active view; defaults to
   ChatView (per-turn cards with inline tool pills).
 - **Pattern-specific strips** under the timeline view:
@@ -85,7 +92,8 @@ The predicate `isCrossLane()` and the canonical part/tool color map live in
   specific agent / human).
 - **Status rail** (footer) — websocket dot, palette / routing / glossary /
   diagnostics / branch-history triggers.
-- **Drawer** (right, 380px) — inspector for the focused message OR agent.
+- **Drawer** (right, 380px) — inspector for the focused message, agent, or file-heat
+  selection (shows metadata + inline diff from session diffs).
 - **Modals** — palette (⌘K), new-run (⌘N), routing, branch history, spawn,
   glossary, diagnostics, metrics, projects.
 
@@ -403,7 +411,8 @@ kill switch cannot.
 | `components/agent-roster.tsx` | Left rail: agents, attention badges |
 | `components/board-rail.tsx` | Blackboard items (visible only on `pattern='blackboard'`) |
 | `components/{plan,heat}-rail.tsx` | Always-on left-rail tabs |
-| `components/inspector/*.tsx` | Right drawer for focused message / agent |
+| `components/phase-tracker.tsx` | Pipeline phase progress (continuationOf chain) |
+| `components/inspector/*.tsx` | Right drawer for focused message / agent / file-heat diff |
 | `components/cost-cap-banner.tsx` | 402 surface; opens routing modal |
 | `components/{cost-dashboard,cross-preset-metrics}.tsx` | `/metrics` route |
 | `components/{routing,spawn-agent,new-run}-modal.tsx` | Modals |

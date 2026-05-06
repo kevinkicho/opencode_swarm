@@ -102,6 +102,18 @@ export const API_RECIPES: ReadonlyArray<{
   "teamSize": 3
 }'`,
   },
+  {
+    pattern: 'pipeline',
+    hint: 'chain patterns: explore → decide → execute',
+    body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
+  "pattern": "pipeline",
+  "workspace": "C:/Users/kevin/Workspace/<repo>",
+  "directive": "Review and improve this codebase",
+  "pipelineConfig": {
+    "preset": "explore-then-execute"
+  }
+}'`,
+  },
 ];
 
 export interface Inferred {

@@ -47,6 +47,7 @@ import {
  readWorkspaceReadme,
 } from './prompt';
 import { latestTodosFrom } from './parsers';
+import { buildLessonsBlock } from '@/lib/server/lesson-inject';
 import {
  buildAllFilteredSummary,
  buildPlannerPartialSummary,
@@ -157,11 +158,13 @@ export async function runPlannerSweep(
  // mandatory tool call to read it.
  const readme =
  opts.includeReadme === false ? null : await readWorkspaceReadme(meta.workspace);
- const prompt = buildPlannerPrompt(
+ const lessons = await buildLessonsBlock(meta.workspace);
+ const rawPrompt = buildPlannerPrompt(
  meta.directive,
  boardContext,
  readme,
  );
+ const prompt = lessons ? lessons + '\n\n' + rawPrompt : rawPrompt;
  // Planner dispatch. Always route through opencode's `plan` agent —
  // the agent carries tool definitions (todowrite, read, grep, etc.)
  // into the model dispatch. Without an agent, opencode dispatches

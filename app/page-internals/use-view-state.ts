@@ -23,7 +23,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-export type LeftTab = 'plan' | 'roster' | 'board' | 'heat';
+export type LeftTab = 'plan' | 'roster' | 'board' | 'heat' | 'phases';
 
 export interface ViewState<RunView extends string> {
   leftTab: LeftTab;

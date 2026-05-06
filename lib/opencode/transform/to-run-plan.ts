@@ -116,7 +116,7 @@ function containment(todoTokens: Set<string>, callText: string): number {
 const TODO_MATCH_THRESHOLD = 0.5;
 
 export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
-  let latest: { todos: RawTodo[]; messageId: string; callIndex: number } | null = null;
+  let latest: { todos: RawTodo[]; messageId: string; callIndex: number; createdAtMs: number } | null = null;
   let callIndex = 0;
 
   for (const m of messages) {
@@ -124,7 +124,7 @@ export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
       if (part.type !== 'tool' || part.tool !== 'todowrite') continue;
       callIndex += 1;
       const todos = rawTodosFromState(part.state);
-      if (todos) latest = { todos, messageId: m.info.id, callIndex };
+      if (todos) latest = { todos, messageId: m.info.id, callIndex, createdAtMs: m.info.time.created };
     }
   }
 
@@ -133,8 +133,6 @@ export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
   const taskCalls = taskCallsFrom(messages);
   const claimed = new Set<number>();
 
-  // Longer/more-specific todos first so a short todo can't steal a task call
-  // that genuinely fits a longer one. Preserve original order in the output.
   const ordered = latest.todos
     .map((t, i) => ({ t, i, tokens: tokenize(t.content) }))
     .sort((a, b) => b.tokens.size - a.tokens.size);
@@ -163,7 +161,6 @@ export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
           : undefined,
       });
     }
-    // silence unused-var warning — `t` is part of the destructure key set
     void t;
   }
 
@@ -175,6 +172,7 @@ export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
       status: mapTodoStatus(t.status),
       taskMessageId: bound?.taskMessageId,
       ownerAgentId: bound?.ownerAgentId,
+      createdAtMs: latest!.createdAtMs || undefined,
     };
   });
 }

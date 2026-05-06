@@ -35,7 +35,7 @@ import { waitForSessionIdle } from './blackboard/coordinator';
 import { extractLatestAssistantText, harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
 import { withRunGuard } from './run-guard';
 import { recordPartialOutcome } from './degraded-completion';
-import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
+import { checkWallClockExpired } from './swarm-bounds';
 import type { OpencodeMessage } from '../opencode/types';
 
 // Default auto-round count when teamSize is small (≤ 4). 3 = R1
@@ -235,21 +235,12 @@ export async function runCouncilRounds(
 
  for (let roundNum = 2; roundNum <= maxRounds; roundNum += 1) {
  // Wall-clock cap (#85) — non-ticker patterns previously ignored
- // bounds.minutesCap silently. Check at the top of each round so
- // partial deliberation already produced stays in opencode for the
- // human; we just stop initiating new rounds.
- if (isWallClockExpired(meta, meta.createdAt)) {
- console.warn(
- `[council] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at round ${roundNum}/${maxRounds}`,
- );
- recordPartialOutcome(swarmRunID, {
- pattern: 'council',
- phase: `round ${roundNum}/${maxRounds} (wall-clock)`,
- reason: 'wall-clock-cap',
- summary: buildPartialSummary(roundNum),
- });
- return;
- }
+  // bounds.minutesCap silently. Check at the top of each round so
+  // partial deliberation already produced stays in opencode for the
+  // human; we just stop initiating new rounds.
+  if (checkWallClockExpired(swarmRunID, meta, `round ${roundNum}/${maxRounds}`, buildPartialSummary(roundNum))) {
+  return;
+  }
  // so each member gets the full ROUND_WAIT_MS. Sequential waits
  // would have shared the deadline (member 5 starts with member 1's
  // remaining time) and the round-end could've blown past the

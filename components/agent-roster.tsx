@@ -5,7 +5,7 @@ import { useMemo, useState } from 'react';
 import type { Agent, AgentMessage, TodoItem } from '@/lib/swarm-types';
 import { Tooltip } from './ui/tooltip';
 import { IconPlus } from './icons';
-import { computeAttention, type Attention } from '@/lib/agent-status';
+import { computeAttention, computeElapsedPerAgent, computeThroughputPerAgent, type Attention } from '@/lib/agent-status';
 // lifted to ./agent-roster/_shared.ts so AgentRow + ActiveTodoChip +
 // AttentionBadge can import them without crossing back into this file.
 import { kindTone, type AttentionKind } from './agent-roster/_shared';
@@ -42,6 +42,16 @@ export function AgentRoster({
     return map;
   }, [agents, messages]);
 
+  const elapsedByAgent = useMemo(
+    () => computeElapsedPerAgent(agents, messages),
+    [agents, messages],
+  );
+
+  const throughputByAgent = useMemo(
+    () => computeThroughputPerAgent(agents, messages),
+    [agents, messages],
+  );
+
   // Owned-in-progress todos per agent. Surfaced as a row-level "→ item X"
   // chip so the roster answers "what is this agent doing right now?" without
   // requiring a tab switch to the plan. Binding source is transform.ts's
@@ -57,6 +67,12 @@ export function AgentRoster({
     return map;
   }, [todos]);
 
+  // When every agent has $0.00 cost (free-tier ollama/go runs), showing
+  // cost in collapsed rows is pure noise — every row displays the same
+  // meaningless "$0.00". Suppress inline cost in that case; it stays
+  // visible in the expanded detail for completeness.
+  const hasAnyCost = agents.some((a) => a.costUsed > 0);
+
   const body = (
     <ul className="flex-1 overflow-y-auto py-1.5">
       {agents.map((a) => (
@@ -65,12 +81,15 @@ export function AgentRoster({
           agent={a}
           attention={attentionByAgent.get(a.id)!}
           activeTodos={todosByAgent.get(a.id) ?? []}
+          elapsedMs={elapsedByAgent.get(a.id)}
+          throughputSamples={throughputByAgent.get(a.id)?.map((s) => s.tokens) ?? []}
           selected={selectedId === a.id}
           expanded={expandedId === a.id}
           onToggleExpand={() => setExpandedId((p) => (p === a.id ? null : a.id))}
           onSelect={() => onSelect(a.id)}
           onInspect={() => onInspect(a.id)}
           onFocus={onFocus}
+          showCostInline={hasAnyCost}
         />
       ))}
     </ul>

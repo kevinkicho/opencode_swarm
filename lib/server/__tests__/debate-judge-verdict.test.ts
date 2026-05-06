@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyJudgeReply,
   bulletAddressedFraction,
-} from '../debate-judge';
+} from '../debate-judge/parsers';
 
 // classifyJudgeReply parses the judge session's reply into a verdict
 // that drives the orchestrator: WINNER / MERGE = debate complete,

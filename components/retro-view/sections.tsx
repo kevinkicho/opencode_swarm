@@ -15,7 +15,7 @@
 
 import clsx from 'clsx';
 import Link from 'next/link';
-import type { RunRetro } from '@/lib/server/memory/types';
+import type { AgentRollup, RunRetro } from '@/lib/server/memory/types';
 import type { TickerSnapshot } from '@/lib/blackboard/live';
 import { OUTCOME_TONE, fmtTokens } from './_shared';
 
@@ -79,6 +79,7 @@ const LESSON_TONE: Record<string, string> = {
   'routing-miss':    'text-amber border-amber/30 bg-amber/5',
   'good-pattern':    'text-mint border-mint/30 bg-mint/5',
   'user-correction': 'text-iris border-iris/30 bg-iris/5',
+  'dissent':         'text-iris border-iris/30 bg-iris/5',
 };
 
 export function Header({
@@ -276,7 +277,69 @@ export function ArtifactGraphBlock({ graph }: { graph: RunRetro['artifactGraph']
             </span>
           )}
         </div>
-      )}
+       )}
+     </section>
+   );
+}
+
+export function CostBreakdown({
+  rollups,
+  total,
+}: {
+  rollups: AgentRollup[];
+  total: number;
+}) {
+  const byAgent = rollups
+    .filter((r) => (r.counters.costUSD ?? 0) > 0)
+    .map((r) => ({
+      name: r.agent.name,
+      model: r.agent.model || undefined,
+      cost: r.counters.costUSD ?? 0,
+      tokens: r.counters.tokensIn + r.counters.tokensOut,
+    }))
+    .sort((a, b) => b.cost - a.cost);
+
+  if (byAgent.length === 0) return null;
+
+  return (
+    <section className="hairline rounded bg-ink-850">
+      <div className="h-6 hairline-b px-3 flex items-center gap-2">
+        <span className="font-mono text-micro uppercase tracking-widest2 text-fog-600">
+          cost breakdown
+        </span>
+        <span className="font-mono text-[10px] text-fog-700 tabular-nums ml-auto">
+          {total < 0.01 ? '<$0.01' : `$${total.toFixed(2)}`}
+        </span>
+      </div>
+      <ul className="divide-y divide-ink-800">
+        {byAgent.map((a, i) => {
+          const pct = total > 0 ? (a.cost / total) * 100 : 0;
+          return (
+            <li key={`${a.name}-${a.model}-${i}`} className="px-3 py-1.5 flex items-center gap-3">
+              <span className="font-mono text-[11px] text-fog-200 w-24 truncate">
+                {a.name}
+              </span>
+              {a.model && (
+                <span className="font-mono text-[9.5px] text-fog-600 w-28 truncate">
+                  {a.model}
+                </span>
+              )}
+              <span className="font-mono text-[10.5px] text-fog-400 tabular-nums ml-auto">
+                {a.cost < 0.01 ? '<$0.01' : `$${a.cost.toFixed(2)}`}
+              </span>
+              <div className="w-16 h-1 rounded-full bg-ink-700 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-iris/60"
+                  style={{ width: `${Math.min(pct, 100)}%` }}
+                />
+              </div>
+              <span className="font-mono text-[9px] text-fog-600 tabular-nums w-9 text-right">
+                {pct.toFixed(0)}%
+              </span>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

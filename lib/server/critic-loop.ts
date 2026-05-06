@@ -20,13 +20,24 @@
 
 import 'server-only';
 
-import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
+import { postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
+import { buildLessonsBlock } from './lesson-inject';
 import { withRunGuard } from './run-guard';
-import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
+import { checkWallClockExpired } from './swarm-bounds';
 import { recordPartialOutcome } from './degraded-completion';
-import { extractLatestAssistantText } from './harvest-drafts';
-import type { OpencodeMessage } from '../opencode/types';
+import { extractLatestAssistantText, snapshotKnownIDs } from './harvest-drafts';
+import {
+  buildWorkerIntroPrompt,
+  buildCriticIntroPrompt,
+  buildReviewPrompt,
+  buildRevisionPrompt,
+  classifyCriticReply,
+} from './critic-loop/parsers';
+import type { ParsedVerdict, VerdictScope } from './critic-loop/parsers';
+
+export { classifyCriticReply } from './critic-loop/parsers';
+export type { ParsedVerdict, VerdictScope } from './critic-loop/parsers';
 
 const WORKER_AGENT_NAME = 'worker';
 const CRITIC_AGENT_NAME = 'critic';
@@ -44,176 +55,7 @@ const ITERATION_WAIT_MS = TIMINGS.critic.iterationWaitMs;
 // feedback without looping on perfection-seeking.
 const DEFAULT_MAX_ITERATIONS = 3;
 
-// harvest-drafts.ts. Pre-fix duplicated character-identical here.
 
-function buildWorkerIntroPrompt(directive: string | undefined): string {
-  const base =
-    directive?.trim() || 'Achieve the mission implied by the project README.';
-  return [
-    'You are the **worker** in a critic loop.',
-    '',
-    `Your task: ${base}`,
-    '',
-    'Produce your first draft now. Be concrete and implement actual',
-    'changes in the codebase if the task asks for them. After your draft,',
-    'a critic will review your work and either approve it or send back',
-    'revisions. Expect up to 3 review rounds total.',
-  ].join('\n');
-}
-
-function buildCriticIntroPrompt(directive: string | undefined): string {
-  const base =
-    directive?.trim() || 'The worker is implementing the project README mission.';
-  return [
-    'You are the **critic** in a critic loop.',
-    '',
-    `Context — the worker has been asked to: ${base}`,
-    '',
-    'Sit tight until the worker produces a draft. You will receive the',
-    'draft and your job is to review it rigorously. When you review,',
-    'reply in EXACTLY this structured shape:',
-    '',
-    '  ```yaml',
-    '  verdict: APPROVED | REVISE',
-    '  confidence: 1-5  # 5 = certain, 1 = guessing',
-    '  scope: STRUCTURAL | WORDING | NONE  # NONE only on APPROVED',
-    '  issues:',
-    '    - <issue 1>',
-    '    - <issue 2>',
-    '  ```',
-    '',
-    'Then a single human paragraph explaining the verdict.',
-    '',
-    'Rules:',
-    '- The yaml block is mandatory; replies that lack it will be re-asked.',
-    '- `verdict: APPROVED` ends the loop. Use it when the draft meets the bar.',
-    '- `verdict: REVISE` plus your issues feeds back to the worker.',
-    '- `scope: STRUCTURAL` = the draft is fundamentally wrong / missing chunks.',
-    '- `scope: WORDING` = the substance is right; only phrasing / polish remains.',
-    '- `confidence: 1-5` — be honest. The orchestrator auto-terminates a loop',
-    '  that drags through low-confidence WORDING revisions in successive rounds.',
-    '',
-    "Be exacting — your approval is load-bearing. If the worker's draft",
-    'has gaps, say so concretely. If it meets the bar, approve and move on.',
-  ].join('\n');
-}
-
-function buildReviewPrompt(draft: string, iteration: number): string {
-  return [
-    `## Round ${iteration}: review the worker's draft below`,
-    '',
-    '---',
-    '',
-    draft.trim(),
-    '',
-    '---',
-    '',
-    'Reply now. Start with "APPROVED:" or "REVISE:" per your contract.',
-  ].join('\n');
-}
-
-function buildRevisionPrompt(
-  feedback: string,
-  iteration: number,
-  maxIterations: number,
-): string {
-  return [
-    `## Round ${iteration} of ${maxIterations}: critic asked for revisions`,
-    '',
-    'Critic feedback:',
-    '',
-    feedback.trim(),
-    '',
-    'Revise your draft to address the feedback. Implement changes on disk',
-    'as appropriate, then reply with your updated draft.',
-  ].join('\n');
-}
-
-// Parses the YAML-ish block at the top of the critic's reply and
-// returns the verdict + confidence + scope + issues. Tolerant of
-// minor formatting variation (loose yaml, missing fields default to
-// safe values). Falls back to legacy `APPROVED:` / `REVISE:` first-
-// line check when no yaml block is present so older critic prompts
-// still classify.
-export type VerdictScope = 'STRUCTURAL' | 'WORDING' | 'NONE';
-
-export interface ParsedVerdict {
-  verdict: 'approved' | 'revise' | 'unclear';
-  confidence: number; // 1-5; 0 = unknown
-  scope: VerdictScope;
-  issues: string[];
-  body: string; // text payload to feed to the worker on REVISE
-}
-
-export function classifyCriticReply(text: string): ParsedVerdict {
-  // Try YAML block extraction first (the I1 structured contract).
-  const yamlMatch = text.match(/```ya?ml\s*\n([\s\S]*?)\n\s*```/i);
-  if (yamlMatch) {
-    const block = yamlMatch[1];
-    const verdictRaw = /^\s*verdict:\s*(APPROVED|REVISE)/im.exec(block)?.[1] ?? '';
-    const confRaw = /^\s*confidence:\s*([1-5])/im.exec(block)?.[1] ?? '';
-    const scopeRaw =
-      /^\s*scope:\s*(STRUCTURAL|WORDING|NONE)/im.exec(block)?.[1] ?? 'NONE';
-    const issues: string[] = [];
-    const issueLines = block.match(/^\s*-\s+.+/gm) ?? [];
-    for (const line of issueLines) {
-      const cleaned = line.replace(/^\s*-\s+/, '').trim();
-      if (cleaned) issues.push(cleaned);
-    }
-    if (/^APPROVED$/i.test(verdictRaw)) {
-      return {
-        verdict: 'approved',
-        confidence: parseInt(confRaw, 10) || 0,
-        scope: 'NONE',
-        issues,
-        body: text.trim(),
-      };
-    }
-    if (/^REVISE$/i.test(verdictRaw)) {
-      // Body fed to worker: yaml's issues + the trailing paragraph.
-      const matchEnd = (yamlMatch.index ?? 0) + yamlMatch[0].length;
-      const trailing = text.slice(matchEnd).trim();
-      const issuesAsText = issues.length > 0 ? issues.map((i) => `- ${i}`).join('\n') : '';
-      const body = [issuesAsText, trailing].filter(Boolean).join('\n\n').trim();
-      return {
-        verdict: 'revise',
-        confidence: parseInt(confRaw, 10) || 0,
-        scope: (scopeRaw.toUpperCase() as VerdictScope) || 'WORDING',
-        issues,
-        body: body || text.trim(),
-      };
-    }
-  }
-
-  // Legacy fallback — first line keyword check.
-  const first = text.split('\n', 1)[0]?.trim() ?? '';
-  if (/^approved\b/i.test(first)) {
-    return {
-      verdict: 'approved',
-      confidence: 0,
-      scope: 'NONE',
-      issues: [],
-      body: first,
-    };
-  }
-  if (/^revise\b/i.test(first)) {
-    const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
-    return {
-      verdict: 'revise',
-      confidence: 0,
-      scope: 'WORDING',
-      issues: [],
-      body: stripped,
-    };
-  }
-  return {
-    verdict: 'unclear',
-    confidence: 0,
-    scope: 'NONE',
-    issues: [],
-    body: text.trim(),
-  };
-}
 
 export async function runCriticLoopKickoff(
   swarmRunID: string,
@@ -256,23 +98,26 @@ export async function runCriticLoopKickoff(
   }
 
   try {
-    // 2026-04-25 fix: dropped `agent: CRITIC_AGENT_NAME / WORKER_AGENT_NAME`
+    // // 2026-04-25 fix: dropped `agent: CRITIC_AGENT_NAME / WORKER_AGENT_NAME`
     // — custom agent names that aren't in the user's opencode.json (the
     // built-ins are build/compaction/explore/general/plan/summary/title)
     // cause opencode's prompt_async to return HTTP 204 success but never
     // persist the user message or start an assistant turn. Same root
     // cause as the picker-dispatch fix in lib/blackboard/roles.ts. Role
     // display in our UI continues working via roleNamesBySessionID.
+    const lessons = await buildLessonsBlock(meta.workspace);
+    const criticPrompt = buildCriticIntroPrompt(meta.directive);
+    const workerPrompt = buildWorkerIntroPrompt(meta.directive);
     await postSessionMessageServer(
       criticSID,
       meta.workspace,
-      buildCriticIntroPrompt(meta.directive),
+      lessons ? lessons + '\n\n' + criticPrompt : criticPrompt,
       { model: criticModel },
     );
     await postSessionMessageServer(
       workerSID,
       meta.workspace,
-      buildWorkerIntroPrompt(meta.directive),
+      lessons ? lessons + '\n\n' + workerPrompt : workerPrompt,
       { model: workerModel },
     );
   } catch (err) {
@@ -290,16 +135,9 @@ export async function runCriticLoopKickoff(
   }
   console.log(`[critic-loop] run ${swarmRunID}: worker + critic intros posted`);
 
-  // Track known message IDs per session so waitForSessionIdle harvests
-  // only NEW turns each iteration. Initialize after the intro posts.
-  const knownWorkerIDs = new Set(
-    (await getSessionMessagesServer(workerSID, meta.workspace).catch(() => []))
-      .map((m) => m.info.id),
-  );
-  const knownCriticIDs = new Set(
-    (await getSessionMessagesServer(criticSID, meta.workspace).catch(() => []))
-      .map((m) => m.info.id),
-  );
+  const knownAll = await snapshotKnownIDs(meta, '[critic-loop]');
+  const knownWorkerIDs = knownAll.get(workerSID) ?? new Set<string>();
+  const knownCriticIDs = knownAll.get(criticSID) ?? new Set<string>();
 
   // loop. Track the last few verdicts; if iterations N-1 and N are
   // both REVISE + WORDING + confidence ≤ 3, the critic is fixating
@@ -348,16 +186,7 @@ export async function runCriticLoopKickoff(
     // Wall-clock cap (#85). Stops new iterations from launching once
     // bounds.minutesCap is exceeded. The current draft (last completed
     // worker turn) stays in opencode regardless.
-    if (isWallClockExpired(meta, meta.createdAt)) {
-      console.warn(
-        `[critic-loop] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at iter ${iter}/${maxIterations}`,
-      );
-      recordPartialOutcome(swarmRunID, {
-        pattern: 'critic-loop',
-        phase: `iter ${iter}/${maxIterations} (wall-clock)`,
-        reason: 'wall-clock-cap',
-        summary: buildPartialSummary(iter),
-      });
+    if (checkWallClockExpired(swarmRunID, meta, `iter ${iter}/${maxIterations}`, buildPartialSummary(iter))) {
       return;
     }
     // 1. Wait for the worker's draft.
@@ -470,6 +299,16 @@ export async function runCriticLoopKickoff(
       console.log(
         `[critic-loop] run ${swarmRunID} iter ${iter}: auto-terminating — nitpick streak (last 2 = REVISE+WORDING+confidence≤${NITPICK_CONF_MAX}). Shipping draft N=${iter}`,
       );
+      const dissentText = classified.issues.length > 0
+        ? `Nitpick-override: ${classified.issues.join('; ')}`
+        : 'Nitpick-override: critic stuck on WORDING revisions with low confidence';
+      const { writeDissentLesson } = await import('./memory/memory-store');
+      await writeDissentLesson(
+        meta.workspace,
+        swarmRunID,
+        'critic-loop',
+        dissentText,
+      ).catch(() => {});
       try {
         await postSessionMessageServer(
           workerSID,

@@ -116,6 +116,12 @@ function AgentRollupCard({ rollup }: { rollup: AgentRollup }) {
           value={`${rollup.counters.compactions}`}
           tone={rollup.counters.compactions > 0 ? 'text-iris' : undefined}
         />
+        {rollup.counters.costUSD != null && rollup.counters.costUSD > 0 && (
+          <Counter
+            label="cost"
+            value={rollup.counters.costUSD < 0.01 ? '<$0.01' : `$${rollup.counters.costUSD.toFixed(2)}`}
+          />
+        )}
       </div>
 
       {rollup.plan && rollup.plan.length > 0 && (

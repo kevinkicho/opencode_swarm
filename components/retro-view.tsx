@@ -31,6 +31,7 @@ import { AgentSection } from './retro-view/agent-blocks';
 import {
   Header,
   RunOverview,
+  CostBreakdown,
   LessonsBlock,
   ArtifactGraphBlock,
 } from './retro-view/sections';
@@ -61,6 +62,9 @@ export function RetroView({ swarmRunID, retro, agentRollups, ticker }: Props) {
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto max-w-[960px] py-6 px-5 space-y-6">
           {retro && <RunOverview retro={retro} />}
+          {agentRollups.some((r) => (r.counters.costUSD ?? 0) > 0) && (
+            <CostBreakdown rollups={agentRollups} total={retro?.cost.costUSD ?? 0} />
+          )}
           {retro && retro.lessons.length > 0 && <LessonsBlock lessons={retro.lessons} />}
           {retro && retro.artifactGraph.filesFinal.length > 0 && (
             <ArtifactGraphBlock graph={retro.artifactGraph} />

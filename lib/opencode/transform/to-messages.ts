@@ -45,6 +45,13 @@ export function toMessages(messages: OpencodeMessage[]): AgentMessage[] {
   }
   const latestAssistantBySession = new Map<string, string>(firstAssistantBySession);
 
+  const inProgressSessionIDs = new Set<string>();
+  for (const m of messages) {
+    if (m.info.role === 'assistant' && !m.info.time.completed) {
+      inProgressSessionIDs.add(m.info.sessionID);
+    }
+  }
+
   for (const m of messages) {
     const role = m.info.role;
     const fromAgentId =
@@ -66,10 +73,12 @@ export function toMessages(messages: OpencodeMessage[]): AgentMessage[] {
       const toolName = part.type === 'tool' ? normalizeTool(part.tool) : undefined;
       const toolState = part.type === 'tool' ? toolStateFrom(part.state) : undefined;
       const interrupted = part.type === 'tool' && isInterruptedTool(part.state);
+      const isLiveAssistant = role === 'assistant' && inProgressSessionIDs.has(m.info.sessionID);
       const status: AgentMessage['status'] =
         interrupted ? 'abandoned'
         : toolState === 'error' ? 'error'
         : toolState === 'pending' || toolState === 'running' ? 'running'
+        : isLiveAssistant && part.type !== 'tool' ? 'running'
         : 'complete';
 
       const partTokens: number | undefined =

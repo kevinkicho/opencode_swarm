@@ -14,3 +14,9 @@ The typed Pattern interface and PatternRegistry must be landed in isolation befo
 
 ## 2026-05-05 · Lifecycle methods as the pattern contract spine
 Every pattern must implement init, step, shouldTerminate, and onResult as typed methods. This lifecycle is what makes patterns composable (a parent pattern can call a child pattern's lifecycle) and observable (each method transition is a traceable event). The interface definition is the single most important type in the codebase.
+
+## 2026-05-05 · One pattern at a time, fully vertical
+This run attempted all six pattern tests simultaneously and landed none of them. Each pattern must be shipped as a complete vertical slice — mock responses, pattern implementation, integration test, and trace assertions — before moving to the next. Partial work across six patterns accumulates debt without demonstrating value.
+
+## 2026-05-05 · Documentation without running tests is premature
+The only met contract was a README describing unimplemented tests. Documentation should trail working software, not lead it. Future runs should gate docs on at least one passing end-to-end pattern test.

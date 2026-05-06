@@ -33,6 +33,7 @@ export interface AgentRollup {
     retries: number;
     compactions: number;
     toolSuccessRate?: number;
+    costUSD?: number;             // $/1M-token cost computed from pricing.ts
   };
   artifacts: Array<{
     type: 'patch' | 'file' | 'commit';
@@ -94,7 +95,7 @@ export interface RunRetro {
     prURLs: string[];
   };
   lessons: Array<{
-    tag: 'tool-failure' | 'routing-miss' | 'good-pattern' | 'user-correction';
+    tag: 'tool-failure' | 'routing-miss' | 'good-pattern' | 'user-correction' | 'dissent';
     text: string;
     evidencePartIDs: string[];   // pointers into L1 (parts.part_id)
   }>;

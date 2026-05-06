@@ -34,6 +34,8 @@ export function HeatRail({
   workspace,
   diffStatsByPath,
   onSelect,
+  onSelectAgent,
+  selectedAgentId,
   embedded = false,
   swarmRunID,
 }: {
@@ -42,12 +44,24 @@ export function HeatRail({
   workspace: string;
   diffStatsByPath: DiffStatsByPath;
   onSelect?: (heat: FileHeat) => void;
+  onSelectAgent?: (id: string) => void;
+  selectedAgentId?: string | null;
   embedded?: boolean;
   swarmRunID?: string;
 }) {
   const agentBySession = new Map<string, Agent>();
   for (const a of agents) if (a.sessionID) agentBySession.set(a.sessionID, a);
   const maxCount = Math.max(1, ...heat.map((h) => h.editCount));
+
+  // When an agent is selected in the roster (cross-panel linking),
+  // compute the set of its session IDs so heat rows can highlight
+  // files that agent touched and dim the rest.
+  const highlightSessionIds = useMemo(() => {
+    if (!selectedAgentId) return null;
+    const agent = agents.find((a) => a.id === selectedAgentId);
+    if (!agent?.sessionID) return null;
+    return new Set([agent.sessionID]);
+  }, [selectedAgentId, agents]);
 
   const [view, setView] = useState<'list' | 'tree' | 'all'>('tree');
   const [filter, setFilter] = useState('');
@@ -100,16 +114,18 @@ export function HeatRail({
   const body =
     view === 'tree' || view === 'all' ? (
        <HeatTreeView
-         heat={filteredHeat}
-         workspace={workspace}
-         maxCount={maxCount}
-         agentBySession={agentBySession}
-         diffStatsByPath={diffStatsByPath}
-         onSelect={onSelect}
-         coldPaths={view === 'all' ? filteredWorkspaceFiles ?? [] : null}
-         coldLoading={view === 'all' && workspaceFiles === null && !workspaceFilesError}
-         coldError={view === 'all' ? workspaceFilesError : null}
-       />
+          heat={filteredHeat}
+          workspace={workspace}
+          maxCount={maxCount}
+          agentBySession={agentBySession}
+          diffStatsByPath={diffStatsByPath}
+          onSelect={onSelect}
+          onSelectAgent={onSelectAgent}
+          highlightSessionIds={highlightSessionIds}
+          coldPaths={view === 'all' ? filteredWorkspaceFiles ?? [] : null}
+          coldLoading={view === 'all' && workspaceFiles === null && !workspaceFilesError}
+          coldError={view === 'all' ? workspaceFilesError : null}
+        />
     ) : (
       <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
         {filteredHeat.length === 0 ? (
@@ -126,6 +142,8 @@ export function HeatRail({
               agentBySession={agentBySession}
               diffStats={diffStatsByPath.get(h.path)}
               onSelect={onSelect}
+              onSelectAgent={onSelectAgent}
+              dimmed={highlightSessionIds ? !h.sessionIDs.some((sid) => highlightSessionIds.has(sid)) : false}
             />
           ))
         )}

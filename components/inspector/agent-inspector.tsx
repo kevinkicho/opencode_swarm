@@ -13,9 +13,11 @@
 import clsx from 'clsx';
 import type { Agent, AgentMessage } from '@/lib/swarm-types';
 import { partHex, toolMeta } from '@/lib/part-taxonomy';
+import { fmtElapsed } from '@/lib/format';
 import { ModelSwapRow } from './agent-model-swap';
 import { SessionInfoPanel } from './agent-session-info';
 import { BudgetPanel } from './agent-budget-panel';
+import { Tooltip } from '../ui/tooltip';
 
 export function AgentInspector({
   agent,
@@ -29,8 +31,17 @@ export function AgentInspector({
   workspace: string;
 }) {
   const agentMsgs = messages.filter(
-    (m) => m.fromAgentId === agent.id || m.toAgentIds.includes(agent.id)
+    (m) => m.fromAgentId === agent.id || m.toAgentIds.includes(agent.id),
   );
+
+  // Compute elapsed time from message timestamps
+  const agentTimestamps = messages
+    .filter((m) => m.fromAgentId === agent.id && m.tsMs != null)
+    .map((m) => m.tsMs!);
+  const elapsedMs = agentTimestamps.length >= 2
+    ? Math.max(...agentTimestamps) - Math.min(...agentTimestamps)
+    : 0;
+
   return (
     <div className="space-y-3 animate-fade-up">
       <div className="border border-ink-600 bg-ink-800 relative">
@@ -59,6 +70,22 @@ export function AgentInspector({
               {agent.glyph}
             </span>
             <span className="text-[15px] text-fog-100">{agent.name}</span>
+          </div>
+
+          <div className="mt-1.5 flex items-center gap-3 font-mono text-[10px] text-fog-600 tabular-nums">
+            {agent.sessionID && (
+              <Tooltip content="opencode session ID — click to copy" side="top">
+                <button
+                  onClick={() => navigator.clipboard?.writeText(agent.sessionID!)}
+                  className="cursor-pointer hover:text-fog-300 transition"
+                >
+                  {agent.sessionID.slice(0, 12)}…
+                </button>
+              </Tooltip>
+            )}
+            {elapsedMs > 0 && (
+              <span>elapsed {fmtElapsed(elapsedMs)}</span>
+            )}
           </div>
 
           <div className="mt-3">

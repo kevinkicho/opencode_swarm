@@ -1,19 +1,11 @@
 'use client';
 
-//
-// Per-item row in the inline board rail. Lifted from board-rail.tsx
-// along with its 5 helpers: KIND_GLYPH/TONE (kind tone tables),
-// retryCountFromNote (parses [retry:N] tag), heatBarTone (color tier
-// for the heat bar), ACCENT_BG (per-agent accent class).
-//
-// Stays in a sibling rather than the main file because BoardRailRow
-// is the per-row presentation (~180 LOC of dense JSX with conditional
-// chip rendering) and the main file is the table shell.
-
 import clsx from 'clsx';
+import { useCallback, useRef, useState } from 'react';
 
 import type { BoardAgent, BoardItem, BoardItemKind, BoardItemStatus } from '@/lib/blackboard/types';
 import { Tooltip } from '../ui/tooltip';
+import { BoardStatusActions } from './board-status-actions';
 
 // Per-kind glyph. Todo is the default kind — we leave its glyph blank so
 // the row reads as content-first. Other kinds get a one-char marker
@@ -77,15 +69,60 @@ export function BoardRailRow({
   owner,
   heatScore,
   maxHeatScore,
+  swarmRunID,
+  onSelectAgent,
+  dimmed = false,
 }: {
   item: BoardItem;
   owner: BoardAgent | null;
-  // Stigmergy heat score for this row. 0 = no heat / not open. Used
-  // with maxHeatScore to render a relative-width bar.
   heatScore: number;
   maxHeatScore: number;
+  swarmRunID: string;
+  onSelectAgent?: (agentId: string) => void;
+  dimmed?: boolean;
 }) {
   const isStale = item.status === 'stale';
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(item.content);
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const startEdit = useCallback(() => {
+    setDraft(item.content);
+    setEditing(true);
+    setTimeout(() => inputRef.current?.select(), 0);
+  }, [item.content]);
+
+  const commitEdit = useCallback(async () => {
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === item.content) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `/api/swarm/run/${encodeURIComponent(swarmRunID)}/board/items/${encodeURIComponent(item.id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ content: trimmed }),
+        },
+      );
+      if (!res.ok) {
+        setDraft(item.content);
+      }
+    } catch {
+      setDraft(item.content);
+    }
+    setEditing(false);
+    setSaving(false);
+  }, [draft, item.content, item.id, swarmRunID]);
+
+  const cancelEdit = useCallback(() => {
+    setDraft(item.content);
+    setEditing(false);
+  }, [item.content]);
   // Heat decoration is open-status only — the picker only scores open
   // items, so anything else has score=0 and we drop the bar entirely.
   // When the run has zero heat data (no patches yet), maxHeatScore=0
@@ -135,10 +172,15 @@ export function BoardRailRow({
               {item.note}
             </div>
           )}
+          <BoardStatusActions item={item} swarmRunID={swarmRunID} />
         </div>
       }
     >
-      <div className="pl-5 pr-2 h-6 flex items-center gap-1.5 hover:bg-ink-800/40 cursor-default transition">
+      <div className={clsx(
+        'pl-5 pr-2 h-6 flex items-center gap-1.5 hover:bg-ink-800/40 cursor-default transition',
+        isStale && 'opacity-60',
+        dimmed && 'opacity-40',
+      )}>
         {KIND_GLYPH[item.kind] && (
           <span
             className={clsx(
@@ -150,9 +192,29 @@ export function BoardRailRow({
             {KIND_GLYPH[item.kind]}
           </span>
         )}
-        <span className="text-[11.5px] text-fog-200 truncate flex-1 min-w-0 font-mono">
-          {item.content}
-        </span>
+        {editing ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') commitEdit();
+              if (e.key === 'Escape') cancelEdit();
+            }}
+            disabled={saving}
+            className="flex-1 min-w-0 bg-ink-700 border border-molten/50 rounded-sm px-1 font-mono text-[11.5px] text-fog-100 outline-none focus:border-molten"
+          />
+        ) : (
+          <span
+            className="text-[11.5px] text-fog-200 truncate flex-1 min-w-0 font-mono cursor-text"
+            onDoubleClick={startEdit}
+            title="double-click to edit"
+          >
+            {item.content}
+          </span>
+        )}
         {(() => {
           const retries = retryCountFromNote(item.note);
           if (retries <= 0) return null;
@@ -239,15 +301,20 @@ export function BoardRailRow({
           </span>
         )}
         {owner ? (
-          <span
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelectAgent?.(owner.id);
+            }}
             className={clsx(
-              'shrink-0 w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none tabular-nums',
+              'shrink-0 w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none tabular-nums cursor-pointer hover:opacity-80 transition',
               ACCENT_BG[owner.accent]
             )}
-            title={`session ${owner.name} · ${owner.id}`}
+            title={`session ${owner.name} · ${owner.id} — click to select in roster`}
           >
             {owner.glyph}
-          </span>
+          </button>
         ) : (
           <span
             className="shrink-0 w-4 h-4 grid place-items-center rounded-sm font-mono text-[9.5px] leading-none text-fog-700 bg-ink-800"

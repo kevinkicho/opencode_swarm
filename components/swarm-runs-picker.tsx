@@ -104,6 +104,16 @@ function PickerPanel({
 }) {
   const { rows, error, loading, lastUpdated } = useSwarmRuns(4000);
   const [query, setQuery] = useState('');
+  const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set());
+
+  const toggleSelect = (id: string) => {
+    setSelectedIDs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -161,6 +171,16 @@ function PickerPanel({
         <span className="font-mono text-[10px] text-fog-700 tabular-nums ml-auto shrink-0">
           {statusLabel}
         </span>
+        {selectedIDs.size >= 2 && (
+          <Link
+            href={`/retro/compare?ids=${encodeURIComponent([...selectedIDs].join(','))}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-mono text-[9px] uppercase tracking-widest2 text-molten hover:text-molten/80 bg-molten/10 border border-molten/30 h-5 px-2 rounded flex items-center shrink-0"
+          >
+            compare {selectedIDs.size}
+          </Link>
+        )}
       </div>
           <div className="px-3 py-1.5 hairline-b flex items-center gap-2 bg-ink-900/30">
             <IconSearch size={12} className="text-fog-600 shrink-0" />
@@ -189,7 +209,8 @@ function PickerPanel({
               row — SESS / CAPS / WHEN drifted right of their value cells.
               Keeping the two shells isomorphic is the only reliable fix. */}
           <div className="flex items-center h-5 hairline-b bg-ink-900/40 pr-1">
-            <div className="flex-1 min-w-0 px-3 h-full flex items-center gap-3">
+            <div className="w-6 shrink-0" aria-hidden />
+            <div className="flex-1 min-w-0 px-1 h-full flex items-center gap-3">
               <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 w-[52px] shrink-0">
                 status
               </span>
@@ -240,6 +261,21 @@ function PickerPanel({
                     isCurrent && 'bg-iris/10 hover:bg-iris/15',
                   )}
                 >
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleSelect(meta.swarmRunID); }}
+                    className={clsx(
+                      'w-5 h-5 shrink-0 flex items-center justify-center ml-1 rounded',
+                      'border transition',
+                      selectedIDs.has(meta.swarmRunID)
+                        ? 'border-molten bg-molten/20'
+                        : 'border-fog-700 hover:border-fog-400',
+                    )}
+                    title={selectedIDs.has(meta.swarmRunID) ? 'deselect' : 'select for compare'}
+                  >
+                    {selectedIDs.has(meta.swarmRunID) && (
+                      <span className="block w-2 h-2 bg-molten" />
+                    )}
+                  </button>
                   <Link
                     // Open in a new tab — by user request 2026-04-28.
                     // Two reasons it's the right default for this surface:

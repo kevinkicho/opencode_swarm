@@ -3,7 +3,7 @@
 import clsx from 'clsx';
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { SWARM_RUNS_QUERY_KEY, useOpencodeProviders } from '@/lib/opencode/live';
 import type { ProviderModel } from '@/app/api/swarm/providers/route';
 import { Modal } from './ui/modal';
@@ -89,6 +89,23 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     [teamCounts]
   );
   const hasDirective = directive.trim().length > 0;
+
+  // Fetch lessons from the most recent run in this workspace.
+  // Used by the "seed from previous run" affordance below the directive.
+  const wsTrimmed = workspacePath.trim().replace(/\/+$/, '');
+  const { data: lessonsData } = useQuery({
+    queryKey: ['memory-lessons', wsTrimmed],
+    queryFn: async () => {
+      if (!wsTrimmed) return { lessons: [] };
+      const res = await fetch(`/api/swarm/memory/lessons?workspace=${encodeURIComponent(wsTrimmed)}`);
+      if (!res.ok) return { lessons: [] };
+      return res.json() as Promise<{ lessons: Array<{ tag: string; text: string }> }>;
+    },
+    enabled: wsTrimmed.length > 0,
+    staleTime: 60_000,
+  });
+  const previousLessons = lessonsData?.lessons ?? [];
+  const hasLessons = previousLessons.length > 0;
 
   const cloneTarget = useMemo(() => {
     const ws = workspacePath.trim().replace(/\/+$/, '');
@@ -358,13 +375,42 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
               )
             }
           >
+            {pattern && patternMeta[pattern]?.directiveHint && (
+              <div className="mb-1.5 font-mono text-[10.5px] text-fog-500 leading-snug">
+                {patternMeta[pattern].directiveHint}
+              </div>
+            )}
             <textarea
               value={directive}
               onChange={(e) => setDirective(e.target.value)}
-              placeholder="what should this swarm push toward? (optional — leave blank to let the swarm set its own goals from what's in the repo)"
+              placeholder={pattern && patternMeta[pattern]?.directiveTemplate
+                ? patternMeta[pattern].directiveTemplate
+                : "what should this swarm push toward? (optional — leave blank to let the swarm set its own goals from what's in the repo)"}
               rows={4}
               className="w-full px-3 py-2 rounded bg-ink-900/40 border border-dashed border-ink-600/60 text-[12.5px] text-fog-400 placeholder:text-fog-700 focus:outline-none focus:bg-ink-900 focus:border-solid focus:border-molten/40 focus:text-fog-200 transition resize-none leading-relaxed font-mono"
             />
+            {pattern && patternMeta[pattern]?.directiveTemplate && !hasDirective && (
+              <button
+                type="button"
+                onClick={() => setDirective(patternMeta[pattern].directiveTemplate!)}
+                className="mt-1 font-mono text-[10px] uppercase tracking-widest2 text-fog-600 hover:text-molten transition-colors cursor-pointer"
+              >
+                use template
+              </button>
+            )}
+            {hasLessons && !hasDirective && (
+              <button
+                type="button"
+                onClick={() => {
+                  const header = '## Lessons from previous runs\n';
+                  const lines = previousLessons.map((l) => `- [${l.tag}] ${l.text}`).join('\n');
+                  setDirective(header + lines);
+                }}
+                className="mt-1 ml-2 font-mono text-[10px] uppercase tracking-widest2 text-fog-600 hover:text-mint transition-colors cursor-pointer"
+              >
+                seed from previous run ({previousLessons.length} lessons)
+              </button>
+            )}
           </Section>
 
           <Section

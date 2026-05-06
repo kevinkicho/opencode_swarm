@@ -191,7 +191,7 @@ export function reduceSession(
     agent: { name: agentName, model: agentModel ?? '' },
     closedAt: endMs ?? Date.now(),
     outcome,
-    counters: { tokensIn, tokensOut, toolCalls, retries, compactions, toolSuccessRate },
+    counters: { tokensIn, tokensOut, toolCalls, retries, compactions, toolSuccessRate, costUSD },
     artifacts,
     failures,
     decisions,
@@ -309,6 +309,8 @@ export function reducePart(p: OpencodePart, ctx: PartReduceContext): void {
       const excerpt = text.length > DECISION_EXCERPT_LEN
         ? text.slice(0, DECISION_EXCERPT_LEN) + '…'
         : text;
+      // at: Date.now() is approximate — parts don't carry per-part
+      // timestamps, so we use wall-clock time of the rollup pass.
       ctx.decisions.push({
         at: Date.now(),
         choice: excerpt,
@@ -336,10 +338,12 @@ export function aggregateRetro(
     (acc, r) => acc + r.counters.tokensIn + r.counters.tokensOut,
     0
   );
-  // Cost lives on the list endpoint; we don't duplicate it here because a
-  // rollup write race could let it drift from the authoritative sum. Leave
-  // it at 0 and read the list endpoint when callers want $.
-  const costUSD = 0;
+  // Per-agent cost is now on AgentRollup.counters.costUSD; aggregate
+  // for the retro. Sum every agent's cost for the total.
+  const costUSD = rollups.reduce(
+    (acc, r) => acc + (r.counters.costUSD ?? 0),
+    0,
+  );
 
   const filesFinal = new Set<string>();
   for (const r of rollups) {

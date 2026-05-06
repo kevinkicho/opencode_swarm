@@ -28,6 +28,7 @@ export const SUPPORTED_PATTERNS: ReadonlySet<SwarmPattern> = new Set([
   'orchestrator-worker',
   'debate-judge',
   'critic-loop',
+  'pipeline',
 ]);
 
 // Pattern-specific defaults + floors. Encoded as a table so new patterns
@@ -44,35 +45,28 @@ export const PATTERN_TEAM_SIZE: Record<
   none: { defaultSize: 1, minSize: 1, maxSize: 1 },
   council: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
   blackboard: { defaultSize: 3, minSize: 2, maxSize: TEAM_SIZE_MAX },
-  // Map-reduce: minSize 3 enforces meaningful parallelism. With
-  // teamSize=2, deriveSlices would hand each session a single dir
-  // (or one dir + whole-workspace fallback) and the synth would
-  // merge two near-identical analyses — basically running solo
-  // twice. ollama-swarm sibling app (#109) found the same: bumped
-  // their min mapper count to 3 mappers + 1 synth = 4 sessions.
-  // Our model is more efficient since any session can claim the
-  // synth (no dedicated synth slot), so 3 sessions = 3 mappers
-  // with one of them taking the synth claim — minimum useful.
   'map-reduce': { defaultSize: 3, minSize: 3, maxSize: TEAM_SIZE_MAX },
-  // Orchestrator-worker: 1 orchestrator + at least 1 worker = minSize 2.
   'orchestrator-worker': {
     defaultSize: 4,
     minSize: 2,
     maxSize: TEAM_SIZE_MAX,
   },
-  // Debate+judge: 1 judge + at least 2 generators = minSize 3.
   'debate-judge': {
     defaultSize: 4,
     minSize: 3,
     maxSize: TEAM_SIZE_MAX,
   },
-  // Critic loop: exactly 2 parties (1 worker + 1 critic). Larger teams
-  // don't map cleanly onto this shape — critic specialization assumes a
-  // stable single reviewer.
   'critic-loop': {
     defaultSize: 2,
     minSize: 2,
     maxSize: 2,
+  },
+  // Pipeline: teamSize 1 because the pipeline itself is a thin coordinator
+  // session. Phase runs each have their own teamSize in pipelineConfig.
+  pipeline: {
+    defaultSize: 1,
+    minSize: 1,
+    maxSize: 1,
   },
 };
 
@@ -84,7 +78,8 @@ function isSwarmPattern(value: unknown): value is SwarmPattern {
     value === 'council' ||
     value === 'orchestrator-worker' ||
     value === 'debate-judge' ||
-    value === 'critic-loop'
+    value === 'critic-loop' ||
+    value === 'pipeline'
   );
 }
 
@@ -95,7 +90,7 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
   if (!raw || typeof raw !== 'object') return 'body must be a JSON object';
   const obj = raw as Record<string, unknown>;
 
-  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker, debate-judge, critic-loop';
+  if (!isSwarmPattern(obj.pattern)) return 'pattern must be one of: none, blackboard, map-reduce, council, orchestrator-worker, debate-judge, critic-loop, pipeline';
 
   // continuationOf: validate type explicitly so a bogus value (number,
   // array, etc.) rejects rather than silently degrading to a fresh run.
@@ -392,6 +387,68 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
   // flag without a URL would mislead; better to reject up front.
   if (req.enableVerifierGate === true && !req.workspaceDevUrl) {
     return 'enableVerifierGate=true requires workspaceDevUrl (the target app URL to verify against)';
+  }
+
+  // Pipeline configuration. When pattern='pipeline', either preset or
+  // phases must be provided and valid. Other patterns must not set it.
+  if (obj.pipelineConfig !== undefined) {
+    if (req.pattern !== 'pipeline') {
+      return `pipelineConfig only applies to pattern='pipeline' (got '${req.pattern}')`;
+    }
+    const pc = obj.pipelineConfig as Record<string, unknown>;
+    if (typeof pc !== 'object' || pc === null) {
+      return 'pipelineConfig must be an object';
+    }
+    if (pc.preset !== undefined && typeof pc.preset !== 'string') {
+      return 'pipelineConfig.preset must be a string';
+    }
+    if (pc.phases !== undefined) {
+      if (!Array.isArray(pc.phases)) {
+        return 'pipelineConfig.phases must be an array';
+      }
+      if (pc.phases.length < 2) {
+        return 'pipelineConfig.phases must have at least 2 phases';
+      }
+      if (pc.phases.length > 4) {
+        return 'pipelineConfig.phases must have at most 4 phases';
+      }
+      const validPatterns: string[] = [
+        'blackboard', 'map-reduce', 'council',
+        'orchestrator-worker', 'debate-judge', 'critic-loop',
+      ];
+      for (let i = 0; i < pc.phases.length; i += 1) {
+        const phase = pc.phases[i] as Record<string, unknown>;
+        if (!phase || typeof phase !== 'object') {
+          return `pipelineConfig.phases[${i}] must be an object`;
+        }
+        if (!validPatterns.includes(phase.pattern as string)) {
+          return `pipelineConfig.phases[${i}].pattern must be one of: ${validPatterns.join(', ')} (got '${phase.pattern}')`;
+        }
+        if (phase.teamSize !== undefined) {
+          if (
+            typeof phase.teamSize !== 'number' ||
+            !Number.isInteger(phase.teamSize) ||
+            phase.teamSize < 2 ||
+            phase.teamSize > TEAM_SIZE_MAX
+          ) {
+            return `pipelineConfig.phases[${i}].teamSize must be an integer between 2 and ${TEAM_SIZE_MAX}`;
+          }
+        }
+        if (phase.directive !== undefined && typeof phase.directive !== 'string') {
+          return `pipelineConfig.phases[${i}].directive must be a string`;
+        }
+      }
+      req.pipelineConfig = {
+        preset: pc.preset as import('../../swarm-run-types').PipelinePreset | undefined,
+        phases: pc.phases as import('../../swarm-run-types').PipelinePhase[],
+      };
+    } else if (pc.preset) {
+      req.pipelineConfig = { preset: pc.preset as import('../../swarm-run-types').PipelinePreset };
+    } else {
+      return 'pipelineConfig must have either preset or phases';
+    }
+  } else if (req.pattern === 'pipeline') {
+    return 'pattern=\'pipeline\' requires pipelineConfig with either preset or phases';
   }
 
   return req;

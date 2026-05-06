@@ -49,6 +49,8 @@ export function HeatRow({
   agentBySession,
   diffStats,
   onSelect,
+  onSelectAgent,
+  dimmed = false,
 }: {
   heat: FileHeat;
   workspace: string;
@@ -56,6 +58,8 @@ export function HeatRow({
   agentBySession: Map<string, Agent>;
   diffStats?: { added: number; deleted: number };
   onSelect?: (heat: FileHeat) => void;
+  onSelectAgent?: (id: string) => void;
+  dimmed?: boolean;
 }) {
   const displayPath = stripWorkspace(heat.path, workspace);
   const { dir, base } = splitPath(displayPath);
@@ -92,6 +96,7 @@ export function HeatRow({
         className={clsx(
           'px-3 h-6 min-w-0 transition-colors',
           onSelect && 'cursor-pointer hover:bg-ink-800/50',
+          dimmed && 'opacity-40',
         )}
         style={{
           display: 'grid',
@@ -132,15 +137,19 @@ export function HeatRow({
                     touched by
                   </span>
                   {touchers.map((a) => (
-                    <span
+                    <button
                       key={a.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelectAgent?.(a.id);
+                      }}
                       className={clsx(
-                        'inline-flex items-center h-4 px-1 rounded-sm font-mono text-[9px] leading-none',
+                        'inline-flex items-center h-4 px-1 rounded-sm font-mono text-[9px] leading-none cursor-pointer hover:opacity-80 transition',
                         accentBadge[a.accent],
                       )}
                     >
                       {a.name}
-                    </span>
+                    </button>
                   ))}
                 </div>
               )}

@@ -1,3 +1,5 @@
+'use client';
+
 // FileHeatInspector + EmptyState — the non-message inspector bodies.
 //
 // Lifted from inspector/sub-components.tsx 2026-04-28.
@@ -14,6 +16,10 @@
 import clsx from 'clsx';
 import type { Agent } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
+import { useSessionDiff } from '@/lib/opencode/live/use-session';
+import { parseUnifiedDiff } from '@/lib/opencode/transform/diffs';
+import type { DiffData } from '@/lib/types';
+import { DiffView } from '../diff-view';
 import { Tooltip } from '../ui/tooltip';
 
 export function EmptyState() {
@@ -133,6 +139,17 @@ export function FileHeatInspector({
           {heat.path}
         </div>
       </div>
+
+      {/* Inline diff — fetches diffs from each session that touched this
+          file, filters to just the selected path, and renders via DiffView.
+          Each session's diff is a separate block; when multiple sessions
+          touched the same file, this shows each one's contribution. */}
+      <div className="pt-1 hairline-t">
+        <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700 mb-2">
+          diff
+        </div>
+        <FileDiffSection filePath={heat.path} sessionIDs={heat.sessionIDs} />
+      </div>
     </div>
   );
 }
@@ -142,6 +159,112 @@ function FileStat({ label, value }: { label: string; value: string }) {
     <div>
       <div className="font-mono text-micro uppercase tracking-widest2 text-fog-700">{label}</div>
       <div className="font-mono text-[12.5px] tabular-nums mt-0.5 text-fog-100">{value}</div>
+    </div>
+  );
+}
+
+// Renders per-session diffs filtered to a single file path. Each session
+// gets its own diff block; when multiple sessions touched the same file,
+// the user sees each contribution separately.
+function FileDiffSection({
+  filePath,
+  sessionIDs,
+}: {
+  filePath: string;
+  sessionIDs: string[];
+}) {
+  if (sessionIDs.length === 0) {
+    return (
+      <div className="font-mono text-[10.5px] text-fog-700">
+        no sessions recorded
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {sessionIDs.slice(0, 3).map((sid) => (
+        <SessionDiffBlock key={sid} sessionId={sid} filePath={filePath} />
+      ))}
+      {sessionIDs.length > 3 && (
+        <div className="font-mono text-[10px] text-fog-700">
+          +{sessionIDs.length - 3} more session{sessionIDs.length - 3 > 1 ? 's' : ''}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Fetches a single session's diff and filters to the selected file.
+// Uses useSessionDiff (TanStack Query) with 5-minute staleTime so
+// re-opening the drawer doesn't re-fetch.
+function SessionDiffBlock({
+  sessionId,
+  filePath,
+}: {
+  sessionId: string;
+  filePath: string;
+}) {
+  const { diffs, loading, error } = useSessionDiff(sessionId, true, null);
+
+  if (loading) {
+    return (
+      <div className="font-mono text-[10px] text-fog-700 animate-pulse">
+        loading diff…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="font-mono text-[10px] text-rust">
+        diff fetch failed: {error}
+      </div>
+    );
+  }
+
+  if (!diffs) {
+    return (
+      <div className="font-mono text-[10px] text-fog-700">
+        no diff available
+      </div>
+    );
+  }
+
+  // Parse all session diffs, filter to just the selected file
+  const matching: DiffData[] = [];
+  for (const d of diffs) {
+    if (d.file === filePath || d.file.endsWith('/' + filePath) || filePath.endsWith('/' + d.file)) {
+      matching.push(parseUnifiedDiff(d.file, d.patch));
+    }
+  }
+
+  // Also try matching with normalized paths (opencode may return
+  // workspace-relative or absolute paths, and the heat path may be
+  // absolute or workspace-relative)
+  if (matching.length === 0) {
+    const normalizedTarget = filePath.replace(/\\/g, '/').split('/').pop() ?? '';
+    for (const d of diffs) {
+      const normalizedFile = d.file.replace(/\\/g, '/').split('/').pop() ?? '';
+      if (normalizedTarget && normalizedFile && normalizedTarget === normalizedFile) {
+        matching.push(parseUnifiedDiff(d.file, d.patch));
+      }
+    }
+  }
+
+  if (matching.length === 0) {
+    return (
+      <div className="font-mono text-[10px] text-fog-700">
+        file not in session diff
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      {matching.map((diff) => (
+        <DiffView key={diff.file} diff={diff} />
+      ))}
     </div>
   );
 }

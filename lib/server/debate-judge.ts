@@ -17,259 +17,24 @@ import 'server-only';
 
 import { getSessionMessagesServer, postSessionMessageServer } from './opencode-server';
 import { waitForSessionIdle } from './blackboard/coordinator';
-import { formatWallClockState, isWallClockExpired } from './swarm-bounds';
+import { checkWallClockExpired } from './swarm-bounds';
 import { withRunGuard } from './run-guard';
 import { recordPartialOutcome } from './degraded-completion';
-import { extractLatestAssistantText } from './harvest-drafts';
-import type { OpencodeMessage } from '../opencode/types';
-
-const JUDGE_AGENT_NAME = 'judge';
-const GENERATOR_AGENT_PREFIX = 'generator-';
+import { buildLessonsBlock } from './lesson-inject';
+import { extractLatestAssistantText, snapshotKnownIDs } from './harvest-drafts';
+import {
+  JudgeVerdict,
+  buildGeneratorIntroPrompt,
+  buildJudgeIntroPrompt,
+  buildJudgmentPrompt,
+  buildRevisionPrompt,
+  classifyJudgeReply,
+  bulletAddressedFraction,
+} from './debate-judge/parsers';
 
 import { TIMINGS } from './pattern-tunables';
 const ROUND_WAIT_MS = TIMINGS.debate.roundWaitMs;
 const DEFAULT_MAX_ROUNDS = 2;
-
-// harvest-drafts.ts.
-
-function buildGeneratorIntroPrompt(
-  directive: string | undefined,
-  generatorIndex: number,
-  totalGenerators: number,
-): string {
-  const base =
-    directive?.trim() ||
-    'Address the mission implied by the project README.';
-  return [
-    `You are **generator ${generatorIndex} of ${totalGenerators}** in a debate.`,
-    '',
-    `Mission: ${base}`,
-    '',
-    'Produce YOUR proposal for how to approach this. Be concrete —',
-    'describe the approach, make explicit trade-offs, and commit to',
-    'specifics. Other generators are working in parallel without seeing',
-    'your draft. A judge will evaluate all proposals and select one',
-    '(possibly asking for revisions).',
-    '',
-    'Focus on genuine divergence — do NOT try to guess what the other',
-    'generators will say. Your value is the distinct perspective you',
-    'bring. The judge picks winners based on quality + fit, not consensus.',
-  ].join('\n');
-}
-
-function buildJudgeIntroPrompt(
-  directive: string | undefined,
-  generatorCount: number,
-): string {
-  const base =
-    directive?.trim() ||
-    'The generators are addressing the mission from the project README.';
-  return [
-    `You are the **judge** in a debate between ${generatorCount} generators.`,
-    '',
-    `Mission: ${base}`,
-    '',
-    'Sit tight until the generators produce their proposals. Once you',
-    "receive them, your job is to evaluate rigorously and deliver a",
- 'verdict in exactly this structured shape (',
-    'judge.md I1):',
-    '',
-    '  WINNER: generator-N (confidence: K/5) — <one-line reason>',
-    '  MERGE: (confidence: K/5) <synthesis of best elements across proposals>',
-    '  REVISE — generator-N:',
-    '    - <specific change 1>',
-    '    - <specific change 2>',
-    '    - <specific change 3>',
-    '  REVISE — generator-M:',
-    '    - <…>',
-    '',
-    'Start your reply with one of WINNER / MERGE / REVISE (case-',
-    'insensitive). On WINNER and MERGE, include `(confidence: K/5)`',
-    'where K is 1-5. 5 = clearly',
-    'best, 4 = strong preference, 3 = better-than-others, 2 = close',
-    'call, 1 = could go either way. Be honest about close calls — the',
-    'UI shows the score so the user can spot when a winner barely',
-    'edged out the others. On REVISE, list 2-4 specific bullet-point',
-    'changes per generator who needs revision. Bullets must name a',
-    'concrete edit, not a vague critique — "tighten the second',
-    'paragraph" beats "improve flow."',
-    '',
-    'Your verdict is authoritative. WINNER or MERGE ends the debate.',
-    'REVISE sends per-generator bullets back for the next round.',
-    'Note: the orchestrator auto-stops if generators fail to engage',
-    "with your REVISE bullets across consecutive rounds, so the",
-    'feedback shape is load-bearing.',
-  ].join('\n');
-}
-
-function buildJudgmentPrompt(
-  drafts: Array<{ index: number; text: string | null }>,
-  round: number,
-  maxRounds: number,
-): string {
-  const proposalBlocks = drafts
-    .filter((d) => d.text !== null)
-    .map(
-      (d) =>
-        `### Proposal from generator-${d.index}\n\n${(d.text ?? '').trim()}`,
-    )
-    .join('\n\n---\n\n');
-  return [
-    `## Round ${round} of ${maxRounds}: evaluate the proposals below`,
-    '',
-    proposalBlocks,
-    '',
-    '---',
-    '',
-    'Reply now. Start with WINNER, MERGE, or REVISE per your contract.',
-  ].join('\n');
-}
-
-function buildRevisionPrompt(
-  feedback: string,
-  round: number,
-  maxRounds: number,
-): string {
-  return [
-    `## Round ${round} of ${maxRounds}: judge requested revisions`,
-    '',
-    'Judge feedback:',
-    '',
-    feedback.trim(),
-    '',
-    'Revise your proposal to address the feedback. Reply with your',
-    'updated proposal.',
-  ].join('\n');
-}
-
-export interface JudgeVerdict {
-  verdict: 'winner' | 'merge' | 'revise' | 'unclear';
-  body: string;
-  // bullets. Map keys are generator indices (1..N); values are the
-  // verdict's bullet list for that generator. Empty when the reply
-  // didn't conform to the structured contract — fallback path.
-  bulletsByGenerator: Map<number, string[]>;
-  // WINNER/MERGE verdicts. 1-5 scale; null when the judge didn't
-  // emit a parseable score (older models, REVISE verdicts where
-  // confidence isn't applicable, or non-conforming replies).
-  // Surfaced in the debate-rail's verdict cell as a small bar.
-  confidence: number | null;
-}
-
-// Parse `(confidence: K/5)` or `confidence: K` from a verdict line.
-// Tolerant of capitalization and surrounding punctuation.
-const CONFIDENCE_RE = /confidence\s*[:=]\s*([1-5])\s*(?:\/\s*5)?/i;
-function parseConfidence(text: string): number | null {
-  const m = CONFIDENCE_RE.exec(text);
-  if (!m) return null;
-  const n = parseInt(m[1], 10);
-  return Number.isFinite(n) && n >= 1 && n <= 5 ? n : null;
-}
-
-// Parse REVISE bullets per generator. Pattern: a line like
-// "REVISE — generator-2:" introduces a generator block, followed
-// by bulleted lines starting with "- " until the next block or
-// end-of-text. Tolerant of variants ("REVISE generator-2:",
-// "Generator 2:" inside a single REVISE block).
-function parseGeneratorBullets(text: string): Map<number, string[]> {
-  const map = new Map<number, string[]>();
-  // Match section headers like "REVISE — generator-2:" or
-  // "Generator 2:" optionally preceded by whitespace.
-  const sectionRe = /(?:^|\n)\s*(?:revise[\s:—-]+)?generator[\s-]*(\d+)\s*:\s*\n([\s\S]*?)(?=(?:\n\s*(?:revise[\s:—-]+)?generator[\s-]*\d+\s*:)|$)/gi;
-  let match: RegExpExecArray | null;
-  while ((match = sectionRe.exec(text)) !== null) {
-    const idx = parseInt(match[1], 10);
-    if (!Number.isFinite(idx)) continue;
-    const block = match[2];
-    const bullets: string[] = [];
-    const bulletRe = /^\s*[-*+]\s+(.+)$/gm;
-    let bm: RegExpExecArray | null;
-    while ((bm = bulletRe.exec(block)) !== null) {
-      const cleaned = bm[1].trim();
-      if (cleaned) bullets.push(cleaned);
-    }
-    if (bullets.length > 0) map.set(idx, bullets);
-  }
-  return map;
-}
-
-export function classifyJudgeReply(text: string): JudgeVerdict {
-  const first = text.split('\n', 1)[0]?.trim() ?? '';
-  // I4: confidence comes from anywhere in the WINNER / MERGE line.
-  // Parsed once across the first ~200 chars (the verdict line);
-  // null when missing.
-  const headerSlice = text.slice(0, 200);
-  const confidence = parseConfidence(headerSlice);
-  if (/^winner\b/i.test(first)) {
-    return {
-      verdict: 'winner',
-      body: text.trim(),
-      bulletsByGenerator: new Map(),
-      confidence,
-    };
-  }
-  if (/^merge\b/i.test(first)) {
-    return {
-      verdict: 'merge',
-      body: text.trim(),
-      bulletsByGenerator: new Map(),
-      confidence,
-    };
-  }
-  if (/^revise\b/i.test(first)) {
-    const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
-    return {
-      verdict: 'revise',
-      body: stripped,
-      bulletsByGenerator: parseGeneratorBullets(text),
-      // REVISE verdicts don't have confidence (they're not picking a
-      // winner). Always null.
-      confidence: null,
-    };
-  }
-  return {
-    verdict: 'unclear',
-    body: text.trim(),
-    bulletsByGenerator: new Map(),
-    confidence: null,
-  };
-}
-
-// Given a generator's R(N+1) proposal text and the bullets the judge
-// asked it to address in R(N), count how many bullets the proposal
-// engaged with. Engagement is detected by token-jaccard ≥ 0.4 against
-// the bullet text — captures rephrasing without forcing exact
-// substring match. Returns the addressed-fraction in [0, 1].
-function tokenizeForAddress(s: string): Set<string> {
-  const out = new Set<string>();
-  for (const raw of s.toLowerCase().split(/[^a-z0-9]+/)) {
-    if (!raw || raw.length < 4) continue;
-    out.add(raw);
-  }
-  return out;
-}
-
-export function bulletAddressedFraction(
-  proposalText: string,
-  bullets: string[],
-): number {
-  if (bullets.length === 0) return 1; // nothing to address = trivially "addressed"
-  const proposalTok = tokenizeForAddress(proposalText);
-  let addressed = 0;
-  for (const b of bullets) {
-    const bulletTok = tokenizeForAddress(b);
-    if (bulletTok.size === 0) continue;
-    let intersect = 0;
-    for (const t of bulletTok) if (proposalTok.has(t)) intersect += 1;
-    const union = proposalTok.size + bulletTok.size - intersect;
-    const jaccard = union === 0 ? 0 : intersect / union;
-    // Use a low threshold (0.10) — proposals are typically much
-    // longer than the bullet, so even partial overlap usually means
-    // engagement. We just want to catch the "totally ignored" case.
-    if (jaccard >= 0.1) addressed += 1;
-  }
-  return addressed / bullets.length;
-}
 
 export async function runDebateJudgeKickoff(
   swarmRunID: string,
@@ -320,24 +85,27 @@ export async function runDebateJudgeKickoff(
   // agent names not in opencode's built-in list (build/compaction/explore/
   // general/plan/summary/title) cause prompt_async to silently drop the
   // user message + never start an assistant turn.
+  const lessons = await buildLessonsBlock(meta.workspace);
   try {
+    const judgePrompt = buildJudgeIntroPrompt(meta.directive, generatorCount);
     await postSessionMessageServer(
       judgeSID,
       meta.workspace,
-      buildJudgeIntroPrompt(meta.directive, generatorCount),
+      lessons ? lessons + '\n\n' + judgePrompt : judgePrompt,
       { model: judgeModel },
     );
     await Promise.all(
-      generatorSIDs.map((sid, idx) =>
-        postSessionMessageServer(
+      generatorSIDs.map((sid, idx) => {
+        const genPrompt = buildGeneratorIntroPrompt(meta.directive, idx + 1, generatorCount);
+        return postSessionMessageServer(
           sid,
           meta.workspace,
-          buildGeneratorIntroPrompt(meta.directive, idx + 1, generatorCount),
+          lessons ? lessons + '\n\n' + genPrompt : genPrompt,
           {
             model: generatorModel(idx),
           },
-        ),
-      ),
+        );
+      }),
     );
   } catch (err) {
     console.warn(
@@ -357,21 +125,12 @@ export async function runDebateJudgeKickoff(
     `[debate-judge] run ${swarmRunID}: judge + ${generatorCount} generators primed`,
   );
 
-  // Track known IDs per session so subsequent rounds only harvest new turns.
+  const knownAll = await snapshotKnownIDs(meta, '[debate-judge]');
   const knownByGenerator = new Map<string, Set<string>>();
-  const knownJudge = new Set<string>();
   for (const sid of generatorSIDs) {
-    const msgs = await getSessionMessagesServer(sid, meta.workspace).catch(
-      () => [],
-    );
-    knownByGenerator.set(sid, new Set(msgs.map((m) => m.info.id)));
+    knownByGenerator.set(sid, knownAll.get(sid) ?? new Set());
   }
-  {
-    const msgs = await getSessionMessagesServer(judgeSID, meta.workspace).catch(
-      () => [],
-    );
-    for (const m of msgs) knownJudge.add(m.info.id);
-  }
+  const knownJudge = knownAll.get(judgeSID) ?? new Set<string>();
 
   // bookkeeping. Stores the prior round's per-generator bullets so
   // the current round's drafts can be checked against them. Empty
@@ -428,16 +187,7 @@ export async function runDebateJudgeKickoff(
     // Wall-clock cap (#85) — log + abort cleanly if elapsed exceeds
     // bounds.minutesCap. Partial debate (drafts + verdicts already
     // produced) stays in opencode for the human's review.
-    if (isWallClockExpired(meta, meta.createdAt)) {
-      console.warn(
-        `[debate-judge] run ${swarmRunID}: wall-clock cap reached (${formatWallClockState(meta, meta.createdAt)}) — aborting at round ${round}/${maxRounds}`,
-      );
-      recordPartialOutcome(swarmRunID, {
-        pattern: 'debate-judge',
-        phase: `round ${round}/${maxRounds} (wall-clock)`,
-        reason: 'wall-clock-cap',
-        summary: buildPartialSummary(round),
-      });
+    if (checkWallClockExpired(swarmRunID, meta, `round ${round}/${maxRounds}`, buildPartialSummary(round))) {
       return;
     }
     // 1. Wait for each generator to produce their round's draft.
@@ -597,6 +347,15 @@ export async function runDebateJudgeKickoff(
       console.log(
         `[debate-judge] run ${swarmRunID} round ${round}: ${verdict.verdict.toUpperCase()} — debate complete`,
       );
+      if (verdict.body) {
+        const { writeDissentLesson } = await import('./memory/memory-store');
+        await writeDissentLesson(
+          meta.workspace,
+          swarmRunID,
+          'debate-judge',
+          `Overruled stance: ${verdict.body}`,
+        ).catch(() => {});
+      }
       return;
     }
 

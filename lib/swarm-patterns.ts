@@ -9,7 +9,7 @@ export interface PatternMeta {
   tagline: string;          // short description shown inside the tile
   // Concrete mechanics — rendered as a second dimmer line under the
   // tagline so users can eyeball "how many sessions / what loop / what
- // ceiling" without reading . Keep ≤ ~55 chars to fit
+  // ceiling" without reading . Keep ≤ ~55 chars to fit
   // two-line tiles cleanly.
   shape: string;
   // When to reach for it. One line, hover-revealable in the tile or
@@ -28,6 +28,13 @@ export interface PatternMeta {
   // (#103). Re-derive from a fresh stress test if pattern internals
   // change.
   recommendedMax: number;
+  // Pattern-aware directive hint shown below the textarea when the
+  // user has selected a pattern. Explains what shape of directive
+  // this pattern works best with.
+  directiveHint?: string;
+  // Pre-filled directive template the user can insert with one click.
+  // Keep it short (1-3 sentences) and pattern-specific.
+  directiveTemplate?: string;
 }
 
 export const patternMeta: Record<SwarmPattern, PatternMeta> = {
@@ -39,6 +46,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'molten',
     recommendedMax: 1,
+    directiveHint: 'describe what you want done. the session uses opencode\'s native task tool for sub-agents.',
   },
   blackboard: {
     label: 'blackboard',
@@ -48,6 +56,8 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'amber',
     recommendedMax: 6,
+    directiveHint: 'break the work into small, independent units. each unit becomes a board item that agents claim and complete.',
+    directiveTemplate: 'Survey the repo and implement the following changes as atomic board items: ',
   },
   'map-reduce': {
     label: 'map-reduce',
@@ -57,6 +67,8 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'mint',
     recommendedMax: 5,
+    directiveHint: 'describe what to survey. mappers explore slices in parallel; the reducer synthesizes findings.',
+    directiveTemplate: 'Survey the codebase and produce a synthesis of: ',
   },
   council: {
     label: 'council',
@@ -66,6 +78,8 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'iris',
     recommendedMax: 5,
+    directiveHint: 'phrase this as a decision or design question. council members draft independently and converge.',
+    directiveTemplate: 'Propose and compare approaches for: ',
   },
   'orchestrator-worker': {
     label: 'orchestrator',
@@ -75,6 +89,8 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'rust',
     recommendedMax: 8,
+    directiveHint: 'describe the end state. the orchestrator decomposes and delegates; workers implement.',
+    directiveTemplate: 'Implement the following end-to-end, delegating implementation to workers: ',
   },
   'debate-judge': {
     label: 'debate',
@@ -84,6 +100,8 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'amber',
     recommendedMax: 4,
+    directiveHint: 'pose this as a choice between alternatives. generators propose; the judge decides.',
+    directiveTemplate: 'Which approach is best for: ',
   },
   'critic-loop': {
     label: 'critic',
@@ -93,6 +111,19 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     available: true,
     accent: 'mint',
     recommendedMax: 2,
+    directiveHint: 'provide a specification. the worker drafts; the critic reviews iteratively until approved.',
+    directiveTemplate: 'Refine the following until the critic approves: ',
+  },
+  pipeline: {
+    label: 'pipeline',
+    tagline: 'chain patterns into a multi-phase workflow',
+    shape: '2-4 phases · each a different pattern · continuation-linked',
+    fit: 'explore → decide → execute; any workflow needing diverge-then-converge',
+    available: true,
+    accent: 'iris',
+    recommendedMax: 8,
+    directiveHint: 'describe the final outcome. the pipeline chains phases automatically — each phase\'s output feeds the next.',
+    directiveTemplate: 'Explore the codebase, then implement: ',
   },
 };
 
@@ -294,6 +325,14 @@ export const patternDefaults: Record<SwarmPattern, PatternDefaults> = {
     // requires exactly teamSize=2.
     teamModels: () => [GEMMA, GEMMA],
   },
+  pipeline: {
+    // Pipeline doesn't directly spawn sessions — it creates phase runs
+    // that each have their own model lineup. The teamModels here are
+    // unused (pipeline's kickoff creates sub-runs, not opencode sessions).
+    // The default below is a placeholder for the phase-coordinator
+    // bookkeeping session (the pipeline watcher itself).
+    teamModels: () => [GEMMA],
+  },
 };
 
 // Static class-name maps so Tailwind's JIT purger keeps these utilities in
@@ -315,3 +354,40 @@ export const patternAccentBorder: Record<PatternMeta['accent'], string> = {
   rust: 'border-rust/40',
   fog: 'border-fog-500/40',
 };
+
+// --- Pipeline presets --------------------------------------------------------
+
+import type { PipelinePreset, PipelinePhase } from './swarm-run-types';
+
+export const PIPELINE_PRESETS: Record<PipelinePreset, PipelinePhase[]> = {
+  'explore-then-execute': [
+    { pattern: 'map-reduce' },
+    { pattern: 'blackboard' },
+  ],
+  'deliberate-then-execute': [
+    { pattern: 'council' },
+    { pattern: 'orchestrator-worker' },
+  ],
+  'explore-deliberate-execute': [
+    { pattern: 'map-reduce' },
+    { pattern: 'council' },
+    { pattern: 'orchestrator-worker' },
+  ],
+  'explore-and-validate': [
+    { pattern: 'map-reduce' },
+    { pattern: 'critic-loop' },
+  ],
+  'explore-judge-execute': [
+    { pattern: 'map-reduce' },
+    { pattern: 'debate-judge' },
+    { pattern: 'blackboard' },
+  ],
+};
+
+export function resolvePipelinePhases(
+  config: import('./swarm-run-types').PipelineConfig,
+): PipelinePhase[] {
+  if (config.phases && config.phases.length >= 2) return config.phases;
+  if (config.preset) return PIPELINE_PRESETS[config.preset];
+  return PIPELINE_PRESETS['explore-then-execute'];
+}

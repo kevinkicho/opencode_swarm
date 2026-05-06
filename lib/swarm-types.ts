@@ -27,7 +27,8 @@ export type SwarmPattern =
   | 'council'
   | 'orchestrator-worker'
   | 'debate-judge'
-  | 'critic-loop';
+  | 'critic-loop'
+  | 'pipeline';
 
 // UI agent status — superset of opencode SessionStatus (idle/busy/retry)
 // with extra rendering states for the roster
@@ -197,6 +198,7 @@ export interface TodoItem {
   taskMessageId?: string;      // AgentMessage.id of the task-tool call that executes it
   parentTodoId?: string;       // non-null for sub-plan items (not rendered in v1)
   note?: string;               // short annotation, e.g. "3 retries"
+  createdAtMs?: number;         // epoch ms from the containing message timestamp
 }
 
 export interface RunMeta {

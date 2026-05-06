@@ -32,6 +32,17 @@ const ALLOWLIST = new Set<string>([
   'app/api/swarm/run/[swarmRunID]/board/events/route.ts:89',
   'app/api/swarm/run/[swarmRunID]/events/route.ts:92',
   'app/api/swarm/run/[swarmRunID]/events/route.ts:238',
+  // extract-json: multi-strategy parser — each catch is a "try next parser"
+  // fallback. Logging every failure would be noisy since most inputs succeed
+  // on a later strategy. The fallback chain is intentional: direct parse →
+  // fenced → balanced-bracket extraction → trailing-comma repair.
+  'lib/json/extract-json.ts:80',
+  'lib/json/extract-json.ts:87',
+  'lib/json/extract-json.ts:90',
+  'lib/json/extract-json.ts:98',
+  'lib/json/extract-json.ts:101',
+  'lib/json/extract-json.ts:109',
+  'lib/json/extract-json.ts:112',
 ]);
 
 interface EmptyCatchSite {
