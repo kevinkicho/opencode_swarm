@@ -57,8 +57,11 @@ export function providerOf(providerID?: string): Provider {
 // from the zen table. Returns 0 when the model isn't in the table or tokens
 // are missing — better than NaN, and aligns with zero-cost free tiers.
 export function derivedCost(info: OpencodeMessage['info']): number {
-  if (typeof info.cost === 'number') return info.cost;
-  const price = priceFor(info.modelID);
+  // When opencode provides a positive cost, trust it. When cost is 0
+  // (ollama flat-rate plans that don't bill per-token), fall through to
+  // compute from tokens so the dashboard shows real estimated cost.
+  if (typeof info.cost === 'number' && info.cost > 0) return info.cost;
+  const price = priceFor(info.modelID, info.providerID);
   const t = info.tokens;
   if (!price || !t) return 0;
   const input = t.input * price.input;

@@ -182,7 +182,7 @@ export function ProjectsMatrix({
           <div className="px-4 py-2 hairline-t bg-ink-850/40 flex items-center gap-6 flex-wrap">
             <div className="flex items-center gap-2 font-mono text-micro uppercase tracking-widest2 text-fog-600">
               <span>status</span>
-              {(['live', 'idle', 'error', 'stale', 'unknown'] as SwarmRunStatus[]).map((s) => (
+              {(['live', 'idle', 'completed', 'error', 'stale', 'unknown'] as SwarmRunStatus[]).map((s) => (
                 <span key={s} className="flex items-center gap-1">
                   <span className={clsx('inline-block w-2.5 h-2.5 rounded-sm', STATUS_TONE[s])} />
                   <span className="text-fog-500 normal-case">{s}</span>

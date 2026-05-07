@@ -159,7 +159,7 @@ export function SwarmTopbar({
             <RetryAfterChip endsAtMs={tickerState.retryAfterEndsAtMs} />
           )}
         {liveSessionId && liveDirectory && swarmRunStatus === 'live' && (
-          <AbortChip sessionId={liveSessionId} directory={liveDirectory} />
+          <AbortChip sessionId={liveSessionId} directory={liveDirectory} swarmRunMeta={swarmRunMeta} />
         )}
         {swarmRunMeta && (swarmRunStatus === 'live' || swarmRunStatus === 'idle') && (
           <HardStopChip swarmRunID={swarmRunMeta.swarmRunID} />

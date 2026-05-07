@@ -27,6 +27,7 @@ import { priceFor } from '../../opencode/pricing';
 import type {
   OpencodeMessage,
   OpencodeMessageInfo,
+  OpencodePart,
 } from '../../opencode/types';
 import type {
   SwarmRunMeta,
@@ -47,16 +48,49 @@ const ZOMBIE_THRESHOLD_MS = 10 * 60 * 1000;
 // match within rounding. Duplicated here rather than imported because
 // transform.ts is a client-adjacent module and we want the server path
 // free of its transitive deps.
-function costForAssistant(info: OpencodeMessageInfo): number {
-  if (typeof info.cost === 'number') return info.cost;
-  const price = priceFor(info.modelID);
+//
+// For ollama and other providers that don't report per-message token counts,
+// we estimate from part content length (~4 chars per token) and use the
+// model's pricing tier. This gives a reasonable approximation for cost
+// and token dashboards rather than showing $0.00 / 0 tokens forever.
+const CHARS_PER_TOKEN = 4;
+
+function estimateTokensFromParts(parts: OpencodePart[]): number {
+  let chars = 0;
+  for (const p of parts) {
+    if (p.type === 'text' || p.type === 'reasoning') {
+      chars += (p as { text: string }).text.length;
+    }
+  }
+  return Math.ceil(chars / CHARS_PER_TOKEN);
+}
+
+function costForAssistant(info: OpencodeMessageInfo, parts: OpencodePart[]): number {
+  // When opencode provides a positive cost, trust it and return directly.
+  // When cost is 0 (ollama flat-rate plans that don't bill per-token),
+  // fall through to compute from tokens or estimate — $0 is a pricing tier
+  // signal, not "no data."
+  if (typeof info.cost === 'number' && info.cost > 0) return info.cost;
+  const price = priceFor(info.modelID, info.providerID);
   const t = info.tokens;
-  if (!price || !t) return 0;
-  const input = t.input * price.input;
-  const output = t.output * price.output;
-  const cachedRead = t.cache.read * price.cached;
-  const cachedWrite = t.cache.write * (price.write ?? price.input);
-  return (input + output + cachedRead + cachedWrite) / 1_000_000;
+  // If opencode reported real token counts, use them directly.
+  if (t && t.total > 0) {
+    if (!price) return 0;
+    const input = t.input * price.input;
+    const output = t.output * price.output;
+    const cachedRead = t.cache.read * price.cached;
+    const cachedWrite = t.cache.write * (price.write ?? price.input);
+    return (input + output + cachedRead + cachedWrite) / 1_000_000;
+  }
+  // Zero-token provider (ollama): estimate from part content and apply
+  // the model's pricing. If we can't find a price, return 0 rather than NaN.
+  if (!price) return 0;
+  const estimated = estimateTokensFromParts(parts);
+  if (estimated === 0) return 0;
+  // Rough 50/50 input/output split — we don't know the real ratio for
+  // estimated tokens, but averaging the two rates gives a fair cost.
+  const avgRate = (price.input + price.output) / 2;
+  return (estimated * avgRate) / 1_000_000;
 }
 
 function sumRunMetrics(messages: OpencodeMessage[]): {
@@ -67,8 +101,11 @@ function sumRunMetrics(messages: OpencodeMessage[]): {
   let tokensTotal = 0;
   for (const m of messages) {
     if (m.info.role !== 'assistant') continue;
-    tokensTotal += m.info.tokens?.total ?? 0;
-    costTotal += costForAssistant(m.info);
+    const reported = m.info.tokens?.total ?? 0;
+    // Use reported tokens if available, otherwise estimate from content.
+    const effectiveTokens = reported > 0 ? reported : estimateTokensFromParts(m.parts);
+    tokensTotal += effectiveTokens;
+    costTotal += costForAssistant(m.info, m.parts);
   }
   return { costTotal, tokensTotal };
 }
@@ -78,6 +115,7 @@ export interface DerivedRow {
   lastActivityTs: number | null;
   costTotal: number;
   tokensTotal: number;
+  messageCount: number;
 }
 
 // Classify one session's tail + sum its assistant-message $/tokens. The
@@ -117,17 +155,18 @@ async function deriveSessionRow(
     // Could be the session was deleted out from under us, or opencode is
     // momentarily unreachable. Either way, not actionable by the picker —
     // surface as unknown and let the next poll try again.
-    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0, messageCount: 0 };
   }
 
   if (messages.length === 0) {
     // Session exists but no messages yet. Usually means the run was just
     // created and the first directive is still in flight. Not idle, not
     // error — honest answer is unknown.
-    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0, messageCount: 0 };
   }
 
   const { costTotal, tokensTotal } = sumRunMetrics(messages);
+  const assistantMessageCount = messages.filter((m) => m.info.role === 'assistant').length;
   const last = messages[messages.length - 1];
   const info = last.info;
   const now = Date.now();
@@ -142,23 +181,13 @@ async function deriveSessionRow(
   // semantics across the two no-completed-yet branches.
   if (info.role === 'user') {
     if (now - info.time.created < ZOMBIE_THRESHOLD_MS) {
-      return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal };
+      return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal, messageCount: assistantMessageCount };
     }
-    return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal };
+    return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal, messageCount: assistantMessageCount };
   }
 
   // Assistant message path.
   if (info.error) {
-    // #7.Q27 — distinguish operator-initiated aborts from real failures.
-    // opencode marks MessageAbortedError on the trailing assistant turn
-    // whenever our /abort fires (cap-stop, manual /stop, operator abort,
-    // F1 silent-watchdog stop). All four are *graceful terminations* —
-    // the session is no longer producing and won't be revived without a
-    // new prompt. Under the renamed schema (#176) that's `stale` per-
-    // session — the run-level fold consults the ticker before deciding
-    // whether the run as a whole is alive-but-quiet (idle) or stopped
-    // (stale). Other error names (provider failures, parse errors,
-    // model timeouts) still escalate to `error` so the picker shows red.
     const errName = (info.error as { name?: string } | null | undefined)?.name;
     if (errName === 'MessageAbortedError') {
       return {
@@ -166,6 +195,7 @@ async function deriveSessionRow(
         lastActivityTs: info.time.completed ?? info.time.created,
         costTotal,
         tokensTotal,
+        messageCount: assistantMessageCount,
       };
     }
     return {
@@ -173,20 +203,17 @@ async function deriveSessionRow(
       lastActivityTs: info.time.completed ?? info.time.created,
       costTotal,
       tokensTotal,
+      messageCount: assistantMessageCount,
     };
   }
   if (info.time.completed) {
-    // Assistant turn completed cleanly. Per-session this is "alive but
-    // quiet" (idle); the run-level fold reconciles against the ticker —
-    // a stopped ticker promotes idle → stale (the run is over, not just
-    // between turns).
-    return { status: 'idle', lastActivityTs: info.time.completed, costTotal, tokensTotal };
+    return { status: 'idle', lastActivityTs: info.time.completed, costTotal, tokensTotal, messageCount: assistantMessageCount };
   }
   // No completed, no error — either actively producing or zombie.
   if (now - info.time.created < ZOMBIE_THRESHOLD_MS) {
-    return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal };
+    return { status: 'live', lastActivityTs: info.time.created, costTotal, tokensTotal, messageCount: assistantMessageCount };
   }
-  return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal };
+  return { status: 'stale', lastActivityTs: info.time.created, costTotal, tokensTotal, messageCount: assistantMessageCount };
 }
 
 // Priority for folding N per-session statuses into one pre-ticker run-level
@@ -197,6 +224,7 @@ async function deriveSessionRow(
 //   error  → at least one session reported a real failure (highest)
 //   live   → at least one session is currently producing tokens
 //   idle   → at least one session is between turns (waiting)
+//   completed → all sessions finished cleanly, no ticker or ticker stopped cleanly
 //   stale  → at least one session is a zombie / cleanly aborted
 //   unknown → no probe data
 //
@@ -205,9 +233,10 @@ async function deriveSessionRow(
 // dominates everything — a single failed session is the most actionable
 // signal regardless of what its peers are doing.
 const STATUS_PRIORITY: Record<SwarmRunStatus, number> = {
-  error: 4,
-  live: 3,
-  idle: 2,
+  error: 5,
+  live: 4,
+  idle: 3,
+  completed: 2,
   stale: 1,
   unknown: 0,
 };
@@ -232,7 +261,7 @@ export async function deriveRunRow(
   signal?: AbortSignal
 ): Promise<DerivedRow> {
   if (meta.sessionIDs.length === 0) {
-    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+    return { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0, messageCount: 0 };
   }
 
   const settled = await Promise.allSettled(
@@ -241,21 +270,20 @@ export async function deriveRunRow(
 
   let costTotal = 0;
   let tokensTotal = 0;
+  let messageCount = 0;
   let lastActivityTs: number | null = null;
   let statusRank = STATUS_PRIORITY.unknown;
   let status: SwarmRunStatus = 'unknown';
 
   for (const r of settled) {
-    // deriveSessionRow is non-throwing; a rejection here would be an
-    // unexpected bug path. Treat as unknown + zeros so one pathological
-    // session doesn't poison the aggregate.
     const row: DerivedRow =
       r.status === 'fulfilled'
         ? r.value
-        : { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+        : { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0, messageCount: 0 };
 
     costTotal += row.costTotal;
     tokensTotal += row.tokensTotal;
+    messageCount += row.messageCount;
     if (row.lastActivityTs !== null) {
       lastActivityTs =
         lastActivityTs === null ? row.lastActivityTs : Math.max(lastActivityTs, row.lastActivityTs);
@@ -268,7 +296,7 @@ export async function deriveRunRow(
   }
 
   status = await reconcileWithTicker(meta.swarmRunID, status);
-  return { status, lastActivityTs, costTotal, tokensTotal };
+  return { status, lastActivityTs, costTotal, tokensTotal, messageCount };
 }
 
 // Apply the alive/stopped axis from the auto-ticker on top of a session-
@@ -333,13 +361,23 @@ async function reconcileWithTicker(
     } else {
       if (tickerFailureStop) {
         status = 'error';
+      } else if (status === 'idle') {
+        // Ticker stopped cleanly and all sessions idle — the run
+        // finished its work under coordinator management.
+        status = 'completed';
       } else if (status !== 'error') {
         status = 'stale';
       }
     }
   } else {
+    // Runs without a ticker (pattern='none', single-session) can't be
+    // "alive but quiet" — there's no coordinator to dispatch new turns.
+    // A session-fold status of 'idle' (all sessions completed cleanly)
+    // is best described as 'completed' — the run finished its work and
+    // won't produce more. Anything else (live/unknown/stale/error) keeps
+    // its session-fold status as-is.
     if (status === 'idle') {
-      status = 'stale';
+      status = 'completed';
     }
   }
 
@@ -398,7 +436,7 @@ export async function deriveRunTokens(
     const row: DerivedRow =
       r.status === 'fulfilled'
         ? r.value
-        : { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0 };
+        : { status: 'unknown', lastActivityTs: null, costTotal: 0, tokensTotal: 0, messageCount: 0 };
 
     sessions.push({
       sessionID: sid,
@@ -487,6 +525,7 @@ type SwarmStatusKey = SwarmRunStatus;
 const TTL_BY_STATUS: Record<SwarmStatusKey, number> = {
   live: 10_000,
   idle: 10_000,
+  completed: 600_000,
   unknown: 10_000,
   stale: 600_000, // 10 min — terminal, only invalidated by appendEvent
   error: 600_000, // 10 min — terminal

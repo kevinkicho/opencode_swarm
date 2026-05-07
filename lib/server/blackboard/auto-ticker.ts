@@ -203,6 +203,10 @@ export function startAutoTicker(
     livenessTimer,
     lastSeenTokens: 0,
     lastTokensChangedAtMs: nowMs,
+    // Ambition ratchet: start at tier 1. Hydration from meta happens
+    // in ensureSlots (tick.ts) so a ticker restart resumes at the
+    // tier where the previous one left off.
+    currentTier: 1,
   });
 }
 

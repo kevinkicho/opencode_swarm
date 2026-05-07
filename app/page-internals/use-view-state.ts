@@ -53,7 +53,7 @@ export function useViewState<RunView extends string>(
   isViewEnabled: (view: RunView) => boolean,
   gateDeps: readonly unknown[],
 ): ViewState<RunView> {
-  const [leftTab, setLeftTab] = useState<LeftTab>('plan');
+  const [leftTab, setLeftTab] = useState<LeftTab>('roster');
   const [runView, setRunView] = useState<RunView>(defaultView);
   const [focusTodoId, setFocusTodoId] = useState<string | null>(null);
 

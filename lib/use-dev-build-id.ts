@@ -40,6 +40,7 @@ export function useDevBuildId(): void {
   useEffect(() => {
     let captured: string | null = null;
     let cancelled = false;
+    let lastReloadAttempt = 0;
 
     const reloadIfStale = async () => {
       if (cancelled) return;
@@ -51,10 +52,11 @@ export function useDevBuildId(): void {
         return;
       }
       if (current !== captured) {
-        // Server restarted — drop the stale tab. `location.reload()`
-        // bypasses any cached JS because the dev server already
-        // sends `Cache-Control: no-store`.
-        // eslint-disable-next-line no-console
+        const now = Date.now();
+        if (now - lastReloadAttempt < 60_000) {
+          return;
+        }
+        lastReloadAttempt = now;
         console.info(
           `[dev] build id changed (${captured} → ${current}) — reloading stale tab`,
         );

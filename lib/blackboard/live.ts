@@ -24,7 +24,8 @@ export interface TickerSnapshot {
     | 'commits-cap'
     | 'todos-cap'
     | 'replan-loop-exhausted'
-    | 'operator-hard-stop';
+    | 'operator-hard-stop'
+    | 'operator-abort';
   consecutiveIdle: number;
   idleThreshold: number;
   lastOutcome?:
@@ -42,6 +43,10 @@ export interface TickerSnapshot {
   // stopReason='zen-rate-limit' runs whose 429 carried a parseable
   // retry-after. UI renders a live countdown chip from this.
   retryAfterEndsAtMs?: number;
+  // Per-session inFlight state. Used to override agent status: a session
+  // with inFlight=true should show as "thinking" even if another agent
+  // spoke more recently.
+  slots: { sessionID: string; inFlight: boolean }[];
 }
 
 // Kept as three distinct arms (rather than a combined `active | stopped`)
@@ -294,4 +299,4 @@ export function deriveBoardAgents(
 // import from live.ts don't need to update their import paths. The
 // shared helper lives in roles.ts because it's both client- and
 // server-needed — this file carries 'use client'.
-export { roleNamesFromMeta } from './roles';
+export { roleNamesFromMeta, roleNamesBySessionID } from './roles';

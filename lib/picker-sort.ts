@@ -23,8 +23,8 @@ import type { SwarmRunListRow } from '@/lib/swarm-run-types';
  */
 export function sortRunsForPicker(rows: SwarmRunListRow[]): SwarmRunListRow[] {
   return [...rows].sort((a, b) => {
-    const aBucket = a.status === 'live' ? 0 : a.status === 'idle' ? 1 : 2;
-    const bBucket = b.status === 'live' ? 0 : b.status === 'idle' ? 1 : 2;
+    const aBucket = a.status === 'live' ? 0 : a.status === 'idle' || a.status === 'completed' ? 1 : 2;
+    const bBucket = b.status === 'live' ? 0 : b.status === 'idle' || b.status === 'completed' ? 1 : 2;
     if (aBucket !== bBucket) return aBucket - bBucket;
     return b.meta.createdAt - a.meta.createdAt;
   });

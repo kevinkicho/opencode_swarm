@@ -45,11 +45,12 @@ export interface StatusVisual {
  * dashboard, retro view.
  */
 export const STATUS_VISUAL: Record<SwarmRunStatus, StatusVisual> = {
-  live:    { dot: 'bg-mint animate-pulse', label: 'live',    rank: 0, tone: 'text-mint' },
-  idle:    { dot: 'bg-mint',               label: 'idle',    rank: 1, tone: 'text-mint' },
-  error:   { dot: 'bg-rust',               label: 'error',   rank: 2, tone: 'text-rust' },
-  stale:   { dot: 'bg-fog-500',            label: 'stale',   rank: 3, tone: 'text-fog-400' },
-  unknown: { dot: 'bg-fog-700',            label: '—',       rank: 4, tone: 'text-fog-700' },
+  live:      { dot: 'bg-mint animate-pulse', label: 'live',      rank: 0, tone: 'text-mint' },
+  idle:      { dot: 'bg-mint',               label: 'idle',      rank: 1, tone: 'text-mint' },
+  completed: { dot: 'bg-mint/70',           label: 'done',      rank: 2, tone: 'text-mint/70' },
+  error:     { dot: 'bg-rust',               label: 'error',     rank: 3, tone: 'text-rust' },
+  stale:     { dot: 'bg-fog-500',            label: 'stale',     rank: 4, tone: 'text-fog-400' },
+  unknown:   { dot: 'bg-fog-700',            label: '—',         rank: 5, tone: 'text-fog-700' },
 };
 
 /**
@@ -59,11 +60,12 @@ export const STATUS_VISUAL: Record<SwarmRunStatus, StatusVisual> = {
  * mental model is time-aggregated cost rather than current liveness.
  */
 export const STATUS_BURN_VISUAL: Record<SwarmRunStatus, { bg: string; tone: string }> = {
-  live:    { bg: 'bg-amber',    tone: 'text-amber' },
-  idle:    { bg: 'bg-mint',     tone: 'text-mint' },
-  error:   { bg: 'bg-rust',     tone: 'text-rust' },
-  stale:   { bg: 'bg-fog-500',  tone: 'text-fog-500' },
-  unknown: { bg: 'bg-fog-700',  tone: 'text-fog-700' },
+  live:      { bg: 'bg-amber',    tone: 'text-amber' },
+  idle:      { bg: 'bg-mint',     tone: 'text-mint' },
+  completed: { bg: 'bg-mint/70',  tone: 'text-mint/70' },
+  error:     { bg: 'bg-rust',     tone: 'text-rust' },
+  stale:     { bg: 'bg-fog-500',  tone: 'text-fog-500' },
+  unknown:   { bg: 'bg-fog-700',  tone: 'text-fog-700' },
 };
 
 /**
@@ -75,6 +77,7 @@ export const STATUS_PRIORITY: SwarmRunStatus[] = [
   'error',
   'live',
   'idle',
+  'completed',
   'stale',
   'unknown',
 ];

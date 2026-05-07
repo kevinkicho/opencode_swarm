@@ -110,7 +110,7 @@ export function LaneHeaderCell({
       <button
         onClick={() => onSelectAgent(a.id)}
         className={clsx(
-          'shrink-0 text-left hairline-r transition relative w-full',
+          'shrink-0 text-left hairline-r transition relative w-full outline-none focus-visible:ring-1 focus-visible:ring-molten/40',
           active ? 'bg-ink-700/40' : 'hover:bg-ink-700/20',
         )}
         style={{ width: LANE_WIDTH }}

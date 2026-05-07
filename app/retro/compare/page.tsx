@@ -1,5 +1,6 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { RetroCompareView } from '@/components/retro-compare';
@@ -10,7 +11,7 @@ type CompareResult = {
   agentRollups: import('@/lib/server/memory/types').AgentRollup[];
 };
 
-export default function RetroComparePage() {
+function RetroCompareInner() {
   const sp = useSearchParams();
   const ids = sp.get('ids') ?? '';
 
@@ -41,4 +42,12 @@ export default function RetroComparePage() {
   }
 
   return <RetroCompareView runs={data} />;
+}
+
+export default function RetroComparePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-ink-900 text-fog-600 p-6 font-mono text-sm">loading…</div>}>
+      <RetroCompareInner />
+    </Suspense>
+  );
 }

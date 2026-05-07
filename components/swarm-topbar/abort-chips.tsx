@@ -1,20 +1,29 @@
 // Abort + hard-stop chips rendered inside SwarmTopbar's nav.
 //
-// AbortChip — soft cancel via opencode's session.abort. Applies only
-// to the primary session; multi-session runs may keep peer sessions
-// alive (#105 motivates HardStopChip below).
+// AbortChip — soft cancel. For ticker-backed patterns (blackboard,
+// orchestrator-worker) this calls /stop?reason=abort to tear down the
+// whole run (ticker + all sessions). For non-ticker patterns it calls
+// opencode's session.abort on the primary session only.
 //
 // HardStopChip — two-step confirm hard kill via /api/swarm/run/:id/stop.
-// Tears down the orchestrator coroutine + every session at once.
+// Tears down the orchestrator coroutine + every session at once. Same
+// endpoint as AbortChip for ticker-backed patterns, but requires
+// confirmation to prevent accidental use.
 //
 // Lifted from swarm-topbar/chips.tsx 2026-04-28 along with the small
 // fmtAbsTs helper (used by both chips' tooltips).
 
+import type { SwarmRunMeta } from '@/lib/swarm-run-types';
 import clsx from 'clsx';
 import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Tooltip } from '../ui/tooltip';
 import { abortSessionBrowser } from '@/lib/opencode/live';
+
+export const TICKER_BACKED_PATTERNS: ReadonlySet<string> = new Set([
+  'blackboard',
+  'orchestrator-worker',
+]);
 
 export function fmtAbsTs(ms: number): string {
   const d = new Date(ms);
@@ -25,19 +34,41 @@ export function fmtAbsTs(ms: number): string {
 export function AbortChip({
   sessionId,
   directory,
+  swarmRunMeta,
 }: {
   sessionId: string;
   directory: string;
+  swarmRunMeta: SwarmRunMeta | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // For ticker-backed patterns, call /stop?reason=abort to tear down
+  // the whole run (ticker + all sessions). For non-ticker patterns,
+  // just abort the primary session via opencode.
+  const isTickerBacked =
+    swarmRunMeta !== null && TICKER_BACKED_PATTERNS.has(swarmRunMeta.pattern);
 
   const doAbort = async () => {
     if (busy) return;
     setBusy(true);
     setError(null);
     try {
-      await abortSessionBrowser(sessionId, directory);
+      if (isTickerBacked && swarmRunMeta) {
+        const res = await fetch(
+          `/api/swarm/run/${swarmRunMeta.swarmRunID}/stop?reason=abort`,
+          { method: 'POST', headers: { 'content-type': 'application/json' } },
+        );
+        if (!res.ok) {
+          const detail = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            detail?: string;
+          };
+          throw new Error(detail.error ?? detail.detail ?? `HTTP ${res.status}`);
+        }
+      } else {
+        await abortSessionBrowser(sessionId, directory);
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -53,7 +84,9 @@ export function AbortChip({
           <span className="font-mono text-[10.5px] text-rust">{error}</span>
         ) : (
           <span className="font-mono text-[10.5px] text-fog-300">
-            cancel this run — already-committed tool calls finish, no further reasoning
+            {isTickerBacked
+              ? 'stop the whole run — aborts all sessions and the ticker'
+              : 'cancel this run — already-committed tool calls finish, no further reasoning'}
           </span>
         )
       }
@@ -102,7 +135,7 @@ export function HardStopChip({ swarmRunID }: { swarmRunID: string }) {
   // mutation doesn't model directly. Mutation drives only busy/done/error.
   const stopMutation = useMutation({
     mutationFn: async (): Promise<void> => {
-      const res = await fetch(`/api/swarm/run/${swarmRunID}/stop`, {
+      const res = await fetch(`/api/swarm/run/${swarmRunID}/stop?reason=hard-stop`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
       });

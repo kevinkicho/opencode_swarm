@@ -105,6 +105,7 @@ function computePatternStats(rows: SwarmRunListRow[]): PatternStats[] {
     const statusCount: Record<SwarmRunStatus, number> = {
       live: 0,
       idle: 0,
+      completed: 0,
       error: 0,
       stale: 0,
       unknown: 0,
@@ -162,6 +163,7 @@ export function CrossPresetMetrics({
       .filter((d) => d >= 0);
     const liveCount = rows.filter((r) => r.status === 'live').length;
     const staleCount = rows.filter((r) => r.status === 'stale').length;
+    const completedCount = rows.filter((r) => r.status === 'completed').length;
     const errorCount = rows.filter((r) => r.status === 'error').length;
     const n = rows.length;
     return {
@@ -179,6 +181,7 @@ export function CrossPresetMetrics({
       // a colSpan=3 "—" placeholder before; now show the same shape as
       // per-preset rows.
       livePct: (liveCount / n) * 100,
+      completedPct: (completedCount / n) * 100,
       stalePct: (staleCount / n) * 100,
       errorPct: (errorCount / n) * 100,
     };

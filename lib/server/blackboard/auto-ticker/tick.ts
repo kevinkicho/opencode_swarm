@@ -27,6 +27,7 @@ import {
   type PerSessionSlot,
   type TickerState,
 } from './types';
+import { attemptTierEscalation, boardHasWorkInFlight } from './escalation';
 import type { TickOutcome } from '../coordinator';
 
 // Re-export the AutoTickerExports lookup so the eager-sweep path inside
@@ -91,6 +92,11 @@ async function ensureSlots(state: TickerState): Promise<boolean> {
     for (const sid of state.sessionIDs) {
       if (!state.slots.has(sid)) state.slots.set(sid, makeSlot(sid));
     }
+  }
+  // Hydrate currentTier from persisted meta so a ticker restart resumes
+  // at the tier where the previous one left off.
+  if (typeof meta.currentTier === 'number' && meta.currentTier > state.currentTier) {
+    state.currentTier = meta.currentTier;
   }
   return true;
 }
@@ -192,7 +198,17 @@ async function tickSession(
       tickingSlots.every((s) => s.consecutiveIdle >= IDLE_TICKS_BEFORE_STOP);
 
     if (state.periodicSweepMs === 0 && allSessionsIdle) {
-      stopAutoTicker(state.swarmRunID, 'auto-idle');
+      // Even short runs (no periodic sweep) get one shot at escalation.
+      // If the board is drained at the current tier, attempt to bump.
+      const hasWork = boardHasWorkInFlight(state.swarmRunID);
+      if (!hasWork) {
+        const escalated = await attemptTierEscalation(state).catch(() => false);
+        if (!escalated) {
+          stopAutoTicker(state.swarmRunID, 'auto-idle');
+        }
+      } else {
+        stopAutoTicker(state.swarmRunID, 'auto-idle');
+      }
     } else if (state.periodicSweepMs > 0 && allSessionsIdle) {
       // Board-drained check. Only the work-class kinds count: open
       // todos / claimed / in-progress. Criteria, findings, and
@@ -219,10 +235,21 @@ async function tickSession(
         return;
       }
       if (workInFlight === 0) {
-        console.log(
-          `[board/auto-ticker] ${state.swarmRunID}: board drained (0 work-class items in flight) and all sessions idle ≥${IDLE_TICKS_BEFORE_STOP} ticks — auto-stopping despite periodicSweepMs=${state.periodicSweepMs}`,
-        );
-        stopAutoTicker(state.swarmRunID, 'auto-idle-drained');
+        // Ambition ratchet: before stopping, attempt to escalate to the
+        // next tier. If the planner produces fresh work at the higher
+        // ambition level, the run continues. If not (or we're already at
+        // max tier), stop normally. Fire-and-forget: we don't await the
+        // escalation. The next tick cycle will see either new open items
+        // (sessions pick them up) or continued idleness (stop fires).
+        const escalated = await attemptTierEscalation(state).catch(() => false);
+        if (!escalated) {
+          console.log(
+            `[board/auto-ticker] ${state.swarmRunID}: board drained (0 work-class items in flight) and all sessions idle ≥${IDLE_TICKS_BEFORE_STOP} ticks — auto-stopping at tier ${state.currentTier} (no higher tier available or sweep produced no work)`,
+          );
+          stopAutoTicker(state.swarmRunID, 'auto-idle-drained');
+        }
+        // If escalated, the next tick cycle will see fresh open items
+        // and reset idle counters, so the run continues at the new tier.
       }
     }
   } catch (err) {

@@ -199,6 +199,9 @@ export function SwarmTimeline({
           </Tooltip>
 
           <div className="ml-auto flex items-center gap-2">
+
+            <PlaybackControls />
+
             <div className="relative">
               <IconSearch
                 size={11}
@@ -321,9 +324,6 @@ export function SwarmTimeline({
         </div>
       </div>
       <ScrollToBottomButton scrollRef={scrollRef} />
-      <div className="absolute bottom-16 left-3 z-30">
-        <PlaybackControls />
-      </div>
     </section>
   );
 }

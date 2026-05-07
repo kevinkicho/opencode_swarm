@@ -40,6 +40,19 @@ export const IDLE_TICKS_BEFORE_EAGER_SWEEP = 3;
 // reasoning about them.
 export const MIN_MS_BETWEEN_SWEEPS = 2 * 60 * 1000;
 
+// ─── Ambition ratchet ────────────────────────────────────────────────
+
+// Tier escalation ladder. Each tier expands the planner's scope.
+export const TIER_LADDER = [
+  'Fix bugs, polish, and small improvements — the obvious loose ends.',
+  'Refactor, extract, and enhance — missing features the README promises.',
+  'Cross-cutting, architectural, and multi-file improvements — wiring up gaps.',
+  'Integrations, end-to-end features, and spec claims the code doesn\'t deliver yet.',
+  'Ambitious bets: multi-area improvements, new subsystems, or design-level changes.',
+] as const;
+
+export const MAX_TIER = TIER_LADDER.length;
+
 // ─── StopReason ──────────────────────────────────────────────────────
 
 export type StopReason =
@@ -78,7 +91,13 @@ export type StopReason =
   // evidence. Used when a run is wedged with a turn that's still
   // emitting parts (silent watchdog can't fire) but isn't producing
   // useful output.
-  | 'operator-hard-stop';
+  | 'operator-hard-stop'
+  // Operator clicked the abort button. For ticker-backed patterns
+  // (blackboard, orchestrator-worker) this stops the ticker + aborts
+  // every session — the same teardown as hard-stop, but with a
+  // distinct reason so partial-outcome wording distinguishes "I
+  // wanted to cancel" from "I had to force-kill a wedged run."
+  | 'operator-abort';
 
 // ─── State shape ─────────────────────────────────────────────────────
 
@@ -152,16 +171,31 @@ export interface TickerState {
   livenessTimer: NodeJS.Timeout | null;
   lastSeenTokens: number;
   lastTokensChangedAtMs: number;
+  // Ambition ratchet: current escalation tier (1-based). Starts at 1.
+  // Each tier expands the planner's scope — from bug fixes (1) up to
+  // architectural and cross-cutting changes (4+). Bumped when the board
+  // drains at the current tier and persisted via updateRunMeta so a
+  // ticker restart resumes at the correct level.
+  currentTier: number;
 }
 
 export type TickerMap = Map<string, TickerState>;
+
+// Minimal per-session slot exposure for client-side status derivation.
+// The UI only needs to know which sessions have an in-flight tick so agents
+// aren't marked "idle" when the ticker just dispatched work to them.
+export interface TickerSlotSnapshot {
+  sessionID: string;
+  inFlight: boolean;
+}
 
 // Shape handed to clients via /api/swarm/run/:id/ticker. Keep this in
 // sync with components/board-rail.tsx's TickerChip expectations.
 // Per-session detail is rolled up: inFlight=any, consecutiveIdle=min,
 // last* from the most recently active session. The UI contract predates
 // per-session fan-out and we keep it single-valued so the chip stays
-// readable at a glance.
+// readable at a glance. Per-session inFlight slots are now exposed via
+// the `slots` field for agent status derivation.
 export interface TickerSnapshot {
   swarmRunID: string;
   intervalMs: number;
@@ -174,17 +208,13 @@ export interface TickerSnapshot {
   lastOutcome?: TickOutcome;
   lastRanAtMs?: number;
   startedAtMs: number;
-  // #7.Q21 — surface the running commits counter so the UI can show it
-  // in the ticker chip and the picker. Internal state (TickerState)
-  // already maintains this; just wasn't propagated through `snapshot()`.
-  // Monotonic — increments on every successful 'picked' outcome
-  // (todo committed to done). Compared to bounds.commitsCap by the
-  // hard-cap watchdog. 0 immediately after start; persists post-stop.
   totalCommits: number;
-  // Epoch-ms when the Zen retry-after window ends (only present when
-  // stopReason is 'zen-rate-limit' AND the 429 response carried a
-  // parseable retry-after header). UI shows a live countdown chip.
   retryAfterEndsAtMs?: number;
+  currentTier: number;
+  // Per-session inFlight state. Used by the client to override agent
+  // status: a session with inFlight=true should show as "thinking"
+  // even if another agent spoke more recently.
+  slots: TickerSlotSnapshot[];
 }
 
 // ─── Public lifecycle options ────────────────────────────────────────

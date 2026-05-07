@@ -8,7 +8,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round 
   "agents": [
     {
       "accent": "mint",
-      "costUsed": 0,
+      "costUsed": 0.00106026,
       "focus": "build",
       "glyph": "B",
       "id": "ag_build_ewpuZgzp",
@@ -18,7 +18,10 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round 
         "family": "gemma",
         "id": "gemma4:31b-cloud",
         "label": "gemma4:31b-cloud",
-        "pricing": undefined,
+        "pricing": {
+          "input": 0.02,
+          "output": 0.02,
+        },
         "provider": "ollama",
       },
       "name": "build",
@@ -112,7 +115,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round 
 [
   {
     "agents": 1,
-    "cost": 0,
+    "cost": 0.00106026,
     "provider": "ollama",
     "tokens": 53013,
   },
@@ -128,7 +131,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > council-round 
   "started": "Jan 1, 12:00 AM",
   "status": "done",
   "title": "fixture",
-  "totalCost": 0,
+  "totalCost": 0.00106026,
   "totalTokens": 53013,
 }
 `;
@@ -170,7 +173,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approve
   "agents": [
     {
       "accent": "mint",
-      "costUsed": 0,
+      "costUsed": 0.00027756000000000005,
       "focus": "build",
       "glyph": "B",
       "id": "ag_build_ZBqiTF12",
@@ -181,8 +184,8 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approve
         "id": "glm-5.1:cloud",
         "label": "glm-5.1:cloud",
         "pricing": {
-          "input": 1.4,
-          "output": 4.4,
+          "input": 0.02,
+          "output": 0.02,
         },
         "provider": "ollama",
       },
@@ -303,7 +306,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approve
 [
   {
     "agents": 1,
-    "cost": 0,
+    "cost": 0.00027756000000000005,
     "provider": "ollama",
     "tokens": 13878,
   },
@@ -319,7 +322,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > critic-approve
   "started": "Jan 1, 12:00 AM",
   "status": "done",
   "title": "fixture",
-  "totalCost": 0,
+  "totalCost": 0.00027756000000000005,
   "totalTokens": 13878,
 }
 `;
@@ -367,7 +370,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1
   "agents": [
     {
       "accent": "mint",
-      "costUsed": 0,
+      "costUsed": 0.00112552,
       "focus": "build",
       "glyph": "B",
       "id": "ag_build_24t340PL",
@@ -378,8 +381,8 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1
         "id": "glm-5.1:cloud",
         "label": "glm-5.1:cloud",
         "pricing": {
-          "input": 1.4,
-          "output": 4.4,
+          "input": 0.02,
+          "output": 0.02,
         },
         "provider": "ollama",
       },
@@ -481,7 +484,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1
 [
   {
     "agents": 1,
-    "cost": 0,
+    "cost": 0.00112552,
     "provider": "ollama",
     "tokens": 56276,
   },
@@ -497,7 +500,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > planner-tier-1
   "started": "Jan 1, 12:00 AM",
   "status": "done",
   "title": "fixture",
-  "totalCost": 0,
+  "totalCost": 0.00112552,
   "totalTokens": 56276,
 }
 `;
@@ -546,7 +549,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-
   "agents": [
     {
       "accent": "mint",
-      "costUsed": 0,
+      "costUsed": 0.00022672,
       "focus": "build",
       "glyph": "B",
       "id": "ag_build_d2vQDXXL",
@@ -556,7 +559,10 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-
         "family": "gemma",
         "id": "gemma4:31b-cloud",
         "label": "gemma4:31b-cloud",
-        "pricing": undefined,
+        "pricing": {
+          "input": 0.02,
+          "output": 0.02,
+        },
         "provider": "ollama",
       },
       "name": "build",
@@ -668,7 +674,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-
 [
   {
     "agents": 1,
-    "cost": 0,
+    "cost": 0.00022672,
     "provider": "ollama",
     "tokens": 11336,
   },
@@ -684,7 +690,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-pseudo-
   "started": "Jan 1, 12:00 AM",
   "status": "done",
   "title": "fixture",
-  "totalCost": 0,
+  "totalCost": 0.00022672,
   "totalTokens": 11336,
 }
 `;
@@ -744,7 +750,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-on
   "agents": [
     {
       "accent": "mint",
-      "costUsed": 0,
+      "costUsed": 0.0005525,
       "focus": "build",
       "glyph": "B",
       "id": "ag_build_imPMj0lF",
@@ -754,7 +760,10 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-on
         "family": "gemma",
         "id": "gemma4:31b-cloud",
         "label": "gemma4:31b-cloud",
-        "pricing": undefined,
+        "pricing": {
+          "input": 0.02,
+          "output": 0.02,
+        },
         "provider": "ollama",
       },
       "name": "build",
@@ -843,7 +852,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-on
 [
   {
     "agents": 1,
-    "cost": 0,
+    "cost": 0.0005525,
     "provider": "ollama",
     "tokens": 27625,
   },
@@ -859,7 +868,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-text-on
   "started": "Jan 1, 12:00 AM",
   "status": "done",
   "title": "fixture",
-  "totalCost": 0,
+  "totalCost": 0.0005525,
   "totalTokens": 27625,
 }
 `;
@@ -896,7 +905,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-to
   "agents": [
     {
       "accent": "mint",
-      "costUsed": 0,
+      "costUsed": 0.00022512,
       "focus": "build",
       "glyph": "B",
       "id": "ag_build_nABtKgZD",
@@ -907,8 +916,8 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-to
         "id": "glm-5.1:cloud",
         "label": "glm-5.1:cloud",
         "pricing": {
-          "input": 1.4,
-          "output": 4.4,
+          "input": 0.02,
+          "output": 0.02,
         },
         "provider": "ollama",
       },
@@ -1041,7 +1050,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-to
 [
   {
     "agents": 1,
-    "cost": 0,
+    "cost": 0.00022512,
     "provider": "ollama",
     "tokens": 11256,
   },
@@ -1057,7 +1066,7 @@ exports[`transform · fixture-driven (D7 schema-drift firewall) > worker-with-to
   "started": "Jan 1, 12:00 AM",
   "status": "done",
   "title": "fixture",
-  "totalCost": 0,
+  "totalCost": 0.00022512,
   "totalTokens": 11256,
 }
 `;

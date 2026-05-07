@@ -9,6 +9,7 @@ import 'server-only';
 
 import { abortSessionServer } from '../../opencode-server';
 import { getRun } from '../../swarm-registry';
+import { invalidateDerivedRow } from '../../swarm-registry/derive';
 import { emitTickerTick } from '../bus';
 import { persistTickerSnapshot } from '../ticker-snapshots';
 import { maybeRunAudit } from './audit';
@@ -66,6 +67,11 @@ export function stopAutoTicker(
 
   // subscribers see the transition without polling.
   emitTickerTick(swarmRunID, snapshot(s));
+
+  // Invalidate the derived-row cache so the next poll of
+  // GET /api/swarm/run sees 'completed' immediately instead of
+  // serving a stale 'idle' or 'live' for up to 10 seconds.
+  invalidateDerivedRow(swarmRunID);
 
   // Fire-and-forget abort on every session associated with this run.
   // Purpose: ensure no opencode assistant turn keeps streaming tokens

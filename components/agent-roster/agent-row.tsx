@@ -69,7 +69,7 @@ export function AgentRow({
           onToggleExpand();
           onSelect();
         }}
-        className="w-full text-left pl-3 pr-3 py-2 flex flex-col gap-1.5 hover:bg-ink-800/60 transition relative"
+        className="w-full text-left pl-3 pr-3 py-2 flex flex-col gap-1.5 hover:bg-ink-800/60 transition relative outline-none focus-visible:ring-1 focus-visible:ring-molten/40"
       >
         <span
           className={clsx(
@@ -169,28 +169,8 @@ export function AgentRow({
             <span className="font-mono text-[9px] uppercase tracking-widest2 text-fog-700 tabular-nums">
               ↑{agent.messagesSent} ↓{agent.messagesRecv}
             </span>
-          )}
-          {/* Budget bar — thin (2px) so it doesn't add visual weight.
-              When focus is shown, it has a fixed width since focus has flex-1.
-              Without focus, it fills all remaining space for max precision. */}
-          <Tooltip
-            content={`${compact(agent.tokensUsed)} of ${compact(agent.tokensBudget)} budget · ${tokenPct}%`}
-            side="top"
-          >
-            <span className={clsx(
-              'min-w-[24px] h-[2px] rounded-full bg-ink-900 overflow-hidden cursor-help',
-              agent.focus ? 'w-12' : 'flex-1',
-            )}>
-              <span
-                className={clsx(
-                  'block h-full rounded-full',
-                  tokenPct > 80 ? 'bg-rust' : tokenPct > 60 ? 'bg-amber' : 'bg-fog-500/70',
-                )}
-                style={{ width: `${tokenPct}%` }}
-              />
-            </span>
-          </Tooltip>
-          {/* Show cost inline only when at least one agent has non-zero
+           )}
+           {/* Show cost inline only when at least one agent has non-zero
               cost. On free-tier runs (ollama, go) every agent shows
               $0.00 which is pure noise — suppress and show only in
               expanded detail. */}
@@ -199,17 +179,14 @@ export function AgentRow({
               ${agent.costUsed.toFixed(2)}
             </span>
           )}
-          {/* Throughput sparkline — shows token activity over the last
-              30s. Only rendered when there are samples with any tokens;
-              all-zero sparklines read as dead noise. */}
-          {throughputSamples.some((t) => t > 0) && (
-            <MiniSparkline
-              samples={throughputSamples}
-              width={36}
-              height={12}
-              accent={st.color}
-            />
-          )}
+          {/* Throughput sparkline — always visible so the user can see
+              when an agent was last active. Empty = idle, peaks = busy. */}
+          <MiniSparkline
+            samples={throughputSamples}
+            width={36}
+            height={12}
+            accent={st.color}
+          />
         </div>
       </button>
 

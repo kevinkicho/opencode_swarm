@@ -27,11 +27,13 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { listBoardItems } from '../store';
+import { TIER_LADDER } from '../auto-ticker/types';
 
 export function buildPlannerPrompt(
   directive: string | undefined,
   boardContext?: PlannerBoardContext,
   readme?: string | null,
+  escalationTier?: number,
 ): string {
   const base =
     directive?.trim() ||
@@ -109,80 +111,30 @@ export function buildPlannerPrompt(
     'agents who will claim and implement each todo. Goal: maximize the team\'s',
     'progress toward the Mission — NOT maximize the number of todos.',
     '',
-    'Ground yourself before planning:',
-    '- Re-read the Mission.',
-    '- Note which of the README\'s claims the code actually delivers vs. which',
-    '  are aspirational and unbuilt. Unshipped claims are usually the highest-',
-    '  impact work.',
-    '- Use up to 10 read / grep / glob tool calls to sample the codebase',
-    '  strategically — not exhaustively.',
-    '',
-    'Then call todowrite with 6-15 todos. Mix of sizes is expected:',
-    '- Small (5-15 min): a targeted fix or polish',
-    '- Medium (15-45 min): implement one endpoint, one panel, one integration',
-    '- Large (45-120 min): build a feature the README promises but the code',
-    '  lacks, wire up a new data source end-to-end, ship a new data pipeline',
-    '',
-    'Bias strongly toward BUILDING over VERIFYING. If the README promises',
-    'integrations with free APIs, public datasets, central-bank or government',
-    'data — and those aren\'t wired up yet — the correct todos are "wire up X"',
-    'and "implement Y", NOT "verify X still works".',
-    '',
-    'AVOID these anti-patterns:',
-    '- "Verify X still works" — skip passive verifications unless there is',
-    '  concrete evidence X is broken.',
-    '- "Add tests for existing X" — only if tests are genuinely missing AND',
-    '  the area is load-bearing. Agents add tests naturally as they build.',
-    '- "Polish X" / "clean up Y" with no specific deliverable.',
-    '- Timid wording ("consider possibly", "maybe add", "look into").',
-    '- Items indistinguishable from the COMPLETED list above.',
-    '',
-    'Each todo must be a decisive, verifiable act that advances the Mission.',
-    '',
-    '**Author acceptance criteria alongside todos.** For each major',
-    'outcome the mission demands, emit a todowrite entry prefixed with',
-    '`[criterion]` describing the condition in plain language. Example:',
-    '`[criterion] Dashboard market-heatmap panel renders live data from',
-    'the API when the mission\'s target repo is running`. Criteria are',
-    'contract items — they describe WHAT SUCCESS LOOKS LIKE, not work to',
-    'do. The auditor verdicts against them (MET / UNMET / WONT_DO) as',
-    'the run progresses. Criteria are ADDITIVE: you can emit new ones on',
-    "later sweeps as the mission's shape clarifies, but never rewrite",
-    'existing ones — the auditor relies on stable contract text. Aim',
-    'for 3-6 criteria at boot; more can come as work unfolds. Criteria',
-    'do NOT get [verify], [role:X], or [files:] prefixes — they\'re',
-    'verdict targets, not worker-dispatch targets.',
-    '',
-    '**Declare expected file scope per todo.** Prefix each todo\'s content',
-    'with `[files:<path>[,<path>]]` listing the files the worker will',
-    'touch. Cap at 2 paths (smaller = smaller contention surface when',
-    'workers run in parallel; the coordinator rejects commits whose CAS',
-    'anchors drift — another worker modified the file under this one).',
-    'Example: `[files:lib/foo.ts,src/bar.tsx] Refactor X to extract Y`.',
-    'Use paths relative to the workspace root. For research / survey /',
-    'investigation todos that produce no file edits, omit the prefix —',
-    'the coordinator skips CAS hashing when no expectedFiles are set.',
-    '',
-    '**Flagging user-observable todos for Playwright verification.** If a',
-    "todo claims a UX-visible outcome the user would notice in a browser —",
-    '"the dashboard renders X", "clicking Y opens Z", "the chart shows',
-    'data from API", "the form submits to the /api/foo endpoint" — prefix',
-    'its `content` with the literal token `[verify]` (including brackets).',
-    'Example: `[verify] Dashboard market-heatmap panel renders from live',
-    "API data`. Todos that don't claim a user-observable outcome",
-    '(refactors, internal cleanup, pure test additions, docs) must NOT',
-    'carry the prefix. The prefix opts the todo into a browser-automated',
-    "check after the critic gate approves; overflagging just slows the",
-    'swarm, so be selective.',
-    '',
-    'Rules:',
-    '- todowrite must fire within your first 12 tool calls total.',
-    '- Do not edit files yourself. Do not call task or bash.',
-    '- No subagent recursion after todowrite.',
-    '- The sweep aborts at 5 minutes — plan decisively, not exhaustively.',
-    '',
-    'Call todowrite now.',
   );
+
+  // Ambition ratchet: tier preamble scales scope with each escalation.
+  // Tier 1 is the default (bugs, polish, small fixes). Each subsequent
+  // tier widens the planner's aperture toward the ceiling.
+  if (escalationTier && escalationTier > 1) {
+    const tierDesc = TIER_LADDER[escalationTier - 1] ?? `Tier ${escalationTier}: ambitious improvements`;
+    sections.push(
+      `## ⚠ Escalation tier ${escalationTier} of ${TIER_LADDER.length}`,
+      '',
+      `The prior sweep(s) completed all work at tier ${escalationTier - 1}.`,
+      `You are now operating at TIER ${escalationTier}.`,
+      '',
+      `This tier's ambition band:`,
+      `  ${tierDesc}`,
+      '',
+      'Do NOT re-propose work from lower tiers (those are COMPLETED above).',
+      'Do NOT propose verification-only items unless there is concrete',
+      'evidence a feature is broken. Focus on work that ONLY becomes',
+      `visible at tier ${escalationTier} scope — cross-cutting, architectural,`,
+      'features the codebase lacks, or spec claims still unfulfilled.',
+      '',
+    );
+  }
 
   return sections.join('\n');
 }

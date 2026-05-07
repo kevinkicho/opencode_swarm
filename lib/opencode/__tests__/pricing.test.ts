@@ -35,6 +35,29 @@ describe('priceFor — model name → price lookup', () => {
     expect(priceFor('minimax-m2-5')).toBeDefined();
     expect(priceFor('kimi-k2-5')).toBeDefined();
   });
+
+  it('routes ollama-provider models to ollama-bundle pricing', () => {
+    // modelID without ollama prefix but providerID=ollama → ollama-bundle
+    const ollamaBundle = priceFor('gemma4:31b-cloud', 'ollama');
+    expect(ollamaBundle).toBeDefined();
+    expect(ollamaBundle!.input).toBe(0.02);
+    expect(ollamaBundle!.output).toBe(0.02);
+
+    // modelID with ollama prefix (no providerID) → also ollama-bundle
+    expect(priceFor('ollama/gemma4:31b-cloud')).toEqual(ollamaBundle);
+
+    // Non-ollama provider → zen pricing (not ollama-bundle)
+    const zenPrice = priceFor('gemma4:31b-cloud', 'opencode');
+    expect(zenPrice).toBeUndefined(); // gemma4 doesn't match any zen tier
+
+    // glm-5.1 with ollama provider → ollama-bundle, not zen
+    const glmOllama = priceFor('glm-5.1:cloud', 'ollama');
+    expect(glmOllama!.input).toBe(0.02);
+
+    // glm-5.1 without ollama provider → zen pricing
+    const glmZen = priceFor('glm-5.1:cloud');
+    expect(glmZen!.input).toBeGreaterThan(0.02);
+  });
 });
 
 describe('tokensForBudget', () => {

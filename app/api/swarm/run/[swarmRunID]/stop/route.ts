@@ -1,17 +1,17 @@
 // POST /api/swarm/run/:swarmRunID/stop
 //
-// Hard-stop a swarm run (#105). Soft `abort` (in components/swarm-topbar.tsx)
-// only kills the primary session — N-1 worker / critic / verifier / auditor
-// sessions keep tokenating, and the orchestrator coroutine keeps waiting.
-// This endpoint tears down the whole run in one shot:
+// Stop a swarm run (operator-initiated). Used by both AbortChip (soft
+// abort) and HardStopChip (force-stop). The `?reason=abort|hard-stop`
+// query parameter controls the ticker stop reason and partial-outcome
+// wording. Both paths tear down the whole run:
 //
 //   1. Stop the auto-ticker if one is running (handles its own abort
 //      cascade + per-session abort + run-end audit + persisted snapshot).
 //   2. For runs WITHOUT a ticker (council, debate-judge, critic-loop,
 //      map-reduce phase 1), abort every session in meta.sessionIDs +
 //      critic/verifier/auditor explicitly.
-//   3. Record a partial-outcome finding ("operator hard-stop") so the
-//      board carries durable evidence of the action.
+//   3. Record a partial-outcome finding so the board carries durable
+//      evidence of the action.
 //
 // Tradeoff: in-flight tool calls land as-is — no rollback. That's the
 // alternative to "stuck forever," which is what soft-abort leaves you
@@ -33,13 +33,20 @@ export const runtime = 'nodejs';
 
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { swarmRunID: string } },
 ): Promise<Response> {
   const meta = await getRun(params.swarmRunID);
   if (!meta) {
     return Response.json({ error: 'swarm run not found' }, { status: 404 });
   }
+
+  // reason: 'abort' (from AbortChip) or 'hard-stop' (from HardStopChip).
+  // Controls ticker stop reason and partial-outcome wording.
+  const urlReason = req.nextUrl.searchParams.get('reason');
+  const isAbort = urlReason === 'abort';
+  const stopReason = isAbort ? 'operator-abort' : 'operator-hard-stop';
+  const humanLabel = isAbort ? 'aborted' : 'force-stopped';
 
   // Build the abort target list once; used both for the explicit-abort
   // path (no ticker) and for the response payload.
@@ -57,13 +64,9 @@ export async function POST(
   const snap = getTickerSnapshot(params.swarmRunID);
   const tickerActive = snap !== null && !snap.stopped;
   if (tickerActive) {
-    stopAutoTicker(params.swarmRunID, 'operator-hard-stop');
+    stopAutoTicker(params.swarmRunID, stopReason);
   } else {
     // Path 2: no active ticker. Abort sessions ourselves.
-    // fire-and-forget per-session: opencode aborts are idempotent and
-    // we don't want one slow / dead session to delay the others. The
-    // catch-undefined keeps Promise.allSettled returning quickly even
-    // when the underlying request errors.
     await Promise.allSettled(
       targets.map((sid) =>
         abortSessionServer(sid, meta.workspace).catch(() => undefined),
@@ -77,10 +80,10 @@ export async function POST(
   try {
     recordPartialOutcome(params.swarmRunID, {
       pattern: meta.pattern,
-      phase: 'operator-hard-stop',
-      reason: 'operator-hard-stop',
+      phase: stopReason,
+      reason: stopReason,
       summary: [
-        'Operator force-stopped this run via the run-anchor force-stop button.',
+        `Operator ${humanLabel} this run via the ${isAbort ? 'abort' : 'force-stop'} button.`,
         '',
         `Sessions aborted: ${targets.length} (${meta.sessionIDs.length} workers${
           meta.criticSessionID ? ' + critic' : ''

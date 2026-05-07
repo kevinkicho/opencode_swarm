@@ -28,10 +28,11 @@
 //   6. `space-y-3` between turns for visual breathing room.
 
 import clsx from 'clsx';
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import type { AgentMessage, Agent, PartType } from '@/lib/swarm-types';
 import { partMeta, toolMeta } from '@/lib/part-taxonomy';
 import { compact } from '@/lib/format';
+import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 const accentText: Record<Agent['accent'], string> = {
   molten: 'text-molten',
@@ -102,6 +103,7 @@ export function ChatView({
   onFocus: (id: string) => void;
   loading?: boolean;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   const agentMap = useMemo(() => {
     const m = new Map<string, Agent>();
     for (const a of agents) m.set(a.id, a);
@@ -121,7 +123,7 @@ export function ChatView({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 relative" ref={scrollRef}>
       {turns.map((turn) =>
         turn.kind === 'user' ? (
           <UserTurnCard key={turn.key} turn={turn} agentMap={agentMap} />
@@ -135,6 +137,7 @@ export function ChatView({
           />
         ),
       )}
+      <ScrollToBottomButton scrollRef={scrollRef} />
     </div>
   );
 }

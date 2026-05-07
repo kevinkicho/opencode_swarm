@@ -115,7 +115,16 @@ const LOOKUP: ReadonlyArray<readonly [RegExp, keyof typeof PRICES]> = [
   [/big[-_/]?pickle/, 'big-pickle'],
 ];
 
-export function priceFor(modelID: string | undefined): ZenPrice | undefined {
+export function priceFor(modelID: string | undefined, providerID?: string | undefined): ZenPrice | undefined {
+  if (!modelID && !providerID) return undefined;
+  // Ollama-bundle pricing takes priority when the provider is ollama,
+  // regardless of the model name. Without this, an ollama-routed model
+  // like "gemma4:31b-cloud" (providerID=ollama, modelID has no ollama
+  // prefix) would fall through to a zen-specific pricing tier or return
+  // undefined — both wrong for a flat-subscription plan.
+  if (providerID && /(^|[/_-])ollama([/_-]|$)/i.test(providerID)) {
+    return PRICES['ollama-bundle'];
+  }
   if (!modelID) return undefined;
   const lower = modelID.toLowerCase();
   for (const [pattern, key] of LOOKUP) {

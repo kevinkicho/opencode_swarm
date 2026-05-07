@@ -112,7 +112,7 @@ export function LeftTabs({
   // non-pipeline runs.
   swarmRunMeta?: SwarmRunMeta | null;
 }) {
-  const [localTab, setLocalTab] = useState<Tab>('plan');
+  const [localTab, setLocalTab] = useState<Tab>('roster');
   const tab = tabProp ?? localTab;
   const setTab = (t: Tab) => {
     if (onTabChange) onTabChange(t);
@@ -176,26 +176,6 @@ export function LeftTabs({
     <section className="relative flex flex-col min-w-0 min-h-0 bg-ink-850 sidebar-seam">
       <div className="h-10 hairline-b px-2 flex items-center gap-0.5 bg-ink-850/80 backdrop-blur">
         <TabButton
-          active={tab === 'plan'}
-          onClick={() => setTab('plan')}
-          label="plan"
-          // Singleton count — total todos. Earlier `${completed}/${total}`
-          // mixed badge formats with roster (also fraction) and heat
-          // (singleton); standardizing on a single count keeps the tab
-          // strip readable. Completion progress lives in the rail's
-          // own header.
-          count={plan.length > 0 ? `${planCompleted}/${plan.length}` : ''}
-          tooltip={
-            <div className="space-y-0.5 max-w-[260px]">
-              <div className="font-mono text-[11px] text-fog-200">plan</div>
-              <div className="font-mono text-[10.5px] text-fog-500">
-                agent-owned todos written via <span className="text-fog-300">todowrite</span>. click a row to
-                expand details + jump to its delegation.
-              </div>
-            </div>
-          }
-        />
-        <TabButton
           active={tab === 'roster'}
           onClick={() => setTab('roster')}
           label="roster"
@@ -205,6 +185,21 @@ export function LeftTabs({
               <div className="font-mono text-[11px] text-fog-200">roster</div>
               <div className="font-mono text-[10.5px] text-fog-500">
                 every live agent in the run — identity, model, status, tokens + cost. click a row to open the inspector.
+              </div>
+            </div>
+          }
+        />
+        <TabButton
+          active={tab === 'plan'}
+          onClick={() => setTab('plan')}
+          label="plan"
+          count={plan.length > 0 ? `${planCompleted}/${plan.length}` : ''}
+          tooltip={
+            <div className="space-y-0.5 max-w-[260px]">
+              <div className="font-mono text-[11px] text-fog-200">plan</div>
+              <div className="font-mono text-[10.5px] text-fog-500">
+                agent-owned todos written via <span className="text-fog-300">todowrite</span>. click a row to
+                expand details + jump to its delegation.
               </div>
             </div>
           }

@@ -144,7 +144,7 @@ function PickerPanel({
   // the user wants to know when scanning ("how many runs are still
   // attached to compute?"); the dot color tells them which sub-state.
   const aliveCount = useMemo(
-    () => rows.filter((r) => r.status === 'live' || r.status === 'idle').length,
+    () => rows.filter((r) => r.status === 'live' || r.status === 'idle' || r.status === 'completed').length,
     [rows]
   );
   const liveCount = useMemo(

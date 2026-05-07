@@ -28,6 +28,11 @@ export function toAgents(messages: OpencodeMessage[]): {
 
   messages.forEach((m, idx) => {
     if (m.info.role !== 'assistant') return;
+    // Compaction sessions are opencode's built-in context compaction.
+    // They produce a new child session with agent='compaction' that
+    // shouldn't appear as a separate agent in the roster — it's an
+    // internal mechanism, not a team member.
+    if (m.info.agent === 'compaction') return;
     const id = agentIdFor(m.info.agent, 'assistant', m.info.sessionID);
     const existing = byId.get(id);
     const tokens = m.info.tokens?.total ?? 0;
@@ -43,7 +48,7 @@ export function toAgents(messages: OpencodeMessage[]): {
 
     if (!existing) {
       order.push(id);
-      const price = priceFor(m.info.modelID);
+      const price = priceFor(m.info.modelID, m.info.providerID);
       byId.set(id, {
         id,
         sessionID: m.info.sessionID,
@@ -98,6 +103,7 @@ export function toAgents(messages: OpencodeMessage[]): {
   const latestMsgIdxByAgent = new Map<string, number>();
   messages.forEach((m, idx) => {
     if (m.info.role !== 'assistant') return;
+    if (m.info.agent === 'compaction') return;
     latestMsgIdxByAgent.set(
       agentIdFor(m.info.agent, 'assistant', m.info.sessionID),
       idx,

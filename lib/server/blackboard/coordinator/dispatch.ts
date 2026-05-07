@@ -9,17 +9,17 @@
 //
 // One tick walks the chain. Each phase either returns an early
 // TickOutcome (skipped/stale) or extends the shared ClaimContext with
-// its outputs. The dispatch-mutex still wraps the entry point regardless
-// of decomp (D9), so concurrent calls within a run still serialize.
+// its outputs.
 //
-// Concurrency model: concurrent calls are safe IFF each call targets a
-// distinct session via opts.restrictToSessionID. The auto-ticker uses this
-// to fan out per-session tickers for parallelism (
-// Open questions → Blackboard parallelism). CAS at the SQL layer protects
-// against two sessions racing on the same todo (the loser gets `skipped:
-// claim lost race`). Calls without restrictToSessionID still use the
-// "first idle session wins" picker and should NOT overlap — the map-reduce
-// synthesis loop relies on that.
+// Concurrency model (post 2026-05-07 parallelism fix):
+//   - Per-session mutex when opts.restrictToSessionID is set (auto-ticker
+//     always sets this). Different sessions run in PARALLEL — two workers
+//     can claim different todos and execute their LLM turns simultaneously.
+//     CAS at the SQL layer protects against two sessions racing on the same
+//     todo (the loser gets `skipped: claim lost race`).
+//   - Per-run mutex when restrictToSessionID is NOT set (manual debug ticks,
+//     map-reduce synthesis). These unrestricted calls serialize per run so
+//     the "first idle session wins" picker stays coherent.
 //
 // Server-only. Never imported from client code. Extracted from
 // coordinator.ts in #107 phase 5.
@@ -35,23 +35,28 @@ import { runGateChecks } from './dispatch/run-gate-checks';
 import { commitDone } from './dispatch/commit-done';
 
 //
-// Pre-fix: tickCoordinator had no per-run lock. The auto-ticker fans out
-// via restrictToSessionID with a per-session inFlight flag, but a user
-// POST to /api/_debug/swarm-run/<id>/tick (with no restriction) could race
-// the auto-ticker on the same swarmRunID — both pick the same idle
-// session, both call getSessionMessagesServer, both pick the same todo,
-// the second loses CAS at transitionStatus. Lossy-but-correct (the SQL
-// CAS was the only real protection) but expensive — one full opencode
-// read trip wasted per race.
+// Concurrency model: the auto-ticker fans out per-session ticks via
+// `void tickSession(s, sessionID)` in tick.ts. Each session gets its
+// own inFlight guard. Sessions should be able to run in PARALLEL —
+// two workers can claim different todos and execute their LLM turns
+// simultaneously. CAS at the SQL layer protects against two sessions
+// racing on the same todo (the loser gets `skipped: claim lost race`).
 //
-// The mutex serializes all entries to tickCoordinator(runID) per run
-// regardless of caller. The per-session inFlight flag still exists
-// inside fanout() for same-session re-entry within the mutex.
+// The pre-fix mutex serialized ALL sessions per run, which meant
+// workers took turns instead of working in parallel — wasting ~60% of
+// wall-clock time on idle waits. The post-fix uses TWO mutex levels:
+//
+//   - Per-session: when opts.restrictToSessionID is set (auto-ticker
+//     always sets this), the mutex key includes the session ID so
+//     different sessions can dispatch concurrently.
+//   - Per-run: when opts.restrictToSessionID is NOT set (manual debug
+//     ticks, map-reduce synthesis), the mutex key is the run ID so
+//     these unrestricted calls still serialize per run.
 //
 // globalThis-keyed so HMR doesn't reset the mutex map mid-flight (same
 // pattern as criticLocks/verifierLocks/auditLocks per D2).
-const DISPATCH_MUTEX_KEY = Symbol.for('opencode_swarm.dispatchMutexByRun.v1');
-function dispatchMutexByRun(): Map<string, Promise<unknown>> {
+const DISPATCH_MUTEX_KEY = Symbol.for('opencode_swarm.dispatchMutex.v2');
+function dispatchMutexMap(): Map<string, Promise<unknown>> {
   const g = globalThis as { [DISPATCH_MUTEX_KEY]?: Map<string, Promise<unknown>> };
   const slot = g[DISPATCH_MUTEX_KEY];
   if (slot instanceof Map) return slot;
@@ -60,33 +65,43 @@ function dispatchMutexByRun(): Map<string, Promise<unknown>> {
   return next;
 }
 
+// Mutex key: per-session when restrictToSessionID is set (parallelism),
+// per-run when not (serial safety for unrestricted callers like map-reduce).
+function mutexKey(swarmRunID: string, opts: TickOpts): string {
+  if (opts.restrictToSessionID) {
+    return `${swarmRunID}::${opts.restrictToSessionID}`;
+  }
+  return swarmRunID;
+}
+
 async function withDispatchMutex<T>(
-  swarmRunID: string,
+  key: string,
   fn: () => Promise<T>,
 ): Promise<T> {
-  const locks = dispatchMutexByRun();
-  const prior = locks.get(swarmRunID) ?? Promise.resolve();
+  const locks = dispatchMutexMap();
+  const prior = locks.get(key) ?? Promise.resolve();
   // Chain via then(fn, fn) so a prior rejection doesn't poison the chain
   // — each tick runs after the prior settles regardless of outcome.
   const next = prior.then(fn, fn) as Promise<T>;
-  locks.set(swarmRunID, next);
+  locks.set(key, next);
   try {
     return await next;
   } finally {
-    if (locks.get(swarmRunID) === next) {
-      locks.delete(swarmRunID);
+    if (locks.get(key) === next) {
+      locks.delete(key);
     }
   }
 }
 
-// Public entry point — serializes per swarmRunID. Internal logic in
-// tickCoordinatorImpl below; keeping the wrapper thin makes the mutex
-// boundary obvious for future readers.
+// Public entry point — serializes per-session (when restricted) or per-run
+// (when unrestricted). The mutex boundary ensures no two unrestricted
+// calls race on the same run, while per-session calls run in parallel.
 export async function tickCoordinator(
   swarmRunID: string,
   opts: TickOpts = {},
 ): Promise<TickOutcome> {
-  return withDispatchMutex(swarmRunID, () =>
+  const key = mutexKey(swarmRunID, opts);
+  return withDispatchMutex(key, () =>
     tickCoordinatorImpl(swarmRunID, opts),
   );
 }

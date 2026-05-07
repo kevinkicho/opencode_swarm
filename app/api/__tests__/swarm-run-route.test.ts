@@ -82,6 +82,7 @@ beforeEach(() => {
     lastActivityTs: null,
     costTotal: 0,
     tokensTotal: 0,
+    messageCount: 0,
   });
 });
 

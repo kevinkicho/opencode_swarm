@@ -371,7 +371,7 @@ export async function GET(): Promise<Response> {
         // failures to `unknown` + zero metrics — so this Promise.all never
         // rejects for per-row reasons. A rejection here would be an
         // unexpected crash path (e.g. OOM) and is fine to surface as a 500.
-        const { status, lastActivityTs, costTotal, tokensTotal } =
+        const { status, lastActivityTs, costTotal, tokensTotal, messageCount } =
           await deriveRunRowCached(meta);
         // #104 — stuck-deliberation flag. listBoardItems is local SQLite
         // (sub-ms per call) so adding it to every list row is cheap;
@@ -384,6 +384,7 @@ export async function GET(): Promise<Response> {
               tokensTotal,
               ageMs: Date.now() - meta.createdAt,
               boardItemCount,
+              messageCount,
             });
             if (result.stuck && result.reason) {
               stuck = { reason: result.reason };

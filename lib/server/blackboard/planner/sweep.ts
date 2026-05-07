@@ -105,7 +105,32 @@ export interface PlannerSweepResult {
 // it's tired (long sweep, run nearing budget).
 const MIN_CRITERION_CHARS = 20;
 const VAGUE_CRITERION_RE =
- /^\s*(make|improve|polish|clean\s*up|fix|update|tighten|tidy|refine)\s+\w+\s+(better|good|nice|clean|right|proper|solid|tidy)\s*\.?$/i;
+  /^\s*(make|improve|polish|clean\s*up|fix|update|tighten|tidy|refine)\s+\w+\s+(better|good|nice|clean|right|proper|solid|tidy)\s*\.?$/i;
+
+// Strip planner-internal prefixes like [files:a.ts] or [role:build]
+// so dedup compares the substantive content, not the metadata envelope.
+function stripContentPrefix(s: string): string {
+  return s.replace(/^\[[^\]]*\]\s*/, '').trim();
+}
+
+// Jaccard-ish token overlap between two strings. Returns 0-1 where 1
+// means "identical token set". Used to suppress duplicate proposals
+// where the planner re-words an existing item slightly differently.
+function tokenOverlap(a: string, b: string): number {
+  const tokenize = (s: string) =>
+    new Set(s.toLowerCase().split(/\s+/).filter(Boolean));
+  const sa = tokenize(a);
+  const sb = tokenize(b);
+  if (sa.size === 0 || sb.size === 0) return 0;
+  let shared = 0;
+  for (const t of sa) {
+    if (sb.has(t)) shared += 1;
+  }
+  // Symmetric: overlap = shared / min(|a|,|b|). Two short strings
+  // that share all tokens still score high; a long string matching
+  // a short one gets penalized by the min denominator.
+  return shared / Math.min(sa.size, sb.size);
+}
 // Sub-patterns also caught: a criterion that's just a bare imperative
 // without a verifiable condition. We don't try to detect every shape;
 // the regex above + length floor catches the common bad ones.
@@ -116,20 +141,25 @@ export function isViableCriterion(content: string): boolean {
 }
 
 export async function runPlannerSweep(
- swarmRunID: string,
- opts: {
- timeoutMs?: number;
- overwrite?: boolean;
- // When true, prepend the current board's done/open summaries to the
- // planner prompt and raise todo novelty. Used by re-sweeps so the
- // model stops proposing duplicates of already-done work.
- includeBoardContext?: boolean;
- // When true (default), read the workspace's README.md and embed it in
- // the prompt so the planner has the project's claimed scope at hand
- // without burning tool calls on a read. Set false for runs where the
- // README is irrelevant or the workspace has no README.
- includeReadme?: boolean;
- } = {},
+  swarmRunID: string,
+  opts: {
+  timeoutMs?: number;
+  overwrite?: boolean;
+  // When true, prepend the current board's done/open summaries to the
+  // planner prompt and raise todo novelty. Used by re-sweeps so the
+  // model stops proposing duplicates of already-done work.
+  includeBoardContext?: boolean;
+  // When true (default), read the workspace's README.md and embed it in
+  // the prompt so the planner has the project's claimed scope at hand
+  // without burning tool calls on a read. Set false for runs where the
+  // README is irrelevant or the workspace has no README.
+  includeReadme?: boolean;
+  // Ambition ratchet: when the planner re-sweeps at a higher tier,
+  // this passes the tier number so the prompt scales its ambition
+  // accordingly. Tier 1 = bugs/polish (default), 2 = refactor/extract,
+  // 3 = cross-cutting, 4+ = architectural/new features.
+  escalationTier?: number;
+  } = {},
 ): Promise<PlannerSweepResult> {
  const meta = await getRun(swarmRunID);
  if (!meta) throw new Error(`run not found: ${swarmRunID}`);
@@ -158,12 +188,13 @@ export async function runPlannerSweep(
  // mandatory tool call to read it.
  const readme =
  opts.includeReadme === false ? null : await readWorkspaceReadme(meta.workspace);
- const lessons = await buildLessonsBlock(meta.workspace);
- const rawPrompt = buildPlannerPrompt(
- meta.directive,
- boardContext,
- readme,
- );
+  const lessons = await buildLessonsBlock(meta.workspace);
+  const rawPrompt = buildPlannerPrompt(
+  meta.directive,
+  boardContext,
+  readme,
+  opts.escalationTier,
+  );
  const prompt = lessons ? lessons + '\n\n' + rawPrompt : rawPrompt;
  // Planner dispatch. Always route through opencode's `plan` agent —
  // the agent carries tool definitions (todowrite, read, grep, etc.)
@@ -303,22 +334,44 @@ export async function runPlannerSweep(
  // the timestamps themselves carry authoring order, which keeps the
  // preview UI (ordered by createdAtMs in JS land) consistent without
  // needing to also know about the SQL tiebreaker.
- const baseMs = Date.now();
- const startT = Date.now();
- const items: BoardItem[] = [];
- let offset = 0;
- let droppedCriteria = 0;
- // dispatch after the board-insert loop so they don't get tangled up
- // with createdAtMs offsets or revision logging.
- const roleNotes: Array<{ role: string; text: string }> = [];
- for (const raw of latest.todos) {
+  const baseMs = Date.now();
+  const startT = Date.now();
+  const items: BoardItem[] = [];
+  let offset = 0;
+  let droppedCriteria = 0;
+  let droppedDuplicates = 0;
+  // Pre-compute existing board content for dedup. Strip prefixes so
+  // comparisons work on substantive content, not [files:...] tags.
+  const existingContent = listBoardItems(swarmRunID)
+    .filter((i) => i.kind !== 'criterion')
+    .map((i) => stripContentPrefix(i.content));
+  // dispatch after the board-insert loop so they don't get tangled up
+  // with createdAtMs offsets or revision logging.
+  const roleNotes: Array<{ role: string; text: string }> = [];
+  for (const raw of latest.todos) {
  if (raw.roleNote && raw.content.trim()) {
  roleNotes.push({ role: raw.roleNote, text: raw.content.trim() });
  continue;
  }
- const content = raw.content.trim();
- if (!content) continue;
- // Vague criteria ("make the app better") get UNCLEAR-forever from
+  const content = raw.content.trim();
+  if (!content) continue;
+  // Dedup guard: skip proposals that substantially overlap with
+  // existing board items (done, open, claimed, in-progress).
+  // The planner prompt already says "do NOT re-propose" but LLMs
+  // don't reliably follow negative instructions — the 2026-05-07
+  // run mouzkzpy showed sweeps 2-4 re-proposing already-done work.
+  const cleanContent = stripContentPrefix(content);
+  const isDuplicate = existingContent.some(
+    (existing) => tokenOverlap(cleanContent, stripContentPrefix(existing)) >= 0.6,
+  );
+  if (isDuplicate && !raw.isCriterion) {
+    console.warn(
+      `[planner] dropping duplicate proposal: "${content.slice(0, 80)}${content.length > 80 ? '…' : ''}"`,
+    );
+    droppedDuplicates += 1;
+    continue;
+  }
+  // Vague criteria ("make the app better") get UNCLEAR-forever from
  // the auditor and clutter the contract. Drop them silently with a
  // WARN; the planner can re-emit on the next sweep.
  if (raw.isCriterion && !isViableCriterion(content)) {
@@ -353,18 +406,19 @@ export async function runPlannerSweep(
  offset += 1;
  items.push(item);
  }
- const elapsedMs = Date.now() - startT;
- const criteriaCount = items.filter((i) => i.kind === 'criterion').length;
- console.log(
- JSON.stringify({
- event: 'planner-sweep-complete',
- swarmRunID,
- itemCount: items.length,
- criteriaCount,
- droppedCriteriaCount: droppedCriteria,
- elapsedMs,
- }),
- );
+  const elapsedMs = Date.now() - startT;
+  const criteriaCount = items.filter((i) => i.kind === 'criterion').length;
+  console.log(
+    JSON.stringify({
+      event: 'planner-sweep-complete',
+      swarmRunID,
+      itemCount: items.length,
+      criteriaCount,
+      droppedCriteriaCount: droppedCriteria,
+      droppedDuplicates,
+      elapsedMs,
+    }),
+  );
 
  // #99 — operator-visible finding for "todowrite called but every
  // item dropped during validation". See buildAllFilteredSummary for

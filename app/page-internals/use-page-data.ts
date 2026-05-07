@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useLiveBoard, useLiveTicker, roleNamesFromMeta } from '@/lib/blackboard/live';
+import { useLiveBoard, useLiveTicker, roleNamesFromMeta, roleNamesBySessionID } from '@/lib/blackboard/live';
 import {
   useLiveSession,
   useLivePermissions,
@@ -56,15 +56,6 @@ export function usePageData() {
     liveData: liveData ?? null,
   });
 
-  const agents = useMemo(() => {
-    if (permissions.pending.length === 0) return view.agents;
-    return view.agents.map((a) =>
-      a.status === 'working' || a.status === 'thinking'
-        ? { ...a, status: 'waiting' as const }
-        : a
-    );
-  }, [view.agents, permissions.pending.length]);
-
   const boardPatterns: ReadonlySet<string> = useMemo(
     () => new Set<string>(['blackboard', 'orchestrator-worker']),
     [],
@@ -79,11 +70,43 @@ export function usePageData() {
     () => roleNamesFromMeta(swarmRunMeta_),
     [swarmRunMeta_],
   );
+  const sessionRoleNames = useMemo(
+    () => roleNamesBySessionID(swarmRunMeta_),
+    [swarmRunMeta_],
+  );
 
   const silentSessions = useMemo(() => {
     if (currentRunStatus !== 'live' && currentRunStatus !== 'idle') return [];
     return deriveSilentSessions(liveSwarmRun.slots);
   }, [liveSwarmRun.slots, currentRunStatus]);
+
+  const agents = useMemo(() => {
+    const inFlightSessionIDs = new Set<string>();
+    if (liveTicker.state.state === 'active' && liveTicker.state.slots) {
+      for (const sl of liveTicker.state.slots) {
+        if (sl.inFlight) inFlightSessionIDs.add(sl.sessionID);
+      }
+    }
+
+    return view.agents.map((a) => {
+      if (permissions.pending.length > 0 && (a.status === 'working' || a.status === 'thinking')) {
+        return { ...a, status: 'waiting' as const };
+      }
+      if (a.status === 'idle' && a.sessionID && inFlightSessionIDs.has(a.sessionID)) {
+        return { ...a, status: 'thinking' as const };
+      }
+      // Override agent display name with role name when available
+      // (planner, worker-2, etc.) instead of opencode's bare agent config
+      // name (plan, build) which produces unhelpful "build #1, build #2".
+      if (a.sessionID) {
+        const roleName = sessionRoleNames.get(a.sessionID);
+        if (roleName) {
+          return { ...a, name: roleName, glyph: roleName.charAt(0).toUpperCase() };
+        }
+      }
+      return a;
+    });
+  }, [view.agents, permissions.pending.length, liveTicker.state, sessionRoleNames]);
 
   return {
     swarmRunID,

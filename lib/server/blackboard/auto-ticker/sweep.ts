@@ -55,6 +55,7 @@ export async function runPeriodicSweep(state: TickerState): Promise<void> {
     const result = await livePlanner().runPlannerSweep(swarmRunID, {
       overwrite: true,
       includeBoardContext: true,
+      escalationTier: state.currentTier,
     });
     const afterOpen = listBoardItems(swarmRunID).filter(
       (i) => i.status === 'open',

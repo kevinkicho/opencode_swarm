@@ -82,6 +82,7 @@ export function resolvePhases(
 const STATUS_DOT: Record<string, string> = {
   live: 'bg-molten animate-pulse-ring',
   idle: 'bg-mint',
+  completed: 'bg-mint/70',
   error: 'bg-rust',
   stale: 'bg-fog-600',
   unknown: 'bg-fog-700',
@@ -90,6 +91,7 @@ const STATUS_DOT: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   live: 'active',
   idle: 'idle',
+  completed: 'done',
   error: 'error',
   stale: 'done',
   unknown: '—',
@@ -143,6 +145,8 @@ export function PhaseTracker({
   const activeIdx = phases.findIndex((p) => p.status === 'live' || p.status === 'idle')
     ?? phases.length - 1;
 
+  const doneCount = phases.filter((p) => p.status === 'stale' || p.status === 'completed').length;
+
   return (
     <ul className="flex-1 overflow-y-auto overflow-x-hidden py-1 list-none">
       {/* Header showing pipeline progress */}
@@ -152,7 +156,7 @@ export function PhaseTracker({
             pipeline
           </span>
           <span className="font-mono text-micro text-fog-700 tabular-nums">
-            {phases.filter((p) => p.status === 'stale').length}/{phases.length} done
+            {doneCount}/{phases.length} done
           </span>
         </div>
         {/* Phase progress bar — one segment per phase */}
@@ -160,7 +164,7 @@ export function PhaseTracker({
           {phases.map((row, i) => {
             const color = row.status === 'live' || row.status === 'idle'
               ? 'bg-molten'
-              : row.status === 'stale'
+              : row.status === 'stale' || row.status === 'completed'
               ? 'bg-mint/60'
               : row.status === 'error'
               ? 'bg-rust'

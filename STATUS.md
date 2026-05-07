@@ -7,7 +7,7 @@ not a roadmap.
 Maintenance: prune + rewrite every couple months. Remove items when shipped
 or abandoned.
 
-**Last updated:** 2026-04-28.
+**Last updated:** 2026-05-07.
 
 ---
 
@@ -20,67 +20,34 @@ plus `none` (single-session opencode native). Personal-use only,
 never SaaS.
 
 Recent (last 7 days, newest first):
-- **Spawn modal parity with new-run team picker** (2026-04-28). Provider-
-  tier filter chips (go / zen / ollama / byok) above the model list,
-  3-layer ollama help (footer hint + `?` popover with checklist + live
-  `/api/tags` diagnostic), `static` / `live` catalog badge tooltip,
-  auto-reselect first visible model when active filter hides current
-  selection. Shared via `lib/swarm-provider-tiers.ts` so both modals
-  consume the same `useProviderFilter` hook.
-- **Chat as default view + turn-grouped chat rewrite** (2026-04-28).
-  Default landing view flipped from `timeline` to `chat`; toolbar
-  order is `chat → timeline → cards`. ChatView rewritten end-to-end:
-  step-start / step-finish parts filtered, parts grouped by threadId
-  (one assistant turn = one card), tool calls fold inline as clickable
-  pills, multi-session user prompts dedup within a 5s window (`council`
-  / `debate-judge` / `map-reduce` no longer show the same prompt 3
-  times), 3px accent stripe + agent label, `space-y-3` between turns.
-- **3-layer ollama help in new-run modal** (2026-04-28). Always-visible
-  Layer-1 footer hint, `?` popover with Layer-2 checklist (click-to-copy
-  `ollama list` and `cat ~/.config/opencode/opencode.json`), Layer-3
-  live diagnostic showing the gap between models pulled via ollama
-  and models declared in opencode.json.
-- **All 10 view tabs always visible + reference matrix** (2026-04-28).
-  Toolbar renders every view; non-applicable tabs render a dim
-  `EmptyViewState` with the per-view explanation and a 7×10
-  patterns × views availability matrix.
-- **GitHub-style projects matrix** (2026-04-28). 14×14 squared cells,
-  hue = dominant run status, opacity = activity intensity. Rows
-  per-repo, columns per-day. Drill-down stays inside the modal.
-- **Metrics + projects open as modals**, not full-page nav
-  (2026-04-28). Topbar buttons mount the modals; the standalone
-  `/metrics` and `/projects` routes still exist as fallbacks for
-  bookmarks and middle-click "open in new tab."
-- **Dev server staleness auto-reload** (2026-04-28). Per-instance
-  build-id endpoint at `/api/dev/build-id`; client-side detector
-  closes the stale-tab gap that wasted 5 days of debugging cycles.
-- **Picker rows + retro chip open in new tabs** (2026-04-28).
-  `target="_blank"` on row + retro links so the close-on-mousedown
-  race that ate 5 days no longer surfaces.
-- **Status-aware TTL on the runs-list derive cache** (2026-04-28).
-  Terminal rows (idle / stale / error) cache for 10 minutes, active
-  ones for 10 seconds. Warm polls dropped from ~5s to ~0.4s.
-- **Dev server pinned to permanent port 8044** (2026-04-28).
-  `scripts/dev.mjs` kills any holder before claiming. Override via
-  `DEV_PORT=xxxx`.
+- **`completed` status + ollama cost/token fix** (2026-05-07). Runs that
+  finish cleanly now show `completed` (mint dot, "done" label) instead
+  of `stale` (fog gray). The `stale` status is reserved for
+  zombie/aborted runs. Ollama-routed models now report real costs
+  ($0.02/1M ollama-bundle rate) and estimated token counts instead of
+  $0.00/0 tokens. Stuck detector gains a `messageCount` fallback for
+  zero-token providers. Smoke-tested all 7 patterns.
+- **Smart smoke test + monitor scripts** (2026-05-06). `scripts/smart-smoke-test.sh`
+  runs all 7 patterns sequentially with per-pattern timeouts, stall
+  detection, auto-nudge, and progress logging. `scripts/swarm-monitor.sh`
+  provides a periodic dashboard of all active runs.
 - Phase 8 reliability hardening complete (~53 items: atomic writes,
   globalThis-keyed caches, server-only enforcement, typed opencode errors,
   per-run dispatch mutex, swarm-registry split into fs/derive halves, 7
   pattern integration tests, dispatch unit tests, postmortem ledger
   template, LRU bounds on every cache, useMutation + SSE migrations).
-- Status terminology rewrite: `live` (ticker + producing), `idle` (ticker
-  alive but quiet), `error` (real failure), `stale` (ticker stopped),
-  `unknown`. Picker visual realigned: live=mint pulse, idle=mint solid,
-  stale=fog gray.
+- Status terminology rewrite: `live` / `idle` / `completed` / `error` /
+  `stale` / `unknown`. Picker visual realigned: live=mint pulse,
+  idle=mint solid, completed=mint/70 "done", stale=fog gray.
 - Critic-loop runaway-token leak fixed: `waitForSessionIdle` now aborts
   the opencode session on deadline expiry when a turn is still in-progress.
-  See `docs/POSTMORTEMS/2026-04-26-critic-loop-runaway-token.md`.
 
 Active substrate:
-- opencode :4097 launched via Windows Startup `.vbs`.
+- opencode :4096 launched via Windows Startup `.vbs`.
 - Provider universe: zen + go + ollama (all routed through opencode).
 - Workspace: reuse the same local directory across runs so commits
   accumulate. Don't abort mid-turn or the spend produces no durable artifact.
+- Dev server on port 8044 (`.env` with `OPENCODE_URL=http://172.24.32.1:4096`).
 
 ---
 
@@ -97,10 +64,6 @@ on a single silent turn; parallel-redundant patterns survive.
 | **Robust** | blackboard, council | Use for important runs |
 | **Serial-critical** | orchestrator-worker, critic-loop, debate-judge | F1 silent-turn aborts mid-flow; partial completion before failure |
 | **Asymmetric** | map-reduce | MAP robust, REDUCE brittle (synthesizer reads ~30K tokens of N drafts → silent turns under GEMMA) |
-
-When picking a pattern for a real run, prefer the robust tier unless the
-work specifically benefits from a fragile shape (debate divergence, critic
-iteration).
 
 **HMR limited.** HMR covers only `coordinator.ts`, `planner.ts`,
 `auto-ticker.ts`. Edits to other `lib/server/` files need a dev-server
@@ -134,57 +97,16 @@ Not urgent.
 
 **Pattern-design improvements** (need a live run to validate):
 - ~~map-reduce I1: synthesis-critic gate.~~ **SHIPPED 2026-04-27.**
-  Validator now accepts `enableSynthesisCritic`; new-run modal surfaces
-  the toggle when pattern==='map-reduce'; the gate code already existed
-  in `lib/server/map-reduce.ts::runSynthesisCriticGate`.
 
-**UI bugs queued (deferred):**
-- ~~**Inspector pane doesn't open when clicking timeline blocks**~~
-  **VERIFIED FIXED 2026-04-28.** Empirical Playwright probe against
-  `run_moi2gc24_r4p5i1` (199 messages, populated state per
-  `feedback_verify_populated_state.md`): clicking a timeline chip
-  fires the `onClick`, the drawer ASIDE (`class="fixed right-0 top-12
-  bottom-7 z-50"`) renders with "message inspector" content + the
-  part details. Already fixed by the 2026-04-27 Popover refactor
-  (`components/ui/popover.tsx`): `cloneElement` now merges the
-  trigger child's existing `onClick` with the popover's reference
-  props, so `<Popover><button onClick={() => onFocus(m.id)}>` no
-  longer drops the inner handler.
-- ~~**Runs picker line-item click + retro link don't work**~~
-  **VERIFIED FIXED 2026-04-28.** Empirical probe: opened picker,
-  enumerated rows — each row has 2 valid anchors (`/?swarmRun=<id>`
-  + `/retro/<id>`). Clicking the row link navigated cleanly from
-  `run_moi2gc24` → `run_moistttk` (the topmost row's id). Already
-  fixed by the same 2026-04-27 Popover refactor: the floating-tree
-  `onMouseDown stopPropagation` was removed because Floating UI's
-  `useDismiss({outsidePress})` already excludes the floating tree
-  from outside-press detection — so the stopPropagation served no
-  purpose AND was killing anchor navigation on Next.js `<Link>`
-  inside the popover.
-- ~~**Run-detail URL takes 30+ seconds to load** (reported 2026-04-27).~~
-  **FIXED 2026-04-27.** Measurement showed two long poles when opencode
-  :4097 is unreachable: /api/swarm/run fanned out 130 runs × N session
-  fetches each waiting ~10s on TCP timeout (11s total), and the proxy's
-  /api/opencode/project did the same. Fix: opencodeFetch now defaults to
-  an 8s timeout with a circuit breaker (3 failures in 2s → trip for 5s)
-  that synthesizes a 503 instead of waiting; /api/swarm/run probes
-  reachability once up front and short-circuits the per-session derive
-  fan-out when opencode is down. Result: /api/swarm/run dropped from 11s
-  to 1.8s with circuit-breaker armed, and to ~130ms once tripped.
+**Smoke-test / operational** (shipped, exercised live 2026-05-06):
+- ~~**Smart smoke test**~~ **SHIPPED 2026-05-06.** All 7 patterns tested
+  against ktopologymath040226 workspace. 6/7 passed (productive-stale
+  with real tokens/cost). The `none` pattern stalled due to an ollama
+  session that never produced token counts — now mitigated by the
+  `completed` status and messageCount fallback in stuck detection.
 
 **UI redesign queued (deferred):**
 - ~~**Chat-bubble view as alternate main**~~ **REWRITE SHIPPED 2026-04-28.**
-  `chat` is now the default landing view (was `timeline`). Toolbar
-  order is `chat → timeline → cards`. The view itself was rewritten
-  end-to-end on 2026-04-28: parts grouped by `threadId` (one assistant
-  turn = one card), `step-start` / `step-finish` filtered as plumbing,
-  tool / agent / subtask / patch parts fold inline as clickable pills,
-  multi-session user prompts dedup within a 5s window so council /
-  debate-judge / map-reduce no longer show the same prompt N times,
-  3px accent stripe + agent label per card, `space-y-3` between turns.
-  Empty state ("no messages yet") renders correctly when opencode is
-  reachable but the run hasn't produced any output. Verified via
-  `scripts/_verify-chat-view.mjs` against a 3-session council run.
 
 **Validation tooling** (queued 2026-04-27 — improves the live-run
 diagnostic loop, not the app itself):
@@ -198,35 +120,15 @@ diagnostic loop, not the app itself):
   `ffmpeg -i page.webm -vf fps=1/5 frame-%04d.png` to dump frames every
   5s, walks frames + flags anomalies (no-op diffs, missing bubbles,
   broken streaming, unexpected layout), writes findings to
-  `runs/_monitor/<runId>/post-mortem.md`. Keeps screenshots as the
-  mid-run probe (live answer to "what looks weird?") and adds video as
-  the post-run scrub artifact. Label which artifact is being read from
-  when describing UI state mid-run ("(latest 30s-tick screenshot)").
+  `runs/_monitor/<runId>/post-mortem.md`.
 
 **UI/UX test surface gaps the sweep can't reach** (560 assertions
 live; only items below pass the right-size gate per
-`feedback_right_size_prototype.md` — the items I previously listed
-that don't pass the gate, like cross-browser and WCAG AA, are
-intentionally omitted):
+`feedback_right_size_prototype.md`):
 
-- ~~**End-to-end run lifecycle.**~~ **SHIPPED 2026-04-27.** Mocked
-  Playwright e2e at `tests/visual/run-lifecycle.spec.ts` — stubs
-  `/api/opencode/**` + intercepts `POST /api/swarm/run`, opens the
-  modal, fills source/workspace/pattern, adds 2 agents on glm-4.6,
-  clicks launch, asserts the captured request body matches the form
-  fields. Catches form↔body decoupling silently breaking the only
-  spawn path.
-- ~~**Streaming / SSE realtime updates.**~~ **SHIPPED 2026-04-27.** SSE
-  event routing extracted from `useLiveSwarmRunMessages` into a pure
-  helper at `lib/opencode/live/sse-filter.ts::classifySseFrame` and
-  unit-tested (9 cases) — covers parse-error, no-session, unknown
-  session, message.part.updated → part decision, message.updated →
-  info decision, malformed payloads → refetch fallback, other typed
-  events → refetch.
-- ~~**Form validation on new-run modal.**~~ **SHIPPED 2026-04-27.** 14
-  tests at `components/new-run/__tests__/helpers.test.ts` covering
-  extractRepoName (URL→folder parsing) + useNewRunForm (clamping,
-  zero-removal, reset, clearTeam preserving other fields).
+- ~~**End-to-end run lifecycle.**~~ **SHIPPED 2026-04-27.**
+- ~~**Streaming / SSE realtime updates.**~~ **SHIPPED 2026-04-27.**
+- ~~**Form validation on new-run modal.**~~ **SHIPPED 2026-04-27.**
 
 ---
 
@@ -236,7 +138,7 @@ intentionally omitted):
 |---|---|
 | `2026-04-24-orchestrator-worker-silent.md` | F1/F3/F6 VERIFIED. F2/F4/F7/F8/F9 SHIPPED, organic re-validation pending. |
 | `2026-04-25-agent-name-silent-drop.md` | F1 VERIFIED. Closed. |
-| `2026-04-26-critic-loop-runaway-token.md` | F1 VERIFIED via synthetic test (`wait-deadline-abort.test.ts`). Live re-validation deferred to organic critic-loop runs. |
+| `2026-04-26-critic-loop-runaway-token.md` | F1 VERIFIED via synthetic test. Live re-validation deferred to organic critic-loop runs. |
 
 When babysitting a new run, walk the validation procedure for any postmortem
 that touches its pattern. Update VERIFIED annotations with run id + log

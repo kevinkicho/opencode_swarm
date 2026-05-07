@@ -316,6 +316,12 @@ export interface SwarmRunMeta {
   criticModel?: string;
   verifierModel?: string;
   auditorModel?: string;
+  // Ambition ratchet: current escalation tier (1-based). Persists across
+  // ticker restarts so the run resumes at the correct ambition level.
+  // Bumped by attemptTierEscalation when the board drains at the current
+  // tier. The planner prompt reads this to widen scope at higher tiers.
+  // Default undefined → treated as tier 1.
+  currentTier?: number;
   // Lineage pointer for run chaining. Absent for standalone runs. See
   // SwarmRunRequest.continuationOf for semantics.
   continuationOf?: string;
@@ -377,7 +383,7 @@ export interface SwarmRunResponse {
 // confusion (an "idle" run reads as still-alive, but most idle runs in
 // the picker were actually completed). The new mental model: alive vs
 // stopped is the primary axis, with `idle`/`error` as flag-flavors.
-export type SwarmRunStatus = 'live' | 'idle' | 'error' | 'stale' | 'unknown';
+export type SwarmRunStatus = 'live' | 'idle' | 'completed' | 'error' | 'stale' | 'unknown';
 
 // One row in GET /api/swarm/run's response. `meta` is the persisted record;
 // the rest is live-derived from the primary session's messages and may

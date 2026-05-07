@@ -278,11 +278,13 @@ export function snapshot(s: TickerState): TickerSnapshot {
     lastOutcome,
     lastRanAtMs,
     startedAtMs: s.startedAtMs,
-    // #7.Q21 — propagate the running commits counter. Defaults to 0
-    // for legacy entries from the old shape (HMR carryover) so the
-    // field is always defined per the type contract.
     totalCommits: s.totalCommits ?? 0,
     retryAfterEndsAtMs: s.retryAfterEndsAtMs,
+    currentTier: s.currentTier ?? 1,
+    slots: slots.map((sl) => ({
+      sessionID: sl.sessionID,
+      inFlight: sl.inFlight,
+    })),
   };
 }
 

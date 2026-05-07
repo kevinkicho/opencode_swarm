@@ -84,12 +84,33 @@ export function computeAttention(agent: Agent, messages: AgentMessage[]): Attent
   const pending: AgentMessage[] = [];
   const errors: AgentMessage[] = [];
   const retries: AgentMessage[] = [];
+  // Track whether an agent has had any successful message after a retry/error.
+  // If so, the retry/error is stale — the agent recovered and continued.
+  let lastSuccessfulTs = 0;
   for (const m of messages) {
     const involves = m.fromAgentId === agent.id || m.toAgentIds.includes(agent.id);
     if (!involves) continue;
     if (m.permission?.state === 'asked' && m.status === 'pending') pending.push(m);
     if (m.status === 'error' && m.fromAgentId === agent.id) errors.push(m);
     if (m.part === 'retry' && m.fromAgentId === agent.id) retries.push(m);
+    // Any non-error, non-retry message from this agent means it recovered
+    if (m.fromAgentId === agent.id && m.status !== 'error' && m.part !== 'retry' && m.tsMs != null) {
+      lastSuccessfulTs = m.tsMs;
+    }
+  }
+  // Filter stale: if the agent has a successful message after a retry/error,
+  // those earlier failures are no longer actionable — showing them as active
+  // badges is misleading (postmortem: "retried-and-completed todos still
+  // show error/retry badges").
+  if (lastSuccessfulTs > 0) {
+    const stale = (m: AgentMessage) => m.tsMs != null && m.tsMs < lastSuccessfulTs;
+    const activeErrors = errors.filter((m) => !stale(m));
+    const activeRetries = retries.filter((m) => !stale(m));
+    // Only apply the filter if there ARE stale items — otherwise return
+    // the same arrays to avoid unnecessary re-renders
+    if (activeErrors.length < errors.length || activeRetries.length < retries.length) {
+      return { pending, errors: activeErrors, retries: activeRetries };
+    }
   }
   return { pending, errors, retries };
 }

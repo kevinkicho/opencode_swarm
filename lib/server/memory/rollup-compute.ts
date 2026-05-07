@@ -80,7 +80,7 @@ export function firstInProgressHash(todos: RawTodoState[]): string | null {
 // caller appears.
 export function costForAssistant(info: OpencodeMessageInfo): number {
   if (typeof info.cost === 'number') return info.cost;
-  const price = priceFor(info.modelID);
+  const price = priceFor(info.modelID, info.providerID);
   const t = info.tokens;
   if (!price || !t) return 0;
   const input = t.input * price.input;

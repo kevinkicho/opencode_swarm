@@ -21,11 +21,16 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 
-// Captured once per module load. Next.js dev creates a fresh module
-// graph on every restart, so this gets a new value every `npm run dev`.
+// Stable across HMR re-evaluations within the same process. Only changes
+// on a full process restart (kill + start), which is when we actually want
+// the client to reload. Previous implementations used Date.now() (changed
+// on every module re-evaluation, causing spurious reloads during HMR) or
+// process.uptime() (still changed on module re-evaluation timing). The
+// process.pid alone is sufficient — it's unique per server instance and
+// stable for the lifetime of the process.
 const SERVER_INSTANCE_ID =
   process.env.NODE_ENV === 'development'
-    ? `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    ? `dev-pid-${process.pid}`
     : 'production';
 
 export async function GET(): Promise<Response> {
