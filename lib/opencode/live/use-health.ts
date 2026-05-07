@@ -22,14 +22,14 @@ export interface HealthSnapshot {
 }
 
 // Lightweight health probe — single request to /project, cheap enough to poll
-// every few seconds as a background heartbeat for the prototype's footer.
+// every 15s as a background heartbeat for the prototype's footer.
 //
 // Migrated to TanStack Query (2026-04-24). Before the migration, each
 // call site (page.tsx + two via useBackendStale in topbar/timeline)
 // spawned its own poller — 3 independent /project fetches every 5s,
 // contributing ~27 calls in a 40s cold load. With TanStack Query,
 // all three share one query key and dedup automatically.
-export function useOpencodeHealth(intervalMs = 5000): HealthSnapshot {
+export function useOpencodeHealth(intervalMs = 15000): HealthSnapshot {
   const q = useQuery({
     queryKey: OPENCODE_HEALTH_QUERY_KEY,
     queryFn: opencodeHealthFetcher,
@@ -67,8 +67,8 @@ async function opencodeHealthFetcher(): Promise<HealthSnapshot> {
 // to gray out when the dev server / proxy is down can call this.
 //
 // Staleness rule: requires at least two consecutive 'offline' health
-// readings before returning true. At the default 5 s poll interval
-// that's ~5 s of downtime before UI goes stale — fast enough to be
+// readings before returning true. At the default 15s poll interval
+// that's ~15s of downtime before UI goes stale — fast enough to be
 // felt, slow enough to tolerate a single failed request.
 //
 // 5s pollers". Audit confirmed that's not actually true: the underlying
@@ -83,7 +83,7 @@ async function opencodeHealthFetcher(): Promise<HealthSnapshot> {
 // Query already gives us at the network layer. Keeping the per-caller
 // debounce is correct.
 export function useBackendStale(): boolean {
-  const health = useOpencodeHealth(5_000);
+  const health = useOpencodeHealth(15_000);
   const [stale, setStale] = useState(false);
   const offlineStreakRef = useRef(0);
   useEffect(() => {

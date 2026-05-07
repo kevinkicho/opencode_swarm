@@ -433,19 +433,32 @@ export function useLiveSwarmRunMessages(
     hydrate();
 
     const qs = new URLSearchParams({ directory: workspace! }).toString();
-    es = new EventSource(`/api/opencode/event?${qs}`);
-    es.onmessage = (ev) => {
-      const decision = classifySseFrame(ev.data, sessionSet);
-      if (decision.kind === 'ignore') return;
-      // Local merges are O(1); refetch is O(full history × N bytes)
-      // and dominates hydration cost over parallel worker activity.
-      if (decision.kind === 'part' || decision.kind === 'info') {
-        if (applyDecision(decision)) return;
-        // applyDecision returned false (message not hydrated yet, etc.)
-        // — fall through to refetch.
-      }
-      refetchOne(decision.sessionID);
+    // Reconnect with exponential backoff. Browser EventSource reconnects
+    // natively but with no backoff control (~1s hammer on sustained outage).
+    // We manage our own reconnect to cap at ~30s.
+    let retryDelay = 1000;
+    const MAX_RETRY_DELAY = 30_000;
+    const connectSSE = () => {
+      es = new EventSource(`/api/opencode/event?${qs}`);
+      es.onmessage = (ev) => {
+        retryDelay = 1000; // reset backoff on successful message
+        const decision = classifySseFrame(ev.data, sessionSet);
+        if (decision.kind === 'ignore') return;
+        if (decision.kind === 'part' || decision.kind === 'info') {
+          if (applyDecision(decision)) return;
+        }
+        refetchOne(decision.sessionID);
+      };
+      es.onerror = () => {
+        if (es) es.close();
+        setTimeout(() => {
+          if (cancelled) return;
+          retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
+          connectSSE();
+        }, retryDelay);
+      };
     };
+    connectSSE();
 
     const pollId = setInterval(() => {
       for (const sid of sessionIDs) refetchOne(sid);

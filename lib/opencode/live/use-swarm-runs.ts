@@ -183,7 +183,7 @@ export function useSwarmRuns(
   const { intervalMs, enabled } =
     typeof arg === 'number'
       ? { intervalMs: arg, enabled: true }
-      : { intervalMs: arg.intervalMs ?? 4000, enabled: arg.enabled ?? true };
+       : { intervalMs: arg.intervalMs ?? 30000, enabled: arg.enabled ?? true };
 
   const q = useQuery({
     queryKey: SWARM_RUNS_QUERY_KEY,

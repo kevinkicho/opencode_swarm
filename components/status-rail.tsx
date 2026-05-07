@@ -41,7 +41,7 @@ export function StatusRail({
   onOpenProjects: () => void;
   swarmRunID: string | null;
 }) {
-  const health = useOpencodeHealth(5000);
+  const health = useOpencodeHealth(15_000);
   const dotClass =
     health.status === 'live'
       ? 'bg-mint'

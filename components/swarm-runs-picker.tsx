@@ -102,7 +102,7 @@ function PickerPanel({
   close: () => void;
   currentSwarmRunID: string | null;
 }) {
-  const { rows, error, loading, lastUpdated } = useSwarmRuns(4000);
+  const { rows, error, loading, lastUpdated } = useSwarmRuns(30_000);
   const [query, setQuery] = useState('');
   const [selectedIDs, setSelectedIDs] = useState<Set<string>>(new Set());
 

@@ -4,9 +4,10 @@
 // every component can `useQuery()` without re-instantiating a client.
 //
 // Defaults picked for this app's shape:
-//   - staleTime 4000ms: the old polling cadence; components get instant
-//     cache hits within 4s of a fetch, and the fetcher re-validates in
-//     the background after that.
+//   - staleTime 30000ms: generous window so SSE-driven invalidation is
+//     the primary freshness signal; queries only go to the network if
+//     explicitly invalidated or the 30s window expires with no SSE
+//     activity.</think>
 //   - refetchOnWindowFocus: true — matches the "live status when user
 //     returns to the tab" UX users expect; cheap because cached data
 //     renders instantly while the revalidation flies.
@@ -45,7 +46,7 @@ export function QueryProvider({ children }: { children: ReactNode }) {
       new QueryClient({
         defaultOptions: {
           queries: {
-            staleTime: 4_000,
+            staleTime: 30_000,
             refetchOnWindowFocus: true,
             refetchOnReconnect: true,
             retry: 1,

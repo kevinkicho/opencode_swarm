@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BoardAgent, BoardItem } from './types';
+import { SWARM_RUNS_QUERY_KEY } from '../opencode/live';
 
 // Mirror of TickerSnapshot from lib/server/blackboard/auto-ticker.ts —
 // kept as a client-side duplicate so this module doesn't pull server-only
@@ -187,6 +188,7 @@ function tickerStateFromSnapshot(snap: TickerSnapshot): TickerState {
 export function useLiveTicker(swarmRunID: string | null): LiveTicker {
   const [state, setState] = useState<TickerState>({ state: 'none' });
   const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!swarmRunID) {
@@ -198,18 +200,20 @@ export function useLiveTicker(swarmRunID: string | null): LiveTicker {
       swarmRunID,
       (frame) => {
         if (frame.type === 'board.ticker.tick') {
-          // The wire shape is the TickerSnapshot the server emits; coerce
-          // through `unknown` because the multiplexer's TickerState type
-          // hint loses the discriminator until tickerStateFromSnapshot
-          // re-derives it.
           setState(tickerStateFromSnapshot(frame.snapshot as unknown as TickerSnapshot));
           setError(null);
+          // Ticker tick means the run's status may have changed —
+          // invalidate the runs list so useSwarmRuns refetches instead
+          // of waiting for its 30s poll.
+          void queryClient.invalidateQueries({
+            queryKey: SWARM_RUNS_QUERY_KEY,
+          });
         }
       },
       (err) => setError(err),
     );
     return unsubscribe;
-  }, [swarmRunID]);
+  }, [swarmRunID, queryClient]);
 
   const mutation = useMutation({
     mutationFn: async (action: 'start' | 'stop') => {

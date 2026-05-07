@@ -88,24 +88,39 @@ export function useLiveSession(
     const openStream = (directory: string) => {
       if (es) es.close();
       const qs = new URLSearchParams({ directory }).toString();
-      es = new EventSource(`/api/opencode/event?${qs}`);
-      es.onmessage = (ev) => {
-        try {
-          const parsed = JSON.parse(ev.data) as {
-            type?: string;
-            properties?: { sessionID?: string };
-          };
-          if (parsed.properties?.sessionID !== sessionId) return;
-          // Invalidate the messages query so TanStack Query refetches.
-          // All consumers of this session's messages (including
-          // useLiveSwarmRunMessages, if it overlaps) pick up the update.
-          void queryClient.invalidateQueries({
-            queryKey: sessionMessagesQueryKey(sessionId),
-          });
-        } catch {
-          // heartbeat / connected frames — ignore
-        }
+      let retryDelay = 1000;
+      const MAX_RETRY_DELAY = 30_000;
+      const connect = () => {
+        const source = new EventSource(`/api/opencode/event?${qs}`);
+        es = source;
+        source.onmessage = (ev) => {
+          retryDelay = 1000;
+          try {
+            const parsed = JSON.parse(ev.data) as {
+              type?: string;
+              properties?: { sessionID?: string };
+            };
+            if (parsed.properties?.sessionID !== sessionId) return;
+            void queryClient.invalidateQueries({
+              queryKey: sessionMessagesQueryKey(sessionId),
+            });
+          } catch {
+            // heartbeat / connected frames — ignore
+          }
+        };
+        source.onerror = () => {
+          source.close();
+          // es may have been reassigned by a later openStream call;
+          // only reconnect if this is still the active source.
+          if (es !== source) return;
+          setTimeout(() => {
+            if (cancelled) return;
+            retryDelay = Math.min(retryDelay * 2, MAX_RETRY_DELAY);
+            connect();
+          }, retryDelay);
+        };
       };
+      connect();
     };
 
     async function fetchSessionMeta() {
@@ -203,7 +218,7 @@ export function useSessionDiff(
 // default for refetch.
 //
 // Migrated to TanStack Query (#109).
-export function useLiveSessions(intervalMs = 3000): {
+export function useLiveSessions(intervalMs = 15000): {
   data: LiveSnapshot | null;
   error: string | null;
   loading: boolean;

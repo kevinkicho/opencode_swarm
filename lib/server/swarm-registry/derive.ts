@@ -478,12 +478,13 @@ export async function deriveRunTokens(
 //
 // deriveRunRow() costs one opencode /message fetch per run. The list
 // endpoint fans that out for *every* run on every GET, and the picker polls
-// on ~4s cadence, so unchanged runs take the same hit they took a moment
-// ago. Short-TTL memoization flattens that curve:
+// on ~30s cadence (with SSE-driven invalidation for real-time updates), so
+// unchanged runs take the same hit they took a moment ago. Short-TTL
+// memoization flattens that curve:
 //
 //   - key:    swarmRunID
 //   - value:  { row, fetchedAt } — the full deriveRunRow() return
-//   - TTL:    CACHE_TTL_MS (10s) — see commentary below
+//   - TTL:    status-aware (30s active, 10min terminal) — see TTL_BY_STATUS
 //   - purge:  appendEvent() (in fs.ts) drops the entry for that run, so any
 //             new event the multiplexer writes forces the next poll to re-
 //             fetch
@@ -500,7 +501,7 @@ interface CachedRow {
   fetchedAt: number;
 }
 
-// Status-aware TTL — 2026-04-28.
+// Status-aware TTL — 2026-04-28, revised 2026-05-07.
 //
 // Pre-fix: a single 10s TTL across every status. With 146 runs × ~3
 // sessions = ~470 opencode probes per cold poll (~5s on WSL2), and
@@ -514,21 +515,19 @@ interface CachedRow {
 // for terminals is just defense against a missed-event regression;
 // in steady state, terminal rows derive once and stay derived.
 //
-// Active statuses (live, idle, unknown) keep the 10s TTL. `unknown`
-// stays short because the freshness contract is fuzzy (could be a
-// session that hasn't produced its first message yet, or a deleted
-// session that'll never produce again — we can't tell from outside).
-//
-// Net effect on the all-stale picker: cold poll 5s, every poll
-// after that <50ms until a real event invalidates a row.
+// Active statuses (live, idle, unknown) now cache for 30s, matching
+// the client-side staleTime. With SSE ticker ticks now driving
+// invalidation of SWARM_RUNS_QUERY_KEY on the client, the 30s TTL
+// only fires when SSE is disconnected — exactly the safety-net case
+// where the data might be up to 30s stale, which is acceptable.
 type SwarmStatusKey = SwarmRunStatus;
 const TTL_BY_STATUS: Record<SwarmStatusKey, number> = {
-  live: 10_000,
-  idle: 10_000,
+  live: 30_000,
+  idle: 30_000,
   completed: 600_000,
-  unknown: 10_000,
-  stale: 600_000, // 10 min — terminal, only invalidated by appendEvent
-  error: 600_000, // 10 min — terminal
+  unknown: 30_000,
+  stale: 600_000,
+  error: 600_000,
 };
 
 // dev a deleted run's CachedRow never expired. 500 is the same bound

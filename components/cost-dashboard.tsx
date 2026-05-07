@@ -52,7 +52,7 @@ export function CostDashboard({
   // fetch fires on drawer-open, TanStack Query serves stale cache
   // instantly if the picker has already fetched in the same window.
   const { rows, error, loading, lastUpdated } = useSwarmRuns({
-    intervalMs: 4000,
+    intervalMs: 30_000,
     enabled: open,
   });
 
