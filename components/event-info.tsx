@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import type { Agent, AgentMessage } from '@/lib/swarm-types';
-import { partMeta, partHex, toolMeta } from '@/lib/part-taxonomy';
+import { partMeta, partHex, getToolMeta } from '@/lib/part-taxonomy';
 import { Tooltip } from './ui/tooltip';
 import { compact } from '@/lib/format';
 import { MarkdownBody } from './ui/markdown-body';
@@ -46,7 +46,7 @@ export function EventInfo({
   onNavigate: (id: string) => void;
 }) {
   const partHue = partHex[msg.part];
-  const toolHue = msg.toolName ? toolMeta[msg.toolName].hex : null;
+  const toolHue = msg.toolName ? getToolMeta(msg.toolName).hex : null;
   const accent = toolHue ?? partHue;
 
   const parent = msg.relatesTo ? allMessages.find((m) => m.id === msg.relatesTo) : null;
@@ -220,7 +220,7 @@ export function EventInfo({
 
 function ToolPanel({ msg }: { msg: AgentMessage }) {
   if (!msg.toolName) return null;
-  const m = toolMeta[msg.toolName];
+  const m = getToolMeta(msg.toolName);
   const isBash = msg.toolName === 'bash';
   const isFetch = msg.toolName === 'webfetch';
   const isTask = msg.toolName === 'task';
@@ -343,7 +343,7 @@ function ChainRow({
 }) {
   const fromName =
     msg.fromAgentId === 'human' ? 'human' : agentMap.get(msg.fromAgentId)?.name ?? msg.fromAgentId;
-  const color = msg.toolName ? toolMeta[msg.toolName].hex : partHex[msg.part];
+  const color = msg.toolName ? getToolMeta(msg.toolName).hex : partHex[msg.part];
   return (
     <button
       onClick={onClick}

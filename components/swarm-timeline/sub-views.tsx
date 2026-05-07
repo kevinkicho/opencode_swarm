@@ -19,7 +19,7 @@
 
 import clsx from 'clsx';
 import type { PartType } from '@/lib/swarm-types';
-import { partMeta, partHex, partOrder, toolMeta } from '@/lib/part-taxonomy';
+import { partMeta, partHex, partOrder, getToolMeta } from '@/lib/part-taxonomy';
 import { compact } from '@/lib/format';
 import { formatRate, type LaneThroughput } from '@/lib/playback-context';
 import { Popover } from '../ui/popover';
@@ -45,7 +45,7 @@ export function LaneMeter({
   const uniqueColors = new Map<string, string>();
   for (const s of [...throughput.activeOut, ...throughput.activeIn]) {
     const key = s.toolName ?? `part:${s.part}`;
-    const color = s.toolName ? toolMeta[s.toolName].hex : partHex[s.part];
+    const color = s.toolName ? getToolMeta(s.toolName).hex : partHex[s.part];
     if (!uniqueColors.has(key)) uniqueColors.set(key, color);
   }
   const dots = Array.from(uniqueColors.values()).slice(0, 5);

@@ -90,7 +90,7 @@ export function familyOf(modelID?: string): Agent['model']['family'] {
 export function normalizeTool(name: string | undefined): ToolName | undefined {
   if (!name) return undefined;
   const n = name.toLowerCase();
-  return KNOWN_TOOLS.find((t) => t === n);
+  return KNOWN_TOOLS.find((t) => t === n) ?? (n as ToolName);
 }
 
 export function normalizePart(t: string): PartType {
@@ -101,6 +101,10 @@ export function toolStateFrom(state: unknown): ToolState {
   if (state && typeof state === 'object' && 'status' in state) {
     const s = (state as { status: unknown }).status;
     if (s === 'completed' || s === 'running' || s === 'pending' || s === 'error') return s;
+    // Opencode emits "asked" when a tool call awaits user permission.
+    // Map to "pending" for the ToolState union and surface the
+    // permission separately via the `permission` field on AgentMessage.
+    if (s === 'asked') return 'pending';
   }
   return 'completed';
 }
@@ -167,8 +171,10 @@ export function bodyOf(part: OpencodePart): string | undefined {
   if (part.type === 'text' || part.type === 'reasoning') return part.text;
   if (part.type === 'tool') {
     const inp = part.input;
-    if (typeof inp === 'string') return inp;
+    if (typeof inp === 'string') return inp || undefined;
     if (inp && typeof inp === 'object') return JSON.stringify(inp, null, 2);
+    // Tool part with no input — pending/asked state or mid-stream.
+    // Return undefined so callers can fall back to title or toolSubtitle.
     return undefined;
   }
   return undefined;

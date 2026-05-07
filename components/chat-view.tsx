@@ -32,6 +32,8 @@ import { useMemo, useRef } from 'react';
 import type { AgentMessage, Agent, PartType } from '@/lib/swarm-types';
 import { partMeta, toolMeta } from '@/lib/part-taxonomy';
 import { compact } from '@/lib/format';
+import { stripProtocolTokens } from '@/lib/text-sanitize';
+import { MarkdownBody } from './ui/markdown-body';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
 
 const accentText: Record<Agent['accent'], string> = {
@@ -268,9 +270,7 @@ function UserTurnCard({
             {turn.timestamp}
           </span>
         </div>
-        <div className="font-mono text-[12.5px] text-fog-200 leading-relaxed whitespace-pre-wrap break-words max-h-[40vh] overflow-y-auto">
-          {turn.body}
-        </div>
+        <MarkdownBody text={turn.body} tone="fog-200" className="text-[12.5px]" />
       </div>
     </div>
   );
@@ -346,16 +346,21 @@ function AssistantTurnCard({
                       reasoning
                     </div>
                   )}
-                  <div
-                    className={clsx(
-                      'font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[40vh] overflow-y-auto',
-                      isReasoning
-                        ? 'text-[11.5px] text-fog-400 italic'
-                        : 'text-[12.5px] text-fog-200',
-                    )}
-                  >
-                    {p.body ?? p.title}
-                  </div>
+                  {(p.part === 'text' || p.part === 'reasoning') && p.body ? (
+                    <MarkdownBody
+                      text={p.body}
+                      tone={isReasoning ? 'fog-300' : 'fog-200'}
+                      className={isReasoning ? 'text-[11.5px] italic' : 'text-[12.5px]'}
+                    />
+                  ) : (
+                    <div
+                      className={clsx(
+                        'font-mono leading-relaxed whitespace-pre-wrap break-words max-h-[40vh] overflow-y-auto text-[12.5px] text-fog-200',
+                      )}
+                    >
+                      {p.body ?? p.title}
+                    </div>
+                  )}
                 </button>
               );
             })}
@@ -389,11 +394,12 @@ function ToolPill({
   onClick: () => void;
 }) {
   const isToolPart = part.part === 'tool';
-  const label = isToolPart ? (part.toolName ?? 'tool') : partMeta[part.part].label;
-  const dotColor =
-    isToolPart && part.toolName ? toolMeta[part.toolName].hex : '#5a6473';
+  const label = isToolPart ? (part.toolName ?? 'tool') : (partMeta[part.part]?.label ?? part.part);
+  const toolMetaEntry = isToolPart && part.toolName ? toolMeta[part.toolName] : undefined;
+  const dotColor = toolMetaEntry?.hex ?? '#5a6473';
   const errored = part.status === 'error' || part.toolState === 'error';
-  const running = part.status === 'running' || part.toolState === 'running';
+  const running = part.status === 'running' || part.toolState === 'running' || part.toolState === 'pending';
+  const asked = part.permission?.state === 'asked';
   return (
     <button
       type="button"
@@ -405,14 +411,18 @@ function ToolPill({
           ? 'bg-ink-800 border-fog-500'
           : 'bg-ink-900/40 border-ink-700 hover:bg-ink-800/70 hover:border-fog-700',
         errored && 'border-rust/60',
-        running && 'border-mint/40 animate-pulse',
+        running && !asked && 'border-mint/40 animate-pulse',
+        asked && 'border-amber/60',
       )}
     >
       <span
-        className="w-1 h-1 rounded-full shrink-0"
+        className={clsx('w-1 h-1 rounded-full shrink-0', asked && 'animate-pulse')}
         style={{ backgroundColor: dotColor }}
       />
       <span className="text-fog-300 truncate max-w-[160px]">{label}</span>
+      {asked && (
+        <span className="text-amber text-[9px] uppercase tracking-widest2">asked</span>
+      )}
       {part.toolSubtitle && (
         <span className="text-fog-600 truncate max-w-[140px]">
           {part.toolSubtitle}

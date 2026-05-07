@@ -12,7 +12,7 @@
 
 import clsx from 'clsx';
 import type { Agent, AgentMessage } from '@/lib/swarm-types';
-import { partHex, toolMeta } from '@/lib/part-taxonomy';
+import { partHex, getToolMeta } from '@/lib/part-taxonomy';
 import { fmtElapsed } from '@/lib/format';
 import { ModelSwapRow } from './agent-model-swap';
 import { SessionInfoPanel } from './agent-session-info';
@@ -120,7 +120,7 @@ export function AgentInspector({
           {agentMsgs.slice(-8).reverse().map((m) => {
             const label = m.toolName ?? m.part;
             const color = m.toolName
-              ? toolMeta[m.toolName].hex
+              ? getToolMeta(m.toolName).hex
               : partHex[m.part];
             return (
               <li key={m.id}>

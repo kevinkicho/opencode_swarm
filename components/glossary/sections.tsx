@@ -10,7 +10,7 @@ import clsx from 'clsx';
 import type React from 'react';
 import { Tooltip } from '../ui/tooltip';
 import type { EventType, PartType, ToolName } from '@/lib/swarm-types';
-import { partHex, partMeta, toolMeta } from '@/lib/part-taxonomy';
+import { partHex, partMeta, getToolMeta } from '@/lib/part-taxonomy';
 import { PartChip, ToolChip } from '../part-chip';
 import {
   eventDetails,
@@ -133,7 +133,7 @@ export function ToolsSection({ tools }: { tools: ToolName[] }) {
           }}
         >
           {tools.map((t) => {
-            const m = toolMeta[t];
+            const m = getToolMeta(t);
             const d = toolDetails[t];
             return (
               <li key={t}>

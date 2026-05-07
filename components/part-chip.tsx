@@ -2,7 +2,7 @@
 
 import clsx from 'clsx';
 import type { PartType, ToolName } from '@/lib/swarm-types';
-import { partMeta, partHex, toolMeta, hueClass } from '@/lib/part-taxonomy';
+import { partMeta, partHex, getToolMeta, hueClass } from '@/lib/part-taxonomy';
 import { Tooltip } from './ui/tooltip';
 
 export function PartChip({
@@ -46,7 +46,7 @@ export function ToolChip({
   tool: ToolName;
   size?: 'xs' | 'sm';
 }) {
-  const m = toolMeta[tool];
+  const m = getToolMeta(tool);
   return (
     <Tooltip
       side="top"

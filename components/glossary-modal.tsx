@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Modal } from './ui/modal';
-import { partOrder, partMeta, toolMeta, toolOrder } from '@/lib/part-taxonomy';
+import { partOrder, partMeta, getToolMeta, toolOrder } from '@/lib/part-taxonomy';
 import {
   DOCS_ROOT,
   SDK_TYPES_URL,
@@ -45,7 +45,7 @@ export function GlossaryModal({ open, onClose }: { open: boolean; onClose: () =>
   const filteredTools = useMemo(
     () =>
       glossaryToolOrder.filter((t) =>
-        matches(t, toolMeta[t].label, toolMeta[t].blurb, toolDetails[t].detail),
+        matches(t, getToolMeta(t).label, getToolMeta(t).blurb, toolDetails[t].detail),
       ),
     [q],
   );

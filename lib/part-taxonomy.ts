@@ -125,6 +125,15 @@ export interface ToolMeta {
   hex: string;
 }
 
+// Fallback for tool names not in the known set. Keeps the UI from
+// crashing on future/opencode tool additions; the unknown tool still
+// gets a colored pill, just without custom label/blurb.
+const UNKNOWN_TOOL_META: ToolMeta = {
+  label: 'tool',
+  blurb: 'unknown tool call',
+  hex: '#5a6473',
+};
+
 // Per-tool display metadata. `task` is opencode's native A2A primitive —
 // calling it spawns/resumes a sub-agent. Hex palette mirrors the existing
 // fog/molten/mint/iris/amber accent system.
@@ -175,6 +184,13 @@ export const hueClass: Record<Hue, { text: string; bg: string; border: string }>
   fog: { text: 'text-fog-300', bg: 'bg-ink-700', border: 'border-ink-500' },
   rust: { text: 'text-rust', bg: 'bg-rust/10', border: 'border-rust/30' },
 };
+
+// Safe accessor — returns the custom meta for known tools, or a fallback
+// for tools not yet in the set. Use this instead of `toolMeta[name]`
+// when the tool name might come from runtime opencode data.
+export function getToolMeta(name: ToolName | string): ToolMeta {
+  return (toolMeta as Record<string, ToolMeta>)[name] ?? UNKNOWN_TOOL_META;
+}
 
 // Treat as lane-crossing any message whose receivers differ from the sender.
 // Covers A2A delegations (task tool), subtask returns, text hand-offs, and

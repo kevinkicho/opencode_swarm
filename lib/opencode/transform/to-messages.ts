@@ -73,6 +73,21 @@ export function toMessages(messages: OpencodeMessage[]): AgentMessage[] {
       const toolName = part.type === 'tool' ? normalizeTool(part.tool) : undefined;
       const toolState = part.type === 'tool' ? toolStateFrom(part.state) : undefined;
       const interrupted = part.type === 'tool' && isInterruptedTool(part.state);
+      // Extract permission state from tool state. Opencode emits
+      // { status: "asked" } when a tool call requires user approval;
+      // subsequent approval/denial changes it to "completed"/"error".
+      const permission: AgentMessage['permission'] =
+        part.type === 'tool' && toolState === 'pending' && part.state && typeof part.state === 'object'
+          ? (() => {
+              const s = part.state as { status?: unknown; metadata?: unknown };
+              if (s.status !== 'asked') return undefined;
+              const approvalState = (s.metadata as { approval?: unknown } | undefined)?.approval;
+              if (approvalState === 'approved' || approvalState === 'denied') {
+                return { tool: toolName ?? 'bash', state: approvalState };
+              }
+              return { tool: toolName ?? 'bash', state: 'asked' };
+            })()
+          : undefined;
       const isLiveAssistant = role === 'assistant' && inProgressSessionIDs.has(m.info.sessionID);
       const status: AgentMessage['status'] =
         interrupted ? 'abandoned'
@@ -118,6 +133,7 @@ export function toMessages(messages: OpencodeMessage[]): AgentMessage[] {
         cost: costForPart > 0 ? costForPart : undefined,
         status,
         threadId: m.info.id,
+        ...(permission ? { permission } : {}),
       });
     }
 

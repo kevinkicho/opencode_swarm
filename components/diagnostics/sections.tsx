@@ -21,7 +21,7 @@ import {
   useLiveToolIds,
 } from '@/lib/opencode/live';
 import type { ToolName } from '@/lib/swarm-types';
-import { toolMeta } from '@/lib/part-taxonomy';
+import { getToolMeta } from '@/lib/part-taxonomy';
 
 // Static ToolName members for drift comparison. Keep in sync with the
 // union — the test catches additions; this list catches removals.
@@ -71,7 +71,7 @@ export function ToolCatalogSection({ directory }: { directory: string }) {
               .filter((t) => !TOOL_ID_BLACKLIST.has(t))
               .map((id) => {
                 const known = STATIC_TOOL_NAMES.includes(id as ToolName);
-                const meta = known ? toolMeta[id as ToolName] : null;
+                const meta = known ? getToolMeta(id as ToolName) : null;
                 const hex = meta?.hex ?? '#7d8798';
                 return (
                   <Tooltip

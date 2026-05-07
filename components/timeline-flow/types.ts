@@ -5,7 +5,7 @@
 // produces.
 
 import type { AgentMessage } from '@/lib/swarm-types';
-import { partMeta, partHex, toolMeta } from '@/lib/part-taxonomy';
+import { partMeta, partHex, getToolMeta } from '@/lib/part-taxonomy';
 import type { MessagePhase } from '@/lib/playback-context';
 
 export const LANE_WIDTH = 168;
@@ -37,7 +37,7 @@ export function fmtIso(tsMs: number): string {
 }
 
 export function accentFor(m: AgentMessage): string {
-  if (m.toolName) return toolMeta[m.toolName].hex;
+  if (m.toolName) return getToolMeta(m.toolName).hex;
   return partHex[m.part];
 }
 

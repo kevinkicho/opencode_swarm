@@ -11,7 +11,7 @@ import type { Agent, AgentMessage, ToolName } from '@/lib/swarm-types';
 import { Tooltip } from '../ui/tooltip';
 import { toolIcon } from '../icons';
 import { compact } from '@/lib/format';
-import { partMeta, partHex, toolMeta, hueClass } from '@/lib/part-taxonomy';
+import { partMeta, partHex, getToolMeta, hueClass } from '@/lib/part-taxonomy';
 import { MarkdownBody } from '../ui/markdown-body';
 
 export function MessageInspector({
@@ -30,7 +30,7 @@ export function MessageInspector({
   const relates = msg.relatesTo ? messages.find((m) => m.id === msg.relatesTo) : null;
 
   const partInfo = partMeta[msg.part];
-  const toolInfo = msg.toolName ? toolMeta[msg.toolName] : null;
+  const toolInfo = msg.toolName ? getToolMeta(msg.toolName) : null;
   const headerLabel = toolInfo?.label ?? partInfo.label;
   const headerHex = toolInfo?.hex ?? partHex[msg.part];
 
@@ -190,7 +190,7 @@ function ToolPanel({
   subtitle?: string;
   preview?: string;
 }) {
-  const meta = toolMeta[toolName];
+  const meta = getToolMeta(toolName);
   return (
     <div className="rounded-md hairline bg-ink-800 p-3">
       <div className="flex items-center gap-2 mb-1.5">
