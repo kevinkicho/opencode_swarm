@@ -161,7 +161,6 @@ export function toRunPlan(messages: OpencodeMessage[]): TodoItem[] {
           : undefined,
       });
     }
-    void t;
   }
 
   return latest.todos.map((t, i) => {

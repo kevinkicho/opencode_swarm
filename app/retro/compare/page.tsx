@@ -27,18 +27,18 @@ function RetroCompareInner() {
 
   if (!ids) {
     return (
-      <div className="min-h-screen bg-ink-900 text-fog-400 p-6 font-mono text-sm">
+      <div className="min-h-screen bg-ink-900 text-fog-400 p-6 font-mono text-micro uppercase tracking-widest2">
         Pass run IDs via <span className="text-fog-200">?ids=id1,id2</span>
       </div>
     );
   }
 
   if (isLoading) {
-    return <div className="min-h-screen bg-ink-900 text-fog-600 p-6 font-mono text-sm">loading…</div>;
+    return <div className="min-h-screen bg-ink-900 text-fog-600 p-6 font-mono text-micro uppercase tracking-widest2">loading…</div>;
   }
 
   if (error || !data) {
-    return <div className="min-h-screen bg-ink-900 text-rust p-6 font-mono text-sm">failed to load comparison</div>;
+    return <div className="min-h-screen bg-ink-900 text-rust p-6 font-mono text-micro uppercase tracking-widest2">failed to load comparison</div>;
   }
 
   return <RetroCompareView runs={data} />;

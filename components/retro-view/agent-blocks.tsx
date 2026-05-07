@@ -130,11 +130,11 @@ function AgentRollupCard({ rollup }: { rollup: AgentRollup }) {
 
       {rollup.artifacts.length > 0 && (
         <DetailBlock label={`artifacts (${rollup.artifacts.length})`}>
-          {rollup.artifacts.slice(0, 10).map((a, i) => {
+          {rollup.artifacts.slice(0, 10).map((a) => {
             const bound = a.originTodoID ? planIndex.get(a.originTodoID) : undefined;
             return (
               <span
-                key={i}
+                key={a.filePath ?? a.originTodoID ?? Math.random()}
                 className="flex items-center gap-2 h-5 px-2 hover:bg-ink-800/60 transition rounded"
               >
                 <span
@@ -183,9 +183,9 @@ function AgentRollupCard({ rollup }: { rollup: AgentRollup }) {
 
       {rollup.failures.length > 0 && (
         <DetailBlock label={`failures (${rollup.failures.length})`}>
-          {rollup.failures.slice(0, 8).map((f, i) => (
+          {rollup.failures.slice(0, 8).map((f) => (
             <span
-              key={i}
+              key={f.tool + (f.argsHash ?? '')}
               className="flex items-center gap-2 h-5 px-2 hover:bg-ink-800/60 transition rounded"
             >
               <span className="font-mono text-[9px] uppercase tracking-widest2 text-rust w-[60px] shrink-0 truncate">
@@ -216,9 +216,9 @@ function AgentRollupCard({ rollup }: { rollup: AgentRollup }) {
 
       {rollup.decisions.length > 0 && (
         <DetailBlock label={`decisions (${rollup.decisions.length})`}>
-          {rollup.decisions.slice(0, 5).map((d, i) => (
+          {rollup.decisions.slice(0, 5).map((d) => (
             <span
-              key={i}
+              key={d.at + d.choice}
               className="flex items-start gap-2 px-2 py-1 hover:bg-ink-800/60 transition rounded"
             >
               <span className="font-mono text-[9.5px] text-fog-700 tabular-nums shrink-0 pt-0.5">

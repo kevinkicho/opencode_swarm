@@ -57,22 +57,27 @@ export async function POST(
     ...(meta.auditorSessionID ? [meta.auditorSessionID] : []),
   ];
 
-  // Path 1: ticker-bearing pattern. stopAutoTicker is the single source
-  // of truth for these — it serializes through its own state machine
-  // (timer clear, snapshot persist, run-end audit, session abort), so
-  // duplicating any of those steps below would race against it.
+  // Path 1: ticker-bearing pattern. stopAutoTicker handles its own
+  // session abort cascade internally (fire-and-forget), but the
+  // aborts are async and may not land before we respond. We still
+  // attempt direct aborts below for safety — duplicate aborts are
+  // idempotent (opencode treats abort-on-already-stopped as a no-op),
+  // so there's no race condition.
   const snap = getTickerSnapshot(params.swarmRunID);
   const tickerActive = snap !== null && !snap.stopped;
   if (tickerActive) {
     stopAutoTicker(params.swarmRunID, stopReason);
-  } else {
-    // Path 2: no active ticker. Abort sessions ourselves.
-    await Promise.allSettled(
-      targets.map((sid) =>
-        abortSessionServer(sid, meta.workspace).catch(() => undefined),
-      ),
-    );
   }
+
+  // Always attempt direct session aborts regardless of ticker state.
+  // For ticker-backed runs this is a safety net in case stopAutoTicker's
+  // fire-and-forget abort hasn't landed yet. For non-ticker runs
+  // (council, debate-judge, etc.) this is the primary abort path.
+  await Promise.allSettled(
+    targets.map((sid) =>
+      abortSessionServer(sid, meta.workspace).catch(() => undefined),
+    ),
+  );
 
   // Record durable evidence of the operator action so the board shows
   // why the run stopped. recordPartialOutcome is best-effort (writes

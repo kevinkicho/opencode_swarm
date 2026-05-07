@@ -56,6 +56,11 @@ interface ConnectionEntry {
   lastSnapshot: BoardSnapshotFrame | null;
   /** Most recent ticker.tick — replayed on late-subscribe. */
   lastTicker: BoardTickerFrame | null;
+  /** Monotonically increasing sequence number, bumped on every frame
+   *  received directly from the SSE stream. Replay microtasks check
+   *  this to avoid overwriting a fresh handshake snapshot with a stale
+   *  cached one. */
+  seq: number;
 }
 
 const connections = new Map<string, ConnectionEntry>();
@@ -71,6 +76,7 @@ function ensureConnection(swarmRunID: string): ConnectionEntry {
     errors: new Set(),
     lastSnapshot: null,
     lastTicker: null,
+    seq: 0,
   };
   connections.set(swarmRunID, entry);
 
@@ -81,9 +87,7 @@ function ensureConnection(swarmRunID: string): ConnectionEntry {
     } catch {
       return;
     }
-    // Cache snapshot + ticker frames so late subscribers (e.g., the
-    // strategy rail mounting after the board) get the current state
-    // without waiting for the server to re-send.
+    entry.seq++;
     if (frame.type === 'board.snapshot') {
       entry.lastSnapshot = frame;
     } else if (frame.type === 'board.ticker.tick') {
@@ -93,7 +97,6 @@ function ensureConnection(swarmRunID: string): ConnectionEntry {
       try {
         listener(frame);
       } catch (err) {
-        // Listener errors shouldn't propagate to other listeners.
         console.warn('[board-events] listener threw:', err);
       }
     }
@@ -137,8 +140,16 @@ export function subscribeBoardEvents(
   // Replay cached frames so late-subscribers don't have to wait for a
   // fresh server emit. Run in a microtask so the caller can finish
   // wiring up state before frames land.
+  //
+  // Capture the current seq so we can skip replay if a direct SSE
+  // frame has already delivered newer data between subscribe() and
+  // the microtask firing (e.g., the SSE handshake snapshot arriving
+  // before our microtask). Without this guard, the stale cached
+  // snapshot overwrites the fresh one.
+  const replaySeq = entry.seq;
   queueMicrotask(() => {
     if (!entry.listeners.has(onFrame)) return; // unsubscribed before microtask fired
+    if (entry.seq !== replaySeq) return; // SSE delivered newer data; skip stale replay
     if (entry.lastSnapshot) {
       try {
         onFrame(entry.lastSnapshot);

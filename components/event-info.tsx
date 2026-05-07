@@ -121,8 +121,8 @@ export function EventInfo({
         <span className="text-fog-600 uppercase tracking-wider text-[9px]">from</span>
         <AgentChip name={fromName} />
         <span className="text-fog-700">into</span>
-        {toNames.map((n, i) => (
-          <AgentChip key={i} name={n} />
+        {toNames.map((n) => (
+          <AgentChip key={n} name={n} />
         ))}
       </div>
 

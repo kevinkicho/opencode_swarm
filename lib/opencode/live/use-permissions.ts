@@ -103,6 +103,12 @@ export function useLivePermissions(
     };
   }, [sessionId, directory]);
 
+  // Use a ref for `pending` so approve/reject have stable identity.
+  // Without this, both callbacks recreate on every pending change,
+  // triggering re-renders in every consumer.
+  const pendingRef = useRef(pending);
+  pendingRef.current = pending;
+
   const approve = useCallback(
     async (permissionID: string, scope: 'once' | 'always') => {
       const dir = directoryRef.current;
@@ -110,7 +116,7 @@ export function useLivePermissions(
       if (!dir || !sid) return;
       // optimistic remove — the replied event will confirm, and if the POST
       // fails we surface the error and put it back
-      const snapshot = pending;
+      const snapshot = pendingRef.current;
       setPending((prev) => prev.filter((p) => p.id !== permissionID));
       try {
         await replyPermissionBrowser(sid, permissionID, dir, scope);
@@ -119,7 +125,7 @@ export function useLivePermissions(
         setPending(snapshot);
       }
     },
-    [pending]
+    [],
   );
 
   const reject = useCallback(
@@ -127,7 +133,7 @@ export function useLivePermissions(
       const dir = directoryRef.current;
       const sid = sessionIdRef.current;
       if (!dir || !sid) return;
-      const snapshot = pending;
+      const snapshot = pendingRef.current;
       setPending((prev) => prev.filter((p) => p.id !== permissionID));
       try {
         await replyPermissionBrowser(sid, permissionID, dir, 'reject');
@@ -136,7 +142,7 @@ export function useLivePermissions(
         setPending(snapshot);
       }
     },
-    [pending]
+    [],
   );
 
   return { pending, approve, reject, error };

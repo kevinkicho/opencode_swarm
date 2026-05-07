@@ -263,6 +263,9 @@ export async function updateRunMeta(
     created_at: next.createdAt,
     payload: JSON.stringify(next),
   });
+  // Invalidate the derived-row cache so the next poll reflects the
+  // updated metadata (e.g., currentTier bump, sessionID addition).
+  invalidateDerivedRow(swarmRunID);
   return next;
 }
 

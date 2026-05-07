@@ -265,10 +265,13 @@ async function tickSession(
     );
   } finally {
     slot.inFlight = false;
-    // run page's `useLiveTicker` SSE consumer can update without polling
-    // /board/ticker. Fires once per tick — listeners that want lower
-    // cadence can sample. No-op when nothing's subscribed.
-    emitTickerTick(state.swarmRunID, snapshot(state));
+    // Emit a ticker tick so the run page's `useLiveTicker` SSE consumer
+    // can update without polling /board/ticker. Skip if the ticker has
+    // already been stopped (stopAutoTicker emits its own final snapshot,
+    // and hard-caps can stop mid-tick — this avoids a duplicate emission).
+    if (!state.stopped) {
+      emitTickerTick(state.swarmRunID, snapshot(state));
+    }
   }
 }
 

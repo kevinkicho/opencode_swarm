@@ -60,6 +60,7 @@ export function useViewState<RunView extends string>(
   // Auto-reset runView when its enabling condition stops applying.
   // Without this the main viewport renders null when the user navigates
   // from a pattern-specific view to a run that doesn't support that view.
+  const gateDepsStr = JSON.stringify(gateDeps);
   useEffect(() => {
     if (!isViewEnabled(runView)) {
       setRunView(defaultView);
@@ -69,8 +70,9 @@ export function useViewState<RunView extends string>(
     // the typical call site rebuilds the closure each render; including
     // it would re-fire the effect every render. The runView + gateDeps
     // dependency set captures every input the gate actually consults.
+    // defaultView is included so the fallback view tracks route changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runView, ...gateDeps]);
+  }, [runView, defaultView, gateDepsStr]);
 
   const jumpToTodo = useCallback((todoId: string) => {
     setLeftTab('plan');

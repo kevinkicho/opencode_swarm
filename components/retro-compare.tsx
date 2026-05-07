@@ -52,7 +52,7 @@ export function RetroCompareView({ runs }: { runs: CompareRun[] }) {
             </div>
             {run.retro ? (
               <>
-                <div className={clsx('font-mono text-sm font-medium', OUTCOME_TONE[run.retro.outcome] ?? 'text-fog-300')}>
+                <div className={clsx('font-mono text-xs font-medium', OUTCOME_TONE[run.retro.outcome] ?? 'text-fog-300')}>
                   {run.retro.outcome}
                 </div>
                 <div className="space-y-1">
