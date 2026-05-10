@@ -22,10 +22,10 @@ Built for keyboard-first developers who want to read a 5-agent run as easily as 
 ## Screenshots
 
 <p align="center">
-  <img src="public/screenshots/tile-2x2.png" alt="opencode_swarm — completed blackboard run" width="800" />
+  <img src="public/screenshots/tile-2x2-live.png" alt="opencode_swarm — live blackboard run on self-referential codebase" width="800" />
 </p>
 
-*Above: 4 captures from a completed blackboard run (`run_mowhf24a_8h62fc`, 11.7M tokens, $0.24, 18/19 todos done)*
+*Above: 4 captures from a live blackboard run (`run_mp0bn4z3_uhu6ky`) fixing its own codebase. 2 workers, opencode-go/glm-5.1 planner + GEMMA worker, $0.03 and counting.*
 
 | Top-left: 2D Timeline | Top-right: Board Rail |
 |:---:|:---:|
