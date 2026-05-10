@@ -22,19 +22,22 @@ Built for keyboard-first developers who want to read a 5-agent run as easily as 
 ## Screenshots
 
 <p align="center">
-  <img src="public/screenshots/tile-2x2.png" alt="opencode_swarm highlights" width="800" />
+  <img src="public/screenshots/tile-2x2-live.png" alt="opencode_swarm highlights — live run" width="800" />
 </p>
 
-| Top-left: Main shell | Top-right: Projects page |
+*Above: 4 captures during a live blackboard run on the ollama_swarm codebase (2 workers, GLM planner + GEMMA worker, $0.50 cap)*
+
+| Top-left: 2D Timeline | Top-right: Board Rail |
 |:---:|:---:|
-| Bottom-left: Metrics dashboard | Bottom-right: Clean state |
+| Bottom-left: Plan Tab | Bottom-right: Topbar + Live Status |
 
 ### Key features visible
 
-1. **⌘N new-run modal** — pattern recommender chip, template dropdown, `save template` button, cost-per-todo badge ($0.034/todo)
-2. **Topbar** — run anchor chip, tier indicator, cost badge, planner error counter, silent session chip, retro button, budget warning (amber at 90%)
+1. **⌘N new-run modal** — pattern recommender chip, template dropdown, `save template` button, cost-per-todo badge ($0.034/todo baseline)
+2. **Topbar** — run anchor chip, tier indicator, cost badge, planner error counter, silent session chip, retro button, budget warning (amber at ≥90%)
 3. **Board rail** — filter chips (open/in-progress/done/stale + todo/criterion/finding), search input, retry-stale button
 4. **Run retro modal** — post-hoc review with agent scoring table, completion rate, cost breakdown
+5. **Human-in-the-loop inject** — bottom composer with agent target picker + send button
 
 ## Status
 
