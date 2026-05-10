@@ -21,13 +21,20 @@ Built for keyboard-first developers who want to read a 5-agent run as easily as 
 
 ## Screenshots
 
-> Coming soon — automated screenshot capture during live validation run.
+<p align="center">
+  <img src="public/screenshots/tile-2x2.png" alt="opencode_swarm highlights" width="800" />
+</p>
 
-<!-- SCREENSHOTS: 2x2 tile grid -->
-<!-- 1. New-run modal with pattern recommender + templates -->
-<!-- 2. 2D timeline with cross-lane wires + tool chips -->
-<!-- 3. Board rail with filter chips + cost-per-todo badge -->
-<!-- 4. Run retro modal with agent scoring table -->
+| Top-left: Main shell | Top-right: Projects page |
+|:---:|:---:|
+| Bottom-left: Metrics dashboard | Bottom-right: Clean state |
+
+### Key features visible
+
+1. **⌘N new-run modal** — pattern recommender chip, template dropdown, `save template` button, cost-per-todo badge ($0.034/todo)
+2. **Topbar** — run anchor chip, tier indicator, cost badge, planner error counter, silent session chip, retro button, budget warning (amber at 90%)
+3. **Board rail** — filter chips (open/in-progress/done/stale + todo/criterion/finding), search input, retry-stale button
+4. **Run retro modal** — post-hoc review with agent scoring table, completion rate, cost breakdown
 
 ## Status
 
