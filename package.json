@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks",
     "dev": "node scripts/dev.mjs",
     "dev:turbo": "node scripts/dev.mjs --turbo",
     "build": "next build",
@@ -28,6 +29,7 @@
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.19",
+    "@rollup/rollup-linux-x64-gnu": "^4.60.3",
     "@tanstack/react-query": "^5.100.1",
     "@tanstack/react-query-devtools": "^5.100.1",
     "@tanstack/react-virtual": "^3.13.24",
@@ -36,7 +38,7 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "framer-motion": "^11.11.17",
-    "next": "14.2.18",
+    "next": "14.2.35",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.1.0",

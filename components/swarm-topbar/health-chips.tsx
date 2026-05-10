@@ -187,15 +187,22 @@ export function RunHealthChip({
         detail:
           tickerStopReason === 'opencode-frozen'
             ? 'opencode stopped responding to ticker probes'
-            : tickerStopReason === 'zen-rate-limit'
-              ? 'opencode-zen returned 429 — backoff in effect'
-              : tickerStopReason === 'replan-loop-exhausted'
-                ? 'orchestrator hit the re-plan cap — human intervention needed'
-                : `ticker stopped on ${tickerStopReason}`,
-        severity: 'error',
-      });
-      severity = 'error';
-    }
+             : tickerStopReason === 'zen-rate-limit'
+               ? 'opencode-zen returned 429 — backoff in effect'
+               : tickerStopReason === 'wall-clock-cap'
+                 ? 'run reached wall-clock time limit'
+                 : tickerStopReason === 'commits-cap'
+                   ? 'run reached maximum committed items limit'
+                   : tickerStopReason === 'todos-cap'
+                     ? 'run reached total todo item limit'
+                     : tickerStopReason === 'replan-loop-exhausted'
+                       ? 'orchestrator hit the re-plan cap — human intervention needed'
+                       : `ticker stopped on ${tickerStopReason}`,
+            severity: 'error',
+          });
+          severity = 'error';
+        }
+
   }
   if (retryExhausted.length > 0) {
     reasons.push({
@@ -296,6 +303,11 @@ export function RunHealthChip({
         >
           health
         </span>
+        {silentSessions.length > 0 && (
+          <span className="font-mono text-micro uppercase tracking-widest2 text-amber hairline rounded px-1">
+            {silentSessions.length} silent
+          </span>
+        )}
       </div>
     </Tooltip>
   );

@@ -341,11 +341,14 @@ async function reconcileWithTicker(
     if (ticker) {
       tickerSeen = true;
       tickerRunning = !ticker.stopped;
-      tickerFailureStop =
-        ticker.stopped &&
-        (ticker.stopReason === 'opencode-frozen' ||
-          ticker.stopReason === 'zen-rate-limit' ||
-          ticker.stopReason === 'replan-loop-exhausted');
+    tickerFailureStop =
+      ticker.stopped &&
+      (ticker.stopReason === 'opencode-frozen' ||
+        ticker.stopReason === 'zen-rate-limit' ||
+        ticker.stopReason === 'replan-loop-exhausted' ||
+        ticker.stopReason === 'filtered-all-todos' ||
+        ticker.stopReason === 'stuck-deliberation');
+
     }
   } catch {
     // ticker registry unreachable — fall through to no-ticker case below.

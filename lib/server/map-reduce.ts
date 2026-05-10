@@ -28,6 +28,7 @@ import { getSessionMessagesServer, postSessionMessageServer } from './opencode-s
 import { tickCoordinator, waitForSessionIdle } from './blackboard/coordinator';
 import { extractLatestAssistantText, harvestDrafts, snapshotKnownIDs } from './harvest-drafts';
 import { recordPartialOutcome } from './degraded-completion';
+import { recordParseFailure } from './parse-failure-log';
 import { getBoardItem, insertBoardItem } from './blackboard/store';
 import { checkWallClockExpired } from './swarm-bounds';
 import { THRESHOLDS, TIMINGS } from './pattern-tunables';
@@ -64,10 +65,16 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
     const SESSION_WAIT_MS = TIMINGS.mapReduce.sessionWaitMs;
     const deadline = Date.now() + SESSION_WAIT_MS;
     const knownIDsBySession = await snapshotKnownIDs(meta, '[map-reduce]');
+    const silentStreaks = new Map<string, number>();
+    const MAX_SILENT_STREAK = 2;
+    const activeSessions = meta.sessionIDs.filter(
+      (sid) => (silentStreaks.get(sid) ?? 0) < MAX_SILENT_STREAK,
+    );
     const waitResults = await harvestDrafts(meta, {
       knownIDsBySession,
       deadline,
       contextLabel: '[map-reduce]',
+      excludeSessions: meta.sessionIDs.filter((sid) => !activeSessions.includes(sid)),
     });
     const drafts: Array<{ sessionID: string; text: string | null }> =
       waitResults.map((r) => ({ sessionID: r.sessionID, text: r.text }));
@@ -89,7 +96,8 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
       return;
     }
 
-    const tolerance = meta.partialMapTolerance;
+    const DEFAULT_PARTIAL_MAP_TOLERANCE = { minMembers: 2, maxMemberFailures: 1 };
+    const tolerance = meta.partialMapTolerance ?? DEFAULT_PARTIAL_MAP_TOLERANCE;
     if (tolerance) {
       if (present.length < tolerance.minMembers) {
         console.warn(
@@ -181,6 +189,9 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
         return;
       }
       await new Promise((r) => setTimeout(r, TICK_INTERVAL_MS));
+      if (checkWallClockExpired(swarmRunID, meta, 'synthesis-dispatch-poll', buildMapPhaseSummary(present, totalSessionCount, failedCount))) {
+        return;
+      }
     }
 
     console.warn(
@@ -196,7 +207,7 @@ export async function runMapReduceSynthesis(swarmRunID: string): Promise<void> {
   );
 }
 
-async function runSynthesisCriticGate(
+export async function runSynthesisCriticGate(
   meta: import('@/lib/swarm-run-types').SwarmRunMeta,
   drafts: Array<{ sessionID: string; text: string | null }>,
   synthesizerSessionID: string,
@@ -288,6 +299,14 @@ async function runSynthesisCriticGate(
     }
 
     const { verdict, feedback } = parseCriticVerdict(criticText);
+    if (verdict === 'unclear') {
+      recordParseFailure(swarmRunID, {
+        pattern: 'map-reduce',
+        role: 'synthesis-critic',
+        rawReply: criticText,
+        reason: 'synthesis critic verdict unparseable',
+      });
+    }
     if (verdict === 'approved') {
       console.log(
         `[map-reduce] run ${swarmRunID} — synthesis APPROVED by critic on attempt ${attempt}`,
@@ -331,7 +350,9 @@ async function runSynthesisCriticGate(
         synthesizerSessionID,
         meta.workspace,
         revisePrompt,
-        meta.synthesisModel ? { model: meta.synthesisModel } : {},
+        meta.synthesisModel
+          ? { model: meta.synthesisModel }
+          : { model: meta.teamModels?.[meta.sessionIDs.indexOf(synthesizerSessionID)] },
       );
     } catch (err) {
       console.warn(

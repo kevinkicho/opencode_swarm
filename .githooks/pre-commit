@@ -1,0 +1,25 @@
+#!/bin/bash
+# Block non-reliability commits when postmortem rate ≥ 2.5/week.
+# Reliability files: lib/server/**, app/api/swarm/**, docs/POSTMORTEMS/**
+# Feature files: components/**, app/page*.tsx, app/page-internals/**
+
+RATE=$(npx tsx scripts/pm-frequency.ts 2>/dev/null | grep "Rate:" | grep -oP '[\d.]+(?=/week)' | tail -1)
+if [ -z "$RATE" ]; then
+  echo "Could not determine postmortem rate — allowing commit"
+  exit 0
+fi
+
+THRESHOLD=2.5
+if (( $(echo "$RATE >= $THRESHOLD" | bc -l) )); then
+  CHANGED=$(git diff --cached --name-only)
+  RELIABILITY_PATTERNS="^lib/server/|^app/api/swarm/|^docs/POSTMORTEMS/|^scripts/pm-frequency|^docs/(MONTE_CARLO|LCCA|FAULT_TREE|RECOMMENDATIONS|IMPLEMENTATION_PLAN|COMPOSITE_PLAN).md$"
+  FEATURE_CHANGES=$(echo "$CHANGED" | grep -vE "$RELIABILITY_PATTERNS")
+  if [ -n "$FEATURE_CHANGES" ]; then
+    echo "BLOCKED: Postmortem rate is $RATE/week (threshold: $THRESHOLD/week)"
+    echo "Only reliability file changes are allowed. Feature changes detected:"
+    echo "$FEATURE_CHANGES"
+    echo "Run 'npx tsx scripts/pm-frequency.ts' to see the current rate."
+    exit 1
+  fi
+fi
+exit 0

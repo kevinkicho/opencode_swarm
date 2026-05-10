@@ -183,7 +183,7 @@ export async function runGateChecks(
         console.warn(
           `[coordinator] ${meta.swarmRunID}/${todo.id}: ${note} (text=${workerText.length} chars)`,
         );
-        const outcome = retryOrStale(meta.swarmRunID, todo, note);
+        const outcome = await retryOrStale(meta.swarmRunID, todo, note);
         return {
           kind: 'fail',
           outcome: {

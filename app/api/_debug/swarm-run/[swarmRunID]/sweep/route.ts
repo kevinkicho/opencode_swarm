@@ -39,6 +39,10 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { swarmRunID: string } },
 ): Promise<Response> {
+  if (!process.env.DEBUG_ENABLED && process.env.NODE_ENV === 'production') {
+    return Response.json({ error: 'debug endpoints disabled in production' }, { status: 403 });
+  }
+
   const meta = await getRun(params.swarmRunID);
   if (!meta) {
     return Response.json({ error: 'swarm run not found' }, { status: 404 });

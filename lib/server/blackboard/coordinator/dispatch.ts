@@ -33,6 +33,8 @@ import { dispatchPrompt } from './dispatch/dispatch-prompt';
 import { awaitTurn } from './dispatch/await-turn';
 import { runGateChecks } from './dispatch/run-gate-checks';
 import { commitDone } from './dispatch/commit-done';
+import { FileLockSet } from './file-locks';
+import { assertItemStatus, recordStateViolation } from './state-assert';
 
 //
 // Concurrency model: the auto-ticker fans out per-session ticks via
@@ -113,14 +115,36 @@ async function tickCoordinatorImpl(
   const pick = await pickClaim(swarmRunID, opts);
   if (pick.kind === 'skip') return pick.outcome;
 
+  // State-machine hardening: verify item is in-progress after successful claim.
+  const claimed = assertItemStatus(swarmRunID, pick.context.todo.id, 'in-progress');
+  if (!claimed.ok) {
+    recordStateViolation(swarmRunID, pick.context.todo.id, 'in-progress', claimed.status, 'post-claim');
+    // Continue fail-open — the item may have moved but dispatch may still work
+  }
+
   const dispatch = await dispatchPrompt(pick.context, opts);
   if (dispatch.kind === 'fail') return dispatch.outcome;
+
+  // Verify item still in-progress before waiting for turn.
+  const preWait = assertItemStatus(swarmRunID, dispatch.context.todo.id, 'in-progress');
+  if (!preWait.ok) {
+    recordStateViolation(swarmRunID, dispatch.context.todo.id, 'in-progress', preWait.status, 'pre-wait');
+  }
 
   const wait = await awaitTurn(dispatch.context);
   if (wait.kind === 'fail') return wait.outcome;
 
   const gates = await runGateChecks(wait.context);
-  if (gates.kind === 'fail') return gates.outcome;
+  if (gates.kind === 'fail') {
+    FileLockSet.release(swarmRunID, wait.context.todo.id);
+    return gates.outcome;
+  }
 
-  return commitDone(gates.context);
+  // Verify item still in-progress before committing to done.
+  const preCommit = assertItemStatus(swarmRunID, gates.context.todo.id, 'in-progress');
+  if (!preCommit.ok) {
+    recordStateViolation(swarmRunID, gates.context.todo.id, 'in-progress', preCommit.status, 'pre-commit');
+  }
+
+  return await commitDone(gates.context);
 }

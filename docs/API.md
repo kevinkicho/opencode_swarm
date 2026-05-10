@@ -292,6 +292,82 @@ surfaces don't.
 
 Role labels resolved via `lib/blackboard/roles.ts::roleNamesBySessionID`.
 
+### `POST /api/swarm/run/{swarmRunID}/nudge`
+
+Send a mid-run message to one or all sessions. Fire-and-forget — no
+wait-for-idle. Prepended with `[nudge]` prefix.
+
+**Body:** `{ message: string; sessionID?: string }` — omit sessionID to broadcast.
+**Response 200:** `{ sent: number; failed: number; targets: number }`
+
+### `GET /api/swarm/run/{swarmRunID}/retro`
+
+Post-hoc run review. Computes per-agent contribution metrics from board
+items and session messages.
+
+**Response 200:**
+```ts
+{
+  swarmRunID: string;
+  pattern: string;
+  costTotal: number;
+  tokensTotal: number;
+  todosCompleted: number;
+  todosStale: number;
+  criteriaMet: number;
+  criteriaUnmet: number;
+  agents: Array<{
+    sessionID: string; name: string;
+    todosCompleted: number; todosStale: number;
+    filesEdited: string[];
+  }>;
+}
+```
+
+### `GET /api/swarm/recommend?directive=...`
+
+Returns a historical learning recommendation for the best pattern + team
+size based on past runs with similar directives.
+
+**Response 200:**
+```ts
+{
+  recommendation: {
+    pattern: string; teamSize: number; confidence: 'high' | 'medium';
+    avgCostPerTodo: number; basedOn: number; reason: string;
+  } | null;
+  historyCount: number;
+  recentPatterns: Array<{ pattern: string; costPerTodo: number; completionRate: number }>;
+}
+```
+
+### `GET /api/swarm/templates` · `POST /api/swarm/templates` · `DELETE /api/swarm/templates/{name}`
+
+CRUD for run configuration templates. Saved to `.opencode_swarm/templates/{name}.json`.
+GET returns all templates sorted newest-first. POST creates or overwrites.
+DELETE removes.
+
+**POST body:** `RunTemplate` (pattern, directive, teamCounts, bounds, branchStrategy, etc.)
+**Response 200:** The saved template.
+
+### `POST /api/webhook/run`
+
+GitHub-style PR webhook. HMAC-verified via `WEBHOOK_SECRET` env var.
+PR opened → start blackboard run. PR closed/merged → stop run.
+
+**Body:** `{ event: string; repo: string; branch: string; prTitle: string; prBody: string }`
+**Headers:** `X-Hub-Signature-256: sha256=<hmac>`
+**Response 200:** `{ swarmRunID: string; status: 'started' | 'stopped' }` or `401` when unconfigured.
+
+### `GET /api/swarm/diagnostics/postmortems`
+
+Returns postmortem frequency statistics for monitoring.
+
+**Response 200:**
+```ts
+{ count: number; firstDate: string; lastDate: string; spanWeeks: number; rate: number }
+```
+
 ---
 
 ## 3. Blackboard endpoints
@@ -559,6 +635,29 @@ Also auto-starts the ticker if it was stopped and the pattern is in
 
 Recovery path for rate-limit-stranded runs — see
 `memory/reference_opencode_freeze.md`.
+
+### `GET /api/_debug/swarm-run/{swarmRunID}/parse-failures`
+
+Aggregates parse-failure findings from a run's board, grouped by
+orchestrator pattern and parser role. Used to identify the most common
+LLM output shapes that no parser recognizes, guiding regex improvements.
+
+**Response 200**
+```ts
+{
+  byPattern: {
+    [pattern: string]: {
+      [role: string]: {
+        count: number;
+        examples: Array<{ content: string; note: string }>;
+      };
+    };
+  };
+  total: number;
+}
+```
+
+**Response 404** — run not found.
 
 ---
 

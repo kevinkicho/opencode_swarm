@@ -60,12 +60,16 @@ export async function POST(
  _req: NextRequest,
  { params }: { params: { swarmRunID: string } },
 ): Promise<Response> {
- const meta = await getRun(params.swarmRunID);
- if (!meta) {
- return Response.json({ error: 'swarm run not found' }, { status: 404 });
- }
+  if (!process.env.DEBUG_ENABLED && process.env.NODE_ENV === 'production') {
+    return Response.json({ error: 'debug endpoints disabled in production' }, { status: 403 });
+  }
 
- const items = listBoardItems(params.swarmRunID);
+  const meta = await getRun(params.swarmRunID);
+  if (!meta) {
+    return Response.json({ error: 'swarm run not found' }, { status: 404 });
+  }
+
+  const items = listBoardItems(params.swarmRunID);
  const stale = items.filter((i) => i.status === 'stale');
 
  const reopened: string[] = [];

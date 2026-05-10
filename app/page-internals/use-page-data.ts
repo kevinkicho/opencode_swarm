@@ -33,6 +33,13 @@ export function usePageData() {
     return row?.status ?? null;
   }, [runsSnapshot.rows, swarmRunID]);
 
+  // Terminal run: no agent can still be "thinking" or "working" — the
+  // run has stopped. Force thinking/working → idle (the SSE feed that
+  // would deliver the completed timestamp is dead, so toAgents keeps
+  // the last-seen status forever). Preserve explicit error/done/paused
+  // statuses since they carry meaning (rust dot, sky dot).
+  const terminalRun = currentRunStatus === 'stale' || currentRunStatus === 'completed' || currentRunStatus === 'error';
+
   const swarmRunMissing = Boolean(swarmRunID) && swarmRunNotFound;
   const sessionId = swarmRunMissing
     ? null
@@ -40,7 +47,7 @@ export function usePageData() {
       ? swarmRunPrimarySessionID
       : directSessionId;
   const { data: liveData, loading: liveLoading } = useLiveSession(sessionId);
-  const liveSwarmRun = useLiveSwarmRunMessages(swarmRunMeta_);
+  const liveSwarmRun = useLiveSwarmRunMessages(swarmRunMeta_, 30_000, undefined, terminalRun);
 
   const snapshotLoading = Boolean(swarmRunID) && !swarmRunSnap.snapshot && !swarmRunNotFound;
   const messagesLoading = Boolean(swarmRunID) && (snapshotLoading || liveLoading || liveSwarmRun.loading);
@@ -89,15 +96,15 @@ export function usePageData() {
     }
 
     return view.agents.map((a) => {
+      if (terminalRun && (a.status === 'thinking' || a.status === 'working')) {
+        return { ...a, status: 'idle' as const };
+      }
       if (permissions.pending.length > 0 && (a.status === 'working' || a.status === 'thinking')) {
         return { ...a, status: 'waiting' as const };
       }
       if (a.status === 'idle' && a.sessionID && inFlightSessionIDs.has(a.sessionID)) {
         return { ...a, status: 'thinking' as const };
       }
-      // Override agent display name with role name when available
-      // (planner, worker-2, etc.) instead of opencode's bare agent config
-      // name (plan, build) which produces unhelpful "build #1, build #2".
       if (a.sessionID) {
         const roleName = sessionRoleNames.get(a.sessionID);
         if (roleName) {
@@ -106,7 +113,7 @@ export function usePageData() {
       }
       return a;
     });
-  }, [view.agents, permissions.pending.length, liveTicker.state, sessionRoleNames]);
+  }, [view.agents, permissions.pending.length, liveTicker.state, sessionRoleNames, terminalRun]);
 
   return {
     swarmRunID,

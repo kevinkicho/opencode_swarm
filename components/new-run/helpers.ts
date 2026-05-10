@@ -6,7 +6,7 @@
 import type { SwarmPattern } from '@/lib/swarm-types';
 
 export type BranchStrategy = 'push-same-branch' | 'push-new-branch' | 'local-only';
-export type StartMode = 'dry-run' | 'live' | 'spectator';
+export type StartMode = 'dry-run' | 'live';
 
 export function generateRunId(): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -40,24 +40,22 @@ export const API_RECIPES: ReadonlyArray<{
 }> = [
   {
     pattern: 'blackboard',
-    hint: 'coordinator-dispatched todos on a shared board',
+    hint: 'coordinator-dispatched todos on a shared board, re-sweeps every 5m by default',
     body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
   "pattern": "blackboard",
   "workspace": "C:/Users/kevin/Workspace/<repo>",
   "directive": "Review and improve this codebase",
-  "teamSize": 3,
-  "persistentSweepMinutes": 20
+  "teamSize": 3
 }'`,
   },
   {
     pattern: 'orchestrator-worker',
-    hint: 'one orchestrator plans + re-strategizes, n workers execute',
+    hint: 'one orchestrator plans + re-strategizes, n workers execute, re-sweeps every 5m by default',
     body: `curl -X POST http://localhost:49187/api/swarm/run -d '{
   "pattern": "orchestrator-worker",
   "workspace": "C:/Users/kevin/Workspace/<repo>",
   "directive": "Achieve everything README claims",
-  "teamSize": 4,
-  "persistentSweepMinutes": 20
+  "teamSize": 4
 }'`,
   },
   {

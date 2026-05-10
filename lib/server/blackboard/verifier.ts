@@ -32,6 +32,7 @@ import {
   postSessionMessageServer,
 } from '../opencode-server';
 import { waitForSessionIdle } from './coordinator';
+import { recordParseFailure } from '../parse-failure-log';
 import type { BoardItem } from '../../blackboard/types';
 
 const DEFAULT_TIMEOUT_MS = 180_000; // 3 min — Playwright can take a while
@@ -139,22 +140,38 @@ function buildVerifierPrompt(input: VerifierReviewInput): string {
 const VERDICT_RE =
   /^\s*VERDICT:\s*(VERIFIED|NOT_VERIFIED|UNCLEAR)\b\s*(?:[—:-]\s*(.+))?\s*$/im;
 
+// Fallback: scan first 256 chars for the verdict keyword anywhere.
+// LLMs often prefix with commentary ("After running the Playwright test, the
+// result is VERIFIED") instead of starting with VERDICT:.
+const VERDICT_FALLBACK = /\b(VERIFIED|NOT_VERIFIED|UNCLEAR)\b/i;
+
 function parseVerdict(text: string): {
   verdict: VerifierVerdict;
   reason: string;
 } {
   const m = VERDICT_RE.exec(text);
-  if (!m) {
-    return {
-      verdict: 'unclear',
-      reason: `verifier reply did not match VERDICT format: ${text.slice(0, 120)}`,
-    };
+  if (m) {
+    const tag = m[1].toUpperCase();
+    const reason = (m[2] ?? '').trim() || '(no reason given)';
+    if (tag === 'NOT_VERIFIED') return { verdict: 'not-verified', reason };
+    if (tag === 'VERIFIED') return { verdict: 'verified', reason };
+    return { verdict: 'unclear', reason };
   }
-  const tag = m[1].toUpperCase();
-  const reason = (m[2] ?? '').trim() || '(no reason given)';
-  if (tag === 'NOT_VERIFIED') return { verdict: 'not-verified', reason };
-  if (tag === 'VERIFIED') return { verdict: 'verified', reason };
-  return { verdict: 'unclear', reason };
+  // Fallback: find keyword anywhere in first 256 chars.
+  const head = text.slice(0, 256);
+  const fb = VERDICT_FALLBACK.exec(head);
+  if (fb) {
+    const tag = fb[1].toUpperCase();
+    const afterKeyword = head.slice(fb.index + fb[0].length).split('\n')[0].replace(/^[—:—-]\s*/, '').trim();
+    const reason = afterKeyword || '(no reason given)';
+    if (tag === 'NOT_VERIFIED') return { verdict: 'not-verified', reason };
+    if (tag === 'VERIFIED') return { verdict: 'verified', reason };
+    return { verdict: 'unclear', reason };
+  }
+  return {
+    verdict: 'unclear',
+    reason: `verifier reply did not match VERDICT format: ${text.slice(0, 120)}`,
+  };
 }
 
 // Post a verification request to the shared verifier session and wait
@@ -210,6 +227,14 @@ export async function verifyWorkerOutcome(
         if (text) replyText = text;
       }
       const parsed = parseVerdict(replyText);
+      if (parsed.verdict === 'unclear') {
+        recordParseFailure(input.swarmRunID, {
+          pattern: 'blackboard',
+          role: 'verifier',
+          rawReply: replyText,
+          reason: parsed.reason,
+        });
+      }
       return { ...parsed, rawReply: replyText };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

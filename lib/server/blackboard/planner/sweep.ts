@@ -29,6 +29,7 @@ import {
  postSessionMessageServer,
 } from '../../opencode-server';
 import { publishExports } from '../../hmr-exports';
+import { TIER_PLANNER_MODELS } from '@/lib/swarm-patterns';
 import { waitForSessionIdle } from '../coordinator';
 import { recordPartialOutcome } from '../../degraded-completion';
 import { insertBoardItem, listBoardItems } from '../store';
@@ -41,13 +42,19 @@ import {
 import type { BoardItem } from '@/lib/blackboard/types';
 
 import { mintItemId } from '../item-ids';
+import { resetSessionForClaim } from '../coordinator/dispatch/claim-context';
+import { saveBoardSnapshot } from './prompt-delta';
+import { invalidateBoardView } from '../board-view';
+import { getCachedReadme, setCachedLessons, invalidatePlannerCache } from './cache';
 import {
- buildPlannerBoardContext,
- buildPlannerPrompt,
- readWorkspaceReadme,
+  buildPlannerBoardContext,
+  buildPlannerPrompt,
+  stripFillerWords,
 } from './prompt';
 import { latestTodosFrom } from './parsers';
+import { validatePlannerOutput } from './validate-output';
 import { buildLessonsBlock } from '@/lib/server/lesson-inject';
+import { discoverPackages, buildPackageMap } from '../../workspace-packages';
 import {
  buildAllFilteredSummary,
  buildPlannerPartialSummary,
@@ -90,9 +97,15 @@ export interface PlannerExports {
 const DEFAULT_TIMEOUT_MS = 15 * 60_000;
 
 export interface PlannerSweepResult {
- items: BoardItem[];
- sessionID: string;
- planMessageID: string | null;
+  items: BoardItem[];
+  sessionID: string;
+  planMessageID: string | null;
+  // True when the planner called todowrite but every proposed item was
+  // dropped by the validation loop (vague criteria filter + dedup guard).
+  // Callers (auto-ticker sweep, orchestrator-worker kickoff) use this to
+  // distinguish "planner produced nothing" from "planner produced work
+  // that was all filtered" — the latter signals a stuck loop.
+  filteredAll?: boolean;
 }
 
 // Returns true when the criterion text is concrete enough for the
@@ -159,6 +172,8 @@ export async function runPlannerSweep(
   // accordingly. Tier 1 = bugs/polish (default), 2 = refactor/extract,
   // 3 = cross-cutting, 4+ = architectural/new features.
   escalationTier?: number;
+  // Internal: set true on retry attempts to prevent infinite recursion.
+  _retry?: boolean;
   } = {},
 ): Promise<PlannerSweepResult> {
  const meta = await getRun(swarmRunID);
@@ -171,12 +186,23 @@ export async function runPlannerSweep(
  throw new Error('board already populated — pass overwrite=true to re-sweep');
  }
 
- const sessionID = meta.sessionIDs[0];
+  const sessionID = meta.sessionIDs[0];
+  const refreshedSessionID = await resetSessionForClaim(
+    swarmRunID,
+    sessionID,
+    meta.workspace,
+  ).catch((err) => {
+    console.warn(
+      `[planner] session reset failed for ${sessionID.slice(-8)} — ` +
+      `falling back to existing session; error: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return sessionID;
+  });
 
  // Snapshot existing messages so we can diff "new since sweep". opencode's
  // /message endpoint returns full history with no tail param, so we track
  // IDs client-side.
- const before = await getSessionMessagesServer(sessionID, meta.workspace);
+  const before = await getSessionMessagesServer(refreshedSessionID, meta.workspace);
  const knownIDs = new Set(before.map((m) => m.info.id));
 
  const boardContext = opts.includeBoardContext
@@ -186,15 +212,19 @@ export async function runPlannerSweep(
  // sweep. The READ itself is cheap (~one filesystem call, single-digit
  // ms) and the prompt-token cost is offset by saving the planner a
  // mandatory tool call to read it.
- const readme =
- opts.includeReadme === false ? null : await readWorkspaceReadme(meta.workspace);
-  const lessons = await buildLessonsBlock(meta.workspace);
-  const rawPrompt = buildPlannerPrompt(
-  meta.directive,
-  boardContext,
-  readme,
-  opts.escalationTier,
-  );
+  const readme =
+  opts.includeReadme === false ? null : await getCachedReadme(meta.workspace);
+  const packages = await discoverPackages(meta.workspace);
+  const packageMap = buildPackageMap(packages);
+    const lessons = await buildLessonsBlock(meta.workspace);
+    if (lessons) setCachedLessons(meta.workspace, lessons);
+   const rawPrompt = buildPlannerPrompt(
+   meta.directive,
+   boardContext,
+   readme,
+   opts.escalationTier,
+   packageMap,
+   );
  const prompt = lessons ? lessons + '\n\n' + rawPrompt : rawPrompt;
  // Planner dispatch. Always route through opencode's `plan` agent —
  // the agent carries tool definitions (todowrite, read, grep, etc.)
@@ -214,8 +244,15 @@ export async function runPlannerSweep(
  // opencode's `model` field overrides the agent's configured default
  // model. So user picking `opencode-go/deepseek-v4-pro` routes through
  // `plan` for tool definitions but uses deepseek for inference.
- const pinnedModel = meta.teamModels?.[0];
- await postSessionMessageServer(sessionID, meta.workspace, prompt, {
+ const pinnedModel = meta.teamModels?.[0] ?? (
+   opts.escalationTier
+     ? TIER_PLANNER_MODELS[Math.min((opts.escalationTier || 1) - 1, TIER_PLANNER_MODELS.length - 1)]
+     : undefined
+ );
+ if (!meta.teamModels?.[0] && opts.escalationTier && opts.escalationTier > 2) {
+   console.log(`[planner] tier ${opts.escalationTier}: using GLM (strong model) for cross-cutting work`);
+ }
+  await postSessionMessageServer(refreshedSessionID, meta.workspace, prompt, {
  agent: 'plan',
  model: pinnedModel,
  });
@@ -228,11 +265,12 @@ export async function runPlannerSweep(
  // Without this, a model that reads a file first (tool:read step) before
  // calling todowrite would race us: we'd catch the read step completing,
  // find no todowrite in scope, and exit with 0 items.
- const waited = await waitForSessionIdle(
- sessionID,
+  const waited = await waitForSessionIdle(
+  refreshedSessionID,
  meta.workspace,
  knownIDs,
  deadline,
+ { silentErrorMs: 360_000 },  // SAAM 6.1: planner sweeps take 90-240s
  );
  if (!waited.ok) {
  // Critical: abort the opencode session before re-throwing. Without this,
@@ -241,12 +279,12 @@ export async function runPlannerSweep(
  // has no stop condition. Incident 2026-04-22 burned 5M tokens across 70+
  // orphaned todowrite calls before a human noticed.
  try {
- await abortSessionServer(sessionID, meta.workspace);
- } catch (abortErr) {
- const detail =
- abortErr instanceof Error ? abortErr.message : String(abortErr);
- console.warn(
- `[planner] abort-on-timeout failed for ${sessionID}: ${detail} — ` +
+  await abortSessionServer(refreshedSessionID, meta.workspace);
+  } catch (abortErr) {
+  const detail =
+  abortErr instanceof Error ? abortErr.message : String(abortErr);
+  console.warn(
+  `[planner] abort-on-timeout failed for ${refreshedSessionID}: ${detail} — ` +
  `session may keep burning tokens`,
  );
  }
@@ -258,13 +296,25 @@ export async function runPlannerSweep(
  // this, a planner-side silent abort makes the run go to status=error
  // with NO finding row — the run "just died" with nothing to read on
  // the board.
- recordPartialOutcome(swarmRunID, {
- pattern: meta.pattern,
- phase: 'planner-sweep',
- reason: waited.reason,
- summary: buildPlannerPartialSummary(swarmRunID, sessionID, waited.reason),
- });
- if (waited.reason === 'timeout') {
+  recordPartialOutcome(swarmRunID, {
+  pattern: meta.pattern,
+  phase: 'planner-sweep',
+  reason: waited.reason,
+  summary: buildPlannerPartialSummary(swarmRunID, refreshedSessionID, waited.reason),
+  });
+  // MC Insight 4: retry once with minimal prompt (no README) on
+  // retryable errors. Reduces the 7-10% zero-output rate to ~1-2%.
+  if (!opts._retry && (waited.reason === 'timeout' || waited.reason === 'silent' || waited.reason === 'tool-loop' || waited.reason === 'error')) {
+    console.warn(`[planner] sweep failed with ${waited.reason} — retrying once with minimal prompt`);
+    try {
+      return await runPlannerSweep(swarmRunID, { ...opts, includeReadme: false, _retry: true });
+    } catch (retryErr) {
+      const msg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+      console.warn(`[planner] retry also failed: ${msg}`);
+      throw new Error(`planner sweep failed after retry: ${msg.slice(0, 120)}`);
+    }
+  }
+  if (waited.reason === 'timeout') {
  throw new Error(`planner sweep timed out after ${timeoutMs}ms`);
  }
  if (waited.reason === 'silent') {
@@ -324,16 +374,83 @@ export async function runPlannerSweep(
  reason: 'no-todowrite-call',
  summary: buildZeroTodoSummary(excerpt),
  });
- return { items: [], sessionID, planMessageID: null };
- }
+  return { items: [], sessionID: refreshedSessionID, planMessageID: null };
+  }
 
- // Spread createdAtMs by 1ms per item so the board's ORDER BY on
- // created_ms produces a stable order within a sweep. Without this,
- // every item in a batch shares Date.now() and ties fall through to
- // listBoardItems' id ASC secondary sort — which works, but this way
- // the timestamps themselves carry authoring order, which keeps the
- // preview UI (ordered by createdAtMs in JS land) consistent without
- // needing to also know about the SQL tiebreaker.
+  // Planner v2: validate output quality before board insertion.
+  // Reject and re-prompt if the planner produced mostly duplicates or vague criteria.
+  const existingContent = listBoardItems(swarmRunID)
+    .filter((i) => i.kind !== 'criterion')
+    .map((i) => i.content);
+  const proposedItems = latest.todos.map((t) => ({
+    content: t.content.trim(),
+    isCriterion: t.isCriterion || false,
+  }));
+  const validation = validatePlannerOutput(proposedItems, existingContent);
+
+  if (!validation.ok) {
+    console.warn(`[planner] output validation failed: ${validation.message}`);
+
+    const feedbackPrompt = [
+      '## ⚠ FEEDBACK: Your last todowrite was rejected',
+      '',
+      `Quality issues:`,
+      validation.duplicates > 0
+        ? `- ${validation.duplicates} item(s) were DUPLICATES of existing board items`
+        : '',
+      validation.vagueCriteria > 0
+        ? `- ${validation.vagueCriteria} criterion/a were too VAGUE (must be concrete and verifiable)`
+        : '',
+      '',
+      'Re-submit your todowrite with:',
+      '- Unique items that do NOT duplicate what is already on the board',
+      '- Criteria that are concrete, measurable, and at least 20 characters',
+      '(Keep any valid items from your previous attempt.)',
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    await postSessionMessageServer(
+      refreshedSessionID,
+      meta.workspace,
+      feedbackPrompt,
+      {
+        agent: 'plan',
+        model: pinnedModel,
+      },
+    );
+
+    const retryKnownIDs = new Set(knownIDs);
+    for (const id of waited.newIDs) retryKnownIDs.add(id);
+    const retryDeadline = Date.now() + 120_000;
+    const retryWait = await waitForSessionIdle(
+      refreshedSessionID,
+      meta.workspace,
+      retryKnownIDs,
+      retryDeadline,
+      { silentErrorMs: 180_000 },
+    );
+
+    if (!retryWait.ok) {
+      console.warn(
+        `[planner] re-prompt failed after validation — falling through to original output`,
+      );
+    } else {
+      const retryTodos = latestTodosFrom(retryWait.messages, retryWait.newIDs);
+      if (retryTodos) {
+        latest.todos = retryTodos.todos;
+        latest.messageId = retryTodos.messageId;
+      }
+    }
+  }
+
+  // Spread createdAtMs by 1ms per item so the board's ORDER BY on
+  // created_ms produces a stable order within a sweep. Without this,
+  // every item in a batch shares Date.now() and ties fall through to
+  // listBoardItems' id ASC secondary sort — which works, but this way
+  // the timestamps themselves carry authoring order, which keeps the
+  // preview UI (ordered by createdAtMs in JS land) consistent without
+  // needing to also know about the SQL tiebreaker.
   const baseMs = Date.now();
   const startT = Date.now();
   const items: BoardItem[] = [];
@@ -342,17 +459,20 @@ export async function runPlannerSweep(
   let droppedDuplicates = 0;
   // Pre-compute existing board content for dedup. Strip prefixes so
   // comparisons work on substantive content, not [files:...] tags.
-  const existingContent = listBoardItems(swarmRunID)
-    .filter((i) => i.kind !== 'criterion')
-    .map((i) => stripContentPrefix(i.content));
+  // Also store expectedFiles per existing item for file-aware threshold.
+  const existingItems = listBoardItems(swarmRunID).filter((i) => i.kind !== 'criterion');
+  const existingEntries = existingItems.map((i) => ({
+    content: stripContentPrefix(i.content),
+    files: i.expectedFiles ?? [],
+  }));
   // dispatch after the board-insert loop so they don't get tangled up
   // with createdAtMs offsets or revision logging.
   const roleNotes: Array<{ role: string; text: string }> = [];
   for (const raw of latest.todos) {
- if (raw.roleNote && raw.content.trim()) {
- roleNotes.push({ role: raw.roleNote, text: raw.content.trim() });
- continue;
- }
+  if (raw.roleNote && raw.content.trim()) {
+    roleNotes.push({ role: raw.roleNote, text: raw.content.trim() });
+    continue;
+  }
   const content = raw.content.trim();
   if (!content) continue;
   // Dedup guard: skip proposals that substantially overlap with
@@ -360,10 +480,24 @@ export async function runPlannerSweep(
   // The planner prompt already says "do NOT re-propose" but LLMs
   // don't reliably follow negative instructions — the 2026-05-07
   // run mouzkzpy showed sweeps 2-4 re-proposing already-done work.
-  const cleanContent = stripContentPrefix(content);
-  const isDuplicate = existingContent.some(
-    (existing) => tokenOverlap(cleanContent, stripContentPrefix(existing)) >= 0.6,
-  );
+  // P2: strip filler words before dedup so semantic near-duplicates
+  // like "Fix the stuck-check" vs "Fix stuck-check in auto-ticker"
+  // are caught. Also lower threshold from 0.6 to 0.5 when both
+  // items share target files — same-file proposals are more likely
+  // to be the same work rephrased.
+  const cleanContent = stripFillerWords(stripContentPrefix(content));
+  const proposedFiles = raw.expectedFiles ?? [];
+  const isDuplicate = existingEntries.some((entry) => {
+    const cleaned = stripFillerWords(entry.content);
+    const overlap = tokenOverlap(cleanContent, cleaned);
+    if (overlap >= 0.6) return true;
+    // P2-medium: lower threshold to 0.5 when items share expected files.
+    if (overlap >= 0.5 && proposedFiles.length > 0 && entry.files.length > 0) {
+      const shareFile = proposedFiles.some((f) => entry.files.includes(f));
+      if (shareFile) return true;
+    }
+    return false;
+  });
   if (isDuplicate && !raw.isCriterion) {
     console.warn(
       `[planner] dropping duplicate proposal: "${content.slice(0, 80)}${content.length > 80 ? '…' : ''}"`,
@@ -392,17 +526,18 @@ export async function runPlannerSweep(
  status: 'open',
  createdAtMs: baseMs + offset,
  })
- : insertBoardItem(swarmRunID, {
- id: mintItemId(),
- kind: 'todo',
- content,
- status: 'open',
- requiresVerification: raw.requiresVerification === true,
- preferredRole: raw.preferredRole,
- expectedFiles: raw.expectedFiles,
- sourceDrafts: raw.sourceDrafts,
- createdAtMs: baseMs + offset,
- });
+  : insertBoardItem(swarmRunID, {
+  id: mintItemId(),
+  kind: 'todo',
+  content,
+  status: 'open',
+  requiresVerification: raw.requiresVerification === true,
+  preferredRole: raw.preferredRole,
+  expectedFiles: raw.expectedFiles,
+  sourceDrafts: raw.sourceDrafts,
+  createdAtMs: baseMs + offset,
+  });
+  existingEntries.push({ content: stripContentPrefix(content), files: raw.expectedFiles ?? [] });
  offset += 1;
  items.push(item);
  }
@@ -420,17 +555,19 @@ export async function runPlannerSweep(
     }),
   );
 
- // #99 — operator-visible finding for "todowrite called but every
- // item dropped during validation". See buildAllFilteredSummary for
- // context + the distinct fix path vs the zero-todo case.
- if (items.length === 0 && latest.todos.length > 0) {
- recordPartialOutcome(swarmRunID, {
- pattern: meta.pattern,
- phase: 'planner-sweep (filtered-all-todos)',
- reason: `dropped=${droppedCriteria}/${latest.todos.length}`,
- summary: buildAllFilteredSummary(latest.todos.length, droppedCriteria),
- });
- }
+  // #99 — operator-visible finding for "todowrite called but every
+  // item dropped during validation". See buildAllFilteredSummary for
+  // context + the distinct fix path vs the zero-todo case.
+  if (items.length === 0 && latest.todos.length > 0) {
+  recordPartialOutcome(swarmRunID, {
+    pattern: meta.pattern,
+    phase: 'planner-sweep (filtered-all-todos)',
+    reason: `dropped=${droppedCriteria}/${latest.todos.length}`,
+    summary: buildAllFilteredSummary(latest.todos.length, droppedCriteria),
+  });
+  }
+
+  const filteredAll = items.length === 0 && latest.todos.length > 0;
 
  // after the board insert. Each note is posted to the matching
  // role's session as a clarification message. Failures log and
@@ -503,15 +640,21 @@ export async function runPlannerSweep(
  excerpt: extractAssistantExcerpt(waited.messages, waited.newIDs),
  planMessageId: latest.messageId,
  });
- } catch (err) {
- console.warn(
- `[planner] plan-revision log failed: ${
- err instanceof Error ? err.message : String(err)
- }`,
- );
- }
+   } catch (err) {
+  console.warn(
+  `[planner] plan-revision log failed: ${
+  err instanceof Error ? err.message : String(err)
+  }`,
+  );
+  }
 
- return { items, sessionID, planMessageID: latest.messageId };
+  // Save board snapshot for delta-based prompt caching on the next sweep.
+  // After this sweep's items land on the board, the next re-sweep gets
+  // only the items added/changed since this point.
+  saveBoardSnapshot(swarmRunID);
+  invalidateBoardView(swarmRunID);
+
+   return { items, sessionID: refreshedSessionID, planMessageID: latest.messageId, filteredAll };
 }
 
 // HMR-resilient publish — see lib/server/hmr-exports.ts. auto-ticker's

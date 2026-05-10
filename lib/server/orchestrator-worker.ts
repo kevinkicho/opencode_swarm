@@ -24,8 +24,12 @@ import 'server-only';
 import { postSessionMessageServer } from './opencode-server';
 import { startAutoTicker } from './blackboard/auto-ticker';
 import { runPlannerSweep } from './blackboard/planner';
-import { getRun } from './swarm-registry';
+import { withRunGuard } from './run-guard';
 import { buildLessonsBlock } from './lesson-inject';
+import { recordPartialOutcome } from './degraded-completion';
+import { checkWallClockExpired } from './swarm-bounds';
+
+
 
 // The name carried in opencode's `info.agent` for the planner session.
 // Surfaces in the transform.ts-derived Agent so the roster shows a
@@ -81,96 +85,141 @@ export async function runOrchestratorWorkerKickoff(
   swarmRunID: string,
   opts: { persistentSweepMinutes?: number } = {},
 ): Promise<void> {
-  const meta = await getRun(swarmRunID);
-  if (!meta) {
-    console.warn(
-      `[orchestrator-worker] run ${swarmRunID} not found — kickoff aborted`,
-    );
-    return;
-  }
-  if (meta.pattern !== 'orchestrator-worker') {
-    console.warn(
-      `[orchestrator-worker] run ${swarmRunID} has pattern '${meta.pattern}', not orchestrator-worker — kickoff aborted`,
-    );
-    return;
-  }
-  if (meta.sessionIDs.length < 2) {
-    console.warn(
-      `[orchestrator-worker] run ${swarmRunID} has only ${meta.sessionIDs.length} session(s) — need at least 2 (1 orchestrator + 1 worker); kickoff aborted`,
-    );
-    return;
-  }
+  await withRunGuard(
+    swarmRunID,
+    { expectedPattern: 'orchestrator-worker', context: 'orchestrator-worker', skipFinalize: true },
+    async (meta) => {
+      if (meta.sessionIDs.length < 2) {
+        console.warn(
+          `[orchestrator-worker] run ${swarmRunID} has only ${meta.sessionIDs.length} session(s) — need at least 2 (1 orchestrator + 1 worker); kickoff aborted`,
+        );
+        return;
+      }
 
-  const orchestratorSessionID = meta.sessionIDs[0];
-  const workerCount = meta.sessionIDs.length - 1;
+      const orchestratorSessionID = meta.sessionIDs[0];
+      const workerCount = meta.sessionIDs.length - 1;
 
-  // Post the orchestrator-framing message. Pass agent='build' explicitly
-  // so opencode includes tool definitions (the `task` tool especially —
-  // that's how the orchestrator dispatches to worker sessions). Earlier
-  // code passed `agent: 'orchestrator'` (silent-204'd by opencode since
-  // 'orchestrator' isn't a built-in), then dropped the agent entirely
-  // assuming opencode would default to 'build'. But empirical test on
-  // 2026-04-27 (run_mohrfodp_xw8ht1) showed no-agent dispatch produces
-  // text-only assistant turns — orchestrator generated 16 completed
-  // turns / 631K tokens, never invoked the `task` tool, workers idle.
-  // Same shape as the blackboard planner-sweep agent-drop bug; same fix.
-  // 'build' is opencode's full-tool default agent; the `model` field
-  // overrides build's configured default model so we still pin to the
-  // user's teamModels[0] choice.
-  const introBase = buildOrchestratorIntroPrompt(meta.directive, workerCount);
-  const lessons = await buildLessonsBlock(meta.workspace);
-  const intro = lessons ? lessons + '\n\n' + introBase : introBase;
-  try {
-    await postSessionMessageServer(
-      orchestratorSessionID,
-      meta.workspace,
-      intro,
-      { agent: 'build', model: meta.teamModels?.[0] },
-    );
-    console.log(
-      `[orchestrator-worker] run ${swarmRunID}: orchestrator intro posted to ${orchestratorSessionID.slice(-8)}`,
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `[orchestrator-worker] run ${swarmRunID}: orchestrator intro post failed:`,
-      message,
-    );
-    return;
-  }
+      // Post the orchestrator-framing message. Pass agent='build' explicitly
+      // so opencode includes tool definitions (the `task` tool especially —
+      // that's how the orchestrator dispatches to worker sessions). Earlier
+      // code passed `agent: 'orchestrator'` (silent-204'd by opencode since
+      // 'orchestrator' isn't a built-in), then dropped the agent entirely
+      // assuming opencode would default to 'build'. But empirical test on
+      // 2026-04-27 (run_mohrfodp_xw8ht1) showed no-agent dispatch produces
+      // text-only assistant turns — orchestrator generated 16 completed
+      // turns / 631K tokens, never invoked the `task` tool, workers idle.
+      // Same shape as the blackboard planner-sweep agent-drop bug; same fix.
+      // 'build' is opencode's full-tool default agent; the `model` field
+      // overrides build's configured default model so we still pin to the
+      // user's teamModels[0] choice.
+      const introBase = buildOrchestratorIntroPrompt(meta.directive, workerCount);
+      const lessons = await buildLessonsBlock(meta.workspace);
+       const intro = lessons ? lessons + '\n\n' + introBase : introBase;
 
-  // Fire the initial planner sweep against the orchestrator session
-  // (runPlannerSweep uses sessionIDs[0] by default — that's us).
-  // The orchestrator has the README embedded and just got its role-
-  // framing message; the planner prompt follows naturally.
-  try {
-    const result = await runPlannerSweep(swarmRunID);
-    if (result.items.length === 0) {
-      console.warn(
-        `[orchestrator-worker] run ${swarmRunID}: initial planner sweep produced 0 todos — auto-ticker NOT started`,
-      );
-      return;
-    }
-    console.log(
-      `[orchestrator-worker] run ${swarmRunID}: initial sweep produced ${result.items.length} todos — starting auto-ticker with worker-only dispatch`,
-    );
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `[orchestrator-worker] run ${swarmRunID}: initial planner sweep failed:`,
-      message,
-    );
-    return;
-  }
+       if (checkWallClockExpired(swarmRunID, meta, 'intro-post', 'Orchestrator intro post exceeded wall-clock cap.')) {
+         return;
+       }
+        try {
+          const timeoutPromise = new Promise<void>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 30_000),
+          );
 
-  // Start the ticker with orchestratorSessionID excluded from dispatch.
-  // Workers only — orchestrator stays reserved for planning + re-planning.
-  const periodicSweepMs =
-    opts.persistentSweepMinutes && opts.persistentSweepMinutes > 0
-      ? Math.round(opts.persistentSweepMinutes * 60_000)
-      : 0;
-  startAutoTicker(swarmRunID, {
-    periodicSweepMs,
-    orchestratorSessionID,
-  });
+         await Promise.race([
+           postSessionMessageServer(
+             orchestratorSessionID,
+             meta.workspace,
+             intro,
+             { agent: 'build', model: meta.teamModels?.[0] },
+           ),
+           timeoutPromise,
+         ]);
+         console.log(
+           `[orchestrator-worker] run ${swarmRunID}: orchestrator intro posted to ${orchestratorSessionID.slice(-8)}`,
+         );
+       } catch (err) {
+         const message = err instanceof Error ? err.message : String(err);
+         const isTimeout = message === 'timeout';
+         console.warn(
+           `[orchestrator-worker] run ${swarmRunID}: orchestrator intro post failed:`,
+           message,
+         );
+         if (isTimeout) {
+           recordPartialOutcome(swarmRunID, {
+             pattern: 'orchestrator-worker',
+             phase: 'intro-post',
+             reason: 'timeout',
+             summary: 'Orchestrator intro post timed out after 30s — run transitioned to terminal state.',
+           });
+         }
+         return;
+       }
+
+       // Fire the initial planner sweep against the orchestrator session
+       // (runPlannerSweep uses sessionIDs[0] by default — that's us).
+        // The orchestrator has the README embedded and just got its role-
+        // framing message; the planner prompt follows naturally.
+        if (checkWallClockExpired(swarmRunID, meta, 'initial-planner-sweep', 'Initial planner sweep exceeded wall-clock cap.')) {
+          return;
+        }
+        try {
+          const result = await runPlannerSweep(swarmRunID);
+
+          if (result.filteredAll) {
+            console.warn(
+              `[orchestrator-worker] run ${swarmRunID}: initial planner sweep filtered all proposed todos — auto-ticker NOT started`,
+            );
+            recordPartialOutcome(swarmRunID, {
+              pattern: 'orchestrator-worker',
+              phase: 'kickoff',
+              reason: 'filtered-all-todos',
+              summary: 'Initial planner sweep proposed items but all were filtered; auto-ticker not started.',
+            });
+            return;
+          }
+
+          if (result.items.length === 0) {
+            console.warn(
+             `[orchestrator-worker] run ${swarmRunID}: initial planner sweep produced 0 todos — auto-ticker NOT started`,
+           );
+           recordPartialOutcome(swarmRunID, {
+             pattern: 'orchestrator-worker',
+             phase: 'kickoff',
+             reason: 'zero-todos',
+             summary: 'Initial planner sweep produced zero todos; auto-ticker not started.',
+           });
+           return;
+         }
+         console.log(
+           `[orchestrator-worker] run ${swarmRunID}: initial sweep produced ${result.items.length} todos — starting auto-ticker with worker-only dispatch`,
+         );
+       } catch (err) {
+         const message = err instanceof Error ? err.message : String(err);
+         console.warn(
+           `[orchestrator-worker] run ${swarmRunID}: initial planner sweep failed:`,
+           message,
+         );
+         recordPartialOutcome(swarmRunID, {
+           pattern: 'orchestrator-worker',
+           phase: 'kickoff',
+           reason: 'planner-sweep-failed',
+           summary: `Initial planner sweep failed: ${message}`,
+         });
+         return;
+       }
+
+       // Start the ticker with orchestratorSessionID excluded from dispatch.
+       // Workers only — orchestrator stays reserved for planning + re-planning.
+       const DEFAULT_PERSISTENT_SWEEP_MINUTES = 5;
+       const sweepMinutes = opts.persistentSweepMinutes ?? DEFAULT_PERSISTENT_SWEEP_MINUTES;
+       const periodicSweepMs =
+         sweepMinutes > 0
+           ? Math.round(sweepMinutes * 60_000)
+           : 0;
+       startAutoTicker(swarmRunID, {
+         periodicSweepMs,
+         orchestratorSessionID,
+       });
+    },
+  );
 }
+

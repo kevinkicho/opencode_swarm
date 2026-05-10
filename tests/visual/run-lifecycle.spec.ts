@@ -127,8 +127,7 @@ test('new-run modal POSTs the assembled body with selected fields', async ({ pag
   await plusButton.click({ force: true });
 
   // Click launch. Modal launch button text is "launch run" / "launch
-  // dry-run" / "launch spectator" depending on startMode (default
-  // dry-run).
+  // dry-run" depending on startMode (default dry-run).
   const launchBtn = page.locator('button', { hasText: /^launch/i }).first();
   await launchBtn.click();
 

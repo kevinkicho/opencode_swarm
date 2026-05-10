@@ -150,6 +150,7 @@ export function classifyJudgeReply(text: string): JudgeVerdict {
   const first = text.split('\n', 1)[0]?.trim() ?? '';
   const headerSlice = text.slice(0, 200);
   const confidence = parseConfidence(headerSlice);
+  // Primary: first-line keyword match (original behavior).
   if (/^winner\b/i.test(first)) {
     return {
       verdict: 'winner',
@@ -167,6 +168,44 @@ export function classifyJudgeReply(text: string): JudgeVerdict {
     };
   }
   if (/^revise\b/i.test(first)) {
+    const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
+    return {
+      verdict: 'revise',
+      body: stripped,
+      bulletsByGenerator: parseGeneratorBullets(text),
+      confidence: null,
+    };
+  }
+  // Fallback: keyword anywhere in first 200 chars.
+  // LLMs often write "After reviewing the proposals, my WINNER is..."
+  // or "I choose MERGE because..." — these should still parse.
+  const winnerMatch = /\bWINNER\b/i.exec(headerSlice);
+  const mergeMatch = /\bMERGE\b/i.exec(headerSlice);
+  const reviseMatch = /\bREVISE\b/i.exec(headerSlice);
+  // Use earliest match to resolve ambiguity.
+  const matches: Array<{ idx: number; verdict: 'winner' | 'merge' | 'revise' }> = [];
+  if (winnerMatch) matches.push({ idx: winnerMatch.index, verdict: 'winner' });
+  if (mergeMatch) matches.push({ idx: mergeMatch.index, verdict: 'merge' });
+  if (reviseMatch) matches.push({ idx: reviseMatch.index, verdict: 'revise' });
+  if (matches.length > 0) {
+    matches.sort((a, b) => a.idx - b.idx);
+    const best = matches[0];
+    if (best.verdict === 'winner') {
+      return {
+        verdict: 'winner',
+        body: text.trim(),
+        bulletsByGenerator: new Map(),
+        confidence,
+      };
+    }
+    if (best.verdict === 'merge') {
+      return {
+        verdict: 'merge',
+        body: text.trim(),
+        bulletsByGenerator: new Map(),
+        confidence,
+      };
+    }
     const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
     return {
       verdict: 'revise',

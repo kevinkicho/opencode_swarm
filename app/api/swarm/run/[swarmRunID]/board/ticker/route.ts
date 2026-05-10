@@ -72,16 +72,20 @@ export async function POST(
   }
 
   if (body.action === 'start') {
-    // Parse optional periodicSweepMinutes → ms. Guard non-negative finite;
-    // anything else falls back to 0 (default short-run shape).
-    let periodicSweepMs = 0;
-    if (
+    // Parse optional periodicSweepMinutes → ms. Defaults to 5m when
+    // not specified (infinite run with ambition ratchet). Pass 0 to
+    // explicitly request single-sweep mode.
+    const DEFAULT_SWEEP_MINUTES = 5;
+    const sweepMinutes =
       typeof body.periodicSweepMinutes === 'number' &&
       Number.isFinite(body.periodicSweepMinutes) &&
-      body.periodicSweepMinutes > 0
-    ) {
-      periodicSweepMs = Math.round(body.periodicSweepMinutes * 60_000);
-    }
+      body.periodicSweepMinutes >= 0
+        ? body.periodicSweepMinutes
+        : DEFAULT_SWEEP_MINUTES;
+    const periodicSweepMs =
+      sweepMinutes > 0
+        ? Math.round(sweepMinutes * 60_000)
+        : 0;
     // E6 — dynamic import keeps start/stop's tick.ts → coordinator chain
     // out of the GET handler's compile graph.
     const { startAutoTicker } = await import(

@@ -281,6 +281,8 @@ export function snapshot(s: TickerState): TickerSnapshot {
     totalCommits: s.totalCommits ?? 0,
     retryAfterEndsAtMs: s.retryAfterEndsAtMs,
     currentTier: s.currentTier ?? 1,
+    periodicSweepMs: s.periodicSweepMs ?? 0,
+    plannerErrors: s.plannerErrors ?? 0,
     slots: slots.map((sl) => ({
       sessionID: sl.sessionID,
       inFlight: sl.inFlight,
@@ -312,4 +314,35 @@ export function getTickerSnapshot(swarmRunID: string): TickerSnapshot | null {
   // because the read path stores it as Record<string, unknown> to
   // stay decoupled from this module's type.
   return persisted.snapshot as unknown as TickerSnapshot;
+}
+
+// Replaces a worker session in both the ticker's in-memory state AND the
+// run's persisted meta. Called by claim-context.ts when a fresh session
+// is created for a work-unit. The old session is aborted (by the caller)
+// and the replacement flows atomically: sessionIDs array index is
+// preserved so teamModels[i] still maps to the correct agent. The
+// PerSessionSlot moves from oldSID → newSID (copy + delete). Returns
+// true when the ticker had an active entry for this run; false when the
+// ticker wasn't running for this run (or had already stopped).
+export function replaceTickerSession(
+  swarmRunID: string,
+  oldSessionID: string,
+  newSessionID: string,
+): boolean {
+  const state = tickers().get(swarmRunID);
+  if (!state || state.stopped) return false;
+  const idx = state.sessionIDs.indexOf(oldSessionID);
+  if (idx < 0) return false;
+  state.sessionIDs[idx] = newSessionID;
+  const slot = state.slots.get(oldSessionID);
+  if (slot) {
+    slot.sessionID = newSessionID;
+    state.slots.delete(oldSessionID);
+    state.slots.set(newSessionID, slot);
+  }
+  // Also update the orchestrator session pointer for OW runs.
+  if (state.orchestratorSessionID === oldSessionID) {
+    state.orchestratorSessionID = newSessionID;
+  }
+  return true;
 }

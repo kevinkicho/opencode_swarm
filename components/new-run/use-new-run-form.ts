@@ -35,6 +35,11 @@ export interface NewRunForm {
   // for revisions before declaring the run done). Hidden unless the
   // selected pattern supports it.
   enableSynthesisCritic: boolean;
+  // Re-sweep cadence (blackboard-family only). When > 0, the auto-ticker
+  // fires a fresh planner sweep every N minutes for the life of the run
+  // and disables auto-idle stop. 0 = single-sweep (run stops when board
+  // drains). Defaults to 5 for infinite runs.
+  persistentSweepMinutes: number;
 }
 
 const INITIAL_FORM = (): NewRunForm => ({
@@ -50,6 +55,7 @@ const INITIAL_FORM = (): NewRunForm => ({
   branchName: generateRunId(),
   startMode: 'dry-run',
   enableSynthesisCritic: false,
+  persistentSweepMinutes: 10,  // MC: 5-min cadence showed zero benefit
 });
 
 export interface NewRunFormApi {

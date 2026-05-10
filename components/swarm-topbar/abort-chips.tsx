@@ -65,7 +65,9 @@ export function AbortChip({
             detail?: string;
           };
           throw new Error(detail.error ?? detail.detail ?? `HTTP ${res.status}`);
-        }
+}
+
+// Hard-stop chip (#105). Two-step confirm: first click arms (3s
       } else {
         await abortSessionBrowser(sessionId, directory);
       }
@@ -108,7 +110,91 @@ export function AbortChip({
   );
 }
 
-// Hard-stop chip (#105). Two-step confirm: first click arms (3s
+// Resume sweep chip — appears on stale/completed/error board-pattern runs.
+// Triggers POST _debug/swarm-run/:id/sweep with overwrite=true so the
+// planner re-evaluates the board and seeds fresh work. The operator can
+// resume a stopped run without losing completed work.
+export function ResumeSweepChip({
+  swarmRunID,
+}: {
+  swarmRunID: string;
+}) {
+  const [phase, setPhase] = useState<'idle' | 'busy' | 'done' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const doSweep = async () => {
+    if (phase === 'busy') return;
+    setPhase('busy');
+    setErrorMsg(null);
+    try {
+      const res = await fetch(
+        `/api/_debug/swarm-run/${encodeURIComponent(swarmRunID)}/sweep`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ overwrite: true }),
+        },
+      );
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          detail?: string;
+        };
+        throw new Error(detail.error ?? detail.detail ?? `HTTP ${res.status}`);
+      }
+      setPhase('done');
+    } catch (err) {
+      setErrorMsg((err as Error).message);
+      setPhase('error');
+    }
+  };
+
+  const label =
+    phase === 'busy'
+      ? 'sweeping…'
+      : phase === 'done'
+        ? 'sweep sent'
+        : phase === 'error'
+          ? 'retry sweep'
+          : 'resume sweep';
+
+  return (
+    <Tooltip
+      side="bottom"
+      content={
+        errorMsg && phase === 'error' ? (
+          <span className="font-mono text-[10.5px] text-rust">{errorMsg}</span>
+        ) : (
+          <span className="font-mono text-[10.5px] text-fog-300">
+            re-run the planner to produce fresh work from the current board state
+          </span>
+        )
+      }
+    >
+      <button
+        onClick={phase === 'done' ? undefined : doSweep}
+        className={clsx(
+          'h-6 px-2 rounded hairline font-mono text-[10px] uppercase tracking-widest2 transition flex items-center gap-1.5 shrink-0',
+          phase === 'idle' && 'bg-ink-900 border-mint/30 text-mint hover:bg-mint/10 hover:border-mint/50',
+          phase === 'busy' && 'bg-ink-800 border-ink-700 text-fog-600 cursor-wait',
+          phase === 'done' && 'bg-ink-900 border-mint/20 text-mint/50',
+          phase === 'error' && 'bg-ink-900 border-rust/30 text-rust hover:bg-rust/10',
+        )}
+      >
+        <span
+          className={clsx(
+            'w-1.5 h-1.5 rounded-full',
+            phase === 'idle' && 'bg-mint',
+            phase === 'busy' && 'bg-fog-700 animate-pulse',
+            phase === 'done' && 'bg-mint/40',
+            phase === 'error' && 'bg-rust',
+          )}
+        />
+        {label}
+      </button>
+    </Tooltip>
+  );
+}
 // auto-disarm so an accidental press doesn't kill the run on the next
 // click), second click executes. Distinct from AbortChip because the
 // soft abort only targets the primary session — multi-session runs

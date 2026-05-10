@@ -6,15 +6,18 @@
 // also imports from here.
 
 import 'server-only';
+ 
+ import { abortSessionServer } from '../../opencode-server';
+ import { getRun } from '../../swarm-registry';
+ import { invalidateDerivedRow } from '../../swarm-registry/derive';
+ import { emitTickerTick } from '../bus';
+ import { persistTickerSnapshot } from '../ticker-snapshots';
+ import { maybeRunAudit } from './audit';
+ import { snapshot, tickers } from './state';
+ import { recordPartialOutcome } from '../../degraded-completion';
+ import { listBoardItems } from '../store';
+ import type { StopReason } from './types';
 
-import { abortSessionServer } from '../../opencode-server';
-import { getRun } from '../../swarm-registry';
-import { invalidateDerivedRow } from '../../swarm-registry/derive';
-import { emitTickerTick } from '../bus';
-import { persistTickerSnapshot } from '../ticker-snapshots';
-import { maybeRunAudit } from './audit';
-import { snapshot, tickers } from './state';
-import type { StopReason } from './types';
 
 // Stop the ticker but KEEP the map entry so observers can distinguish
 // "never started" (no entry) from "ran and stopped" (stopped: true).
@@ -45,6 +48,35 @@ export function stopAutoTicker(
   s.stoppedAtMs = Date.now();
   s.stopReason = reason;
 
+  if (reason === 'auto-idle-drained') {
+    recordPartialOutcome(swarmRunID, {
+      pattern: 'blackboard',
+      phase: 'auto-idle-stop',
+      reason: 'auto-idle-complete',
+      summary: 'All scheduled work completed and board is idle. Run finished successfully.',
+    });
+  } else if (reason === 'auto-idle') {
+    const allItems = listBoardItems(swarmRunID);
+    const hasOpenItems = allItems.some(
+      (i) => i.status === 'open' || i.status === 'claimed' || i.status === 'in-progress'
+    );
+    if (hasOpenItems) {
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'blackboard',
+        phase: 'auto-idle-stop',
+        reason: 'auto-idle-stalled',
+        summary: 'Sessions went idle while work remains on the board. Possible stall or repeated rejection.',
+      });
+    } else {
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'blackboard',
+        phase: 'auto-idle-stop',
+        reason: 'auto-idle-complete',
+        summary: 'All scheduled work completed and board is idle. Run finished successfully.',
+      });
+    }
+  }
+ 
   // SQLite so getTickerSnapshot can reconstruct a stopped-state
   // response after dev restart / HMR. Synchronous + cheap (single
   // INSERT/REPLACE); failure here is logged but doesn't block the

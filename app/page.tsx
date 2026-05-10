@@ -2,7 +2,6 @@
 
 import { Suspense, useMemo } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter } from 'next/navigation';
 import { ProfileBoundary } from '@/components/perf/profile-boundary';
 import { ErrorBoundary } from '@/components/ui/error-boundary';
 import { SwarmTopbar } from '@/components/swarm-topbar';
@@ -23,10 +22,11 @@ import { useCostCapBlock } from './page-internals/use-cost-cap-block';
 import { useGlobalKeybindings } from './page-internals/use-global-keybindings';
 import { useViewState } from './page-internals/use-view-state';
 import { usePageData } from './page-internals/use-page-data';
+import { usePaletteActions } from './page-internals/use-palette-actions';
+import { useDrawerMeta } from './page-internals/use-drawer-meta';
 import { ViewToolbar, MainViewSwitch } from './page-internals/view-switch';
 import { RunStrips } from './page-internals/run-strips';
 import { PageFooter } from './page-internals/page-footer';
-import type { PaletteAction } from '@/components/command-palette';
 import type { AgentMessage, Agent, RunMeta, ProviderSummary, TodoItem } from '@/lib/swarm-types';
 import type { SwarmRunMeta, SwarmRunStatus } from '@/lib/swarm-run-types';
 import type { TimelineNode } from '@/lib/types';
@@ -56,16 +56,6 @@ export default function Page() {
       </ProfileBoundary>
     </Suspense>
   );
-}
-
-function ageHint(ms: number): string {
-  const s = Math.floor((Date.now() - ms) / 1000);
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  return `${Math.floor(h / 24)}d`;
 }
 
 function PageInner() {
@@ -222,7 +212,6 @@ function PageBody({
   silentSessions: SilentSession[];
   runsSnapshot: { rows: import('@/lib/swarm-run-types').SwarmRunListRow[] };
 }) {
-  const router = useRouter();
   const modals = useModalState();
   const { costCapBlock, safePost, dismissCap } = useCostCapBlock(swarmRunID);
 
@@ -233,49 +222,7 @@ function PageBody({
   );
   const { leftTab, setLeftTab, runView, setRunView, focusTodoId, jumpToTodo } = viewState;
 
-  const paletteActions = useMemo<PaletteAction[]>(() => {
-    const out: PaletteAction[] = [];
-    if (swarmRunID && swarmRunStatus && swarmRunStatus !== 'live' && swarmRunStatus !== 'unknown') {
-      out.push({
-        id: 'retro:current',
-        group: 'open',
-        label: 'retro · current run',
-        hint: swarmRunID,
-        tone: 'molten',
-        onSelect: () => router.push(`/retro/${swarmRunID}`),
-      });
-    }
-    const recent = [...swarmRuns]
-      .filter(
-        (r) =>
-          r.meta.swarmRunID !== swarmRunID &&
-          r.status !== 'live' &&
-          r.status !== 'unknown'
-      )
-      .sort(
-        (a, b) =>
-          (b.lastActivityTs ?? b.meta.createdAt) -
-          (a.lastActivityTs ?? a.meta.createdAt)
-      )
-      .slice(0, 8);
-    for (const r of recent) {
-      const directive = r.meta.directive?.split('\n', 1)[0]?.trim() ?? '';
-      const teaser =
-        directive.length > 64
-          ? directive.slice(0, 64).replace(/\s+$/, '') + '…'
-          : directive || '(no directive)';
-      const age = ageHint(r.lastActivityTs ?? r.meta.createdAt);
-      out.push({
-        id: `retro:${r.meta.swarmRunID}`,
-        group: 'recent retros',
-        label: `retro · ${teaser}`,
-        hint: `${r.meta.pattern} · ${age}`,
-        tone: 'iris',
-        onSelect: () => router.push(`/retro/${r.meta.swarmRunID}`),
-      });
-    }
-    return out;
-  }, [router, swarmRunID, swarmRunStatus, swarmRuns]);
+  const paletteActions = usePaletteActions(swarmRunID, swarmRunStatus, swarmRuns);
 
   const { bounds } = useRoutingBounds();
   const runWithBounds = useMemo<RunMeta>(
@@ -317,21 +264,9 @@ function PageBody({
 
   useGlobalKeybindings(modals);
 
-  const drawerTitle = focusedMsgId
-    ? messages.find((m) => m.id === focusedMsgId)?.title
-    : selectedAgentId
-      ? agents.find((a) => a.id === selectedAgentId)?.name
-      : selectedFileHeat
-        ? selectedFileHeat.path.split(/[\\/]/).pop() || selectedFileHeat.path
-        : undefined;
-
-  const drawerEyebrow = focusedMsgId
-    ? 'message inspector'
-    : selectedAgentId
-      ? 'agent inspector'
-      : selectedFileHeat
-        ? 'file heat'
-        : undefined;
+  const { title: drawerTitle, eyebrow: drawerEyebrow } = useDrawerMeta(
+    focusedMsgId, selectedAgentId, selectedFileHeat, messages, agents,
+  );
 
   return (
     <PlaybackProvider runDuration={runDuration}>

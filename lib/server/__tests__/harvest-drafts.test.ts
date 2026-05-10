@@ -8,8 +8,9 @@ import type { OpencodeServerMocks } from './_helpers/mock-opencode';
 // every non-ticker pattern collects member drafts — pin the contract.
 
 const opencodeMocks: OpencodeServerMocks = vi.hoisted(() => ({
- getSessionMessagesServer: vi.fn().mockResolvedValue([]),
- abortSessionServer: vi.fn().mockResolvedValue(undefined),
+  getSessionMessagesServer: vi.fn().mockResolvedValue([]),
+  mockWait: vi.fn().mockResolvedValue({ ok: true, messages: [], newIDs: new Set() }),
+  abortSessionServer: vi.fn().mockResolvedValue(undefined),
  postSessionMessageServer: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('../opencode-server', () => opencodeMocks);
@@ -34,11 +35,10 @@ afterEach(() => {
 
 describe('harvestDrafts', () => {
  it('returns one row per session with text + ok + newKnownIDs', async () => {
- mockWait.mockResolvedValue({
- ok: true,
- messages: [],
- newIDs: new Set<string>(),
- });
+  mockWait.mockResolvedValue({
+    ok: true,
+    messages: [],
+  });
  mockGet.mockImplementation(async (sid: string) => [
  makeAssistant({
  id: `m-${sid}`,
@@ -107,11 +107,10 @@ describe('harvestDrafts', () => {
  // Pre-existing message — should be in `known` and NOT block the
  // wait. Helper passes a Set(known) to waitForSessionIdle.
  const known = new Map([['s1', new Set(['old-msg'])]]);
- mockWait.mockResolvedValue({
- ok: true,
- messages: [],
- newIDs: new Set<string>(),
- });
+  mockWait.mockResolvedValue({
+    ok: true,
+    messages: [],
+  });
  mockGet.mockResolvedValue([
  makeAssistant({ id: 'old-msg', completed: 1 }),
  makeAssistant({ id: 'new-msg', completed: 2 }),
@@ -136,13 +135,63 @@ describe('harvestDrafts', () => {
  expect(knownArg.has('new-msg')).toBe(false);
  });
 
- it('absorbs message-fetch errors as text=null + empty newKnownIDs', async () => {
- mockWait.mockResolvedValue({
- ok: true,
- messages: [],
- newIDs: new Set<string>(),
- });
- mockGet.mockRejectedValue(new Error('opencode 502'));
+  it('honors excludeSessions option: excludes specific sessions and awaits others', async () => {
+    mockWait.mockResolvedValue({
+      ok: true,
+      messages: [],
+      newIDs: new Set<string>(),
+    });
+    mockGet.mockResolvedValue([]);
+
+    const meta = fakeMeta({ sessionIDs: ['s1', 's2', 's3'], pattern: 'map-reduce' });
+    const out = await harvestDrafts(meta, {
+      excludeSessions: ['s2'],
+      deadline: Date.now() + 60_000,
+      contextLabel: '[test]',
+    });
+
+    expect(out).toHaveLength(3);
+    
+    // s1 and s3 should be processed normally
+    const r1 = out.find(r => r.sessionID === 's1');
+    const r3 = out.find(r => r.sessionID === 's3');
+    expect(r1?.ok).toBe(true);
+    expect(r3?.ok).toBe(true);
+
+    // s2 should be excluded
+    const r2 = out.find(r => r.sessionID === 's2');
+    expect(r2?.ok).toBe(false);
+    expect(r2?.reason).toBe('excluded');
+    expect(r2?.text).toBeNull();
+
+    // Verify waitForSessionIdle was only called for non-excluded sessions
+    const calledSIDs = mockWait.mock.calls.map(args => args[0]);
+    expect(calledSIDs).toContain('s1');
+    expect(calledSIDs).toContain('s3');
+    expect(calledSIDs).not.toContain('s2');
+  });
+
+  it('treats empty excludeSessions as a no-op', async () => {
+    mockWait.mockResolvedValue({
+      ok: true,
+      messages: [],
+      newIDs: new Set<string>(),
+    });
+    mockGet.mockResolvedValue([]);
+
+    const meta = fakeMeta({ sessionIDs: ['s1'], pattern: 'map-reduce' });
+    const out = await harvestDrafts(meta, {
+      excludeSessions: [],
+      deadline: Date.now() + 60_000,
+      contextLabel: '[test]',
+    });
+
+    expect(out[0].ok).toBe(true);
+    expect(mockWait).toHaveBeenCalledWith('s1', expect.any(String), expect.any(Set), expect.any(Number));
+  });
+
+  it('returns null text when message fetch fails after successful wait', async () => {
+    mockGet.mockRejectedValue(new Error('opencode 502'));
 
  const meta = fakeMeta({ sessionIDs: ['s1'], pattern: 'council' });
  const out = await harvestDrafts(meta, {

@@ -28,6 +28,9 @@ import {
   type OpencodeDiffEntry,
 } from '../opencode/validators';
 import { estimateTokens, getModelContextLimit } from './opencode-models';
+// Re-export model context limit so all opencode HTTP access
+// surfaces through this adapter module.
+export { getModelContextLimit };
 import { startOpencodeLogTail } from './opencode-log-tail';
 
 // POSTMORTEMS/2026-04-24 F2 — kick the opencode log tail on first

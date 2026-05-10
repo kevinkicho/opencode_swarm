@@ -26,6 +26,7 @@ import { buildLessonsBlock } from './lesson-inject';
 import { withRunGuard } from './run-guard';
 import { checkWallClockExpired } from './swarm-bounds';
 import { recordPartialOutcome } from './degraded-completion';
+import { recordParseFailure } from './parse-failure-log';
 import { extractLatestAssistantText, snapshotKnownIDs } from './harvest-drafts';
 import {
   buildWorkerIntroPrompt,
@@ -136,15 +137,25 @@ export async function runCriticLoopKickoff(
   console.log(`[critic-loop] run ${swarmRunID}: worker + critic intros posted`);
 
   const knownAll = await snapshotKnownIDs(meta, '[critic-loop]');
-  const knownWorkerIDs = knownAll.get(workerSID) ?? new Set<string>();
+   const knownWorkerIDs = knownAll.get(workerSID) ?? new Set<string>();
   const knownCriticIDs = knownAll.get(criticSID) ?? new Set<string>();
 
-  // loop. Track the last few verdicts; if iterations N-1 and N are
+  // Graceful degradation: track per-session consecutive silent rounds.
+  // A session that produces null text (silent/frozen) in N consecutive
+  // iterations is excluded from further iterations to avoid wasting
+  // wall-clock time. After 2 consecutive silent rounds, the session
+  // is dropped. If fewer than 2 sessions remain active, the loop
+  // finalizes with a partial outcome.
+  const silentStreaks = new Map<string, number>();
+  const MAX_SILENT_STREAK = 2;
+
+  // Track the last few verdicts; if iterations N-1 and N are
   // both REVISE + WORDING + confidence ≤ 3, the critic is fixating
   // on phrasing rather than substance — ship the current draft and
   // stop. Spec calls for a 2-iteration look-back; we keep history
   // longer for log clarity.
   const verdictHistory: ParsedVerdict[] = [];
+
   const NITPICK_CONF_MAX = THRESHOLDS.critic.nitpickConfMax;
   function isNitpickStreak(): boolean {
     if (verdictHistory.length < 2) return false;
@@ -189,6 +200,24 @@ export async function runCriticLoopKickoff(
     if (checkWallClockExpired(swarmRunID, meta, `iter ${iter}/${maxIterations}`, buildPartialSummary(iter))) {
       return;
     }
+
+    // Degradation check: if both roles are silent, abort.
+    const activeSIDs = meta.sessionIDs.filter(
+      (sid) => (silentStreaks.get(sid) ?? 0) < MAX_SILENT_STREAK,
+    );
+    if (activeSIDs.length < 2) {
+      console.warn(
+        `[critic-loop] run ${swarmRunID} iter ${iter}: too many silent streaks (active=${activeSIDs.length}/2) — finalizing`,
+      );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'critic-loop',
+        phase: `iter ${iter}/${maxIterations} degradation`,
+        reason: `silenced-sessions=${meta.sessionIDs.length - activeSIDs.length}`,
+        summary: buildPartialSummary(iter),
+      });
+      return;
+    }
+
     // 1. Wait for the worker's draft.
     const workerDeadline = Date.now() + ITERATION_WAIT_MS;
     const workerWait = await waitForSessionIdle(
@@ -208,6 +237,12 @@ export async function runCriticLoopKickoff(
         summary: buildPartialSummary(iter),
       });
       return;
+    }
+    // Track consecutive silent turns.
+    if (extractLatestAssistantText(workerWait.messages) === null) {
+      silentStreaks.set(workerSID, (silentStreaks.get(workerSID) ?? 0) + 1);
+    } else {
+      silentStreaks.set(workerSID, 0);
     }
     // Refresh known IDs to include the new worker turn.
     for (const m of workerWait.messages) knownWorkerIDs.add(m.info.id);
@@ -268,6 +303,12 @@ export async function runCriticLoopKickoff(
       });
       return;
     }
+    // Track consecutive silent turns.
+    if (extractLatestAssistantText(criticWait.messages) === null) {
+      silentStreaks.set(criticSID, (silentStreaks.get(criticSID) ?? 0) + 1);
+    } else {
+      silentStreaks.set(criticSID, 0);
+    }
     for (const m of criticWait.messages) knownCriticIDs.add(m.info.id);
     const criticReply = extractLatestAssistantText(criticWait.messages);
     if (!criticReply) {
@@ -284,6 +325,14 @@ export async function runCriticLoopKickoff(
     }
 
     const classified = classifyCriticReply(criticReply);
+    if (classified.verdict === 'unclear') {
+      recordParseFailure(swarmRunID, {
+        pattern: 'critic-loop',
+        role: 'critic',
+        rawReply: criticReply,
+        reason: `critic verdict unclear: ${classified.body.slice(0, 120)}`,
+      });
+    }
     verdictHistory.push(classified);
 
     if (classified.verdict === 'approved') {

@@ -34,6 +34,14 @@ import {
 import type { LiveSessionSnapshot, LiveSwarmRunMessagesSnapshot } from '@/lib/opencode/live';
 import type { Agent, AgentMessage, RunMeta, ProviderSummary, TodoItem } from '@/lib/swarm-types';
 import type { SwarmRunMeta } from '@/lib/swarm-run-types';
+import { useThrottledValue } from '@/lib/use-throttled-value';
+
+// Throttle window for the message transform pipeline. SSE events arrive
+// ~6×/s per worker during active streaming; with 4 workers that's ~24
+// setSlots() calls per second, each triggering toMessages + buildTurns.
+// 200ms (= 5 updates/s) is perceptually instant while cutting recomputation
+// by ~4–5×.
+const THROTTLE_MS = 200;
 
 export interface SwarmView {
   agents: Agent[];
@@ -87,6 +95,12 @@ export function useSwarmView({
   sessionId,
   liveData,
 }: UseSwarmViewArgs): SwarmView {
+  // Throttle the slots that feed into the expensive transform pipeline
+  // (toMessages, toAgents, toLiveTurns, etc.). Raw slots are still available
+  // for immediate agent-roster updates via the parent component, but the
+  // message→turn→render chain only recomputes at most every THROTTLE_MS.
+  const throttledSlots = useThrottledValue(liveSwarmRun.slots, THROTTLE_MS);
+
   return useMemo(() => {
     // Council / multi-session: merge every slot's messages into a single
     // chronological stream, then feed the transform pipeline. toAgents and
@@ -95,12 +109,15 @@ export function useSwarmView({
     // per-session rather than cross-session. The primary slot's session is
     // the anchor for runMeta; workspace / title are identical across
     // council members by construction.
-    if (isMultiSession && liveSwarmRun.slots.length > 0) {
-      const merged = liveSwarmRun.slots
+    //
+    // Uses throttledSlots so the pipeline only recomputes at ~5Hz instead
+    // of on every SSE part.update event.
+    if (isMultiSession && throttledSlots.length > 0) {
+      const merged = throttledSlots
         .flatMap((s) => s.messages)
         .slice()
         .sort((a, b) => a.info.time.created - b.info.time.created);
-      const anchorSession = liveSwarmRun.slots[0]?.session ?? null;
+      const anchorSession = throttledSlots[0]?.session ?? null;
       const { agents, agentOrder } = toAgents(merged);
       const baseMeta = toRunMeta(anchorSession, merged);
       // For multi-session runs the primary member's opencode title carries
@@ -140,5 +157,5 @@ export function useSwarmView({
       };
     }
     return EMPTY_SWARM_VIEW;
-  }, [isMultiSession, liveSwarmRun.slots, swarmRunMeta, sessionId, liveData]);
+  }, [isMultiSession, throttledSlots, swarmRunMeta, sessionId, liveData]);
 }

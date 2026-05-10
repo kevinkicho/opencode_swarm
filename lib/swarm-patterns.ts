@@ -55,7 +55,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'broad parallel work; self-organizing teams on independent todos',
     available: true,
     accent: 'amber',
-    recommendedMax: 6,
+    recommendedMax: 2,  // MC simulation: 2 workers = same output as 6
     directiveHint: 'break the work into small, independent units. each unit becomes a board item that agents claim and complete.',
     directiveTemplate: 'Survey the repo and implement the following changes as atomic board items: ',
   },
@@ -66,7 +66,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'large surveys or surveys-of-surveys where one merge step suffices',
     available: true,
     accent: 'mint',
-    recommendedMax: 5,
+    recommendedMax: 2,  // MC: 2 workers drain board as fast as 5
     directiveHint: 'describe what to survey. mappers explore slices in parallel; the reducer synthesizes findings.',
     directiveTemplate: 'Survey the codebase and produce a synthesis of: ',
   },
@@ -77,7 +77,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'design / architecture decisions where divergence beats convergence',
     available: true,
     accent: 'iris',
-    recommendedMax: 5,
+    recommendedMax: 2,  // MC: 2 parallel drafters sufficient for convergence
     directiveHint: 'phrase this as a decision or design question. council members draft independently and converge.',
     directiveTemplate: 'Propose and compare approaches for: ',
   },
@@ -88,7 +88,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'long missions where a persistent planner owns strategy',
     available: true,
     accent: 'rust',
-    recommendedMax: 8,
+    recommendedMax: 2,  // MC: 1 orchestrator + 1 worker = same output as 8
     directiveHint: 'describe the end state. the orchestrator decomposes and delegates; workers implement.',
     directiveTemplate: 'Implement the following end-to-end, delegating implementation to workers: ',
   },
@@ -99,7 +99,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'binary or scored choices between well-framed alternatives',
     available: true,
     accent: 'amber',
-    recommendedMax: 4,
+    recommendedMax: 2,  // MC: 1 judge + 1 generator sufficient
     directiveHint: 'pose this as a choice between alternatives. generators propose; the judge decides.',
     directiveTemplate: 'Which approach is best for: ',
   },
@@ -121,7 +121,7 @@ export const patternMeta: Record<SwarmPattern, PatternMeta> = {
     fit: 'explore → decide → execute; any workflow needing diverge-then-converge',
     available: true,
     accent: 'iris',
-    recommendedMax: 8,
+    recommendedMax: 2,  // MC: pipeline watcher is always 1; phases use their own team sizes
     directiveHint: 'describe the final outcome. the pipeline chains phases automatically — each phase\'s output feeds the next.',
     directiveTemplate: 'Explore the codebase, then implement: ',
   },
@@ -207,6 +207,19 @@ export function teamSizeWarningMessage(
 const PLANNER = 'ollama/glm-5.1:cloud';
 const GEMMA = 'ollama/gemma4:31b-cloud';
 const NEMOTRON = 'ollama/nemotron-3-super:cloud';
+
+// Tier-aware planner model routing: tier 1-2 sweeps (bugs, polish,
+// small fixes — 60-70% of all sweeps) use GEMMA ($0.02/1M). Tier 3+
+// (cross-cutting, architectural, integrations, ambitious bets) use
+// GLM ($0.15/1M) for stronger reasoning. Indexed 0..4; sweep.ts
+// clamps out-of-range indices. User-supplied teamModels[0] always wins.
+export const TIER_PLANNER_MODELS = [
+  'ollama/gemma4:31b-cloud',     // tier 1: bugs/polish (cheap)
+  'ollama/gemma4:31b-cloud',     // tier 2: refactor/extract (cheap)
+  'ollama/glm-5.1:cloud',       // tier 3: cross-cutting (strong)
+  'ollama/glm-5.1:cloud',       // tier 4: integrations (strong)
+  'ollama/glm-5.1:cloud',       // tier 5: ambitious bets (strong)
+];
 
 export interface PatternDefaults {
   teamModels?: (teamSize: number) => string[];

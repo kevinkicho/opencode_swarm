@@ -28,8 +28,8 @@
 import 'server-only';
 
 import { abortSessionServer, getSessionMessagesServer } from '../../opencode-server';
-import { OLLAMA_URL } from '../../../config';
 import type { OpencodeMessage } from '../../../opencode/types';
+import { probeOllamaPs } from '../../provider-health';
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -76,36 +76,24 @@ const TOOL_LOOP_THRESHOLD = 10;
 // loop — once-per-poll-window beats once-per-tick.
 const PROBE_AFTER_MS = 30 * 1000;
 const PROBE_INTERVAL_MS = 30 * 1000;
-const PROBE_TIMEOUT_MS = 5 * 1000;
-async function probeOllamaPs(): Promise<{ ok: boolean; detail?: string }> {
-  const base = OLLAMA_URL.replace(/\/$/, '');
-  const ac = new AbortController();
-  const timer = setTimeout(() => ac.abort(), PROBE_TIMEOUT_MS);
-  try {
-    const res = await fetch(`${base}/api/ps`, {
-      method: 'GET',
-      signal: ac.signal,
-    });
-    if (!res.ok) {
-      return { ok: false, detail: `HTTP ${res.status}` };
-    }
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, detail: err instanceof Error ? err.message : String(err) };
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 export async function waitForSessionIdle(
   sessionID: string,
   workspace: string,
   knownIDs: Set<string>,
   deadline: number,
+  opts: {
+    // SAAM 6.1: Role-aware silent error threshold. Workers complete in
+    // 60-120s and should be declared silent at 180s. Planner sweeps take
+    // 90-240s and should be declared silent at 360s. Default 240s is the
+    // legacy uniform threshold (backward-compatible for existing callers).
+    silentErrorMs?: number;
+  } = {},
 ): Promise<
   | { ok: true; messages: OpencodeMessage[]; newIDs: Set<string> }
   | { ok: false; reason: 'timeout' | 'error' | 'silent' | 'provider-unavailable' | 'tool-loop' }
 > {
+  const silentErrorMs = opts.silentErrorMs ?? SILENT_ERROR_MS;
   // Dispatch watchdog state — F1. We track total parts across all
   // new-since-dispatch assistant messages, plus the wallclock at last
   // change. Initial state: zero parts seen, lastActivityTs = now.
@@ -211,7 +199,7 @@ export async function waitForSessionIdle(
       }
     }
 
-    if (silentMs >= SILENT_ERROR_MS) {
+    if (silentMs >= silentErrorMs) {
       const ageS = Math.round(silentMs / 1000);
       console.error(
         `[coordinator] session ${sessionID} silent ${ageS}s — aborting (F1 watchdog)`,

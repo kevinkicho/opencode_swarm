@@ -115,6 +115,17 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
     return 'workspace, when provided, must be a non-empty string';
   }
 
+  // Security S1: validate workspace path to prevent traversal.
+  const ws = typeof obj.workspace === 'string' ? obj.workspace.trim() : '';
+  if (ws) {
+    if (ws.startsWith('.') || ws.includes('..')) {
+      return 'workspace must be an absolute path (relative paths and .. traversal not allowed)';
+    }
+    if (!ws.startsWith('/') && !/^[A-Za-z]:[/\\]/.test(ws)) {
+      return 'workspace must be an absolute path (Linux: /..., Windows: C:\\...)';
+    }
+  }
+
   const req: SwarmRunRequest = {
     pattern: obj.pattern,
     // Placeholder when continuation inheritance will fill workspace.
@@ -132,7 +143,8 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
   }
   if (obj.directive !== undefined) {
     if (typeof obj.directive !== 'string') return 'directive must be a string';
-    req.directive = obj.directive;
+    // Data Flow D1: sanitize directive to prevent accidental prompt injection.
+    req.directive = sanitizeDirective(obj.directive);
   }
   if (obj.title !== undefined) {
     if (typeof obj.title !== 'string') return 'title must be a string';
@@ -178,9 +190,9 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
         typeof b.commitsCap !== 'number' ||
         !Number.isFinite(b.commitsCap) ||
         !Number.isInteger(b.commitsCap) ||
-        b.commitsCap < 1
+        b.commitsCap < 0
       ) {
-        return 'bounds.commitsCap must be a positive integer';
+        return 'bounds.commitsCap must be a non-negative integer (0 = no cap)';
       }
       bounds.commitsCap = b.commitsCap;
     }
@@ -189,9 +201,9 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
         typeof b.todosCap !== 'number' ||
         !Number.isFinite(b.todosCap) ||
         !Number.isInteger(b.todosCap) ||
-        b.todosCap < 1
+        b.todosCap < 0
       ) {
-        return 'bounds.todosCap must be a positive integer';
+        return 'bounds.todosCap must be a non-negative integer (0 = no cap)';
       }
       bounds.todosCap = b.todosCap;
     }
@@ -452,4 +464,15 @@ export function parseRequest(raw: unknown): SwarmRunRequest | string {
   }
 
   return req;
+}
+
+// Data Flow D1: strip markdown headers and code fences from user directives
+// to prevent accidental prompt injection. Does not block valid directives;
+// only removes formatting that could be misinterpreted as planner instructions.
+function sanitizeDirective(d: string): string {
+  return d
+    .replace(/^#{1,6}\s+.*$/gm, '')           // strip markdown headers
+    .replace(/```[\s\S]*?```/g, '')            // strip code fences
+    .replace(/\n{3,}/g, '\n\n')                // collapse excessive newlines
+    .trim();
 }

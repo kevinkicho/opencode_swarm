@@ -42,6 +42,7 @@ export async function awaitTurn(
     meta.workspace,
     knownIDs,
     deadline,
+    { silentErrorMs: 180_000 },  // SAAM 6.1: workers complete in 60-120s
   );
 
   if (!waited.ok) {
@@ -89,7 +90,7 @@ export async function awaitTurn(
         );
       });
     }
-    const outcome = retryOrStale(meta.swarmRunID, todo, reason);
+    const outcome = await retryOrStale(meta.swarmRunID, todo, reason);
     return {
       kind: 'fail',
       outcome: {

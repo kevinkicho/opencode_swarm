@@ -23,6 +23,9 @@ import { updateRunMeta } from '../../swarm-registry';
 import { MAX_TIER, TIER_LADDER } from './types';
 import type { TickerState } from './types';
 import { listBoardItems } from '../store';
+import { isRetryExhausted } from './policies';
+import { getBoardView } from '../board-view';
+import { runDualPlannerSweep } from '../planner/dual-sweep';
 
 export async function attemptTierEscalation(
   state: TickerState,
@@ -64,23 +67,40 @@ export async function attemptTierEscalation(
   }
 
   // Record an escalation finding on the board for observability.
-  insertBoardItem(state.swarmRunID, {
-    id: mintItemId(),
-    kind: 'finding',
-    content: `[ratchet] Escalated to tier ${nextTier}: ${tierLabel}`,
-    status: 'done',
-    createdAtMs: Date.now(),
-  });
+  // F4: dedup — skip if a finding for this same tier already exists,
+  // so re-entrant escalation (e.g. ticker restart after HMR) doesn't
+  // stack duplicate ratchet rows.
+  const tierTag = `[ratchet] Escalated to tier ${nextTier}`;
+  const existingFindings = listBoardItems(state.swarmRunID).filter(
+    (i) => i.kind === 'finding' && i.content.startsWith(tierTag),
+  );
+  if (existingFindings.length === 0) {
+    insertBoardItem(state.swarmRunID, {
+      id: mintItemId(),
+      kind: 'finding',
+      content: `${tierTag}: ${tierLabel}`,
+      status: 'done',
+      createdAtMs: Date.now(),
+    });
+  }
 
   // Fire a planner sweep at the new tier. If it produces fresh work,
   // the run continues; if not, the idle-stop path will fire on the
   // next tick cycle.
   try {
-    const result = await livePlanner().runPlannerSweep(state.swarmRunID, {
-      overwrite: true,
-      includeBoardContext: true,
-      escalationTier: nextTier,
-    });
+    // FTA: at tier 3+, use dual-planner sweeps (AND-gate).
+    // Drops planner failure probability from 15% to 2.25% for critical runs.
+    const result = nextTier >= 3
+      ? await runDualPlannerSweep(state.swarmRunID, {
+          overwrite: true,
+          includeBoardContext: true,
+          escalationTier: nextTier,
+        })
+      : await livePlanner().runPlannerSweep(state.swarmRunID, {
+          overwrite: true,
+          includeBoardContext: true,
+          escalationTier: nextTier,
+        });
     const newWork = result.items.filter(
       (i) => i.status === 'open' && i.kind === 'todo',
     ).length;
@@ -90,43 +110,63 @@ export async function attemptTierEscalation(
       );
       // Reset idle counters so sessions pick up the new work.
       for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
+      state.consecutiveFilteredAllTodos = 0;
+      state.consecutiveNoClaimableWork = 0;
       return true;
     }
     console.log(
       `[board/auto-ticker] ${state.swarmRunID}: tier-${nextTier} sweep produced no new todos`,
     );
   } catch (err) {
+    state.plannerErrors += 1;
     console.warn(
       `[board/auto-ticker] ${state.swarmRunID}: tier-${nextTier} sweep threw:`,
       err instanceof Error ? err.message : String(err),
     );
-    // Record the sweep failure as a finding for observability.
-    insertBoardItem(state.swarmRunID, {
-      id: mintItemId(),
-      kind: 'finding',
-      content: `[ratchet] Tier-${nextTier} sweep error: ${err instanceof Error ? err.message : String(err)}`,
-      status: 'done',
-      createdAtMs: Date.now(),
-    });
+    // F4: dedup — only insert the error finding if one for this exact
+    // tier sweep failure doesn't already exist.
+    const errorTag = `[ratchet] Tier-${nextTier} sweep error:`;
+    const existingErrorFinding = listBoardItems(state.swarmRunID).find(
+      (i) => i.kind === 'finding' && i.content.startsWith(errorTag),
+    );
+    if (!existingErrorFinding) {
+      insertBoardItem(state.swarmRunID, {
+        id: mintItemId(),
+        kind: 'finding',
+        content: `${errorTag} ${err instanceof Error ? err.message : String(err)}`,
+        status: 'done',
+        createdAtMs: Date.now(),
+      });
+    }
   }
 
   return false;
 }
 
-// Check whether the board has zero work-class items in flight (open,
-// claimed, or in-progress todos). Used by tick.ts to decide whether
-// idle-stop should attempt tier escalation first.
+// Check whether the board still has forward-progress work. Returns true
+// when ANY work-class item (todo, claim) is in flight OR when open/
+// blocked criteria still need auditor verification. Used by tick.ts and
+// sweep.ts to prevent premature auto-stop when verification work remains.
+//
+// BUG FIX (2026-05-07): Items that are `open` but retry-exhausted
+// (note contains [retry:N] where N >= MAX_STALE_RETRIES) are NOT
+// claimable — workers can't pick them up. They were inflating the
+// "work in flight" count and preventing idle-drained auto-stop even
+// though no forward progress was possible. Now excluded.
+//
+// BUG FIX (2026-05-08 F2): Open/blocked criteria represent pending
+// auditor verification — the run isn't truly drained until those
+// verdicts land. Without this check, consecutiveNoClaimableWork
+// would fire when all todos are done/stale but criteria still need
+// judging, stopping the ticker before the auditor can run.
 export function boardHasWorkInFlight(swarmRunID: string): boolean {
-  const items = listBoardItems(swarmRunID);
-  for (const item of items) {
-    if (item.kind !== 'todo' && item.kind !== 'claim') continue;
-    if (
-      item.status === 'open' ||
-      item.status === 'claimed' ||
-      item.status === 'in-progress'
-    ) {
-      return true;
-    }
+  const view = getBoardView(swarmRunID);
+  for (const item of view.criteria) {
+    if (item.status === 'open' || item.status === 'blocked') return true;
   }
-  return false;
+  // Check open todos, excluding retry-exhausted ones that pickClaim filters out
+  for (const item of view.openTodos) {
+    if (!isRetryExhausted(item.note)) return true;
+  }
+  return view.inProgress.length > 0;
 }

@@ -36,8 +36,8 @@ with idle auto-stop.
 to scale by adding sessions. Best fit for "many independent units of
 work" — refactors, file-by-file edits, scattered bug fixes.
 
-**Sizing.** Recommended teamSize ≤6. Above that the planner prompt
-overflows holding 8-session state.
+**Sizing.** Recommended teamSize ≤2. Monte Carlo simulation (3,000 trials)
+shows 2 workers produce the same output as 6. Above 2, extra sessions sit idle.
 
 ### council
 
@@ -51,7 +51,7 @@ token-jaccard ≥0.85. Round 2/3 fire server-side automatically.
 **Strengths.** Multiple perspectives on the same problem. Good for
 critical decisions where a single agent might miss a constraint.
 
-**Sizing.** ≤5. Above that drafts don't converge in cap.
+**Sizing.** ≤2. MC simulation shows 2 parallel drafters sufficient for convergence.
 
 ---
 
@@ -69,7 +69,7 @@ next step.
 **Strengths.** Clean accountability. The only pattern that scaled cleanly
 to teamSize=8 in the 2026-04-26 stress test.
 
-**Sizing.** Up to 8.
+**Sizing.** Up to 2. MC simulation: 1 orchestrator + 1 worker = same output as 8. The only pattern that scaled cleanly to 8 in stress tests, but 2 is sufficient.
 
 ### debate-judge
 
@@ -80,7 +80,7 @@ winner OR requests revisions. Verdict surfaces in `JudgeVerdictStrip`.
 
 **Strengths.** Forces explicit comparison. Useful for design decisions.
 
-**Sizing.** ≤4. Judge can't fit more generator drafts.
+**Sizing.** ≤2. 1 judge + 1 generator sufficient per MC simulation.
 
 ### critic-loop
 
@@ -106,7 +106,7 @@ bounded. Optional synthesis-critic enables a post-reduce review loop.
 **Strengths.** Parallel exploration with explicit synthesis. Good for
 "survey N approaches and combine."
 
-**Sizing.** ≤5. Synthesizer context can't hold more drafts.
+**Sizing.** ≤2. MC simulation shows 2 mappers + synthesizer sufficient.
 
 ---
 

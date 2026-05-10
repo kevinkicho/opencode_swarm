@@ -29,6 +29,12 @@ SaaS, never multi-tenant. Prototype-grade — clarity beats optionality.
 - **`STATUS.md`** — what shipped, what's queued *right now*. Time-scoped.
 - **`docs/POSTMORTEMS/`** — incident log. Re-run probes when babysitting a
   new run; opens regression tells fast.
+- **`docs/RECOMMENDATIONS.md`** — single-source queue from 12-analysis composite.
+  Monitoring dashboard, stop-doing list, steady-state conditions.
+- **`docs/MONTE_CARLO.md`** — probabilistic simulation (3,000 trials).
+  Baseline: $0.034/todo, cost cap stops 93% of runs.
+- **`docs/LCCA.md`** — life cycle cost. Operator time is 945× more expensive
+  than token waste. Every reliability fix returns 433% annual ROI.
 
 ## Always
 

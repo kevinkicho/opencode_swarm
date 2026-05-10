@@ -464,7 +464,7 @@ export function InitiateTooltip() {
         <ul className="space-y-0.5 font-mono text-[10.5px] text-fog-400 leading-snug">
           <li>· source — the github repo agents read and write</li>
           <li>· workspace — parent directory where the clone lands</li>
-          <li>· start mode — dry-run / live / spectator</li>
+          <li>· start mode — dry-run / live</li>
           <li>· branch strategy — how writes land</li>
         </ul>
       </div>

@@ -59,7 +59,7 @@ export function AttentionBadge({
       <Popover
         side="right"
         align="start"
-        width={280}
+        width={320}
         content={(close) => (
           <AttentionTable
             rows={rows}
@@ -99,6 +99,13 @@ export function AttentionBadge({
   );
 }
 
+function errorDetail(msg: AgentMessage): string | null {
+  if (msg.status !== 'error') return null;
+  if (msg.body) return msg.body.slice(0, 120);
+  if (msg.toolPreview) return msg.toolPreview.slice(0, 120);
+  return null;
+}
+
 function AttentionTable({
   rows,
   onPick,
@@ -119,11 +126,12 @@ function AttentionTable({
       <ul className="hairline-t">
         {rows.map(({ msg, kind }) => {
           const tone = kindTone[kind];
+          const detail = errorDetail(msg);
           return (
             <li key={msg.id}>
               <button
                 onClick={() => onPick(msg.id)}
-                className="w-full grid grid-cols-[36px_1fr_auto] items-center gap-2 px-2 h-6 hover:bg-ink-800 transition text-left border-b border-ink-800 last:border-b-0"
+                className="w-full grid grid-cols-[36px_1fr_auto] items-center gap-2 px-2 hover:bg-ink-800 transition text-left border-b border-ink-800 last:border-b-0"
               >
                 <span
                   className={clsx(
@@ -133,9 +141,16 @@ function AttentionTable({
                 >
                   {tone.label}
                 </span>
-                <span className="text-[11px] text-fog-200 truncate leading-none">
-                  {msg.title}
-                </span>
+                <div className="min-w-0 flex flex-col leading-tight">
+                  <span className="text-[11px] text-fog-200 truncate">
+                    {msg.title}
+                  </span>
+                  {detail && (
+                    <span className="text-[9.5px] text-fog-500 truncate">
+                      {detail}
+                    </span>
+                  )}
+                </div>
                 <span className="font-mono text-[9.5px] tabular-nums text-fog-600">
                   {msg.timestamp}
                 </span>

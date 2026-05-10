@@ -63,7 +63,7 @@ export async function dispatchPrompt(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const outcome = retryOrStale(
+    const outcome = await retryOrStale(
       meta.swarmRunID,
       todo,
       `prompt-send failed: ${message.slice(0, 160)}`,

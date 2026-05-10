@@ -97,7 +97,29 @@ export async function POST(req: NextRequest): Promise<Response> {
   // pattern's default. The resolved value is what drives how many sessions
   // we spawn — meta.teamSize isn't persisted separately because
   // meta.sessionIDs.length carries the truth.
-  const teamSize = parsed.teamSize ?? PATTERN_TEAM_SIZE[parsed.pattern].defaultSize;
+  let teamSize = parsed.teamSize ?? PATTERN_TEAM_SIZE[parsed.pattern].defaultSize;
+
+  // Auto-scale teamSize with budget (C3). When the operator didn't
+  // explicitly set teamSize or teamModels, size to costCap.
+  if (parsed.teamSize === undefined && parsed.teamModels === undefined) {
+    const autoSize = (parsed.bounds?.costCap ?? 0) <= 5 ? 2 : 3;
+    if (autoSize !== teamSize) {
+      teamSize = autoSize;
+      console.log(`[swarm/run] auto-scaled teamSize to ${teamSize} (costCap=$${parsed.bounds?.costCap ?? 0})`);
+    }
+  }
+
+  // Hard cap: Monte Carlo simulation shows 2 workers = same output as 6.
+  // Team sizes above 3 are rejected regardless of per-pattern maxSize.
+  if (teamSize > 3) {
+    return Response.json(
+      {
+        error:
+          'Monte Carlo simulation shows 2 workers = same output as 6. Max team size is 3.',
+      },
+      { status: 400 },
+    );
+  }
 
   // Per-pattern empirical sanity warning (#101). teamSize > recommendedMax
   // is allowed (route still accepts up to TEAM_SIZE_MAX), but we surface a
@@ -112,6 +134,22 @@ export async function POST(req: NextRequest): Promise<Response> {
     return Response.json(
       {
         error: `teamModels length ${parsed.teamModels.length} does not match resolved teamSize ${teamSize} for pattern '${parsed.pattern}'`,
+      },
+      { status: 400 },
+    );
+  }
+
+  // Sweep cadence minimum: Monte Carlo shows 5-min cadence has zero
+  // benefit over 10-min. Reject persistentSweepMinutes in (0, 10).
+  if (
+    typeof parsed.persistentSweepMinutes === 'number' &&
+    parsed.persistentSweepMinutes > 0 &&
+    parsed.persistentSweepMinutes < 10
+  ) {
+    return Response.json(
+      {
+        error:
+          'Monte Carlo shows 5-min cadence has zero benefit over 10-min. Minimum persistentSweepMinutes is 10.',
       },
       { status: 400 },
     );

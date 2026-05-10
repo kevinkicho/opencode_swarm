@@ -10,7 +10,6 @@ import 'server-only';
 import { liveExports } from '../../hmr-exports';
 import { getRun } from '../../swarm-registry';
 import { emitTickerTick } from '../bus';
-import { listBoardItems } from '../store';
 import { maybeRunAudit } from './audit';
 import { checkHardCaps } from './hard-caps';
 import { liveCoordinator } from './live-exports';
@@ -18,16 +17,23 @@ import { checkLiveness } from './liveness';
 import { snapshot, tickers } from './state';
 import { runPeriodicSweep } from './sweep';
 import { stopAutoTicker } from './stop';
+import { checkStuckDeliberation } from './stuck-check';
 import {
   AUTO_TICKER_EXPORTS_KEY,
   IDLE_TICKS_BEFORE_EAGER_SWEEP,
   IDLE_TICKS_BEFORE_STOP,
   MIN_MS_BETWEEN_SWEEPS,
+  NO_CLAIMABLE_WORK_TICKS,
   type AutoTickerExports,
   type PerSessionSlot,
   type TickerState,
 } from './types';
 import { attemptTierEscalation, boardHasWorkInFlight } from './escalation';
+import { finalizeRetryExhaustedItems, finalizeClaimedZombies } from '../coordinator/retry';
+import { FileLockSet } from '../coordinator/file-locks';
+import { assertRuntimeInvariant } from '../pattern-guard';
+import { evaluateAutoPilot } from '../auto-pilot';
+import { getBoardView } from '../board-view';
 import type { TickOutcome } from '../coordinator';
 
 // Re-export the AutoTickerExports lookup so the eager-sweep path inside
@@ -92,6 +98,10 @@ async function ensureSlots(state: TickerState): Promise<boolean> {
     for (const sid of state.sessionIDs) {
       if (!state.slots.has(sid)) state.slots.set(sid, makeSlot(sid));
     }
+    // Fix 2: Reconstruct file lock set from board state on ticker boot.
+    // Handles the case where the server restarted mid-run — in-progress
+    // items from the prior process still hold file locks.
+    FileLockSet.rebuild(state.swarmRunID);
   }
   // Hydrate currentTier from persisted meta so a ticker restart resumes
   // at the tier where the previous one left off.
@@ -101,7 +111,7 @@ async function ensureSlots(state: TickerState): Promise<boolean> {
   return true;
 }
 
-async function tickSession(
+export async function tickSession(
   state: TickerState,
   sessionID: string,
 ): Promise<void> {
@@ -135,16 +145,118 @@ async function tickSession(
       state.totalCommits += 1;
       state.commitsSinceLastAudit += 1;
       if (state.commitsSinceLastAudit >= state.auditEveryNCommits) {
-        void maybeRunAudit(state, 'cadence');
+        void maybeRunAudit(state, 'cadence').catch((err) => {
+          console.warn(
+            `[ticker] maybeRunAudit failed for run ${state.swarmRunID}:`,
+            err instanceof Error ? err.message : String(err),
+          );
+        });
       }
-      // Hard-cap check after every commit — at-commit is when all
-      // three dimensions (commits, todos, wall-clock) are most likely
-      // to have shifted. Fire-and-forget: if breached, checkHardCaps
-      // calls stopAutoTicker itself. Don't race against further ticks
-      // — state.stopped gates any subsequent work.
-      void checkHardCaps(state);
+      void checkHardCaps(state).catch((err) => {
+        console.warn(
+          `[ticker] checkHardCaps failed for run ${state.swarmRunID}:`,
+          err instanceof Error ? err.message : String(err),
+        );
+      });
+
+      // Item 4: Sweep-after-claim — if this commit drained the board to
+      // zero open todos, fire an eager sweep immediately. Combined with
+      // the tightened cooldown (item 3), workers should never wait more
+      // than one sweep duration (~60s) for a fresh batch.
+      if (state.periodicSweepMs > 0 && !state.resweepInFlight) {
+        const { getBoardView } = await import('../board-view');
+        const view = getBoardView(state.swarmRunID);
+        if (view.openTodos.length === 0 && view.inProgress.length === 0) {
+          console.log(
+            `[board/auto-ticker] ${state.swarmRunID}: commit drained board — firing eager sweep`,
+          );
+          void liveAutoTicker().runPeriodicSweep(state);
+        }
+      }
     }
+
+    // Stuck-deliberation check. Fires outside the picked block so it
+    // runs even for idle/stale outcomes. Delegates to the stuck-check
+    // policy module which calls detectStuckDeliberation internally.
+    void checkStuckDeliberation(state).catch((err) => {
+      console.warn(
+        `[ticker] checkStuckDeliberation failed for run ${state.swarmRunID}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+    });
+
     const slots = [...state.slots.values()];
+
+    // Auto-pilot evaluation: surface run-health decisions so the operator
+    // can review before enabling full autonomy. LOGGING ONLY for now —
+    // does not auto-execute stop/raise_cap. Hydrates costCap from meta
+    // on first tick if not yet set.
+    if (state.sessionIDs.length > 0) {
+      // Lazy-hydrate costCap from meta.bounds
+      if (state.costCap === undefined) {
+        try {
+          const meta = await getRun(state.swarmRunID);
+          state.costCap = meta?.bounds?.costCap ?? 0;
+        } catch {
+          state.costCap = 0;
+        }
+      }
+      const view = getBoardView(state.swarmRunID);
+      const staleCount = view.staleTodos.length;
+      const silentSessions = slots.filter((s) => s.consecutiveIdle > 0).length;
+      // Rough cost estimate from commits (LCCA P95 ~$0.042/todo) — replace
+      // with real cost accumulation when TickerState gains cost tracking.
+      const estimatedCost = state.totalCommits * 0.042;
+      const autoPilot = evaluateAutoPilot(
+        estimatedCost,
+        state.costCap ?? 0,
+        state.totalCommits,
+        staleCount,
+        state.plannerErrors ?? 0,
+        silentSessions,
+        !state.stopped,
+      );
+      if (autoPilot.action !== 'none') {
+        console.log(`[auto-pilot] ${state.swarmRunID}: ${autoPilot.reason}`);
+      }
+    }
+
+    // Safety net: bulk-transition any `open` items stuck at
+    // currentRetryCount >= MAX_STALE_RETRIES to `stale`. These are
+    // zombie items created by the pre-fix fencepost bug where
+    // retryOrStale wrote [retry:2] but pickClaim excluded them, leaving
+    // them permanently unclaimable. This also handles items orphaned by
+    // a server restart mid-retry. Run once per tick cycle; the function
+    // is idempotent and cheap (list + filter + N transitions).
+    const fixedRetry = await finalizeRetryExhaustedItems(state.swarmRunID);
+    if (fixedRetry > 0) {
+      console.log(
+        `[board/auto-ticker] ${state.swarmRunID}: finalized ${fixedRetry} retry-exhausted item(s) to stale`,
+      );
+    }
+
+    // UML 5.3: Clean up claimed zombies (orphaned between open→claimed CAS)
+    const fixedClaimed = finalizeClaimedZombies(state.swarmRunID);
+
+    // No-claimable-work escape hatch for persistent-sweep mode. When
+    // pickClaim returns "no claimable todos" for too many consecutive
+    // ticks (retry-exhausted zombies or a stuck planner), the run is
+    // burning tokens without progress. Stop the ticker even though
+    // periodicSweepMs > 0 would otherwise keep it alive indefinitely.
+    if (outcome.status === 'skipped' && outcome.reason?.includes('retry-exhausted')) {
+      state.consecutiveNoClaimableWork += 1;
+      if (state.consecutiveNoClaimableWork >= NO_CLAIMABLE_WORK_TICKS && !boardHasWorkInFlight(state.swarmRunID)) {
+        console.warn(
+          `[board/auto-ticker] ${state.swarmRunID}: ${state.consecutiveNoClaimableWork} consecutive no-claimable-work ticks — stopping ticker (no-claimable-work)`,
+        );
+        stopAutoTicker(state.swarmRunID, 'no-claimable-work');
+        return;
+      }
+    } else if (!isIdleOutcome(outcome)) {
+      state.consecutiveNoClaimableWork = 0;
+    }
+
+
 
     // Eager re-sweep (long-running mode only). When every session has
     // been idle past IDLE_TICKS_BEFORE_EAGER_SWEEP and MIN_MS_BETWEEN_SWEEPS
@@ -204,7 +316,7 @@ async function tickSession(
       if (!hasWork) {
         const escalated = await attemptTierEscalation(state).catch(() => false);
         if (!escalated) {
-          stopAutoTicker(state.swarmRunID, 'auto-idle');
+          stopAutoTicker(state.swarmRunID, 'auto-idle-drained');
         }
       } else {
         stopAutoTicker(state.swarmRunID, 'auto-idle');
@@ -264,6 +376,18 @@ export async function fanout(swarmRunID: string): Promise<void> {
   if (!ready) return;
   // Re-check after the await — could have been stopped while resolving run.
   if (s.stopped) return;
+
+  // Fix 3: Assert pattern runtime invariant before fan-out. If a
+  // critical-role session (critic, orchestrator, judge) has died, this
+  // records a finding and the run continues fail-open. Blackboard and
+  // council (parallel-redundant) always pass.
+  {
+    const meta = await getRun(swarmRunID);
+    if (meta) {
+      await assertRuntimeInvariant(swarmRunID, meta);
+    }
+  }
+
   // Fire per-session ticks without awaiting. Each has its own inFlight
   // guard, so slow sessions don't block fast ones. Orchestrator-worker
   // runs skip the orchestrator — it's the planner, not a worker.

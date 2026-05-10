@@ -131,6 +131,20 @@ async function proxy(
   req: NextRequest,
   { params }: { params: { path: string[] } }
 ): Promise<Response> {
+  // Security S3: path whitelist — only forward requests to known opencode
+  // endpoints. Prevents the proxy from being used as an open relay.
+  const ALLOWED_PREFIXES = [
+    'session', 'project', 'agent', 'event', 'permission',
+    'config', 'mcp', 'command', 'experimental', 'model',
+  ];
+  const topSegment = params.path[0] ?? '';
+  if (!ALLOWED_PREFIXES.includes(topSegment)) {
+    return Response.json(
+      { error: `proxy: path prefix '/${topSegment}' not in allowed list` },
+      { status: 403 },
+    );
+  }
+
   const gateSession = gatedSessionID(req.method, params.path);
   if (gateSession) {
     try {

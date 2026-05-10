@@ -26,6 +26,8 @@ const FAILURE_STOP_REASONS = new Set<string>([
   'opencode-frozen',
   'zen-rate-limit',
   'replan-loop-exhausted',
+  'filtered-all-todos',
+  'stuck-deliberation',
 ]);
 
 function isFailureStop(ticker: TickerSnapshot | null | undefined): boolean {

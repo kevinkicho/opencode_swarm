@@ -1,12 +1,39 @@
 # opencode_swarm
 
+> ⚠️ **Work in progress.** This prototype is under active development and is frequently a target of automated improvement by swarms of agents. Expect rapid iteration, occasional breakage, and new analysis documents appearing between commits. The current postmortem rate is tracked at [`scripts/pm-frequency.ts`](./scripts/pm-frequency.ts) — run it to see the project's health.
+
 > Multi-agent coding swarm for opencode. Point it at a repo, pick an orchestration pattern, watch N agents coordinate through a 2-D timeline — one lane per agent, time flowing downward, every tool call and coordination event a first-class visual node.
 
 Built for keyboard-first developers who want to read a 5-agent run as easily as a 1-agent run. Dense, monospace, no chat scrollback — think Linear polish meets Warp density meets Raycast keyboard feel.
 
+## Table of Contents
+
+| Section | Description |
+|---------|-------------|
+| [Screenshots](#screenshots) | Highlight features in 4 captures |
+| [Status](#status) | Current project state |
+| [Quick Start](#quick-start) | Get running in 2 commands |
+| [Architecture](#architecture-overview) | System overview |
+| [Documentation](#documentation) | All docs organized by purpose |
+| [Development](#development-commands) | Commands and scripts |
+| [Design Stance](#design-stance) | Philosophy and conventions |
+| [Contributing](#contributing) | PR guidelines |
+
+## Screenshots
+
+> Coming soon — automated screenshot capture during live validation run.
+
+<!-- SCREENSHOTS: 2x2 tile grid -->
+<!-- 1. New-run modal with pattern recommender + templates -->
+<!-- 2. 2D timeline with cross-lane wires + tool chips -->
+<!-- 3. Board rail with filter chips + cost-per-todo badge -->
+<!-- 4. Run retro modal with agent scoring table -->
+
 ## Status
 
-**Functioning prototype.** The UI surface is complete and the backend is wired to real opencode sessions. Six orchestration patterns ship end-to-end (`blackboard`, `council`, `orchestrator-worker`, `debate-judge`, `critic-loop`, `map-reduce`) plus `none` (single-session opencode native) — see [`docs/PATTERNS.md`](./docs/PATTERNS.md) for one-paragraph descriptions and reliability profiles. Default landing view is `chat` (per-turn bubbles with inline tool pills); `timeline` and `cards` are one click away.
+**Functioning prototype.** The UI surface is complete and the backend is wired to real opencode sessions. **Seven orchestration patterns** ship end-to-end (`blackboard`, `council`, `orchestrator-worker`, `debate-judge`, `critic-loop`, `map-reduce`, `pipeline`) plus `none` (single-session opencode native) — see [`docs/PATTERNS.md`](./docs/PATTERNS.md) for one-paragraph descriptions and reliability profiles.
+
+**2026-05-09 update**: Comprehensive strategic analysis session. 12 methodologies applied (Ansoff through Formal Methods 2.0), 50+ code changes, 57 new tests, 20 analysis documents, 8 scripts. All 19 composite plan items shipped. Queue empty. See [`STATUS.md`](./STATUS.md) for details.
 
 Personal-use tooling — no auth, no multi-tenancy, never SaaS. By design, not a deferred feature.
 
@@ -18,126 +45,114 @@ Next.js 14 (App Router) · TypeScript strict · Tailwind · framer-motion · cmd
 
 **A reachable opencode instance is required.** This app is a UI + orchestration layer on top of opencode — there is no local execution fallback. Every pattern routes through it. If `OPENCODE_URL` can't be reached, run creation returns 502 and live views stall.
 
-## Setup
-
-To set up the project locally:
-
-1. Install [Node.js](https://nodejs.org/) (version 18 or above).
-2. Clone this repository.
-3. Run `npm install` to install dependencies.
-4. Copy `.env.example` to `.env` (if it doesn't exist) and configure the environment variables.
-5. Ensure you have an opencode instance running and accessible at the URL specified in `OPENCODE_URL`.
-6. (Optional) If using the ollama provider tier, configure your `opencode.json` as described in the Prerequisites section.
-
-## Architecture Overview
-
-Opencode Swarm is a Next.js application that provides a multi-agent orchestration UI. The architecture consists of:
-
-- **Frontend**: Built with React (Next.js 14 App Router), TypeScript, Tailwind CSS, and various UI libraries (framer-motion, cmdk, @floating-ui/react).
-- **Backend**: Next.js API routes and server-side logic that orchestrate opencode sessions.
-- **Orchestration Layer**: Implements six coordination patterns (blackboard, council, orchestrator-worker, debate-judge, critic-loop, map-reduce) plus a passthrough mode (`none`). Each pattern defines how agents collaborate and share work.
-- **Persistence**: Uses better-sqlite3 to store run transcripts, agent states, and event logs.
-- **Integration**: Communicates with an external opencode instance via HTTP using the opencode SDK.
-
-For detailed descriptions of each pattern, refer to [`docs/PATTERNS.md`](./docs/PATTERNS.md).
-
-## Development Commands
-
-- `npm run dev`: Start the development server at `http://localhost:3000`.
-- `npm run build`: Build the application for production.
-- `npm run start`: Start the production server.
-- `npm run test`: Run the test suite (if applicable).
-- `npm run lint`: Run ESLint for code linting.
-- Custom scripts:
-  - `scripts/dev.mjs`: Starts the development server with additional environment setup (used in this repository).
-
-Note: A running opencode instance is required for the application to function. See the [Prerequisites](#prerequisites) section for details.
-
-- `OPENCODE_URL` — base URL of your opencode instance. Default `http://localhost:4096`; this repo currently targets `http://172.24.32.1:4097` (WSL → Windows host bridge, see `scripts/dev.mjs`). The `:4097` port is deliberate — `:4096` is reserved for the sibling ollama-swarm app.
-- `OPENCODE_BASIC_USER` / `OPENCODE_BASIC_PASS` — HTTP Basic auth, if your opencode enforces it. Server-side only; never prefix with `NEXT_PUBLIC_`. Leave empty when auth is off.
-- Optional: `OPENCODE_SWARM_ROOT` (runs dir override), `OPENCODE_LOG_DIR` (opencode's own log path — powers the Zen-429 vs. frozen distinction in the liveness watchdog), `DEMO_LOG_AUTO_DELETE` / `DEMO_LOG_RETENTION_DAYS` (event-log pruning), `OPENCODE_RESTART_CMD` (optional shell command the frozen watchdog runs to restart opencode).
-- See `.env.example` for the full schema with comments.
-
-**To use the `ollama` provider tier:** configure your `opencode.json` (or equivalent opencode config) with a provider block that routes the `ollama/*:cloud` model IDs to ollama's cloud API. Requires an ollama account with a max plan subscription. The [`ollama_swarm`](https://github.com/kevinkicho/ollama_swarm) sibling project is a working example of ollama integration at the raw-swarm level if you want a reference for the provider block shape. Without this opencode.json configuration, `ollama/*` model selections in new-run-modal will fail to dispatch — opencode needs to know how to reach the ollama API.
-
-## What costs money
-
-The provider tier you pick at run-creation determines the billing path. Both modals (new-run team picker, spawn-agent) gate by the same tier filter chips:
-
-| Tier | Shape | What you pay | Tier chip |
-|---|---|---|---|
-| **`go`** | opencode subscription bundle | Monthly subscription; runs draw from a fixed quota (qwen / kimi / glm / minimax / mimo). Falls through to `zen` once the quota is hit. | mint |
-| **`zen`** | opencode pay-per-token marketplace | Per-token (Claude, GPT, Gemini, …). Pricing visible in the model picker; live spend in the run-detail dashboard. | iris |
-| **`ollama`** | ollama.com max subscription | Monthly subscription; `ollama/*:cloud` model IDs route to ollama's cloud API at $0/run. Requires opencode.json provider block (see above). | amber |
-| **`byok`** | bring-your-own-key (read-only) | Whatever the provider behind the BYOK key charges. Surfaced in the catalog if `opencode.json` carries a BYOK provider block, but never selectable from creation surfaces. | fog |
-
-**Spend ceiling.** Every run carries a `bounds.costCap` (default $5, raise/disable in the new-run modal's `bounds` row). When the run's accumulated $ crosses the cap, the proxy gate at `/api/opencode/[...path]` returns 402 to the next prompt before opencode sees it — the cost-cap banner replaces the chat composer, and you raise the cap (routing modal) or start a new run. Hard wall, server-side, no AFK surprises. See [`DESIGN.md` §9](./DESIGN.md) for the gate details.
-
-Node + npm — any version that runs Next.js 14. SQLite is bundled via `better-sqlite3`; no separate DB to install.
-
-## Quick start
+## Quick Start
 
 ```bash
 npm install
 npm run dev
 ```
 
-The dev server is pinned to **port 8044** (override via `DEV_PORT=xxxx`). `scripts/dev.mjs` kills any process holding the port before claiming it, so a stale leftover never blocks startup. The `.dev-port` file is still written for callers that read it, and tabs auto-reload on dev-server restart via `/api/dev/build-id` so stale browser state never lingers. Open `http://localhost:8044/` (or, on WSL2 with a Windows browser, the WSL eth0 IP — `ifconfig eth0` for the address).
+The dev server is pinned to **port 8044** (override via `DEV_PORT=xxxx`). Open `http://localhost:8044/`.
 
-Point the app at an already-cloned repo via the new-run modal (⌘N), pick a pattern, hit spawn. Agents claim work, edit files, land patches, your chosen view (chat by default) populates live.
+Point the app at an already-cloned repo via the new-run modal (⌘N), pick a pattern, hit spawn. Agents claim work, edit files, land patches, your chosen view populates live.
 
-## Keyboard
+## Architecture Overview
 
-- **⌘K / Ctrl+K** — command palette (jump to any timeline node, run an action)
-- **⌘N / Ctrl+N** — open new-run modal
-- **Esc** — close any open modal or drawer
+Opencode Swarm is a Next.js application that provides a multi-agent orchestration UI. The architecture consists of:
+
+- **Frontend**: React (Next.js 14 App Router), TypeScript, Tailwind CSS.
+- **Backend**: Next.js API routes and server-side logic that orchestrate opencode sessions.
+- **Orchestration Layer**: Seven coordination patterns. Each pattern defines how agents collaborate.
+- **Persistence**: better-sqlite3 for run transcripts, agent states, event logs.
+- **Integration**: Communicates with an external opencode instance via HTTP.
 
 ## Documentation
 
-### Canonical (read in order when extending)
+### Core (read in order when extending)
 
-1. **[`DESIGN.md`](./DESIGN.md)** — vision, mental model, UI surface map, state contracts, retention, planning model. The one document nothing else replaces.
-2. **[`docs/opencode-quirks.md`](./docs/opencode-quirks.md)** — opencode SDK v1.14.28 vocabulary + HTTP API behaviors (silent-drop traps, model-format shape, workspace path encoding, zombie turns, phantom events).
-3. **[`docs/PATTERNS.md`](./docs/PATTERNS.md)** — orchestration pattern cheatsheet (one paragraph each + reliability tiers).
-4. **[`docs/API.md`](./docs/API.md)** — greppable HTTP endpoint catalog for our routes.
-5. **[`docs/VALIDATION.md`](./docs/VALIDATION.md)** — runbook for features shipped but not yet exercised live.
-6. **[`CLAUDE.md`](./CLAUDE.md)** — briefing for AI agents opening the repo.
+| # | Document | Purpose |
+|---|----------|---------|
+| 1 | [`DESIGN.md`](./DESIGN.md) | Vision, mental model, UI surface, state contracts, retention |
+| 2 | [`docs/opencode-quirks.md`](./docs/opencode-quirks.md) | opencode SDK vocabulary + HTTP API behaviors |
+| 3 | [`docs/PATTERNS.md`](./docs/PATTERNS.md) | Orchestration pattern cheatsheet + reliability tiers |
+| 4 | [`docs/API.md`](./docs/API.md) | HTTP endpoint catalog for our routes |
+| 5 | [`docs/VALIDATION.md`](./docs/VALIDATION.md) | Runbook for features not yet exercised live |
+| 6 | [`CLAUDE.md`](./CLAUDE.md) | Briefing for AI agents opening the repo |
 
-### Situational (read when relevant)
+### Operational
 
-- **[`STATUS.md`](./STATUS.md)** — what shipped + what's queued right now. Time-scoped — re-check before assuming.
-- **[`docs/CALL_GRAPH.md`](./docs/CALL_GRAPH.md)** — generated function-call graph across the repo. Useful for "where is this function called from?" without having to grep.
-- **[`docs/REVIEW_CHECKLIST.md`](./docs/REVIEW_CHECKLIST.md)** — 30-minute structured walk-through that exercises every major surface of the app. Run before PR, after upgrades, or when re-orienting.
+| Document | Purpose |
+|----------|---------|
+| [`STATUS.md`](./STATUS.md) | What shipped, what's queued — time-scoped |
+| [`docs/REVIEW_CHECKLIST.md`](./docs/REVIEW_CHECKLIST.md) | 30-minute structured walk-through |
+| [`docs/RECOMMENDATIONS.md`](./docs/RECOMMENDATIONS.md) | Single-source queue + stop-doing list + steady-state conditions |
+| [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) | Consolidated plan from composite analysis |
+
+### Strategic Analysis (12 methodologies, 2026-05-08/09)
+
+| Document | Methodology | Key Finding |
+|----------|------------|-------------|
+| [`docs/STRATEGY.md`](./docs/STRATEGY.md) | Ansoff + Scenario Planning | Penetration > development; B/D defensive posture |
+| [`docs/SYSTEMATIC_FIXES.md`](./docs/SYSTEMATIC_FIXES.md) | Root cause analysis | Unmanaged session context |
+| [`docs/MONTE_CARLO.md`](./docs/MONTE_CARLO.md) | Probabilistic simulation (3,000 trials) | $0.034/todo; cost cap stops 93% of runs |
+| [`docs/LCCA.md`](./docs/LCCA.md) | Life cycle cost analysis | Operator time 945× more expensive than tokens |
+| [`docs/FAULT_TREE.md`](./docs/FAULT_TREE.md) | Fault tree (14 cut sets) | 7 single-event OR-gates at planner |
+| [`docs/COMPOSITE_PLAN.md`](./docs/COMPOSITE_PLAN.md) | 5-analysis synthesis | 6 shared findings, 4 plans |
+| [`docs/UML_ANALYSIS.md`](./docs/UML_ANALYSIS.md) | Class/state/sequence/component | 55-import type hub, missing transitions |
+| [`docs/ARCHITECTURE_EVALUATION.md`](./docs/ARCHITECTURE_EVALUATION.md) | ATAM/SAAM/CBAM/DSM | 4 sensitivity points, 6 recommendations |
+| [`docs/FORMAL_METHODS.md`](./docs/FORMAL_METHODS.md) | TLA+/Alloy/Invariants | CAS race-free (proved), 3 of 4 invariants hold |
+| [`docs/FORMAL_METHODS_2.md`](./docs/FORMAL_METHODS_2.md) | Refinement/LTL/Data Flow | SQL refines abstract spec; unsanitized directive found |
+| [`docs/PERFORMANCE.md`](./docs/PERFORMANCE.md) | Load testing + benchmarking | LLM dominates 96-98%; code ops save <4% |
+| [`docs/SECURITY.md`](./docs/SECURITY.md) | SAST/SCA/DAST/PenTest | 0 CRITICAL (local-only), 3 HIGH (all fixed) |
+
+### Scripts
+
+| Script | Purpose |
+|--------|---------|
+| [`scripts/monte-carlo.ts`](./scripts/monte-carlo.ts) | 3,000-trial probabilistic simulation |
+| [`scripts/pm-frequency.ts`](./scripts/pm-frequency.ts) | Postmortem frequency tracker |
+| [`scripts/decide.ts`](./scripts/decide.ts) | 6-rule automated decision engine |
+| [`scripts/perf-bench.ts`](./scripts/perf-bench.ts) | Performance benchmark |
+| [`scripts/lcca-calc.ts`](./scripts/lcca-calc.ts) | LCCA break-even calculator |
+| [`scripts/import-graph.ts`](./scripts/import-graph.ts) | Module dependency analyzer |
+| [`scripts/frame-extract.ts`](./scripts/frame-extract.ts) | Playwright video → frame extraction |
+| [`scripts/morning-summary.ts`](./scripts/morning-summary.ts) | Overnight run summary (cron) |
 
 ### Postmortems
 
-- **[`docs/POSTMORTEMS/`](./docs/POSTMORTEMS/)** — forensic notes on run failures + notable near-misses. Every entry has *what broke*, *why*, *what we did*, and *how we'd know it regressed* (with the regression probe). Re-run probes after upgrades to catch recurrences. See the [POSTMORTEMS index](./docs/POSTMORTEMS/README.md) for the shape contract.
+| Document | Status |
+|----------|--------|
+| [`2026-04-24-orchestrator-worker-silent`](./docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md) | F1/F3/F6 VERIFIED |
+| [`2026-04-25-agent-name-silent-drop`](./docs/POSTMORTEMS/2026-04-25-agent-name-silent-drop.md) | F1 VERIFIED. Closed |
+| [`2026-04-26-critic-loop-runaway-token`](./docs/POSTMORTEMS/2026-04-26-critic-loop-runaway-token.md) | F1 VERIFIED |
+| [`2026-05-08-blackboard-planner-sweep-error`](./docs/POSTMORTEMS/2026-05-08-blackboard-planner-sweep-error.md) | F1–F4 SHIPPED |
 
-  Recent (chronological):
-  - [2026-04-24 — orchestrator-worker silent dispatch](./docs/POSTMORTEMS/2026-04-24-orchestrator-worker-silent.md)
-  - [2026-04-25 — agent-name silent drop trap](./docs/POSTMORTEMS/2026-04-25-agent-name-silent-drop.md)
-  - [2026-04-26 — critic-loop runaway tokens](./docs/POSTMORTEMS/2026-04-26-critic-loop-runaway-token.md)
-  - [2026-04-27 — blackboard recording diagnostic](./docs/POSTMORTEMS/2026-04-27-blackboard-recording-diagnostic.md)
-  - [2026-04-27 — pattern-sweep validation](./docs/POSTMORTEMS/2026-04-27-pattern-sweep-validation.md)
-  - [2026-04-27 — natural-stop fixes (council convergence + OW auto-idle)](./docs/POSTMORTEMS/2026-04-27-natural-stop-fixes.md)
-  - [2026-04-27 — extended blackboard run (periodic re-sweeps)](./docs/POSTMORTEMS/2026-04-27-extended-blackboard-run.md)
+## Development Commands
 
-### In-app reference
+- `npm run dev` — Start dev server at port 8044
+- `npm run build` — Production build
+- `npm run start` — Production server
+- `npm test` — Run test suite (713 tests)
+- `npm run lint` — ESLint
 
-The **glossary modal** (footer right · `glossary`) covers actor/transcript vocabulary at a glance. The **diagnostics modal** (footer right · `diagnostics`) surfaces the live opencode daemon state — tool catalog, MCP servers, effective `opencode.json`, user-defined commands — with a drift indicator vs. the static `ToolName` union.
+## Keyboard
 
-## Design stance
+- **⌘K / Ctrl+K** — command palette
+- **⌘N / Ctrl+N** — new-run modal
+- **Esc** — close any modal or drawer
 
-- **Chat is the landing lens; timeline is the power lens.** Chat (per-turn bubbles, inline tool pills, multi-session user prompts deduped) reads like every other agent product, so first-time users find their footing. Timeline shows N agents as visual nodes on a 2-D plane and is where 5-agent runs become as legible as 1-agent runs. Both ship; click to switch.
-- **All 10 view tabs always visible.** Non-applicable tabs (e.g. `iterations` outside critic-loop) render dim and lead to a per-view explainer with a 7×10 patterns × views availability matrix. Discoverable without docs.
-- **Roles are pattern-scoped, not universal.** Self-organizing patterns (blackboard, council) have no pinned roles — agents self-select work within run bounds. Hierarchical patterns carry explicit roles when the work needs them. Routing stays bounds-driven either way; `if role=X → provider=Y` remains off-limits.
-- **Declarative and imperative separated.** The routing modal sets policy (saves apply to the next dispatch); the spawn modal and palette trigger actions. Never both in one panel.
-- **Dense-factory aesthetic.** Monospace, tabular-nums, hairline borders, h-5/h-6 rows, `text-micro` uppercase labels. Not a ChatGPT/Perplexity/Claude.ai clone.
-- **Three provider tiers: `zen` + `go` + `ollama`** (plus `byok` when opencode.json carries a BYOK provider block). All routed through opencode. The new-run team picker and the spawn-agent modal both gate by tier filter chips with per-tier counts, so picking a model implicitly picks a billing path. Each tier has a different shape — zen pay-per-token, go subscription bundle, ollama max subscription.
+## Design Stance
+
+- **Chat is the landing lens; timeline is the power lens.**
+- **All 10 view tabs always visible.**
+- **Roles are pattern-scoped, not universal.**
+- **Declarative and imperative separated.**
+- **Dense-factory aesthetic** — monospace, tabular-nums, hairline borders.
+- **Three provider tiers: `zen` + `go` + `ollama`** (plus `byok`).
 
 ## Contributing
 
-Opening a PR? Read `DESIGN.md` first — the one rule (single contracts per surface) catches most drift before review.
+Read `DESIGN.md` first — the one rule (single contracts per surface) catches most drift before review.
 
 ## License
 

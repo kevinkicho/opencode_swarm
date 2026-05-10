@@ -31,12 +31,16 @@ import type { SwarmRunMeta } from '../swarm-run-types';
 import type { SwarmPattern } from '../swarm-types';
 
 export interface RunGuardOpts {
- // Pattern(s) this orchestrator accepts. Most expect a single pattern;
- // arrays allow accepting multiple (rare).
- expectedPattern: SwarmPattern | readonly SwarmPattern[];
- // Tag for log lines and the finalizeRun context. Examples: 'council',
- // 'critic-loop', 'debate-judge', 'map-reduce'.
- context: string;
+  // Pattern(s) this orchestrator accepts. Most expect a single pattern;
+  // arrays allow accepting multiple (rare).
+  expectedPattern: SwarmPattern | readonly SwarmPattern[];
+  // Tag for log lines and the finalizeRun context. Examples: 'council',
+  // 'critic-loop', 'debate-judge', 'map-reduce'.
+  context: string;
+  // If true, skip calling finalizeRun in the finally block. Used by
+  // ticker-backed patterns (e.g. orchestrator-worker) where the auto-ticker
+  // manages lifecycle and finalizeRun would abort the run prematurely.
+  skipFinalize?: boolean;
 }
 
 export async function withRunGuard<T>(
@@ -100,7 +104,9 @@ export async function withRunGuard<T>(
  );
  }
  throw err;
- } finally {
- await finalizeRun(swarmRunID, opts.context);
- }
+  } finally {
+    if (!opts.skipFinalize) {
+      await finalizeRun(swarmRunID, opts.context);
+    }
+  }
 }

@@ -20,7 +20,9 @@ import { Popover } from './ui/popover';
 import { ProviderBadge } from './provider-badge';
 import { useBackendStale } from '@/lib/opencode/live';
 import { compact } from '@/lib/format';
-import { AbortChip, HardStopChip } from './swarm-topbar/abort-chips';
+import { useState } from 'react';
+import { RunRetroModal } from './run-retro-modal';
+import { AbortChip, HardStopChip, ResumeSweepChip, TICKER_BACKED_PATTERNS } from './swarm-topbar/abort-chips';
 import { BudgetChip, RetryAfterChip, RunHealthChip } from './swarm-topbar/health-chips';
 import { RunAnchorChip } from './swarm-topbar/run-anchor-chip';
 
@@ -73,6 +75,7 @@ export function SwarmTopbar({
   tickerState: TickerState;
 }) {
   const budgetPct = Math.min(100, Math.round((run.totalCost / run.budgetCap) * 100));
+  const [retroOpen, setRetroOpen] = useState(false);
   const totalAgents = providers.reduce((s, p) => s + p.agents, 0);
   // When the backend has been unreachable for > ~5 s, React's in-memory
   // snapshots (run status, agent animations) are showing
@@ -133,6 +136,15 @@ export function SwarmTopbar({
           </button>
         </Popover>
         {swarmRunMeta && <RunAnchorChip meta={swarmRunMeta} status={swarmRunStatus} stale={backendStale} />}
+        {swarmRunMeta && (swarmRunStatus === 'completed' || swarmRunStatus === 'stale') && (
+          <button
+            type="button"
+            onClick={() => setRetroOpen(true)}
+            className="font-mono text-[9px] uppercase tracking-widest2 px-2 h-5 rounded-sm hairline border-fog-700 text-fog-400 hover:text-mint hover:border-mint/30 hover:bg-mint/5 transition cursor-pointer"
+          >
+            retro
+          </button>
+        )}
         {/*
           Conditional chip set — gated on the authoritative live status
           from the runs-poll (`swarmRunStatus`), NOT the mock-shaped
@@ -164,6 +176,11 @@ export function SwarmTopbar({
         {swarmRunMeta && (swarmRunStatus === 'live' || swarmRunStatus === 'idle') && (
           <HardStopChip swarmRunID={swarmRunMeta.swarmRunID} />
         )}
+        {swarmRunMeta &&
+          (swarmRunStatus === 'stale' || swarmRunStatus === 'completed' || swarmRunStatus === 'error') &&
+          TICKER_BACKED_PATTERNS.has(swarmRunMeta.pattern) && (
+            <ResumeSweepChip swarmRunID={swarmRunMeta.swarmRunID} />
+        )}
       </nav>
 
       <div className="flex items-center gap-1 pr-1 h-full">
@@ -180,6 +197,50 @@ export function SwarmTopbar({
             ['tokens', compact(run.totalTokens)],
           ]}
         />
+        {budgetPct >= 90 && (
+          <Tooltip
+            side="bottom"
+            content={
+              <div className="space-y-1">
+                <div className="font-mono text-micro uppercase tracking-widest2 text-amber">
+                  budget warning
+                </div>
+                <div className="font-mono text-[11px] text-fog-200">
+                  {budgetPct}% of ${run.budgetCap.toFixed(2)} cap used
+                </div>
+                <div className="font-mono text-[10px] text-fog-500">
+                  consider raising cap or stopping the run
+                </div>
+              </div>
+            }
+          >
+            <span className="font-mono text-[9px] uppercase tracking-widest2 px-1.5 h-5 flex items-center rounded-sm bg-amber/10 text-amber border border-amber/30 tabular-nums">
+              {budgetPct}%
+            </span>
+          </Tooltip>
+        )}
+        {tickerState.state !== 'none' && tickerState.totalCommits > 0 && run.totalCost > 0 && (
+          <Tooltip
+            side="bottom"
+            content={
+              <div className="space-y-1">
+                <div className="font-mono text-micro uppercase tracking-widest2 text-fog-500">
+                  cost per completed todo
+                </div>
+                <div className="font-mono text-[11px] text-fog-200">
+                  {tickerState.totalCommits} commits · ${run.totalCost.toFixed(2)} total
+                </div>
+                <div className="font-mono text-[10px] text-fog-500">
+                  MC simulation baseline: $0.034/todo
+                </div>
+              </div>
+            }
+          >
+            <span className="font-mono text-[10px] text-fog-500 tabular-nums px-1.5 h-5 flex items-center rounded-sm hairline border-fog-700/50">
+              ${(run.totalCost / tickerState.totalCommits).toFixed(3)}/todo
+            </span>
+          </Tooltip>
+        )}
 
         <Tooltip
           side="bottom"
@@ -192,7 +253,7 @@ export function SwarmTopbar({
               </div>
               {providers.map((p) => (
                 <div key={p.provider} className="flex items-center gap-2">
-                  <ProviderBadge provider={p.provider} size="sm" />
+                  <ProviderBadge provider={p.provider} size="sm" clickable />
                   <span className="font-mono text-[11px] text-fog-200 tabular-nums ml-auto">
                     {p.agents} agent{p.agents === 1 ? '' : 's'}
                   </span>
@@ -236,6 +297,13 @@ export function SwarmTopbar({
           </button>
         </Tooltip>
       </div>
+      {swarmRunMeta && (
+        <RunRetroModal
+          open={retroOpen}
+          onClose={() => setRetroOpen(false)}
+          swarmRunID={swarmRunMeta.swarmRunID}
+        />
+      )}
     </header>
   );
 }

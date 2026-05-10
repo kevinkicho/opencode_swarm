@@ -27,18 +27,31 @@ export const IDLE_TICKS_BEFORE_STOP = 6;
 // many ticks AND we're in long-running mode (periodicSweepMs > 0) AND
 // the last sweep was long enough ago, fire a fresh planner sweep
 // immediately instead of waiting for the periodic timer. Practical
-// effect: 10-15 todos drain in ~5 min, sessions go idle, 30s later a
+// effect: 10-15 todos drain in ~5 min, sessions go idle, 20s later a
 // new batch lands — no more sitting idle for 15 min waiting for the
 // 20-min periodic tick.
-export const IDLE_TICKS_BEFORE_EAGER_SWEEP = 3;
+export const IDLE_TICKS_BEFORE_EAGER_SWEEP = 2;
+
+// 2026-05-07: Consecutive no-claimable-work threshold for persistent-
+// sweep mode. When every tick's pickClaim returns "no claimable todos"
+// for this many consecutive ticks, the ticker stops regardless of
+// periodic-sweep mode — the board has zombie items (retry-exhausted
+// but status=open) and the planner isn't producing fresh work.
+export const NO_CLAIMABLE_WORK_TICKS = 18;
 
 // Floor on how frequently sweeps fire. Even if the board drains
 // instantly, the planner needs ~60-90s per sweep, and stacking sweeps
 // back-to-back would burn tokens on constant re-planning and race the
-// "overwrite guard" in runPlannerSweep. 2 minutes gives the previous
-// sweep time to fully land its new todos before the next one starts
-// reasoning about them.
-export const MIN_MS_BETWEEN_SWEEPS = 2 * 60 * 1000;
+// "overwrite guard" in runPlannerSweep. 60s gives the previous sweep
+// enough time to fully land its new todos while keeping the idle gap
+// short. Combined with sweep-after-claim (item 4), workers should
+// never wait >1 sweep duration for a fresh batch.
+export const MIN_MS_BETWEEN_SWEEPS = 60 * 1000;
+
+// Consecutive sweeps where the planner called todowrite but every proposed
+// item was filtered (vague criteria + dedup). After this many in a row,
+// the ticker stops to avoid burning tokens re-proposing the same items.
+export const MAX_CONSECUTIVE_FILTERED_ALL_SWEEPS = 4;
 
 // ─── Ambition ratchet ────────────────────────────────────────────────
 
@@ -91,15 +104,18 @@ export type StopReason =
   // evidence. Used when a run is wedged with a turn that's still
   // emitting parts (silent watchdog can't fire) but isn't producing
   // useful output.
-  | 'operator-hard-stop'
-  // Operator clicked the abort button. For ticker-backed patterns
-  // (blackboard, orchestrator-worker) this stops the ticker + aborts
-  // every session — the same teardown as hard-stop, but with a
-  // distinct reason so partial-outcome wording distinguishes "I
-  // wanted to cancel" from "I had to force-kill a wedged run."
-  | 'operator-abort';
+   | 'operator-hard-stop'
+   | 'operator-abort'
+   | 'filtered-all-todos'
+   | 'stuck-deliberation'
+   // 2026-05-07: persistent-sweep runs that have zero claimable work
+   // for too many consecutive ticks (retry-exhausted zombies with no
+   // fresh planner output) burn tokens without progress. This stop
+   // fires independently of hard caps and idle-stop.
+   | 'no-claimable-work';
+ 
+ // ─── State shape ─────────────────────────────────────────────────────
 
-// ─── State shape ─────────────────────────────────────────────────────
 
 export interface PerSessionSlot {
   sessionID: string;
@@ -177,6 +193,25 @@ export interface TickerState {
   // drains at the current tier and persisted via updateRunMeta so a
   // ticker restart resumes at the correct level.
   currentTier: number;
+  // Consecutive planner sweeps where the planner called todowrite but every
+  // proposed item was filtered (vague criteria + dedup). Reset to 0 on any
+  // sweep that produces new work. When this reaches
+  // MAX_CONSECUTIVE_FILTERED_ALL_SWEEPS, the ticker stops with reason
+  // 'filtered-all-todos'.
+  consecutiveFilteredAllTodos: number;
+  // 2026-05-07: Counts consecutive ticks where pickClaim returned
+  // "no claimable todos" because of retry-exhausted zombie items. When
+  // this reaches NO_CLAIMABLE_WORK_TICKS, the ticker stops even in
+  // persistent-sweep mode. Reset to 0 whenever a claim succeeds or
+  // the planner adds fresh work.
+  consecutiveNoClaimableWork: number;
+  // Monotonic counter of planner sweep errors. Tracks how many times
+  // a sweep (periodic, eager, or tier-escalation) threw. Surfaced via
+  // TickerSnapshot so the UI can surface planner health.
+  plannerErrors: number;
+  // Auto-pilot: cost cap from bounds.costCap, hydrated once at startup.
+  // Default undefined → no cap set; the auto-pilot rules 3/4 won't fire.
+  costCap?: number;
 }
 
 export type TickerMap = Map<string, TickerState>;
@@ -211,6 +246,12 @@ export interface TickerSnapshot {
   totalCommits: number;
   retryAfterEndsAtMs?: number;
   currentTier: number;
+  // Re-sweep cadence. 0 = single-sweep (auto-stop on idle).
+  // > 0 = periodic re-sweep every N ms with ambition ratchet.
+  periodicSweepMs: number;
+  // Monotonic counter of planner sweep errors. Incremented in every
+  // catch block (periodic sweep, eager sweep, tier escalation).
+  plannerErrors: number;
   // Per-session inFlight state. Used by the client to override agent
   // status: a session with inFlight=true should show as "thinking"
   // even if another agent spoke more recently.

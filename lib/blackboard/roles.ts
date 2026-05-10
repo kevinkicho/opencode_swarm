@@ -21,6 +21,9 @@ export interface RoleMetaLite {
   pattern: string;
   sessionIDs: readonly string[];
   teamRoles?: readonly string[];
+  criticSessionID?: string;
+  verifierSessionID?: string;
+  auditorSessionID?: string;
 }
 
 export function roleNamesFromMeta(
@@ -59,6 +62,9 @@ export function roleNamesFromMeta(
       meta.sessionIDs.forEach((sid, i) => {
         out.set(ownerIdForSession(sid), i === 0 ? 'planner' : `worker-${i}`);
       });
+      if (meta.criticSessionID) out.set(ownerIdForSession(meta.criticSessionID), 'critic');
+      if (meta.verifierSessionID) out.set(ownerIdForSession(meta.verifierSessionID), 'verifier');
+      if (meta.auditorSessionID) out.set(ownerIdForSession(meta.auditorSessionID), 'auditor');
       break;
     }
     // Display labels for council / map-reduce. The role isn't enforced
@@ -115,6 +121,9 @@ export function roleNamesBySessionID(
       meta.sessionIDs.forEach((sid, i) => {
         out.set(sid, i === 0 ? 'planner' : `worker-${i}`);
       });
+      if (meta.criticSessionID) out.set(meta.criticSessionID, 'critic');
+      if (meta.verifierSessionID) out.set(meta.verifierSessionID, 'verifier');
+      if (meta.auditorSessionID) out.set(meta.auditorSessionID, 'auditor');
       break;
     }
     case 'council': {

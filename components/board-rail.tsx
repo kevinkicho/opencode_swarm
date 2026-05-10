@@ -10,6 +10,7 @@ import {
   type TickerState,
 } from '@/lib/blackboard/live';
 import type { BoardAgent, BoardItem, BoardItemKind, BoardItemStatus } from '@/lib/blackboard/types';
+import { applyBoardFilters, type BoardFilter } from '@/lib/blackboard/board-filters';
 import type { SwarmPattern } from '@/lib/swarm-types';
 import type { FileHeat } from '@/lib/opencode/transform';
 import { Tooltip } from './ui/tooltip';
@@ -230,6 +231,17 @@ export function BoardRail({
     return out;
   });
 
+  const [boardFilter, setBoardFilter] = useState<BoardFilter>({});
+
+  const matchingIds = useMemo(() => {
+    const hasStatus = boardFilter.status && boardFilter.status.length > 0;
+    const hasKind = boardFilter.kind && boardFilter.kind.length > 0;
+    const hasSearch = !!boardFilter.search;
+    if (!hasStatus && !hasKind && !hasSearch) return null;
+    const matched = applyBoardFilters(items, boardFilter);
+    return new Set(matched.map((it) => it.id));
+  }, [items, boardFilter]);
+
   const loading = live.items === null && !live.error;
 
   const body = (
@@ -305,7 +317,10 @@ export function BoardRail({
                   maxHeatScore={maxHeatScore}
                   swarmRunID={swarmRunID}
                   onSelectAgent={onSelectAgent}
-                  dimmed={!!selectedAgentId && item.ownerAgentId !== selectedAgentId}
+                  dimmed={
+                    (!!selectedAgentId && item.ownerAgentId !== selectedAgentId) ||
+                    (!!matchingIds && !matchingIds.has(item.id))
+                  }
                 />
               ))
             )}
@@ -350,6 +365,71 @@ export function BoardRail({
         <span className="font-mono text-micro text-fog-700 tabular-nums">
           {items.filter((i) => i.status === 'done').length}/{items.length}
         </span>
+      </div>
+      {/* Filter pills — dense row below header. Active toggles get their
+          accent; inactive are dim fog. Search input on the right. */}
+      <div className="hairline-b px-4 py-1 flex items-center gap-1.5 bg-ink-900/40 flex-wrap">
+        {(['open', 'in-progress', 'done', 'stale'] as const).map((s) => {
+          const active = boardFilter.status?.includes(s);
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() =>
+                setBoardFilter((prev) => {
+                  const cur = prev.status ?? [];
+                  const next = active ? cur.filter((v) => v !== s) : [...cur, s];
+                  return { ...prev, status: next.length ? next : undefined };
+                })
+              }
+              className={clsx(
+                'font-mono text-[9px] uppercase tracking-widest2 px-1.5 h-5 rounded-sm hairline transition cursor-pointer',
+                active
+                  ? 'border-molten/50 bg-molten/10 text-molten'
+                  : 'border-fog-700 text-fog-600 hover:text-fog-400 hover:border-fog-600',
+              )}
+            >
+              {s}
+            </button>
+          );
+        })}
+        <span className="w-px h-3 bg-ink-600 mx-0.5" />
+        {(['todo', 'criterion', 'finding'] as const).map((k) => {
+          const active = boardFilter.kind?.includes(k);
+          return (
+            <button
+              key={k}
+              type="button"
+              onClick={() =>
+                setBoardFilter((prev) => {
+                  const cur = prev.kind ?? [];
+                  const next = active ? cur.filter((v) => v !== k) : [...cur, k];
+                  return { ...prev, kind: next.length ? next : undefined };
+                })
+              }
+              className={clsx(
+                'font-mono text-[9px] uppercase tracking-widest2 px-1.5 h-5 rounded-sm hairline transition cursor-pointer',
+                active
+                  ? 'border-iris/50 bg-iris/10 text-iris'
+                  : 'border-fog-700 text-fog-600 hover:text-fog-400 hover:border-fog-600',
+              )}
+            >
+              {k}
+            </button>
+          );
+        })}
+        <input
+          type="text"
+          value={boardFilter.search ?? ''}
+          onChange={(e) =>
+            setBoardFilter((prev) => ({
+              ...prev,
+              search: e.target.value || undefined,
+            }))
+          }
+          placeholder="search…"
+          className="ml-auto w-[80px] bg-transparent border-0 border-b hairline-b border-fog-700 focus:border-fog-400 outline-none font-mono text-[10px] text-fog-200 placeholder:text-fog-700 py-0.5"
+        />
       </div>
       {body}
       {footer}

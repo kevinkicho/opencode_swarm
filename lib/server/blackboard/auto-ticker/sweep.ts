@@ -14,11 +14,16 @@ import {
 } from './policies';
 import { stopAutoTicker } from './stop';
 import {
+  MAX_CONSECUTIVE_FILTERED_ALL_SWEEPS,
   MIN_MS_BETWEEN_SWEEPS,
+  NO_CLAIMABLE_WORK_TICKS,
   type TickerState,
 } from './types';
+import { attemptTierEscalation, boardHasWorkInFlight } from './escalation';
+import { recordPartialOutcome } from '../../degraded-completion';
 
 export async function runPeriodicSweep(state: TickerState): Promise<void> {
+
   if (state.stopped) return;
   if (state.resweepInFlight) return;
 
@@ -66,17 +71,57 @@ export async function runPeriodicSweep(state: TickerState): Promise<void> {
         `[board/auto-ticker] ${swarmRunID}: periodic sweep seeded ${newlyOpen} new open todo(s) — resetting idle counters`,
       );
       for (const slot of state.slots.values()) slot.consecutiveIdle = 0;
+      state.consecutiveFilteredAllTodos = 0;
+      state.consecutiveNoClaimableWork = 0;
     } else {
       console.log(
         `[board/auto-ticker] ${swarmRunID}: periodic sweep produced no new work (planner returned ${result.items.length} total items)`,
       );
+      if (result.filteredAll) {
+        state.consecutiveFilteredAllTodos += 1;
+        const hasWorkInFlight = Array.from(state.slots.values()).some(s => s.inFlight);
+        if (!hasWorkInFlight && state.consecutiveFilteredAllTodos >= MAX_CONSECUTIVE_FILTERED_ALL_SWEEPS) {
+          console.warn(
+            `[board/auto-ticker] ${swarmRunID}: ${state.consecutiveFilteredAllTodos} consecutive sweeps filtered all proposals — stopping ticker (filtered-all-todos)`,
+          );
+          recordPartialOutcome(swarmRunID, {
+            pattern: 'blackboard',
+            phase: 'periodic-sweep',
+            reason: 'filtered-all-todos',
+            summary: `Planner consistently proposed work that was filtered by dedup/vague-filters for ${MAX_CONSECUTIVE_FILTERED_ALL_SWEEPS} consecutive sweeps. Run has stalled.`,
+          });
+          stopAutoTicker(swarmRunID, 'filtered-all-todos');
+        }
+      } else {
+        state.consecutiveFilteredAllTodos = 0;
+      }
     }
   } catch (err) {
+    state.plannerErrors += 1;
     const message = err instanceof Error ? err.message : String(err);
     console.warn(
       `[board/auto-ticker] ${swarmRunID}: periodic sweep threw:`,
       message,
     );
+    // F1: increment the no-claimable-work counter on sweep failure so
+    // repeated errors eventually stop the ticker instead of burning
+    // tokens indefinitely. Don't reset — a failed sweep is not progress.
+    state.consecutiveNoClaimableWork += 1;
+    if (
+      state.consecutiveNoClaimableWork >= NO_CLAIMABLE_WORK_TICKS &&
+      !boardHasWorkInFlight(state.swarmRunID)
+    ) {
+      console.warn(
+        `[board/auto-ticker] ${swarmRunID}: ${state.consecutiveNoClaimableWork} consecutive no-claimable-work ticks (last: sweep error) — stopping ticker`,
+      );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'blackboard',
+        phase: 'periodic-sweep',
+        reason: 'sweep-error-no-progress',
+        summary: `Periodic sweep failed ${NO_CLAIMABLE_WORK_TICKS}+ times consecutively with no claimable work. Last error: ${message}`,
+      });
+      stopAutoTicker(swarmRunID, 'no-claimable-work');
+    }
   } finally {
     state.resweepInFlight = false;
   }

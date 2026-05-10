@@ -40,6 +40,7 @@ import {
   postSessionMessageServer,
 } from '../opencode-server';
 import { waitForSessionIdle } from './coordinator';
+import { recordParseFailure } from '../parse-failure-log';
 import type { BoardItem } from '../../blackboard/types';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
@@ -172,28 +173,61 @@ function buildAuditPrompt(input: AuditInput): string {
 // Line-oriented verdict parser. Each line: `<N>. VERDICT: <tok> — <reason>`.
 // Returns Map<index, {verdict, reason}>; missing indices are the caller's
 // responsibility (fall-open to 'unclear').
+//
+// Resilience: Two-tier parsing —
+// 1. Strict: numbered line prefix `1. VERDICT: MET — reason` (original).
+// 2. Loose: `VERDICT:` anywhere on a line, no number required.
+//    This catches LLMs that write prose before the verdict, use
+//    markdown formatting, or skip the line number.
 const VERDICT_LINE_RE =
   /^\s*(\d+)\s*[.)]\s*VERDICT:\s*(MET|UNMET|WONT_DO|WONTDO|WONT-DO)\b\s*(?:[—:-]\s*(.+))?\s*$/i;
+// Loose fallback: VERDICT: MET/UNMET/WONT-DO anywhere on a line.
+const VERDICT_LOOSE_RE =
+  /\bVERDICT:\s*(MET|UNMET|WONT[_-]?DO)\b\s*(?:[—:-]\s*(.+?))?\s*$/im;
 
 function parseVerdictBatch(
   text: string,
   criteriaCount: number,
 ): Map<number, { verdict: AuditVerdict; reason: string }> {
   const out = new Map<number, { verdict: AuditVerdict; reason: string }>();
-  for (const line of text.split(/\r?\n/)) {
+  const lines = text.split(/\r?\n/);
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+    // Strict match: numbered line with VERDICT: prefix.
     const m = VERDICT_LINE_RE.exec(line);
-    if (!m) continue;
-    const idx = parseInt(m[1], 10) - 1;
-    if (idx < 0 || idx >= criteriaCount) continue;
-    const tokRaw = m[2].toUpperCase().replace(/[-_]/g, '');
-    let verdict: AuditVerdict;
-    if (tokRaw === 'MET') verdict = 'met';
-    else if (tokRaw === 'UNMET') verdict = 'unmet';
-    else verdict = 'wont-do'; // WONTDO / WONT_DO / WONT-DO all normalize here
-    const reason = (m[3] ?? '').trim() || '(no reason given)';
-    // Keep first parse per index — ignores duplicate lines from a
-    // misbehaving auditor that re-numbers.
-    if (!out.has(idx)) out.set(idx, { verdict, reason });
+    if (m) {
+      const idx = parseInt(m[1], 10) - 1;
+      if (idx < 0 || idx >= criteriaCount) continue;
+      const tokRaw = m[2].toUpperCase().replace(/[-_]/g, '');
+      let verdict: AuditVerdict;
+      if (tokRaw === 'MET') verdict = 'met';
+      else if (tokRaw === 'UNMET') verdict = 'unmet';
+      else verdict = 'wont-do';
+      const reason = (m[3] ?? '').trim() || '(no reason given)';
+      if (!out.has(idx)) out.set(idx, { verdict, reason });
+      continue;
+    }
+    // Loose match: VERDICT: MET/UNMET/WONT-DO anywhere on a line.
+    // Assign to the next unset criterion index (sequential fallback).
+    const lm = VERDICT_LOOSE_RE.exec(line);
+    if (lm) {
+      // Find next unset index.
+      let assigned = false;
+      for (let i = 0; i < criteriaCount; i++) {
+        if (!out.has(i)) {
+          const tokRaw = lm[1].toUpperCase().replace(/[-_]/g, '');
+          let verdict: AuditVerdict;
+          if (tokRaw === 'MET') verdict = 'met';
+          else if (tokRaw === 'UNMET') verdict = 'unmet';
+          else verdict = 'wont-do';
+          const reason = (lm[2] ?? '').trim() || '(no reason given)';
+          out.set(i, { verdict, reason });
+          assigned = true;
+          break;
+        }
+      }
+      if (!assigned) continue; // More verdicts than criteria — skip.
+    }
   }
   return out;
 }
@@ -274,6 +308,17 @@ export async function auditCriteria(input: AuditInput): Promise<AuditResult> {
           reason: entry.reason,
         };
       });
+      // Log any unclear verdicts so the user can see what the model
+      // produced that the parser couldn't recognize.
+      const unclearCount = verdicts.filter((v) => v.verdict === 'unclear').length;
+      if (unclearCount > 0) {
+        recordParseFailure(input.swarmRunID, {
+          pattern: 'blackboard',
+          role: 'auditor',
+          rawReply: replyText,
+          reason: `${unclearCount}/${criteriaToJudge.length} criteria unparseable`,
+        });
+      }
       return { verdicts, rawReply: replyText };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

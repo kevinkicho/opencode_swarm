@@ -11,6 +11,7 @@ import { Tooltip } from './ui/tooltip';
 import { IconBranch, IconMilestone, IconSettings } from './icons';
 import { patternMeta } from '@/lib/swarm-patterns';
 import type { SwarmPattern } from '@/lib/swarm-types';
+import { recommendPattern } from '@/lib/recommend-pattern';
 import type {
   SwarmRunRequest,
   SwarmRunResponse,
@@ -48,10 +49,10 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   // useState count from 13 to 3 (form + recipesOpen + copiedPattern;
   // launching comes from launchMutation.isPending).
   const { form, setField, bumpTeamCount, clearTeam } = useNewRunForm();
-  const { sourceValue, workspacePath, pattern, teamCounts, directive, unbounded, costCap, minutesCap, branchStrategy, branchName, startMode, enableSynthesisCritic } = form;
+  const { sourceValue, workspacePath, pattern, teamCounts, directive, unbounded, costCap, minutesCap, branchStrategy, branchName, startMode, enableSynthesisCritic, persistentSweepMinutes } = form;
   const setSourceValue = (v: string) => setField('sourceValue', v);
   const setWorkspacePath = (v: string) => setField('workspacePath', v);
-  const setPattern = (v: SwarmPattern) => setField('pattern', v);
+  const setPattern = (v: SwarmPattern) => { setField('pattern', v); if (v !== 'none') setPatternManuallySet(true); };
   const setDirective = (v: string) => setField('directive', v);
   const setUnbounded = (v: boolean) => setField('unbounded', v);
   const setCostCap = (v: number) => setField('costCap', v);
@@ -60,6 +61,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const setBranchName = (v: string) => setField('branchName', v);
   const setStartMode = (v: StartMode) => setField('startMode', v);
   const setEnableSynthesisCritic = (v: boolean) => setField('enableSynthesisCritic', v);
+  const setPersistentSweepMinutes = (v: number) => setField('persistentSweepMinutes', v);
   const [recipesOpen, setRecipesOpen] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -90,6 +92,37 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   );
   const hasDirective = directive.trim().length > 0;
 
+  const [patternManuallySet, setPatternManuallySet] = useState(false);
+  const suggestedPattern = useMemo(
+    () => patternManuallySet ? null : recommendPattern(directive),
+    [directive, patternManuallySet],
+  );
+
+  // Historical recommendation: analyze past runs to suggest pattern + team
+  // size. Enabled only when the user has typed a directive; staleTime 30s
+  // so rapid typing doesn't hammer the endpoint.
+  const { data: historicalRecommendation } = useQuery({
+    queryKey: ['swarm-recommend', directive],
+    queryFn: async () => {
+      const res = await fetch(`/api/swarm/recommend?directive=${encodeURIComponent(directive)}`);
+      if (!res.ok) return null;
+      return res.json() as Promise<{
+        recommendation: {
+          pattern: string;
+          teamSize: number;
+          confidence: string;
+          avgCostPerTodo: number;
+          basedOn: number;
+          reason: string;
+        } | null;
+        historyCount: number;
+      }>;
+    },
+    enabled: hasDirective,
+    staleTime: 30_000,
+  });
+  const rec = historicalRecommendation?.recommendation ?? null;
+
   // Fetch lessons from the most recent run in this workspace.
   // Used by the "seed from previous run" affordance below the directive.
   const wsTrimmed = workspacePath.trim().replace(/\/+$/, '');
@@ -106,6 +139,70 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   });
   const previousLessons = lessonsData?.lessons ?? [];
   const hasLessons = previousLessons.length > 0;
+
+  // Run templates — save / load configuration presets.
+  const { data: templates = [] } = useQuery({
+    queryKey: ['swarm-templates'],
+    queryFn: async () => {
+      const res = await fetch('/api/swarm/templates');
+      if (!res.ok) return [];
+      return res.json() as Promise<Array<{
+        name: string; pattern: string; directive: string;
+        teamCounts: Record<string, number>; unbounded: boolean;
+        costCap: number; minutesCap: number; branchStrategy: string;
+        persistentSweepMinutes: number; enableSynthesisCritic: boolean;
+        startMode: string;
+      }>>;
+    },
+    staleTime: 30_000,
+  });
+  const saveTemplateMutation = useMutation({
+    mutationFn: async (name: string) => {
+      const res = await fetch('/api/swarm/templates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          pattern,
+          directive,
+          teamCounts,
+          unbounded,
+          costCap,
+          minutesCap,
+          branchStrategy,
+          persistentSweepMinutes,
+          enableSynthesisCritic,
+          startMode,
+        }),
+      });
+      if (!res.ok) throw new Error('save failed');
+      return res.json();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['swarm-templates'] });
+    },
+  });
+  const [templateName, setTemplateName] = useState('');
+  const applyTemplate = (name: string) => {
+    const t = templates.find((tp) => tp.name === name);
+    if (!t) return;
+    setPattern(t.pattern as SwarmPattern);
+    setPatternManuallySet(t.pattern !== 'none');
+    setDirective(t.directive);
+    setUnbounded(t.unbounded);
+    setCostCap(t.costCap);
+    setMinutesCap(t.minutesCap);
+    setBranchStrategy(t.branchStrategy as BranchStrategy);
+    setPersistentSweepMinutes(t.persistentSweepMinutes);
+    setEnableSynthesisCritic(t.enableSynthesisCritic);
+    setStartMode(t.startMode as StartMode);
+    if (t.teamCounts && Object.keys(t.teamCounts).length > 0) {
+      clearTeam();
+      for (const [modelId, count] of Object.entries(t.teamCounts)) {
+        for (let i = 0; i < count; i += 1) bumpTeamCount(modelId, 1);
+      }
+    }
+  };
 
   const cloneTarget = useMemo(() => {
     const ws = workspacePath.trim().replace(/\/+$/, '');
@@ -160,7 +257,6 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
   const launchLabel = useMemo(() => {
     if (launching) return 'launching run';
     if (startMode === 'dry-run') return 'launch dry-run';
-    if (startMode === 'spectator') return 'launch spectator';
     return 'launch run';
   }, [launching, startMode]);
 
@@ -205,6 +301,12 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
     if (!unbounded) body.bounds = { costCap, minutesCap };
     if (pattern === 'map-reduce' && enableSynthesisCritic) {
       body.enableSynthesisCritic = true;
+    }
+    // Blackboard-family patterns: pass re-sweep cadence. 0 = single-sweep
+    // (run stops when board drains); > 0 = periodic re-sweep every N minutes
+    // for infinite/long-running runs with ambition ratchet.
+    if ((pattern === 'blackboard' || pattern === 'orchestrator-worker') && persistentSweepMinutes > 0) {
+      body.persistentSweepMinutes = persistentSweepMinutes;
     }
     launchMutation.mutate(body);
   };
@@ -261,6 +363,24 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
         style={{ gridTemplateColumns: '1fr 340px' }}
       >
         <div className="min-w-0 flex flex-col gap-3">
+          {templates.length > 0 && (
+            <div className="flex items-center gap-2 -mt-1">
+              <span className="font-mono text-[10px] uppercase tracking-widest2 text-fog-700 shrink-0">
+                template
+              </span>
+              <select
+                onChange={(e) => { if (e.target.value) applyTemplate(e.target.value); e.target.value = ''; }}
+                className="flex-1 h-7 px-2 rounded bg-ink-900/40 border border-dashed border-ink-600/60 text-[11px] text-fog-300 font-mono focus:outline-none focus:border-solid focus:border-molten/40 transition cursor-pointer"
+              >
+                <option value="">— load preset —</option>
+                {templates.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.name} ({t.pattern}{t.unbounded ? '' : ` $${t.costCap}`})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <Section
             step="01"
             label="source"
@@ -326,6 +446,15 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                 />
               ))}
             </div>
+            {suggestedPattern && (
+              <button
+                type="button"
+                onClick={() => { setField('pattern', suggestedPattern); setPatternManuallySet(true); }}
+                className="mt-1.5 font-mono text-[10px] uppercase tracking-widest2 text-fog-500 hover:text-molten transition-colors cursor-pointer"
+              >
+                suggested: {patternMeta[suggestedPattern].label} — {patternMeta[suggestedPattern].fit}
+              </button>
+            )}
             {/* Pattern-specific toggle: synthesis-critic gate for
                 map-reduce. Hidden under other patterns to keep the
                 pattern section uncluttered when the option doesn't
@@ -350,7 +479,52 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                 </div>
               </label>
             )}
+            {(pattern === 'blackboard' || pattern === 'orchestrator-worker') && (
+              <label className="mt-2 flex items-start gap-2 cursor-pointer group">
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-[11px] text-fog-200 group-hover:text-fog-100 transition">
+                    re-sweep cadence
+                  </div>
+                  <div className="font-mono text-[10px] text-fog-700 leading-snug">
+                    fire a fresh planner sweep every N minutes. the ambition ratchet escalates scope each tier. set to 0 for a single-sweep run that stops when the board drains.
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <input
+                      type="range"
+                      min={0}
+                      max={60}
+                      step={10}
+                      value={persistentSweepMinutes}
+                      onChange={(e) => setPersistentSweepMinutes(Number(e.target.value))}
+                      className="flex-1 accent-molten"
+                    />
+                    <span className="font-mono text-[11px] text-fog-300 w-16 text-right tabular-nums">
+                      {persistentSweepMinutes === 0 ? 'single' : `${persistentSweepMinutes}m`}
+                    </span>
+                  </div>
+                </div>
+              </label>
+            )}
           </Section>
+
+          {rec && (Object.keys(patternMeta) as string[]).includes(rec.pattern) && (
+            <button
+              type="button"
+              onClick={() => {
+                setField('pattern', rec.pattern as SwarmPattern);
+                setPatternManuallySet(true);
+                if (orderedModels.length > 0 && rec.teamSize > 0) {
+                  clearTeam();
+                  for (let i = 0; i < rec.teamSize; i += 1) {
+                    bumpTeamCount(orderedModels[0].id, 1);
+                  }
+                }
+              }}
+              className="font-mono text-[10px] uppercase tracking-widest2 text-fog-500 hover:text-molten transition-colors cursor-pointer text-left leading-relaxed"
+            >
+              &#x1F4CA; {rec.reason}
+            </button>
+          )}
 
           <TeamSection
             pattern={pattern}
@@ -563,25 +737,11 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                 label="live"
                 accent="molten"
                 hint={
-                  <ModeHint
+                   <ModeHint
                     accent="molten"
                     posture="writes land"
                     body="changes land per the branch strategy picked in step 06."
                     when={'the "I trust this, go" posture.'}
-                  />
-                }
-              />
-              <ModeButton
-                active={startMode === 'spectator'}
-                onClick={() => setStartMode('spectator')}
-                label="spectator"
-                accent="mint"
-                hint={
-                  <ModeHint
-                    accent="mint"
-                    posture="passive observation"
-                    body="the run dispatches but the composer is hidden — the human can watch but not inject mid-run."
-                    when="study-the-swarm posture."
                   />
                 }
               />
@@ -602,6 +762,7 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
           startMode={startMode}
           teamRows={teamRows}
           hasDirective={hasDirective}
+          persistentSweepMinutes={persistentSweepMinutes}
         />
       </div>
 
@@ -632,6 +793,21 @@ export function NewRunModal({ open, onClose }: { open: boolean; onClose: () => v
                   : 'add a source to enable launch'}
           </span>
         )}
+        <Tooltip side="top" content="save current config as a reusable run template">
+          <button
+            type="button"
+            onClick={() => {
+              const name = prompt('template name:', templateName || '');
+              if (name?.trim()) {
+                setTemplateName(name.trim());
+                saveTemplateMutation.mutate(name.trim());
+              }
+            }}
+            className="h-8 px-3 rounded font-mono text-micro uppercase tracking-wider bg-ink-900 hairline text-fog-400 hover:text-molten hover:border-ink-500 transition"
+          >
+            save template
+          </button>
+        </Tooltip>
         <button
           onClick={handleLaunch}
           disabled={!canLaunch || launching}

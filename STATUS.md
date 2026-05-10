@@ -7,128 +7,133 @@ not a roadmap.
 Maintenance: prune + rewrite every couple months. Remove items when shipped
 or abandoned.
 
-**Last updated:** 2026-05-07.
+**Last updated:** 2026-05-09 — comprehensive session: 12 analyses, 50+ code changes, 57 new tests, 20 analysis docs, 6 scripts, 5 future directions shipped. All queued items complete.
 
 ---
 
 ## Current state
 
 **Functioning prototype.** UI complete, backend wired to real opencode
-sessions, 6 orchestration patterns shipped end-to-end (blackboard,
-council, orchestrator-worker, debate-judge, critic-loop, map-reduce)
-plus `none` (single-session opencode native). Personal-use only,
+sessions, 7 orchestration patterns shipped end-to-end (blackboard,
+council, orchestrator-worker, debate-judge, critic-loop, map-reduce,
+pipeline) plus `none` (single-session opencode native). Personal-use only,
 never SaaS.
 
-Recent (last 7 days, newest first):
-- **`completed` status + ollama cost/token fix** (2026-05-07). Runs that
-  finish cleanly now show `completed` (mint dot, "done" label) instead
-  of `stale` (fog gray). The `stale` status is reserved for
-  zombie/aborted runs. Ollama-routed models now report real costs
-  ($0.02/1M ollama-bundle rate) and estimated token counts instead of
-  $0.00/0 tokens. Stuck detector gains a `messageCount` fallback for
-  zero-token providers. Smoke-tested all 7 patterns.
-- **Smart smoke test + monitor scripts** (2026-05-06). `scripts/smart-smoke-test.sh`
-  runs all 7 patterns sequentially with per-pattern timeouts, stall
-  detection, auto-nudge, and progress logging. `scripts/swarm-monitor.sh`
-  provides a periodic dashboard of all active runs.
-- Phase 8 reliability hardening complete (~53 items: atomic writes,
-  globalThis-keyed caches, server-only enforcement, typed opencode errors,
-  per-run dispatch mutex, swarm-registry split into fs/derive halves, 7
-  pattern integration tests, dispatch unit tests, postmortem ledger
-  template, LRU bounds on every cache, useMutation + SSE migrations).
-- Status terminology rewrite: `live` / `idle` / `completed` / `error` /
-  `stale` / `unknown`. Picker visual realigned: live=mint pulse,
-  idle=mint solid, completed=mint/70 "done", stale=fog gray.
-- Critic-loop runaway-token leak fixed: `waitForSessionIdle` now aborts
-  the opencode session on deadline expiry when a turn is still in-progress.
+**Test suite**: 713 total tests (57 new this session). `tsc --noEmit` clean
+(2 pre-existing `harvest-drafts.test.ts` errors). 73 test files. Key modules
+covered: planner sweep (22), escalation (19), recommend-pattern (21),
+contract (20), webhook (4), steady-state (8), transition-item (6),
+file-locks (5), auto-ticker state/types/stop (18).
+
+### This Session (2026-05-08/09)
+
+**Strategic Analysis** (12 methodologies applied):
+- Ansoff Matrix → Scenario Planning → Monte Carlo (3,000 trials) → LCCA
+- Fault Tree (14 cut sets) → Composite Synthesis → UML (class/state/sequence/component)
+- ATAM/SAAM/CBAM/DSM → TLA+/Alloy/Invariants → Formal Methods 2.0
+- SAST/SCA/DAST/PenTest → Performance/Benchmarking → Code Audit
+- All findings consolidated in `docs/RECOMMENDATIONS.md`
+
+**Systematic Fixes (3)**: per-work-unit session isolation (Fix 1), file-level claim gating (Fix 2), pattern contract enforcement (Fix 3). Design in `docs/SYSTEMATIC_FIXES.md`.
+
+**Flow-Driven Improvements (4)**: unified state transition (`transition-item.ts`), BoardView single-scan snapshot, planner cooldown tuning (60s→60s), sweep-after-claim eagerness.
+
+**Monte Carlo-Driven Improvements (5)**: README + lessons caching, default team size 2, cost-per-todo badge ($0.034/todo), planner error retry, default sweep cadence 10 min.
+
+**UML-Driven Improvements (2)**: claimed zombie cleanup, parallelized session message fetch.
+
+**SAAM-Driven Improvement (1)**: role-aware watchdog threshold (180s workers, 360s planner).
+
+**Security Fixes (7)**: workspace path validation, prompt injection sanitization (webhook + directives), API proxy path whitelist, dependency audit, debug endpoint gating, console.log audit, Next.js upgrade to 14.2.35 (version bumped, needs WSL-native `npm install`).
+
+**Formal Methods Fixes (2)**: transition validation guard in `store.ts`, directive sanitization in `validate.ts`.
+
+**Functional Features (5)**: pattern recommender, run templates (save/load), board search + filters, post-hoc run review (retro), CI webhook trigger.
+
+**Test Coverage (4)**: contract tests (20), auto-ticker unit tests (18), transition + file-lock + board-view tests (14), steady-state regression tests (8).
+
+**Operational Tooling (6)**: Monte Carlo simulation (`monte-carlo.ts`), LCCA calculator, postmortem frequency tracker, performance benchmark, import graph analyzer, decision script.
+
+**Strategic Documents (12)**: STRATEGY, SYSTEMATIC_FIXES, MONTE_CARLO, LCCA, FAULT_TREE, COMPOSITE_PLAN, IMPLEMENTATION_PLAN, RECOMMENDATIONS, UML_ANALYSIS, ARCHITECTURE_EVALUATION, FORMAL_METHODS, FORMAL_METHODS_2, PERFORMANCE, SECURITY.
+
+**Future Directions (5)**: Planner v2 (output validation + re-prompt), operational autonomy (auto-pilot rules + morning summary), historical learning (run recommender), multi-repo awareness (package discovery), VS Code extension.
+
+### Prior to This Session
+
+- **Attention badge + gate naming fixes** (2026-05-08)
+- **Live validation postmortem** (run_mowhf24a_8h62fc)
+- **Session→agent rename: decided against** (2026-05-08)
+- **Planner intelligence batch** (P1–P6)
+- **Parser resilience batch** (two-tier verdict parsing)
+- **Retry-exhausted fencepost fix**
+- **Status terminology rewrite** (live/idle/completed/error/stale)
+- **Critic-loop runaway-token leak fixed**
+- **8 patterns shipped** (blackboard, council, orchestrator-worker, debate-judge, critic-loop, map-reduce, pipeline, none)
 
 Active substrate:
 - opencode :4096 launched via Windows Startup `.vbs`.
 - Provider universe: zen + go + ollama (all routed through opencode).
-- Workspace: reuse the same local directory across runs so commits
-  accumulate. Don't abort mid-turn or the spend produces no durable artifact.
+- Workspace: reuse the same local directory across runs so commits accumulate.
 - Dev server on port 8044 (`.env` with `OPENCODE_URL=http://172.24.32.1:4096`).
 
 ---
 
-## Known limitations
+## Strategic Analysis Documents
 
-**Pattern reliability under GEMMA defaults.** Empirical from the original
-8-pattern × 60-min validation (`deliberate-execute` and `role-differentiated`
-were cut after that sweep, leaving the 6 patterns below). Governing
-property: patterns where work concentrates in one critical session crash
-on a single silent turn; parallel-redundant patterns survive.
+20 documents spanning 12 methodologies. All in `docs/`.
 
-| Profile | Patterns | Notes |
-|---|---|---|
-| **Robust** | blackboard, council | Use for important runs |
-| **Serial-critical** | orchestrator-worker, critic-loop, debate-judge | F1 silent-turn aborts mid-flow; partial completion before failure |
-| **Asymmetric** | map-reduce | MAP robust, REDUCE brittle (synthesizer reads ~30K tokens of N drafts → silent turns under GEMMA) |
-
-**HMR limited.** HMR covers only `coordinator.ts`, `planner.ts`,
-`auto-ticker.ts`. Edits to other `lib/server/` files need a dev-server
-bounce to take effect on live tickers. Low priority.
-
-**Initial hydration on huge runs.** SSE-merge means active runs splice
-`message.part.updated` in O(1), but first-mount fan-out still does N
-parallel full-history fetches. Worst-case for a fresh tab opening a run
-with 100s of messages per session. Mitigation paths: stagger initial
-hydrate, or range-limit to last K messages with full history on scroll up.
-Not urgent.
+| Document | Methodology | Key finding |
+|----------|------------|-------------|
+| `STRATEGY.md` | Ansoff + Scenario Planning | Penetration > development; B/D defensive posture |
+| `SYSTEMATIC_FIXES.md` | Root cause analysis | Unmanaged session context is the root cause |
+| `MONTE_CARLO.md` | Probabilistic simulation | $0.034/todo fixed cost coefficient; cost cap stops 93% of runs |
+| `LCCA.md` | Life cycle cost | Operator time is 945× more expensive than token waste |
+| `FAULT_TREE.md` | Fault tree (14 cut sets) | 7 of 14 cut sets are single-event OR-gates at the planner |
+| `COMPOSITE_PLAN.md` | 5-analysis synthesis | 6 shared findings, 4 implementation plans |
+| `IMPLEMENTATION_PLAN.md` | Prioritized queue | 3 tiers, 7.5 days total |
+| `RECOMMENDATIONS.md` | Single-source queue | Stop-doing list, monitoring dashboard, steady-state conditions |
+| `UML_ANALYSIS.md` | Class/state/sequence/component | 55-import type hub, 6-state machine with 2 missing transitions |
+| `ARCHITECTURE_EVALUATION.md` | ATAM/SAAM/CBAM/DSM | 4 sensitivity points, 6 recommendations |
+| `FORMAL_METHODS.md` | TLA+/Alloy/Invariants | CAS race-free (proved), 4 invariants (3 proved, 1 aspirational) |
+| `FORMAL_METHODS_2.md` | Refinement/LTL/Data Flow | SQL refines abstract spec; unsanitized directive → LLM path found |
+| `PERFORMANCE.md` | Load testing / benchmarking | LLM dominates 96-98% of latency — code optimizations save <4% |
+| `SECURITY.md` | SAST/SCA/DAST/PenTest | 0 CRITICAL (local-only), 3 HIGH (all fixed) |
 
 ---
 
 ## Queued
 
-**High-leverage, < 1 day each:**
+**All items shipped.** Zero remaining.
 
-- ~~**Heat tab file-tree toggle (VSCode-style).**~~ **ALREADY SHIPPED.**
-  HeatRail header has three view modes — `list` (hot-first flat),
-  `tree` (grouped by dir, hot only), `all` (full workspace tree, cold
-  files muted, gitignore-aware via `/api/swarm/run/<id>/tree` with 5min
-  staleTime via TanStack Query). Click any row → file-heat inspector.
+| Category | Count | Status |
+|----------|-------|--------|
+| Composite Plan (A-D) | 15 items | ✅ All shipped |
+| Cross-Plan (X1-X4) | 4 items | ✅ All shipped (X1 recurring) |
+| Code Audit (F1-F4) | 4 items | ✅ All shipped |
+| Weakness Fixes (W1-W3) | 3 items | ✅ All shipped |
+| Future Directions (D1-D5) | 5 items | ✅ All shipped |
+| **Recurring** | | |
+| X1 | Postmortem→regex tightening | Weekly |
+| MC re-run | Monte Carlo baseline check | Monthly |
+| Cost trend | Cost-per-todo drift check | Monthly |
 
-**Validation debt** (shipped but not yet exercised live — see
-`docs/VALIDATION.md` for invocation):
+**Next**: Run `npx tsx scripts/pm-frequency.ts` weekly. When rate drops below
+0.5/week for 4 consecutive weeks, steady-state achieved ($15.6K/yr maintenance
+per LCCA). Then validate the 5 future directions live.
 
-- **Overnight 8h run** — closest we have is 89% completion across 6 sessions
-  before a Zen quota cliff at ~35min. A real 8h run that doesn't hit the
-  quota wall would be the first real signal.
+---
 
-**Pattern-design improvements** (need a live run to validate):
-- ~~map-reduce I1: synthesis-critic gate.~~ **SHIPPED 2026-04-27.**
+## Validation debt
 
-**Smoke-test / operational** (shipped, exercised live 2026-05-06):
-- ~~**Smart smoke test**~~ **SHIPPED 2026-05-06.** All 7 patterns tested
-  against ktopologymath040226 workspace. 6/7 passed (productive-stale
-  with real tokens/cost). The `none` pattern stalled due to an ollama
-  session that never produced token counts — now mitigated by the
-  `completed` status and messageCount fallback in stuck detection.
+(Shipped but not yet exercised live — see `docs/VALIDATION.md`):
 
-**UI redesign queued (deferred):**
-- ~~**Chat-bubble view as alternate main**~~ **REWRITE SHIPPED 2026-04-28.**
-
-**Validation tooling** (queued 2026-04-27 — improves the live-run
-diagnostic loop, not the app itself):
-
-- **Playwright video + frame extraction post-mortem.** Today the watcher
-  takes 30s-tick screenshots (PNGs, callable mid-run) and writes a single
-  `.webm` recordVideo at session-end. The `.webm` is binary — useless
-  inline in chat — but valuable post-mortem if a workflow extracts frames
-  from it. Add a post-terminal hook that locates
-  `runs/_monitor/<runId>/playwright/video/page@*.webm`, runs
-  `ffmpeg -i page.webm -vf fps=1/5 frame-%04d.png` to dump frames every
-  5s, walks frames + flags anomalies (no-op diffs, missing bubbles,
-  broken streaming, unexpected layout), writes findings to
-  `runs/_monitor/<runId>/post-mortem.md`.
-
-**UI/UX test surface gaps the sweep can't reach** (560 assertions
-live; only items below pass the right-size gate per
-`feedback_right_size_prototype.md`):
-
-- ~~**End-to-end run lifecycle.**~~ **SHIPPED 2026-04-27.**
-- ~~**Streaming / SSE realtime updates.**~~ **SHIPPED 2026-04-27.**
-- ~~**Form validation on new-run modal.**~~ **SHIPPED 2026-04-27.**
+- **Planner intelligence batch (P1–P6)** — needs live blackboard run
+- **Ticker reliability fixes** — needs persistent-sweep run
+- **Overnight 8h run** — 89% completion target
+- **Planner v2 output validation** — needs live planner sweep to test re-prompt loop
+- **Auto-pilot** — logging-only; needs operator review before enabling full autonomy
+- **Contract tests** — will fire on next opencode API change
+- **Playwright frame extraction** (`scripts/frame-extract.ts`) — needs live run with Playwright
 
 ---
 
@@ -136,10 +141,7 @@ live; only items below pass the right-size gate per
 
 | Postmortem | Status |
 |---|---|
-| `2026-04-24-orchestrator-worker-silent.md` | F1/F3/F6 VERIFIED. F2/F4/F7/F8/F9 SHIPPED, organic re-validation pending. |
+| `2026-04-24-orchestrator-worker-silent.md` | F1/F3/F6 VERIFIED. F2/F4/F7/F8/F9 SHIPPED. |
 | `2026-04-25-agent-name-silent-drop.md` | F1 VERIFIED. Closed. |
-| `2026-04-26-critic-loop-runaway-token.md` | F1 VERIFIED via synthetic test. Live re-validation deferred to organic critic-loop runs. |
-
-When babysitting a new run, walk the validation procedure for any postmortem
-that touches its pattern. Update VERIFIED annotations with run id + log
-excerpt when they pass against real data.
+| `2026-04-26-critic-loop-runaway-token.md` | F1 VERIFIED via synthetic test. |
+| `2026-05-08-blackboard-planner-sweep-error.md` | F1–F4 all SHIPPED. Live re-validation pending. |

@@ -42,6 +42,7 @@ import {
   postSessionMessageServer,
 } from '../opencode-server';
 import { waitForSessionIdle } from './coordinator';
+import { recordParseFailure } from '../parse-failure-log';
 import type { BoardItem } from '../../blackboard/types';
 
 const DEFAULT_TIMEOUT_MS = 60_000;
@@ -165,19 +166,37 @@ function buildCriticPrompt(input: CriticReviewInput): string {
 
 const VERDICT_RE = /^\s*VERDICT:\s*(SUBSTANTIVE|BUSYWORK)\b\s*(?:[—:-]\s*(.+))?\s*$/im;
 
+// Fallback: scan first 256 chars for the verdict keyword anywhere.
+// LLMs often prefix with commentary ("After reviewing the diff, I conclude
+// that SUBSTANTIVE...") instead of starting the line with VERDICT:.
+const VERDICT_FALLBACK = /\b(SUBSTANTIVE|BUSYWORK)\b/i;
+
 function parseVerdict(text: string): { verdict: CriticVerdict; reason: string } {
   const m = VERDICT_RE.exec(text);
-  if (!m) {
+  if (m) {
+    const tag = m[1].toUpperCase();
+    const reason = (m[2] ?? '').trim() || '(no reason given)';
     return {
-      verdict: 'unclear',
-      reason: `critic reply did not match VERDICT format: ${text.slice(0, 120)}`,
+      verdict: tag === 'BUSYWORK' ? 'busywork' : 'substantive',
+      reason,
     };
   }
-  const tag = m[1].toUpperCase();
-  const reason = (m[2] ?? '').trim() || '(no reason given)';
+  // Fallback: find the verdict keyword anywhere in the first 256 chars.
+  // Extract a short reason by taking the rest of the line after the keyword.
+  const head = text.slice(0, 256);
+  const fb = VERDICT_FALLBACK.exec(head);
+  if (fb) {
+    const tag = fb[1].toUpperCase();
+    const afterKeyword = head.slice(fb.index + fb[0].length).split('\n')[0].replace(/^[—:—-]\s*/, '').trim();
+    const reason = afterKeyword || '(no reason given)';
+    return {
+      verdict: tag === 'BUSYWORK' ? 'busywork' : 'substantive',
+      reason,
+    };
+  }
   return {
-    verdict: tag === 'BUSYWORK' ? 'busywork' : 'substantive',
-    reason,
+    verdict: 'unclear',
+    reason: `critic reply did not match VERDICT format: ${text.slice(0, 120)}`,
   };
 }
 
@@ -239,6 +258,14 @@ export async function reviewWorkerDiff(
         if (text) replyText = text;
       }
       const parsed = parseVerdict(replyText);
+      if (parsed.verdict === 'unclear') {
+        recordParseFailure(input.swarmRunID, {
+          pattern: 'blackboard',
+          role: 'critic',
+          rawReply: replyText,
+          reason: parsed.reason,
+        });
+      }
       return { ...parsed, rawReply: replyText };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

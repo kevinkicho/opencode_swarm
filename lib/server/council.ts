@@ -186,93 +186,127 @@ export async function runCouncilRounds(
  return;
  }
 
- // Resolve the round cap now that we have meta.sessionIDs.length.
- // Override (caller-supplied) wins; otherwise use the teamSize-aware
- // recommendation. minRounds=2 because a single-round council is
- // just an unmoderated R1 fan-out — no exchange phase, no real
- // council shape.
- const maxRounds = Math.max(
- 2,
- maxRoundsOverride ?? recommendedDeliberationRounds(meta.sessionIDs.length),
- );
- if (
- maxRoundsOverride === undefined &&
- maxRounds < DEFAULT_MAX_ROUNDS
- ) {
- console.log(
- `[council] run ${swarmRunID}: scale-aware round cap = ${maxRounds} rounds for teamSize=${meta.sessionIDs.length} (#98). Override via opts.maxRounds.`,
- );
- }
+  // Resolve the round cap now that we have meta.sessionIDs.length.
+  // Override (caller-supplied) wins; otherwise use the teamSize-aware
+  // recommendation. minRounds=2 because a single-round council is
+  // just an unmoderated R1 fan-out — no exchange phase, no real
+  // council shape.
+  const maxRounds = Math.max(
+    2,
+    maxRoundsOverride ?? recommendedDeliberationRounds(meta.sessionIDs.length),
+  );
+
+  // Track silent sessions to skip them in subsequent rounds.
+  const silentSessions = new Set<string>();
+
+  if (
+    maxRoundsOverride === undefined &&
+    maxRounds < DEFAULT_MAX_ROUNDS
+  ) {
+    console.log(
+      `[council] run ${swarmRunID}: scale-aware round cap = ${maxRounds} rounds for teamSize=${meta.sessionIDs.length} (#98). Override via opts.maxRounds.`,
+    );
+  }
+
 
  // Snapshot the set of known message IDs per session. The directive
  // post happened just before this function was called (in the route),
  // so each session already has its Round-0 user message plus the base
  // system. Anything that arrives after this snapshot is Round-1 and up.
- const knownIDsBySession = await snapshotKnownIDs(meta, '[council]');
+  const knownIDsBySession = await snapshotKnownIDs(meta, '[council]');
+  const silentStreaks = new Map<string, number>();
+  const MAX_SILENT_STREAK = 2;
 
- // #73 — track latest drafts so a partial-outcome record can capture
- // what survived if council aborts mid-rounds (wall-clock cap, fewer
- // than 2 drafts, etc.).
- let latestDrafts: Array<{ sessionID: string; text: string | null }> = [];
- let lastCompletedRound = 1; // Round 1 = initial directive (kicked off by route)
- function buildPartialSummary(roundNum: number): string {
- const parts: string[] = [];
- parts.push(
- `Council aborted at round ${roundNum}/${maxRounds}. Last completed round: ${lastCompletedRound}.`,
- );
- if (latestDrafts.length > 0) {
- const present = latestDrafts.filter((d) => d.text !== null);
- parts.push(`Latest drafts: ${present.length}/${latestDrafts.length} members produced text.`);
- parts.push('');
- for (const d of present) {
- parts.push(`--- session ${d.sessionID.slice(-8)} ---`);
- parts.push(d.text ?? '');
- parts.push('');
- }
- }
- return parts.join('\n');
- }
-
- for (let roundNum = 2; roundNum <= maxRounds; roundNum += 1) {
- // Wall-clock cap (#85) — non-ticker patterns previously ignored
-  // bounds.minutesCap silently. Check at the top of each round so
-  // partial deliberation already produced stays in opencode for the
-  // human; we just stop initiating new rounds.
-  if (checkWallClockExpired(swarmRunID, meta, `round ${roundNum}/${maxRounds}`, buildPartialSummary(roundNum))) {
-  return;
+  // #73 — track latest drafts so a partial-outcome record can capture
+  // what survived if council aborts mid-rounds (wall-clock cap, fewer
+  // than 2 drafts, etc.).
+  let latestDrafts: Array<{ sessionID: string; text: string | null }> = [];
+  let lastCompletedRound = 1; // Round 1 = initial directive (kicked off by route)
+  function buildPartialSummary(roundNum: number): string {
+    const parts: string[] = [];
+    parts.push(
+      `Council aborted at round ${roundNum}/${maxRounds}. Last completed round: ${lastCompletedRound}.`,
+    );
+    if (latestDrafts.length > 0) {
+      const present = latestDrafts.filter((d) => d.text !== null);
+      parts.push(`Latest drafts: ${present.length}/${latestDrafts.length} members produced text.`);
+      parts.push('');
+      for (const d of present) {
+        parts.push(`--- session ${d.sessionID.slice(-8)} ---`);
+        parts.push(d.text ?? '');
+        parts.push('');
+      }
+    }
+    return parts.join('\n');
   }
- // so each member gets the full ROUND_WAIT_MS. Sequential waits
- // would have shared the deadline (member 5 starts with member 1's
- // remaining time) and the round-end could've blown past the
- // per-round budget. harvestDrafts encapsulates the fan-out shape;
- // we update knownIDsBySession from the row's newKnownIDs so the
- // next round only awaits genuinely-new messages.
- const deadline = Date.now() + ROUND_WAIT_MS;
- const harvest = await harvestDrafts(meta, {
- knownIDsBySession,
- deadline,
- contextLabel: '[council]',
- });
- for (const row of harvest) {
- knownIDsBySession.set(row.sessionID, row.newKnownIDs);
- }
- const drafts = harvest.map((r) => ({ sessionID: r.sessionID, text: r.text }));
 
- latestDrafts = drafts;
- const present = drafts.filter((d) => d.text !== null);
- if (present.length < 2) {
- console.warn(
- `[council] run ${swarmRunID} — only ${present.length}/${drafts.length} drafts present before round ${roundNum}, auto-rounds stopping`,
- );
- recordPartialOutcome(swarmRunID, {
- pattern: 'council',
- phase: `round ${roundNum}/${maxRounds} draft-fan-in`,
- reason: `too-few-drafts (${present.length}/${drafts.length})`,
- summary: buildPartialSummary(roundNum),
- });
- return;
- }
- lastCompletedRound = roundNum - 1; // round (roundNum-1) drafts are now in hand
+  for (let roundNum = 2; roundNum <= maxRounds; roundNum += 1) {
+    // Wall-clock cap (#85) — non-ticker patterns previously ignored
+    // bounds.minutesCap silently. Check at the top of each round so
+    // partial deliberation already produced stays in opencode for the
+    // human; we just stop initiating new rounds.
+    if (checkWallClockExpired(swarmRunID, meta, `round ${roundNum}/${maxRounds}`, buildPartialSummary(roundNum))) {
+      return;
+    }
+    // so each member gets the full ROUND_WAIT_MS. Sequential waits
+    // would have shared the deadline (member 5 starts with member 1's
+    // remaining time) and the round-end could've blown past the
+    // per-round budget. harvestDrafts encapsulates the fan-out shape;
+    // we update knownIDsBySession from the row's newKnownIDs so the
+    // next round only awaits genuinely-new messages.
+    const deadline = Date.now() + ROUND_WAIT_MS;
+    const activeSessions = meta.sessionIDs.filter(
+      (sid) => (silentStreaks.get(sid) ?? 0) < MAX_SILENT_STREAK,
+    );
+    const harvest = await harvestDrafts(meta, {
+      knownIDsBySession,
+      deadline,
+      contextLabel: '[council]',
+      excludeSessions: meta.sessionIDs.filter((sid) => !activeSessions.includes(sid)),
+    });
+
+    // Silent-streak degradation check: if every member is silent, we've hit
+    // a dead-end. Fail fast and record outcome so the run doesn't just hang.
+    const allSilent = harvest.every((row) => row.text === null);
+    if (allSilent) {
+      console.warn(
+        `[council] run ${swarmRunID} — all members silent at round ${roundNum}, auto-rounds stopping`,
+      );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'council',
+        phase: `round ${roundNum}/${maxRounds} silent-streak`,
+        reason: 'all-sessions-silent',
+        summary: buildPartialSummary(roundNum),
+      });
+      return;
+    }
+
+    for (const row of harvest) {
+      knownIDsBySession.set(row.sessionID, row.newKnownIDs);
+      if (row.text === null) {
+        silentStreaks.set(row.sessionID, (silentStreaks.get(row.sessionID) ?? 0) + 1);
+      } else {
+        silentStreaks.set(row.sessionID, 0);
+      }
+    }
+    const drafts = harvest.map((r) => ({ sessionID: r.sessionID, text: r.text }));
+
+    latestDrafts = drafts;
+    const present = drafts.filter((d) => d.text !== null);
+    if (present.length < 2 && present.length < activeSessions.length) {
+      console.warn(
+        `[council] run ${swarmRunID} — only ${present.length}/${drafts.length} drafts present before round ${roundNum}, auto-rounds stopping`,
+      );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'council',
+        phase: `round ${roundNum}/${maxRounds} draft-fan-in`,
+        reason: `too-few-drafts (${present.length}/${drafts.length})`,
+        summary: buildPartialSummary(roundNum),
+      });
+      return;
+    }
+    lastCompletedRound = roundNum - 1; // round (roundNum-1) drafts are now in hand
+
 
  // The drafts we just harvested are responses to round (roundNum-1)'s
  // prompt (or the initial directive when roundNum=2). If they converge

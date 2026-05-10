@@ -15,19 +15,23 @@ export interface TickerSnapshot {
   inFlight: boolean;
   stopped: boolean;
   stoppedAtMs?: number;
-  stopReason?:
-    | 'auto-idle'
-    | 'auto-idle-drained'
-    | 'manual'
-    | 'opencode-frozen'
-    | 'zen-rate-limit'
-    | 'wall-clock-cap'
-    | 'commits-cap'
-    | 'todos-cap'
-    | 'replan-loop-exhausted'
-    | 'operator-hard-stop'
-    | 'operator-abort';
-  consecutiveIdle: number;
+   stopReason?:
+     | 'auto-idle'
+     | 'auto-idle-drained'
+     | 'manual'
+     | 'opencode-frozen'
+     | 'zen-rate-limit'
+     | 'wall-clock-cap'
+     | 'commits-cap'
+     | 'todos-cap'
+     | 'replan-loop-exhausted'
+     | 'operator-hard-stop'
+     | 'operator-abort'
+     | 'filtered-all-todos'
+     | 'stuck-deliberation'
+     | 'no-claimable-work';
+   consecutiveIdle: number;
+
   idleThreshold: number;
   lastOutcome?:
     | { status: 'picked'; sessionID: string; itemID: string; editedPaths: string[] }

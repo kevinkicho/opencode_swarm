@@ -20,6 +20,7 @@ import { waitForSessionIdle } from './blackboard/coordinator';
 import { checkWallClockExpired } from './swarm-bounds';
 import { withRunGuard } from './run-guard';
 import { recordPartialOutcome } from './degraded-completion';
+import { recordParseFailure } from './parse-failure-log';
 import { buildLessonsBlock } from './lesson-inject';
 import { extractLatestAssistantText, snapshotKnownIDs } from './harvest-drafts';
 import {
@@ -132,6 +133,15 @@ export async function runDebateJudgeKickoff(
   }
   const knownJudge = knownAll.get(judgeSID) ?? new Set<string>();
 
+  // Graceful degradation: track per-generator consecutive silent rounds.
+  // A generator that produces null text (silent/frozen) in N consecutive
+  // rounds is excluded from further rounds to avoid wasting wall-clock time
+  // on broken sessions. After 2 consecutive silent rounds, the generator
+  // is dropped. If fewer than 2 generators remain, the run finalizes with
+  // a partial outcome rather than spinning indefinitely.
+  const silentStreaks = new Map<string, number>();
+  const MAX_SILENT_STREAK = 2;
+
   // bookkeeping. Stores the prior round's per-generator bullets so
   // the current round's drafts can be checked against them. Empty
   // until the first REVISE verdict.
@@ -193,8 +203,30 @@ export async function runDebateJudgeKickoff(
     // 1. Wait for each generator to produce their round's draft.
     const deadline = Date.now() + ROUND_WAIT_MS;
     const drafts: Array<{ index: number; text: string | null }> = [];
+    const activeGenerators = generatorSIDs.filter(
+      (sid) => (silentStreaks.get(sid) ?? 0) < MAX_SILENT_STREAK,
+    );
+    // If fewer than 2 generators can contribute, finalize with partial
+    // outcome rather than spinning the remaining rounds on broken sessions.
+    if (activeGenerators.length < 2) {
+      console.warn(
+        `[debate-judge] run ${swarmRunID} round ${round}: only ${activeGenerators.length} active generator(s) (≥${MAX_SILENT_STREAK} silent rounds) — finalizing`,
+      );
+      recordPartialOutcome(swarmRunID, {
+        pattern: 'debate-judge',
+        phase: `round ${round}/${maxRounds} generator-silenced`,
+        reason: `silenced-generators=${generatorSIDs.length - activeGenerators.length}`,
+        summary: buildPartialSummary(round),
+      });
+      return;
+    }
     for (let i = 0; i < generatorSIDs.length; i += 1) {
       const sid = generatorSIDs[i];
+      // Skip generators that exceeded the silent-streak threshold.
+      if ((silentStreaks.get(sid) ?? 0) >= MAX_SILENT_STREAK) {
+        drafts.push({ index: i + 1, text: null });
+        continue;
+      }
       const known = knownByGenerator.get(sid) ?? new Set<string>();
       const wait = await waitForSessionIdle(
         sid,
@@ -223,16 +255,42 @@ export async function runDebateJudgeKickoff(
         const newMsgs = msgs.filter((m) => !known.has(m.info.id));
         text = extractLatestAssistantText(newMsgs);
         knownByGenerator.set(sid, new Set(msgs.map((m) => m.info.id)));
-      } catch {
-        // tolerate fetch failure; proceed with null text
+      } catch (err) {
+        // tolerate fetch failure; proceed with null text. Still update
+        // knownByGenerator with partial progress from waitForSessionIdle
+        // to prevent cascading timeouts on broken sessions (the next
+        // round re-scopes from a stale snapshot otherwise).
+       if (wait.ok && wait.messages) {
+         for (const m of wait.messages) known.add(m.info.id);
+         knownByGenerator.set(sid, new Set(known));
+       }
+       console.warn(
+         `[debate-judge] run ${swarmRunID} round ${round}: generator-${i + 1} message fetch failed:`,
+         err instanceof Error ? err.message : String(err),
+       );
+     }
+     // Track consecutive silent streaks across rounds.
+     // 2026-05-07 fix: explicitly update knownByGenerator even if wait failed
+     // or fetch failed, using whatever messages waitForSessionIdle managed to capture.
+      if (wait.ok) {
+        for (const m of wait.messages) known.add(m.info.id);
+        knownByGenerator.set(sid, new Set(known));
       }
+
+     if (text === null) {
+       silentStreaks.set(sid, (silentStreaks.get(sid) ?? 0) + 1);
+     } else {
+       silentStreaks.set(sid, 0);
+     }
+
       drafts.push({ index: i + 1, text });
     }
     lastDrafts = drafts;
     const present = drafts.filter((d) => d.text !== null);
-    if (present.length < 2) {
+    const activeCount = activeGenerators.length;
+    if (present.length < 2 && present.length < activeCount) {
       console.warn(
-        `[debate-judge] run ${swarmRunID} round ${round}: only ${present.length} proposal(s) — aborting`,
+        `[debate-judge] run ${swarmRunID} round ${round}: only ${present.length} proposal(s) from ${activeCount} active generators — aborting`,
       );
       recordPartialOutcome(swarmRunID, {
         pattern: 'debate-judge',
@@ -338,6 +396,14 @@ export async function runDebateJudgeKickoff(
     lastJudgeReply = judgeReply;
 
     const verdict = classifyJudgeReply(judgeReply);
+    if (verdict.verdict === 'unclear') {
+      recordParseFailure(swarmRunID, {
+        pattern: 'debate-judge',
+        role: 'judge',
+        rawReply: judgeReply,
+        reason: `judge verdict unclear: ${verdict.verdict}`,
+      });
+    }
     roundsCompleted.push({
       round,
       drafts: present.length,

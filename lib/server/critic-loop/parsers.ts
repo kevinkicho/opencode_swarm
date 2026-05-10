@@ -94,6 +94,7 @@ export function buildRevisionPrompt(
 }
 
 export function classifyCriticReply(text: string): ParsedVerdict {
+  // Strategy 1: Extract from YAML code block (most structured output).
   const yamlMatch = text.match(/```ya?ml\s*\n([\s\S]*?)\n\s*```/i);
   if (yamlMatch) {
     const block = yamlMatch[1];
@@ -131,6 +132,7 @@ export function classifyCriticReply(text: string): ParsedVerdict {
     }
   }
 
+  // Strategy 2: First-line keyword match (original fallback).
   const first = text.split('\n', 1)[0]?.trim() ?? '';
   if (/^approved\b/i.test(first)) {
     return {
@@ -151,6 +153,34 @@ export function classifyCriticReply(text: string): ParsedVerdict {
       body: stripped,
     };
   }
+
+  // Strategy 3: Keyword anywhere in first 256 chars.
+  // LLMs often write "After reviewing, I find this APPROVED" or
+  // "My verdict is REVISE because..." — these should still parse.
+  const head = text.slice(0, 256);
+  const approvedMatch = /\bAPPROVED\b/i.exec(head);
+  const reviseMatch = /\bREVISE\b/i.exec(head);
+  // Use earliest match to resolve ambiguity.
+  if (approvedMatch && (!reviseMatch || approvedMatch.index <= reviseMatch.index)) {
+    return {
+      verdict: 'approved',
+      confidence: 0,
+      scope: 'NONE',
+      issues: [],
+      body: text.trim(),
+    };
+  }
+  if (reviseMatch) {
+    const stripped = text.replace(/^\s*revise[:\s]*/i, '').trim();
+    return {
+      verdict: 'revise',
+      confidence: 0,
+      scope: 'WORDING',
+      issues: [],
+      body: stripped,
+    };
+  }
+
   return {
     verdict: 'unclear',
     confidence: 0,

@@ -38,6 +38,7 @@ export interface PreviewPanelProps {
   startMode: StartMode;
   teamRows: Array<{ model: ProviderModel; count: number }>;
   hasDirective: boolean;
+  persistentSweepMinutes: number;
 }
 
 export function PreviewPanel({
@@ -53,6 +54,7 @@ export function PreviewPanel({
   startMode,
   teamRows,
   hasDirective,
+  persistentSweepMinutes,
 }: PreviewPanelProps) {
   return (
     <aside className="min-w-0 flex flex-col gap-3">
@@ -120,6 +122,18 @@ export function PreviewPanel({
                   {unbounded ? 'unbounded' : `$${costCap.toFixed(2)} · ${minutesCap}m`}
                 </span>
               </LabelRow>
+              {(pattern === 'blackboard' || pattern === 'orchestrator-worker') && (
+                <LabelRow label="sweep">
+                  <span
+                    className={clsx(
+                      'font-mono text-[11px] tabular-nums',
+                      persistentSweepMinutes > 0 ? 'text-mint' : 'text-fog-500'
+                    )}
+                  >
+                    {persistentSweepMinutes > 0 ? `every ${persistentSweepMinutes}m` : 'single'}
+                  </span>
+                </LabelRow>
+              )}
               <LabelRow label="branches">
                 <span
                   className={clsx(
@@ -142,7 +156,6 @@ export function PreviewPanel({
                     'font-mono text-[11px]',
                     startMode === 'live' && 'text-molten',
                     startMode === 'dry-run' && 'text-amber',
-                    startMode === 'spectator' && 'text-mint'
                   )}
                 >
                   {startMode}

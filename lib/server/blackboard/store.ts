@@ -10,6 +10,30 @@
 
 import 'server-only';
 
+/**
+ * @abstract Board Store — persistent item database.
+ *
+ * Abstract specification (what SQL must satisfy):
+ *   Board = ItemID → (Status × Owner × Content × CreatedAt)
+ *
+ *   insert(b, item) → b'
+ *     Pre:  item.id ∉ dom(b)
+ *     Post: b'(item.id) = item ∧ dom(b') = dom(b) ∪ {item.id}
+ *
+ *   transition(b, id, from, to) → b'
+ *     Pre:  b(id).status ∈ from
+ *     Post: b'(id).status = to ∧ ∀j ≠ id: b'(j) = b(j)
+ *
+ *   list(b) → {item | item ∈ range(b)}
+ *
+ * Concrete implementation: SQLite with CAS (UPDATE WHERE status IN (from)).
+ * The CAS is STRICTLY STRONGER than the abstract precondition — it adds
+ * atomicity that prevents interleaving between read and write.
+ *
+ * See docs/FORMAL_METHODS.md § Refinement Mapping and
+ * docs/FORMAL_METHODS_2.md § Refinement for proofs.
+ */
+
 import { blackboardDb } from './db';
 import { emitBoardEvent } from './bus';
 import type {
@@ -17,6 +41,28 @@ import type {
   BoardItemKind,
   BoardItemStatus,
 } from '@/lib/blackboard/types';
+
+export type InsertBoardItemInput = Omit<
+  BoardItem,
+  'createdAtMs' | 'completedAtMs' | 'staleSinceSha'
+> & {
+  createdAtMs?: number;
+};
+
+export interface BoardStore {
+  listBoardItems(swarmRunID: string): BoardItem[];
+  insertBoardItem(
+    swarmRunID: string,
+    input: InsertBoardItemInput,
+  ): BoardItem;
+  transitionStatus(
+    swarmRunID: string,
+    itemId: string,
+    input: TransitionInput,
+  ):
+    | { ok: true; item: BoardItem }
+    | { ok: false; currentStatus: BoardItemStatus | null };
+}
 
 // Shape of a row as it comes back from SQLite. Snake-case + JSON-encoded
 // columns; hydrate() turns it into the canonical BoardItem. Kept internal
@@ -228,7 +274,27 @@ export function transitionStatus(
 ):
   | { ok: true; item: BoardItem }
   | { ok: false; currentStatus: BoardItemStatus | null } {
+  // Formal Methods / Alloy 2.2: validate that the from→to pair is a
+  // defined transition. Prevents silent acceptance of invalid transitions
+  // (e.g. done→stale) that Alloy found as counterexamples.
+  const VALID_TRANSITIONS: Record<string, string[]> = {
+    open: ['claimed', 'stale'],
+    claimed: ['in-progress', 'stale'],
+    'in-progress': ['done', 'stale', 'open'],
+    done: [],
+    stale: [],
+  };
   const fromList = Array.isArray(input.from) ? input.from : [input.from];
+  for (const from of fromList) {
+    const valid = VALID_TRANSITIONS[from];
+    if (valid && !valid.includes(input.to)) {
+      console.warn(
+        `[board/store] invalid transition blocked: ${from} → ${input.to} on item ${itemId} in ${swarmRunID}`,
+      );
+      return { ok: false, currentStatus: null };
+    }
+  }
+
   const placeholders = fromList.map(() => '?').join(', ');
 
   // Build the SET clause dynamically — only touch columns the caller cares

@@ -330,25 +330,12 @@ new-run-modal (or include it in the team config).
 exercising — feeding it to a real opencode + ollama is the first
 natural opportunity.**
 
-**Team-picker wiring status (2026-04-24).** As of this commit, the
+**Team-picker wiring status.** As of this commit, the
 new-run-modal team picker flows `teamModels: string[]` through to
-every session's dispatch on the first turn (blackboard planner +
-workers, and the directive broadcast for council / map-reduce).
-Blackboard is FULLY WIRED — every worker dispatch from the
-coordinator reads `meta.teamModels[sessionIdx]` and passes it as
-`model` on `postSessionMessageServer`.
-
-**Known limitation (follow-up):** non-ticker pattern orchestrators
-(council.ts, map-reduce.ts, critic-loop.ts, debate-judge.ts,
-orchestrator-worker.ts) do NOT yet read `meta.teamModels` on their
-follow-up rounds. A
-council run with an ollama team picks ollama for Round 1 (via the
-route's directive broadcast) but Rounds 2 / 3 fall back to whatever
-opencode selects per `postSessionMessageServer` without an explicit
-`model`. Same for critic iterations, debate rounds, and the
-orchestrator-worker intro. Tracked in STATUS.md; wiring is a
-mechanical follow-up (each `postSessionMessageServer` call adds
-`model: meta.teamModels?.[sessionIDs.indexOf(sid)]`).
+every session's dispatch on every turn. All patterns (blackboard, council,
+map-reduce, critic-loop, debate-judge, orchestrator-worker) are
+FULLY WIRED — every `postSessionMessageServer` call reads
+`meta.teamModels?.[sessionIDs.indexOf(sid)]` and passes it as the `model`.
 
 ## 7. Parser correctness (stripVerifyTag, stripRoleTag)
 
@@ -375,6 +362,230 @@ printed.
 
 **Fail signals.** A regex drift breaks composition order or case
 insensitivity. Assertion messages name the failing case.
+---
+ 
+ ## 8. Pattern graceful degradation (silent-streaks)
+ 
+ **What it does.** Prevents runs from hanging indefinitely when members of a 
+ coordinated pattern (council, debate-judge, critic-loop) stop responding.
+ Tolerates transient failures but excludes sessions that stay silent for 2
+ consecutive rounds.
+ 
+ **Pass signals.**
+ - Session exclusion: `harvestDrafts` logs/output show sessions with
+   `reason: 'excluded'` (or missing from the processed list) once their
+   streak reaches `MAX_SILENT_STREAK`.
+ - Partial Outcome: If active members drop below a critical threshold
+   (e.g., < 2 active generators in debate-judge), the run transitions to
+   `idle` and logs a partial outcome with reason `all-sessions-silent` or
+   `too-few-drafts`.
+ - Convergence: Run correctly continues if at least 2 members remain active
+   and productive.
+ 
+ **Fail signals.**
+ - Run continues to spinner/wait for a session that has been silent for 3+
+   rounds (exclusion logic broken).
+ - Run hangs indefinitely instead of recording a partial outcome when all
+   members are silenced.
+ 
+ ---
+ 
+ ## 10. Parser resilience batch (two-tier verdict parsing)
+
+## 11. Parser resilience batch (two-tier verdict parsing)
+
+**What it does.** All LLM verdict parsers now use a two-tier strategy:
+(1) strict regex match for the expected format (`VERDICT: SUBSTANTIVE`,
+`1. VERDICT: MET`, etc.), then (2) fallback keyword scan in the first
+256 chars if the strict match fails. This catches LLMs that preface
+their verdict with commentary instead of starting the line with the
+keyword.
+
+Affected parsers:
+- Critic gate: `SUBSTANTIVE`/`BUSYWORK` (blackboard)
+- Verifier gate: `VERIFIED`/`NOT_VERIFIED` (blackboard)
+- Auditor: `MET`/`UNMET`/`WONT-DO` per numbered line + loose fallback
+- Debate-judge: `WINNER`/`MERGE`/`REVISE` mid-line in first 200 chars
+- Critic-loop: `APPROVED`/`REVISE` YAML + first-line + mid-line fallback
+- Map-reduce critic: `APPROVED`/`REVISE` scan window expanded 64→256 chars
+
+**Setup.** Standard blackboard, critic-loop, or debate-judge run.
+
+**Re-validation invocation.**
+```bash
+# Blackboard with critic gate (most likely to trigger fallbacks)
+curl -X POST http://localhost:8044/api/swarm/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pattern": "blackboard",
+    "workspace": "/abs/path/to/target/repo",
+    "directive": "Add error handling to the API routes.",
+    "teamSize": 3,
+    "enableCriticGate": true,
+    "persistentSweepMinutes": 5
+  }'
+```
+
+**Pass signals.**
+- No `unclear` verdicts from critic, verifier, or auditor when the LLM
+  includes the verdict keyword anywhere in the first 256 chars.
+- `APPROVED`/`REVISE` verdicts parse correctly even when preceded by
+  commentary like "After reviewing the diff, I conclude that REVISE..."
+- When a verdict *does* parse as `unclear` (genuinely ambiguous output),
+  a `finding` board item with `note` containing the `role` and first 500
+  chars of the raw reply appears on the board. This is the operator-visible
+  learning loop — patterns that repeatedly show up in findings should guide
+  future regex improvements.
+
+**Fail signals.**
+- Verdicts that were parsing correctly before now return `unclear`.
+- Critic consistently classifies substantive work as busywork (fallback
+  catching wrong keyword).
+- Auditor marks all criteria as `unclear` (loose parser matching wrong
+  lines).
+
+---
+
+## 10. Map-reduce synthesis wall-clock cap
+
+**What it does.** Verifies that the map-reduce reducer phase does not hang indefinitely if the synthesizer session fails to claim or complete the item. The loop now respects a dispatch deadline.
+ 
+ **Invocation.** Run a map-reduce pattern. Force a timeout by intercepting the synthesizer session's response or inducing a silence longer than `TIMINGS.mapReduce.dispatchDeadlineMs`.
+ 
+ **Pass signals.**
+ - The run does not hang; it exits the dispatch loop.
+ - A `finding` board item is created with phase `synthesis-dispatch-deadline` (or `synthesis-claim` for stale claims).
+ - The outcome summary correctly identifies the synthesis phase as the point of failure.
+ 
+ **Fail signals.**
+ - The run stays `live` past the deadline without any board update.
+ - The orchestrator crashes with an unhandled rejection instead of recording a partial outcome.
+
+## 9. Planner intelligence batch (P1–P6)
+**What it does.** Six improvements to reduce wasteful re-proposals and
+help the planner scope work to worker capability:
+
+| ID | Change | Effect |
+|---|---|---|
+| P4-simpler | Stale items replaced with 1-line summary | Saves ~2K chars of planner context per sweep |
+| P5/P1 | Failure-pattern clustering (silent/abort/error/drift) | Planner sees *why* work failed, not just that it failed |
+| P3 | Per-module failure counts from stale items' `expectedFiles` | Planner scopes down in modules where workers struggle |
+| P2-quick | Filler-word stripping before dedup comparison | Catches "Fix the stuck-check" ≈ "Fix stuck-check" |
+| P2-medium | Lower dedup threshold (0.5) for same-file items | Catches "Add silent-streak detection" ≈ "Wire silent-streak tracking" |
+| P4-full | Stale→finding auto-conversion | Failed work surfaces in the contracts rail instead of rotting on the board |
+| P6 | Model-aware retry budget (gemma/llama/phi: 1, others: 2) | Fewer wasted retries on weaker models |
+
+**Not yet validated live.** All changes pass `tsc --noEmit` and 634 unit
+tests pass (3 pre-existing failures unrelated). Needs a live blackboard
+run to verify planner prompt quality, stale-to-finding conversion, and
+reduced duplicate proposals.
+
+**Setup.** Standard blackboard run with a workspace that has meaningful
+work (at least 3–5 files worth of scope). A 30-minute run with
+`teamSize: 3` and `persistentSweepMinutes: 5` will exercise periodic
+re-sweeps and stale-item handling.
+
+**Re-validation invocation.**
+```bash
+curl -X POST http://localhost:8044/api/swarm/run \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "pattern": "blackboard",
+    "workspace": "/abs/path/to/target/repo",
+    "directive": "Fix stale-streak tracking and improve error handling in the auto-ticker.",
+    "teamSize": 3,
+    "persistentSweepMinutes": 5
+  }'
+```
+
+**Pass signals (watch the planner's board context in logs or UI):**
+- Planner prompt shows `## STALE:` as a 1-line summary (not itemized list).
+- When items go stale, a `finding` item appears on the board with
+  `[stale]` prefix content and the failure reason as `note`.
+- Failure patterns appear beneath the stale line with per-category hints.
+- Planner does not re-propose work that semantically overlaps with stale
+  or done items (filler-word dedup catches minor rephrasings).
+- `getMaxRetries` logs show `1` for gemma/llama models, `2` for glm/claude.
+
+**Fail signals.**
+- Planner prompt still shows itemized stale list → `PlannerBoardContext`
+  migration incomplete, check `buildPlannerPrompt` format.
+- Stale items appear as `stale` on the board but no `finding` is created
+  → `retryOrStale` finding insertion failed, check console for
+  `[retry] failed to insert finding` warnings.
+- Duplicate proposals pass dedup → `stripFillerWords` or file-aware
+  threshold not invoked, check `runPlannerSweep` dedup loop.
+- Model-aware budget not applied → weaker models still get 2 retries,
+  check `pickClaim` uses `effectiveMaxRetries` not `MAX_STALE_RETRIES`.
+
+---
+
+## 12. Contract tests (shipped 2026-05-09)
+
+**What to validate.** `lib/opencode/__tests__/contract.test.ts` contains 20
+snapshot tests against opencode response schemas (`isOpencodeSession`,
+`isOpencodeMessage`, `isOpencodeMessageInfo`, `isOpencodeProject`,
+`isOpencodeDiffEntry`).
+
+**Invocation.** `npx vitest run lib/opencode/__tests__/contract.test.ts`
+
+**Pass signals.** All 20 tests pass. If opencode changes its API (field rename,
+drop), tests fail.
+
+**Fail signals.** `isOpencodeSession` rejects → opencode renamed/dropped
+`id` or `time` fields. `isOpencodeMessageInfo` rejects → opencode renamed
+`id` or `role`. Check `docs/opencode-quirks.md` and update validators.
+
+---
+
+## 13. Auto-pilot (shipped 2026-05-09, logging-only)
+
+**What to validate.** `lib/server/blackboard/auto-pilot.ts` evaluates 5 rules
+per tick. Enabled by default, logs decisions to console. Does NOT auto-execute.
+
+**Invocation.** Start a run with `persistentSweepMinutes: 10`. Watch server
+logs for `[auto-pilot]` lines.
+
+**Pass signals.** `[auto-pilot]` lines appear when conditions are met:
+- 3 planner errors + 0 output → logs "stop" recommendation
+- Productive at 90% cap → logs "raise_cap" recommendation
+- Silent sessions detected → logs "notify" recommendation
+
+**Fail signals.** No `[auto-pilot]` lines → `evaluateAutoPilot` not wired
+or `costCap` not hydrated from meta.
+
+---
+
+## 14. Frame extraction (shipped 2026-05-09)
+
+**What to validate.** `scripts/frame-extract.ts` extracts frames from
+Playwright videos and flags anomalies.
+
+**Invocation.** After a verifier-gated run completes:
+`npx tsx scripts/frame-extract.ts <swarmRunID>`
+
+**Pass signals.** Frames extracted to `runs/_monitor/<runId>/playwright/frames/`.
+`post-mortem.md` written with anomaly count. Requires `ffmpeg` in PATH.
+
+**Fail signals.** "No videos found" → Playwright wasn't enabled or videos
+not written. "ffmpeg failed" → ffmpeg not installed.
+
+---
+
+## 15. Run recommender (shipped 2026-05-09)
+
+**What to validate.** `GET /api/swarm/recommend?directive=...` returns
+historical pattern + team size recommendations.
+
+**Invocation.** Open the new-run modal, type a directive. The recommendation
+chip should appear below the pattern selector. Or: `curl
+"http://localhost:8044/api/swarm/recommend?directive=fix+bugs+in+auth"`.
+
+**Pass signals.** Returns recommendation with `confidence`, `basedOn`,
+`avgCostPerTodo`. Falls back to `recentPatterns` when no history exists.
+
+**Fail signals.** 500 error → `run-history.ts` can't read `.opencode_swarm/runs/`.
+No recommendation chip in UI → `useQuery` not wired or directive too short.
 
 ---
 

@@ -31,7 +31,7 @@ export interface HarvestDraftRow {
  sessionID: string;
  text: string | null;
  ok: boolean;
- reason?: 'timeout' | 'error' | 'silent' | 'provider-unavailable' | 'tool-loop';
+  reason?: 'timeout' | 'error' | 'silent' | 'provider-unavailable' | 'tool-loop' | 'excluded';
  // Post-wait known IDs for this session. Caller can merge back into a
  // shared map for multi-round semantics (council R2..RN). Empty when
  // the message-fetch failed entirely.
@@ -55,23 +55,37 @@ export interface HarvestDraftsOpts {
  // Log prefix — "[map-reduce]", "[council]", etc. — used for the
  // wait-failed and message-fetch-failed warnings so the run-context
  // is readable in dev logs.
- contextLabel: string;
+  contextLabel: string;
+  // Sessions to skip entirely. They are returned immediately as
+  // { text: null, ok: false, reason: 'excluded' }.
+  excludeSessions?: string[];
 }
 
+
 export async function harvestDrafts(
- meta: SwarmRunMeta,
- opts: HarvestDraftsOpts,
+  meta: SwarmRunMeta,
+  opts: HarvestDraftsOpts,
 ): Promise<HarvestDraftRow[]> {
- const { knownIDsBySession, deadline, contextLabel } = opts;
- return Promise.all(
- meta.sessionIDs.map(async (sid) => {
- const known = knownIDsBySession?.get(sid) ?? new Set<string>();
- const result = await waitForSessionIdle(
- sid,
- meta.workspace,
- new Set(known),
- deadline,
- );
+  const { knownIDsBySession, deadline, contextLabel, excludeSessions } = opts;
+  return Promise.all(
+  meta.sessionIDs.map(async (sid) => {
+    if (excludeSessions?.includes(sid)) {
+      return {
+        sessionID: sid,
+        text: null,
+        ok: false,
+        reason: 'excluded',
+        newKnownIDs: new Set(knownIDsBySession?.get(sid) ?? new Set<string>()),
+      };
+    }
+    const known = knownIDsBySession?.get(sid) ?? new Set<string>();
+    const result = await waitForSessionIdle(
+      sid,
+      meta.workspace,
+      new Set(known),
+      deadline,
+    );
+
  if (!result.ok) {
  console.warn(
  `${contextLabel} session ${sid} wait failed (${result.reason}) — proceeding with its last completed text`,

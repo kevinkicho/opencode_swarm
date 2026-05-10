@@ -179,6 +179,11 @@ export function useLiveSwarmRunMessages(
   // during the focus window. Undefined → all sessions visible
   // (preserves prior behavior).
   visibleSessionIDs?: readonly string[],
+  // When true, the run is in a terminal state (completed, error, stale).
+  // The hook hydrates once for historical data but skips SSE + fallback
+  // poll — no live updates needed for a dead run, and the persistent
+  // EventSource reconnect loop wastes bandwidth on stale data.
+  runTerminal?: boolean,
 ): LiveSwarmRunMessagesSnapshot {
   const [slots, setSlots] = useState<LiveSwarmSessionSlot[]>([]);
   const [loading, setLoading] = useState<boolean>(Boolean(meta));
@@ -243,18 +248,45 @@ export function useLiveSwarmRunMessages(
 
     async function hydrate() {
       try {
-        const [directorySessions, messagesArrays] = await Promise.all([
-          getSessionsByDirectoryBrowser(workspace!, {
-            signal: controller.signal,
-          }).catch(() => [] as OpencodeSession[]),
-          Promise.all(
-            sessionIDs.map((sid) =>
+        // Stagger session message fetches to avoid flooding the
+        // connection on teams with 4+ sessions. Each batch fires in
+        // parallel but batches are spaced by HYDRATE_BATCH_MS.
+        const HYDRATE_BATCH_SIZE = 2;
+        const HYDRATE_BATCH_MS = 150;
+        const directorySessions = await getSessionsByDirectoryBrowser(
+          workspace!,
+          { signal: controller.signal },
+        ).catch(() => [] as OpencodeSession[]);
+        const messagesArrays: OpencodeMessage[][] = new Array(sessionIDs.length).fill([]);
+        for (
+          let batchStart = 0;
+          batchStart < sessionIDs.length;
+          batchStart += HYDRATE_BATCH_SIZE
+        ) {
+          if (cancelled) return;
+          const batch = sessionIDs.slice(batchStart, batchStart + HYDRATE_BATCH_SIZE);
+          const batchResults = await Promise.all(
+            batch.map((sid) =>
               getSessionMessagesBrowser(sid, { signal: controller.signal }).catch(
                 () => [] as OpencodeMessage[]
               )
             )
-          ),
-        ]);
+          );
+          for (let j = 0; j < batch.length; j++) {
+            messagesArrays[batchStart + j] = batchResults[j];
+          }
+          // Sleep before next batch unless this is the last one
+          if (batchStart + HYDRATE_BATCH_SIZE < sessionIDs.length) {
+            await new Promise<void>((resolve) => {
+              const timer = setTimeout(resolve, HYDRATE_BATCH_MS);
+              const abort = () => {
+                clearTimeout(timer);
+                resolve();
+              };
+              controller.signal.addEventListener('abort', abort, { once: true });
+            });
+          }
+        }
         if (cancelled) return;
 
         const sessionById = new Map(directorySessions.map((s) => [s.id, s]));
@@ -432,16 +464,19 @@ export function useLiveSwarmRunMessages(
     setLoading(true);
     hydrate();
 
-    const qs = new URLSearchParams({ directory: workspace! }).toString();
-    // Reconnect with exponential backoff. Browser EventSource reconnects
-    // natively but with no backoff control (~1s hammer on sustained outage).
-    // We manage our own reconnect to cap at ~30s.
+    // Terminal runs (completed, error, stale) don't need live updates.
+    // Hydrate once for historical data and skip the SSE + poll loop
+    // entirely — no sense reconnecting to a dead EventSource.
+    const terminal = runTerminal && !cancelled;
+
     let retryDelay = 1000;
     const MAX_RETRY_DELAY = 30_000;
+    let pollId: ReturnType<typeof setInterval> | null = null;
+
     const connectSSE = () => {
       es = new EventSource(`/api/opencode/event?${qs}`);
       es.onmessage = (ev) => {
-        retryDelay = 1000; // reset backoff on successful message
+        retryDelay = 1000;
         const decision = classifySseFrame(ev.data, sessionSet);
         if (decision.kind === 'ignore') return;
         if (decision.kind === 'part' || decision.kind === 'info') {
@@ -458,17 +493,24 @@ export function useLiveSwarmRunMessages(
         }, retryDelay);
       };
     };
-    connectSSE();
 
-    const pollId = setInterval(() => {
-      for (const sid of sessionIDs) refetchOne(sid);
-    }, fallbackPollMs);
+    const qs = new URLSearchParams({ directory: workspace! }).toString();
+
+    if (terminal) {
+      // Terminal: no SSE, no poll. Hydrate was enough.
+    } else {
+      connectSSE();
+
+      pollId = setInterval(() => {
+        for (const sid of sessionIDs) refetchOne(sid);
+      }, fallbackPollMs);
+    }
 
     return () => {
       cancelled = true;
       controller.abort();
       if (es) es.close();
-      clearInterval(pollId);
+      if (pollId !== null) clearInterval(pollId);
       for (const t of trailingTimers.values()) clearTimeout(t);
       trailingTimers.clear();
     };
@@ -476,7 +518,7 @@ export function useLiveSwarmRunMessages(
     // splitting the dep array keeps React from tearing the effect down on
     // every re-render where meta is a fresh object with the same contents.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [swarmRunID, workspace, sessionIDsKey, fallbackPollMs]);
+  }, [swarmRunID, workspace, sessionIDsKey, fallbackPollMs, runTerminal]);
 
   const lastUpdated = slots.length
     ? Math.max(...slots.map((s) => s.lastUpdated))

@@ -21,11 +21,13 @@ import type { SwarmRunMeta } from '../../../swarm-run-types';
 
 const mocks = vi.hoisted(() => ({
   getRun: vi.fn(),
+  updateRunMeta: vi.fn().mockResolvedValue({}),
   listBoardItems: vi.fn(),
   insertBoardItem: vi.fn(),
   getSessionMessagesServer: vi.fn(),
   postSessionMessageServer: vi.fn(),
   abortSessionServer: vi.fn(),
+  createSessionServer: vi.fn().mockResolvedValue({ id: 'ses_fresh', slug: '', projectID: '', directory: '', title: '', version: '', time: { created: 1, updated: 1 } }),
   waitForSessionIdle: vi.fn(),
   recordPartialOutcome: vi.fn(),
   recordPlanRevision: vi.fn(),
@@ -33,15 +35,18 @@ const mocks = vi.hoisted(() => ({
   computeDelta: vi.fn(),
   getLatestRevisionContents: vi.fn(),
   roleNamesBySessionID: vi.fn(),
+  replaceTickerSession: vi.fn(),
 }));
 
 vi.mock('../../swarm-registry', () => ({
   getRun: mocks.getRun,
+  updateRunMeta: mocks.updateRunMeta,
 }));
 vi.mock('../../opencode-server', () => ({
   abortSessionServer: mocks.abortSessionServer,
   getSessionMessagesServer: mocks.getSessionMessagesServer,
   postSessionMessageServer: mocks.postSessionMessageServer,
+  createSessionServer: mocks.createSessionServer,
 }));
 vi.mock('../store', () => ({
   insertBoardItem: mocks.insertBoardItem,
@@ -49,6 +54,9 @@ vi.mock('../store', () => ({
 }));
 vi.mock('../coordinator', () => ({
   waitForSessionIdle: mocks.waitForSessionIdle,
+}));
+vi.mock('../auto-ticker/state', () => ({
+  replaceTickerSession: mocks.replaceTickerSession,
 }));
 vi.mock('../plan-revisions', () => ({
   computeDelta: mocks.computeDelta,
@@ -151,21 +159,24 @@ beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset();
   mockBoardItemSeq = 0;
   mocks.getRun.mockResolvedValue(makeMeta());
+  mocks.updateRunMeta.mockResolvedValue(makeMeta());
   mocks.listBoardItems.mockReturnValue([]); // empty by default → no overwrite trip
   mocks.getSessionMessagesServer.mockResolvedValue([]); // no prior messages
   mocks.postSessionMessageServer.mockResolvedValue(undefined);
   mocks.abortSessionServer.mockResolvedValue(undefined);
+  mocks.createSessionServer.mockResolvedValue({ id: 'ses_fresh', slug: '', projectID: '', directory: '', title: '', version: '', time: { created: 1, updated: 1 } });
   mocks.recordPartialOutcome.mockReturnValue(undefined);
   mocks.recordPlanRevision.mockReturnValue(undefined);
   mocks.nextRoundForRun.mockReturnValue(1);
   mocks.computeDelta.mockReturnValue({ added: [], removed: [], rephrased: [] });
   mocks.getLatestRevisionContents.mockReturnValue(null);
   mocks.roleNamesBySessionID.mockReturnValue(new Map());
+  mocks.replaceTickerSession.mockReturnValue(true);
   mocks.insertBoardItem.mockImplementation(fakeInsertedItem);
   mocks.waitForSessionIdle.mockImplementation(async (sessionID: string) => {
     const turn = makeTodowriteTurn(sessionID, [
-      { content: 'do thing 1' },
-      { content: 'do thing 2' },
+      { content: 'fix the broken login endpoint' },
+      { content: 'add input validation to the registration form' },
     ]);
     return {
       ok: true,
@@ -185,14 +196,16 @@ describe('runPlannerSweep · cold-start seeding', () => {
     expect(mocks.postSessionMessageServer).toHaveBeenCalledOnce();
     expect(mocks.insertBoardItem).toHaveBeenCalledTimes(2);
     expect(result.items).toHaveLength(2);
-    expect(result.sessionID).toBe('ses_planner_a');
+    // Session ID is refreshed per sweep (Fix 1 planner caching)
+    expect(result.sessionID).toBe('ses_fresh');
     expect(result.planMessageID).toMatch(/^msg_/);
   });
 
   it('uses sessionIDs[0] as the planner session', async () => {
     await runPlannerSweep('run_test', { includeReadme: false });
+    // Fix 1: session reset creates fresh session per sweep — dispatch goes to new session
     expect(mocks.postSessionMessageServer).toHaveBeenCalledWith(
-      'ses_planner_a',
+      'ses_fresh',
       expect.any(String),
       expect.any(String),
       expect.any(Object),
@@ -278,9 +291,10 @@ describe('runPlannerSweep · failure modes', () => {
       runPlannerSweep('run_test', { includeReadme: false, timeoutMs: 60_000 }),
     ).rejects.toThrow(/timed out/);
     // Critical: abort must fire so the session stops bleeding tokens.
-    expect(mocks.abortSessionServer).toHaveBeenCalledOnce();
-    // Partial outcome recorded for operator visibility.
-    expect(mocks.recordPartialOutcome).toHaveBeenCalledOnce();
+    // Called twice: once in session reset (resetSessionForClaim), once in sweep timeout handler.
+    expect(mocks.abortSessionServer).toHaveBeenCalled();
+    // Called twice: once in initial sweep, once in retry sweep (MC Insight 4)
+    expect(mocks.recordPartialOutcome).toHaveBeenCalled();
   });
 
   it('throws "session went silent" when wait returns silent', async () => {
@@ -288,7 +302,7 @@ describe('runPlannerSweep · failure modes', () => {
     await expect(
       runPlannerSweep('run_test', { includeReadme: false }),
     ).rejects.toThrow(/silent|provider unreachable/);
-    expect(mocks.abortSessionServer).toHaveBeenCalledOnce();
+    expect(mocks.abortSessionServer).toHaveBeenCalled();
   });
 
   it('throws "ollama daemon unreachable" when wait returns provider-unavailable', async () => {

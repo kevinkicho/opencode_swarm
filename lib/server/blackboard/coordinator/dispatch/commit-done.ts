@@ -1,35 +1,21 @@
 //
-// commitDone — final transitionStatus from in-progress → done. The CAS
-// can lose if something else moved the row mid-flight (rare; the
-// dispatch-mutex makes within-run concurrency impossible, but a
-// /board/:itemId/state route could still flip the row from outside).
-// Surface the observed status so the caller can re-read.
+// commitDone — final transition from in-progress → done via the unified
+// transitionItem. FileLockSet.release is handled inside transitionItem.
+//
 
 import 'server-only';
 
-import { transitionStatus } from '../../store';
+import { transitionItem } from '../transition-item';
 import type { TickOutcome } from '../types';
 import type { GatedContext } from './_context';
 
-export function commitDone(gated: GatedContext): TickOutcome {
+export async function commitDone(gated: GatedContext): Promise<TickOutcome> {
   const { meta, sessionID, todo, fileHashes, editedPaths } = gated;
 
-  const done = transitionStatus(meta.swarmRunID, todo.id, {
-    from: 'in-progress',
-    to: 'done',
-    fileHashes: fileHashes.length > 0 ? fileHashes : null,
+  await transitionItem(meta.swarmRunID, todo, 'done', {
+    fileHashes,
     setCompletedAt: true,
   });
-  if (!done.ok) {
-    // Something else moved it mid-flight. Surface the observed state so
-    // the caller can re-read and decide.
-    return {
-      status: 'stale',
-      sessionID,
-      itemID: todo.id,
-      reason: `done-transition lost: ${done.currentStatus}`,
-    };
-  }
 
   return { status: 'picked', sessionID, itemID: todo.id, editedPaths };
 }

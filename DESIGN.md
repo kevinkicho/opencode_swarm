@@ -193,7 +193,7 @@ The new-run modal is the run's creation event:
 |---|---|---|
 | **source** (repo URL / folder) | yes | human — the only thing the swarm cannot invent |
 | **branch strategy** | yes (default worktree) | human |
-| **start mode** (dry-run / live / spectator) | yes (default dry-run) | human |
+| **start mode** (dry-run / live) | yes (default dry-run) | human |
 | **directive** | no | human *or* the swarm (inferred from README / commits / issues) |
 | **team** | no | human-picked roster + fresh spawns; zero is fine |
 | **bounds** (spend / wallclock) | no | human; `unbounded` toggle surrenders the ceiling |
@@ -426,3 +426,34 @@ kill switch cannot.
 | `lib/server/swarm-registry/{fs,derive}.ts` | Persistence + liveness derivation |
 | `lib/server/blackboard/coordinator/*.ts` | Tick coordinator + watchdogs |
 | `lib/server/memory/*.ts` | L0 → L1 → L2 ingest + rollup |
+
+---
+
+## 12. Analysis documents + scripts
+
+Strategic analysis (12 methodologies applied 2026-05-08/09). See `STATUS.md`
+for the consolidated queue.
+
+| Path | Purpose |
+|---|---|
+| `docs/STRATEGY.md` | Ansoff Matrix + Scenario Planning |
+| `docs/SYSTEMATIC_FIXES.md` | Root cause analysis + Fix 1-3 design |
+| `docs/MONTE_CARLO.md` | 3,000-trial probabilistic simulation |
+| `docs/LCCA.md` | Life cycle cost analysis, break-even thresholds |
+| `docs/FAULT_TREE.md` | 14 cut sets, OR-gate dominance |
+| `docs/COMPOSITE_PLAN.md` | 6 shared findings, 4 implementation plans |
+| `docs/RECOMMENDATIONS.md` | Single-source queue + stop-doing list |
+| `docs/UML_ANALYSIS.md` | Class/state/sequence/component diagrams |
+| `docs/ARCHITECTURE_EVALUATION.md` | ATAM/SAAM/CBAM/DSM |
+| `docs/FORMAL_METHODS.md` | TLA+/Alloy/Invariant proofs |
+| `docs/FORMAL_METHODS_2.md` | Refinement/LTL/Data flow/Abstract interpretation |
+| `docs/PERFORMANCE.md` | Load testing, bottleneck identification, benchmarking |
+| `docs/SECURITY.md` | SAST/SCA/DAST/Penetration testing |
+| `scripts/monte-carlo.ts` | MC simulation engine (3,000 trials) |
+| `scripts/pm-frequency.ts` | Postmortem frequency tracker |
+| `scripts/decide.ts` | 6-rule automated decision engine |
+| `scripts/perf-bench.ts` | Performance benchmark |
+| `scripts/lcca-calc.ts` | LCCA break-even calculator |
+| `scripts/import-graph.ts` | Module dependency analyzer |
+| `scripts/frame-extract.ts` | Playwright video → frame extraction |
+| `scripts/morning-summary.ts` | Overnight run summary (cron) |

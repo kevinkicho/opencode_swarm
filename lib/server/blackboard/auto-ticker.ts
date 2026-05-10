@@ -207,6 +207,10 @@ export function startAutoTicker(
     // in ensureSlots (tick.ts) so a ticker restart resumes at the
     // tier where the previous one left off.
     currentTier: 1,
+    consecutiveFilteredAllTodos: 0,
+    consecutiveNoClaimableWork: 0,
+    plannerErrors: 0,
+    costCap: undefined,
   });
 }
 

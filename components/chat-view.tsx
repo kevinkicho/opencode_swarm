@@ -35,6 +35,7 @@ import { compact } from '@/lib/format';
 import { stripProtocolTokens } from '@/lib/text-sanitize';
 import { MarkdownBody } from './ui/markdown-body';
 import { ScrollToBottomButton } from './ui/scroll-to-bottom';
+import { useStickToBottom } from '@/lib/use-stick-to-bottom';
 
 const accentText: Record<Agent['accent'], string> = {
   molten: 'text-molten',
@@ -105,7 +106,6 @@ export function ChatView({
   onFocus: (id: string) => void;
   loading?: boolean;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
   const agentMap = useMemo(() => {
     const m = new Map<string, Agent>();
     for (const a of agents) m.set(a.id, a);
@@ -113,6 +113,8 @@ export function ChatView({
   }, [agents]);
 
   const turns = useMemo<Turn[]>(() => buildTurns(messages), [messages]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useStickToBottom(scrollRef, turns);
 
   if (turns.length === 0) {
     return (
@@ -213,33 +215,25 @@ function buildTurns(messages: AgentMessage[]): Turn[] {
 
   // Pass 3: dedup user prompts that fan across sessions. Same body
   // within FAN_WINDOW_MS collapse into the earliest, with the union
-  // of recipients on the survivor.
+  // of recipients on the survivor. O(U) via time-bucket hash key
+  // (body + quantized tsMs) instead of the prior O(U²) pairwise scan.
   const dropped = new Set<string>();
-  const userIndices: number[] = [];
-  built.forEach((t, i) => {
-    if (t.kind === 'user') userIndices.push(i);
-  });
-  for (let i = 0; i < userIndices.length; i++) {
-    const idx = userIndices[i];
-    const turn = built[idx] as UserTurn;
-    if (dropped.has(turn.key)) continue;
-    const merged = new Set(turn.toAgents);
-    for (let j = i + 1; j < userIndices.length; j++) {
-      const otherIdx = userIndices[j];
-      const other = built[otherIdx] as UserTurn;
-      if (dropped.has(other.key)) continue;
-      if (other.body !== turn.body) continue;
-      if (
-        other.tsMs != null &&
-        turn.tsMs != null &&
-        Math.abs(other.tsMs - turn.tsMs) > FAN_WINDOW_MS
-      ) {
-        continue;
-      }
-      for (const r of other.toAgents) merged.add(r);
-      dropped.add(other.key);
+  const fanBuckets = new Map<string, { idx: number; agents: Set<string> }>();
+  for (let i = 0; i < built.length; i++) {
+    const t = built[i];
+    if (t.kind !== 'user') continue;
+    if (dropped.has(t.key)) continue;
+    const bucket = `${t.body}@@${Math.floor((t.tsMs ?? 0) / FAN_WINDOW_MS)}`;
+    const existing = fanBuckets.get(bucket);
+    if (existing) {
+      for (const r of t.toAgents) existing.agents.add(r);
+      dropped.add(t.key);
+    } else {
+      fanBuckets.set(bucket, { idx: i, agents: new Set(t.toAgents) });
     }
-    (built[idx] as UserTurn).toAgents = Array.from(merged);
+  }
+  for (const [, { idx, agents }] of fanBuckets) {
+    (built[idx] as UserTurn).toAgents = Array.from(agents);
   }
 
   return built.filter((t) => !dropped.has(t.key));

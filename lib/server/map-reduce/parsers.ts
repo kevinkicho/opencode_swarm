@@ -292,13 +292,30 @@ export function buildCriticPrompt(
 export function parseCriticVerdict(
   text: string,
 ): { verdict: 'approved' | 'revise' | 'unclear'; feedback: string } {
-  const head = text.trimStart().slice(0, 64).toUpperCase();
-  if (head.startsWith('APPROVED')) {
+  // Primary: first-line keyword match (original behavior).
+  const head = text.trimStart().slice(0, 256);
+  const first = head.split('\n', 1)[0]?.trim() ?? '';
+  if (/^approved\b/i.test(first)) {
     return { verdict: 'approved', feedback: '' };
   }
-  if (head.startsWith('REVISE')) {
+  if (/^revise\b/i.test(first)) {
     const idx = text.indexOf('\n');
     const feedback = idx >= 0 ? text.slice(idx + 1).trim() : '';
+    return { verdict: 'revise', feedback };
+  }
+  // Fallback: keyword anywhere in first 256 chars.
+  // LLMs often write "After reviewing, I find this APPROVED" or
+  // "My verdict is REVISE because..." — these should still parse.
+  const approvedMatch = /\bAPPROVED\b/i.exec(head);
+  const reviseMatch = /\bREVISE\b/i.exec(head);
+  if (approvedMatch && (!reviseMatch || approvedMatch.index <= reviseMatch.index)) {
+    return { verdict: 'approved', feedback: '' };
+  }
+  if (reviseMatch) {
+    // Take everything after the line containing REVISE as feedback
+    const lineStart = text.lastIndexOf('\n', reviseMatch.index) + 1;
+    const afterLine = text.slice(text.indexOf('\n', reviseMatch.index));
+    const feedback = afterLine ? afterLine.replace(/^\s*/, '').trim() : '';
     return { verdict: 'revise', feedback };
   }
   return { verdict: 'unclear', feedback: '' };

@@ -19,13 +19,19 @@ import { listBoardItems } from '../store';
 import { stopAutoTicker } from './stop';
 import type { TickerState } from './types';
 
-// Hard-cap defaults: "fire whichever first — wall-clock 8h, 200
-// commits, 300 todos". Effective caps are max(meta.bounds.<cap>,
-// default). Per-run override is authoritative when set; defaults keep
-// hands-off runs from running forever.
-const DEFAULT_WALLCLOCK_MINUTES = 8 * 60; // 8h
-const DEFAULT_COMMITS_CAP = 200;
-const DEFAULT_TODOS_CAP = 300;
+// Hard-cap defaults for the auto-ticker.
+//
+// All three default to 0 (disabled). When 0, the check is skipped entirely —
+// the run continues without a wall-clock / commit / todo ceiling. Per-run
+// overrides via meta.bounds still work; the operator can opt into caps
+// by setting bounds in the run request. The prior defaults (8h, 200
+// commits, 300 todos) were guardrails that killed runs prematurely during
+// extended blackboard sessions. The ambition-ratchet + periodic-sweep
+// system is now the primary control surface — runs stop when they run
+// out of work at tier 5, not when an arbitrary counter trips.
+const DEFAULT_WALLCLOCK_MINUTES = 0;
+const DEFAULT_COMMITS_CAP = 0;
+const DEFAULT_TODOS_CAP = 0;
 
 // Hard-cap check — Stage 2. Called after each successful commit and
 // before each tick. Returns true if a cap breached; caller stops the
@@ -42,7 +48,7 @@ export async function checkHardCaps(state: TickerState): Promise<boolean> {
 
   const elapsedMs = Date.now() - state.startedAtMs;
   const elapsedMinutes = elapsedMs / 60_000;
-  if (elapsedMinutes >= minutesCap) {
+  if (minutesCap > 0 && elapsedMinutes >= minutesCap) {
     console.log(
       `[board/auto-ticker] ${state.swarmRunID}: wall-clock cap breached — ${Math.round(elapsedMinutes)}min >= ${minutesCap}min. Stopping.`,
     );
@@ -50,7 +56,7 @@ export async function checkHardCaps(state: TickerState): Promise<boolean> {
     return true;
   }
 
-  if (state.totalCommits >= commitsCap) {
+  if (commitsCap > 0 && state.totalCommits >= commitsCap) {
     console.log(
       `[board/auto-ticker] ${state.swarmRunID}: commits cap breached — ${state.totalCommits} >= ${commitsCap}. Stopping.`,
     );
@@ -63,7 +69,7 @@ export async function checkHardCaps(state: TickerState): Promise<boolean> {
   const todoCount = listBoardItems(state.swarmRunID).filter(
     (i) => i.kind === 'todo',
   ).length;
-  if (todoCount >= todosCap) {
+  if (todosCap > 0 && todoCount >= todosCap) {
     console.log(
       `[board/auto-ticker] ${state.swarmRunID}: todos cap breached — ${todoCount} >= ${todosCap} authored. Stopping.`,
     );
