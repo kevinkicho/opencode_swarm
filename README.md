@@ -22,14 +22,14 @@ Built for keyboard-first developers who want to read a 5-agent run as easily as 
 ## Screenshots
 
 <p align="center">
-  <img src="public/screenshots/tile-2x2-live.png" alt="opencode_swarm highlights — live run" width="800" />
+  <img src="public/screenshots/tile-2x2.png" alt="opencode_swarm — completed blackboard run" width="800" />
 </p>
 
-*Above: 4 captures during a live blackboard run on the ollama_swarm codebase (2 workers, GLM planner + GEMMA worker, $0.50 cap)*
+*Above: 4 captures from a completed blackboard run (`run_mowhf24a_8h62fc`, 11.7M tokens, $0.24, 18/19 todos done)*
 
 | Top-left: 2D Timeline | Top-right: Board Rail |
 |:---:|:---:|
-| Bottom-left: Plan Tab | Bottom-right: Topbar + Live Status |
+| Bottom-left: Plan Tab | Bottom-right: Topbar + Stats |
 
 ### Key features visible
 
