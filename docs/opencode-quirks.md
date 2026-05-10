@@ -254,6 +254,8 @@ forever. Our defenses:
 
 ---
 
+---
+
 ## 9. Notes for this prototype
 
 - opencode has **no A2A typed-pin schema**. Sub-agent communication = `task`
@@ -266,3 +268,47 @@ forever. Our defenses:
 - `permission.*` is a real signal for "waiting on human approval" — first-
   class chip in the UI.
 - `compaction` is a first-class part type — dedicated timeline marker.
+
+---
+
+## 10. Ollama-cloud tool-calling silent-failure (probed 2026-05-10)
+
+**The ollama-cloud pipeline does not support tool definitions through
+opencode's `agent: plan` route.** When opencode dispatches a prompt with
+`agent: 'plan'` + `model: { providerID: 'ollama', modelID: 'glm-5.1:cloud' }`,
+the model produces a text-only assistant response. No tool calls (`todowrite`,
+`read`, `grep`, etc.) are invoked. This is the Q34 failure mode — the same
+bug that killed the deepseek-v4-pro:cloud attempt on 2026-04-27.
+
+**Root cause**: The ollama SDK has two endpoints:
+- `POST /api/generate` — completion endpoint. No `tools` parameter. No tool
+  calling support.
+- `POST /api/chat` — chat endpoint. HAS `tools` parameter. Supports
+  `tool_calls` in responses.
+
+opencode likely routes ollama-cloud prompts through the `/api/generate`
+endpoint, which has no mechanism to pass tool definitions. The opencode-go
+and opencode (zen) providers use opencode's own internal dispatch, which
+correctly routes tool definitions regardless of the upstream API.
+
+**Verification**: `scripts/probe-pipelines.ts` confirmed:
+- `ollama/glm-5.1:cloud` + `agent: plan` → assistant completed, NO tool calls
+- `ollama/glm-5.1:cloud` + NO agent → same (agent doesn't matter)
+- `opencode-go/glm-5.1` + `agent: plan` → todowrite completed successfully
+- `opencode/glm-5.1` (zen) + `agent: plan` → todowrite completed successfully
+
+**Impact**: The default planner model was switched from
+`ollama/glm-5.1:cloud` to `opencode-go/glm-5.1` in `swarm-patterns.ts`
+(2026-05-10 commit `e516e18`). Worker models (GEMMA) and auditor models
+(NEMOTRON) remain on ollama — they use `agent: 'build'` and the audit
+path respectively, which have different tool-routing behavior.
+
+**Re-probe**: Ollama introduced tool support in the chat API in early 2025.
+If opencode is updated to route ollama prompts through `/api/chat` with
+tool definitions, re-run `npx tsx scripts/probe-pipelines.ts` and revert
+the planner model if it passes.
+
+**Diagnostic**: if a planner session completes with `info.error` set and
+zero `part.type === 'tool'` parts, the model likely received the prompt
+without tool definitions — check which provider the session was routed
+through.
