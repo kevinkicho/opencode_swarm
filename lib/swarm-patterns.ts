@@ -204,21 +204,28 @@ export function teamSizeWarningMessage(
 // orchestrator for orchestrator-worker, judge for debate-judge,
 // worker for critic-loop. Convention defined in each pattern's
 // orchestrator module; this table matches them.
-const PLANNER = 'ollama/glm-5.1:cloud';
+// 2026-05-10 pipeline probe: ollama/glm-5.1:cloud does NOT invoke
+// todowrite when routed through ollama-cloud (produces prose-only with
+// an error object). opencode-go/glm-5.1 and opencode/glm-5.1 both
+// successfully call todowrite with completed status. Switched default
+// planner to opencode-go provider. See scripts/probe-pipelines.ts.
+const PLANNER = 'opencode-go/glm-5.1';
 const GEMMA = 'ollama/gemma4:31b-cloud';
 const NEMOTRON = 'ollama/nemotron-3-super:cloud';
 
 // Tier-aware planner model routing: tier 1-2 sweeps (bugs, polish,
-// small fixes — 60-70% of all sweeps) use GEMMA ($0.02/1M). Tier 3+
-// (cross-cutting, architectural, integrations, ambitious bets) use
-// GLM ($0.15/1M) for stronger reasoning. Indexed 0..4; sweep.ts
-// clamps out-of-range indices. User-supplied teamModels[0] always wins.
+// small fixes — 60-70% of all sweeps) use GEMMA ($0.02/1M via ollama).
+// Tier 3+ (cross-cutting, architectural, integrations, ambitious bets)
+// use GLM via opencode-go provider ($0.15/1M). ollama/glm-5.1:cloud
+// is BROKEN for plan agent (probe 2026-05-10: prose-only, no todowrite).
+// Indexed 0..4; sweep.ts clamps out-of-range indices. User-supplied
+// teamModels[0] always wins.
 export const TIER_PLANNER_MODELS = [
   'ollama/gemma4:31b-cloud',     // tier 1: bugs/polish (cheap)
   'ollama/gemma4:31b-cloud',     // tier 2: refactor/extract (cheap)
-  'ollama/glm-5.1:cloud',       // tier 3: cross-cutting (strong)
-  'ollama/glm-5.1:cloud',       // tier 4: integrations (strong)
-  'ollama/glm-5.1:cloud',       // tier 5: ambitious bets (strong)
+  'opencode-go/glm-5.1',         // tier 3: cross-cutting (strong)
+  'opencode-go/glm-5.1',         // tier 4: integrations (strong)
+  'opencode-go/glm-5.1',         // tier 5: ambitious bets (strong)
 ];
 
 export interface PatternDefaults {
