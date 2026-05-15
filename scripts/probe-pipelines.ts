@@ -12,9 +12,11 @@ const USER = process.env.OPENCODE_BASIC_USER || 'opencode';
 const PASS = process.env.OPENCODE_BASIC_PASS || '';  // from .env
 
 const PROBES = [
-  { label: 'ollama-cloud', provider: 'ollama', model: 'glm-5.1:cloud', agent: 'plan' },
-  { label: 'go (opencode-go)', provider: 'opencode-go', model: 'glm-5.1', agent: 'plan' },
-  { label: 'zen (opencode)', provider: 'opencode', model: 'glm-5.1', agent: 'plan' },
+  { label: 'ollama-cloud (GLM)', provider: 'ollama', model: 'glm-5.1:cloud', agent: 'plan' },
+  { label: 'go (GLM)', provider: 'opencode-go', model: 'glm-5.1', agent: 'plan' },
+  { label: 'zen (GLM)', provider: 'opencode', model: 'glm-5.1', agent: 'plan' },
+  { label: 'ollama (GEMMA)', provider: 'ollama', model: 'gemma4:31b-cloud', agent: 'build' },
+  { label: 'ollama (NEMOTRON)', provider: 'ollama', model: 'nemotron-3-super:cloud', agent: 'build' },
   { label: 'ollama (no agent)', provider: 'ollama', model: 'glm-5.1:cloud', agent: undefined },
 ];
 

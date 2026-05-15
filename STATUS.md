@@ -135,6 +135,11 @@ per LCCA). Then validate the 5 future directions live.
 - **Contract tests** — will fire on next opencode API change
 - **Playwright frame extraction** (`scripts/frame-extract.ts`) — needs live run with Playwright
 
+**WSL test failures.** `better-sqlite3` native module compiled for Windows
+fails in WSL (Linux) with "invalid ELF header." 30+ integration test files
+affected. All 53 dedicated unit tests pass. Run `npm rebuild better-sqlite3`
+when switching between WSL and native environments.
+
 ---
 
 ## Postmortem follow-ups
