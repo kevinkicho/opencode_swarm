@@ -6,10 +6,10 @@
 //
 // Run: npx tsx scripts/probe-pipelines.ts
 
-const OCODE = 'http://172.24.32.1:4096';
+const OCODE = process.env.OPENCODE_URL || 'http://172.24.32.1:4096';
 const DIR = 'C:\\Users\\kevin\\Desktop\\opencode_swarm';
-const USER = 'opencode';
-const PASS = '82k1xkXWXhDquI837lSl0G';  // from .env
+const USER = process.env.OPENCODE_BASIC_USER || 'opencode';
+const PASS = process.env.OPENCODE_BASIC_PASS || '';  // from .env
 
 const PROBES = [
   { label: 'ollama-cloud', provider: 'ollama', model: 'glm-5.1:cloud', agent: 'plan' },
